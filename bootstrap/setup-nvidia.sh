@@ -8,6 +8,7 @@ source "${SUPPORT_ROOT}/lib/common.sh"
 SUPPORT_REPO="${SUPPORT_REPO:-CorniiDog/open-gpu-kernel-modules-steamos-support}"
 
 DRIVER_SPEC=""
+UPSTREAM_SPEC=""
 RESOLVE_ONLY=0
 YES=0
 
@@ -42,6 +43,11 @@ while [[ $# -gt 0 ]]; do
             DRIVER_SPEC="$2"
             shift 2
             ;;
+        --use-upstream)
+            [[ $# -ge 2 ]] || die "--use-upstream requires a version."
+            UPSTREAM_SPEC="$2"
+            shift 2
+            ;;
         --resolve-only)
             RESOLVE_ONLY=1
             shift
@@ -63,6 +69,15 @@ done
 if [[ -n "$DRIVER_SPEC" ]]; then
     [[ "$DRIVER_SPEC" =~ ^[0-9]+([.][0-9]+)*$ ]] ||
         die "--driver must be a numeric NVIDIA version prefix such as 575, 580.105, or 580.105.08."
+fi
+
+if [[ -n "$DRIVER_SPEC" && -n "$UPSTREAM_SPEC" ]]; then
+    die "--driver and --use-upstream are mutually exclusive."
+fi
+
+if [[ -n "$UPSTREAM_SPEC" ]]; then
+    [[ "$UPSTREAM_SPEC" =~ ^[0-9]+([.][0-9]+)*$ ]] ||
+        die "--use-upstream must be a numeric NVIDIA version prefix such as 575 or 580."
 fi
 
 require_steamos
@@ -223,7 +238,24 @@ REFERENCE_STEAMOS=""
 REFERENCE_KERNEL=""
 REFERENCE_RELEASE=""
 
-if [[ -n "$DRIVER_SPEC" ]]; then
+if [[ -n "$UPSTREAM_SPEC" ]]; then
+    SELECTION_MODE="upstream-development"
+
+    log "Resolving newest NVIDIA upstream driver matching ${UPSTREAM_SPEC}..."
+
+    NVIDIA_UTILS_FILE="$(resolve_arch_package nvidia-utils "$UPSTREAM_SPEC" prefix)"
+
+    NVIDIA_UTILS_VERREL="${NVIDIA_UTILS_FILE#nvidia-utils-}"
+    NVIDIA_UTILS_VERREL="${NVIDIA_UTILS_VERREL%-x86_64.pkg.tar.zst}"
+    NVIDIA_UTILS_VERREL="${NVIDIA_UTILS_VERREL%-x86_64.pkg.tar.xz}"
+
+    RESOLVED_NVIDIA="${NVIDIA_UTILS_VERREL%-*}"
+
+    REFERENCE_STEAMOS="$STEAMOS_VERSION"
+    REFERENCE_KERNEL="$KERNEL_VERSION"
+    REFERENCE_RELEASE="upstream:${UPSTREAM_SPEC}"
+
+elif [[ -n "$DRIVER_SPEC" ]]; then
     SELECTION_MODE="explicit"
 
     log "Resolving newest NVIDIA driver matching ${DRIVER_SPEC}..."
@@ -345,7 +377,19 @@ STATE_TMP="$TMP/state"
 mkdir -p "$STATE_TMP"
 
 printf "%s\n" "$SELECTION_MODE" > "$STATE_TMP/selection-mode"
-printf "%s\n" "${DRIVER_SPEC:-auto}" > "$STATE_TMP/selection-request"
+
+if [[ -n "$UPSTREAM_SPEC" ]]; then
+    printf "%s\n" "$UPSTREAM_SPEC" > "$STATE_TMP/selection-request"
+else
+    printf "%s\n" "${DRIVER_SPEC:-auto}" > "$STATE_TMP/selection-request"
+fi
+
+if [[ "$SELECTION_MODE" == "upstream-development" ]]; then
+    printf "%s\n" "upstream" > "$STATE_TMP/kernel-provider"
+else
+    printf "%s\n" "project" > "$STATE_TMP/kernel-provider"
+fi
+
 printf "%s\n" "$RESOLVED_NVIDIA" > "$STATE_TMP/nvidia-version"
 printf "%s\n" "$STEAMOS_VERSION" > "$STATE_TMP/installed-on-steamos"
 printf "%s\n" "$KERNEL_VERSION" > "$STATE_TMP/installed-on-kernel"

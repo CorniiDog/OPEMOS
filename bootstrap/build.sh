@@ -8,7 +8,6 @@ source "${SUPPORT_ROOT}/lib/common.sh"
 
 need_cmd git
 need_cmd podman
-need_cmd nvidia-smi
 
 require_steamos
 
