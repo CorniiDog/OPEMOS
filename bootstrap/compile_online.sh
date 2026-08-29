@@ -6,14 +6,26 @@ SUPPORT_REPO="${SUPPORT_REPO:-CorniiDog/open-gpu-kernel-modules-steamos-support}
 SUPPORT_BRANCH="${SUPPORT_BRANCH:-main}"
 SOURCE_REPO="${SOURCE_REPO:-CorniiDog/open-gpu-kernel-modules-steamos}"
 
+usage()
+{
+    cat <<EOF
+Usage: compile_online.sh [options]
+
+Options:
+      --in-code       Compile the current NVIDIA source checkout.
+  -o, --output DIR    Write release artifacts to DIR.
+      --auto-upload   Upload or update the matching GitHub release.
+  -y, --yes           Forward automatic confirmation to compile.sh.
+  -h, --help          Show this help.
+
+Other compile.sh options are forwarded unchanged.
+EOF
+}
+
 need()
 {
     command -v "$1" >/dev/null 2>&1 || { printf 'Missing command: %s\n' "$1" >&2; exit 1; }
 }
-
-need git
-need curl
-need nvidia-smi
 
 IN_CODE=0
 HAS_OUTPUT=0
@@ -37,12 +49,20 @@ while [[ $# -gt 0 ]]; do
             FORWARD_ARGS+=("$1")
             shift
             ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
         *)
             FORWARD_ARGS+=("$1")
             shift
             ;;
     esac
 done
+
+need git
+need curl
+need nvidia-smi
 
 NVIDIA_VERSION="$(nvidia-smi --query-gpu=driver_version --format=csv,noheader,nounits | head -n1 | tr -d '[:space:]')"
 SOURCE_BRANCH="nvidia/${NVIDIA_VERSION}"
@@ -53,6 +73,8 @@ printf '[open-gpu-kernel-modules-steamos-support] Source branch: %s\n' "$SOURCE_
 SUPPORT_REV="$(git ls-remote "https://github.com/${SUPPORT_REPO}.git" "refs/heads/${SUPPORT_BRANCH}" | awk 'NR==1 {print $1}')"
 [[ "$SUPPORT_REV" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "Could not resolve support revision." >&2; exit 1; }
 
+# common.sh is not available until the support repository is cloned, so this
+# bootstrap entry point must create its cache-rooted temporary directory itself.
 mkdir -p "${HOME}/.cache/open-gpu-kernel-modules-steamos-support"
 TMP="$(mktemp -d "${HOME}/.cache/open-gpu-kernel-modules-steamos-support/compile-online.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT

@@ -167,8 +167,11 @@ fi
 
 if git -C "$SUPPORT_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     SUPPORT_COMMIT="$(git -C "$SUPPORT_ROOT" rev-parse HEAD)"
+    SUPPORT_DIRTY=0
+    [[ -z "$(git -C "$SUPPORT_ROOT" status --porcelain)" ]] || SUPPORT_DIRTY=1
 else
     SUPPORT_COMMIT="unknown"
+    SUPPORT_DIRTY=1
 fi
 
 if [[ "$AUTO_UPLOAD" == "1" ]]; then
@@ -207,7 +210,10 @@ metadata_value()
 
 CACHE_HIT=0
 
-if [[ "$FORCE_REBUILD" == "0" && -f "$BUNDLE" ]]; then
+if [[ "$FORCE_REBUILD" == "0" &&
+      "$SOURCE_DIRTY" == "0" &&
+      "$SUPPORT_DIRTY" == "0" &&
+      -f "$BUNDLE" ]]; then
     CACHE_DIR="${WORK_DIR}/cache"
     mkdir -p "$CACHE_DIR"
 
@@ -221,6 +227,7 @@ if [[ "$FORCE_REBUILD" == "0" && -f "$BUNDLE" ]]; then
             CACHED_KERNEL="$(metadata_value "$CACHED_INFO" kernel_version)"
             CACHED_NVIDIA="$(metadata_value "$CACHED_INFO" nvidia_version)"
             CACHED_CONTAINER="$(metadata_value "$CACHED_INFO" container_image)"
+            CACHED_SUPPORT="$(metadata_value "$CACHED_INFO" support_commit)"
             EXPECTED_SHA="$(awk '{print $1}' "$CACHED_CHECKSUM" | head -n1)"
             ACTUAL_SHA="$(sha256_file "$CACHED_ARCHIVE")"
 
@@ -228,13 +235,14 @@ if [[ "$FORCE_REBUILD" == "0" && -f "$BUNDLE" ]]; then
                   "$CACHED_KERNEL" == "$KERNEL_VERSION" &&
                   "$CACHED_NVIDIA" == "$NVIDIA_VERSION" &&
                   "$CACHED_CONTAINER" == "$CONTAINER_IMAGE_REF" &&
+                  "$CACHED_SUPPORT" == "$SUPPORT_COMMIT" &&
                   "$EXPECTED_SHA" =~ ^[0-9a-fA-F]{64}$ &&
                   "${EXPECTED_SHA,,}" == "${ACTUAL_SHA,,}" ]]; then
                 CACHE_HIT=1
                 ARCHIVE="$CACHED_ARCHIVE"
                 CHECKSUM="$CACHED_CHECKSUM"
                 BUILD_INFO="$CACHED_INFO"
-                ok "Existing bundle matches source, kernel, NVIDIA version, and build image."
+                ok "Existing bundle matches source, support tooling, kernel, NVIDIA version, and build image."
                 log "Skipping compilation."
             fi
         fi
@@ -255,6 +263,7 @@ if [[ "$CACHE_HIT" == "0" ]]; then
 
     {
         printf 'open-gpu-kernel-modules-steamos build information\n\n'
+        printf 'schema_version=1\n'
         printf 'built_at=%s\n' "$BUILD_TIMESTAMP"
         printf 'steamos_version=%s\n' "$STEAMOS_VERSION"
         printf 'kernel_version=%s\n' "$KERNEL_VERSION"
@@ -268,9 +277,15 @@ if [[ "$CACHE_HIT" == "0" ]]; then
         printf 'source_dirty=%s\n' "$SOURCE_DIRTY"
         printf 'nvidia_upstream_commit=%s\n' "$UPSTREAM_COMMIT"
         printf 'support_repository=%s\n' "$SUPPORT_REPO"
-        printf 'support_commit=%s\n\n' "$SUPPORT_COMMIT"
+        printf 'support_commit=%s\n' "$SUPPORT_COMMIT"
+        printf 'support_dirty=%s\n\n' "$SUPPORT_DIRTY"
 
         printf 'container_image=%s\n\n' "$CONTAINER_IMAGE_REF"
+
+        if [[ -f "${STATE_DIR}/last-build-environment" ]]; then
+            cat "${STATE_DIR}/last-build-environment"
+            printf '\n'
+        fi
 
         printf 'modules:\n'
         for module in "${PACKAGE_DIR}/modules/"*.ko; do

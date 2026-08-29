@@ -5,8 +5,20 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SUPPORT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 source "${SUPPORT_ROOT}/lib/common.sh"
 
+usage()
+{
+    printf 'Usage: %s\n' "$0"
+    printf 'Prepare the rootless Fedora/Podman NVIDIA build environment.\n'
+}
+
+if [[ $# -gt 0 ]]; then
+    case "$1" in
+        -h|--help) usage; exit 0 ;;
+        *) die "Unknown argument: $1" ;;
+    esac
+fi
+
 require_steamos
-need_cmd sudo
 
 RO_WAS_ENABLED=0
 
@@ -21,6 +33,7 @@ restore_readonly()
 trap restore_readonly EXIT
 
 if ! command -v podman >/dev/null 2>&1; then
+    need_cmd sudo
     log "Installing Podman for NVIDIA development builds..."
 
     if command -v steamos-readonly >/dev/null 2>&1 &&

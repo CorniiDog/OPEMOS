@@ -6,6 +6,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SUPPORT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 source "${SUPPORT_ROOT}/lib/common.sh"
 
+usage()
+{
+    printf 'Usage: %s\n' "$0"
+    printf 'Build the source recorded in the development state using Fedora/Podman.\n'
+}
+
+if [[ $# -gt 0 ]]; then
+    case "$1" in
+        -h|--help) usage; exit 0 ;;
+        *) die "Unknown argument: $1" ;;
+    esac
+fi
+
 need_cmd git
 need_cmd podman
 
@@ -51,12 +64,19 @@ log "Source branch:     ${EXPECTED_BRANCH}"
 log "Headers package:   ${HEADERS_FILENAME}"
 echo
 
+mkdir -p "$STATE_DIR"
+BUILD_ENV_FILE="${STATE_DIR}/last-build-environment"
+# Never let a failed build make a later package inherit metadata from an older
+# successful build.
+rm -f "$BUILD_ENV_FILE"
+
 podman run \
     --rm \
     --security-opt label=disable \
     -e "TARGET_KERNEL=${KERNEL_VERSION}" \
     -e "HEADERS_FILENAME=${HEADERS_FILENAME}" \
     -v "${SOURCE_DIR}:/src" \
+    -v "${STATE_DIR}:/build-state" \
     -w /src \
     "$NVIDIA_BUILD_IMAGE" \
     bash -euxo pipefail -c '
@@ -86,8 +106,8 @@ podman run \
 
         DISCOVERED="$(
             curl -fsSL "$MIRROR/" \
-                | grep -oE "href=\\\"jupiter-[^\\\"/]*/\\\"" \
-                | sed -e "s|^href=\\\"||" -e "s|/\\\"$||" \
+                | grep -oE "href=\"jupiter-[^\"/]*/\"" \
+                | sed -e "s|^href=\"||" -e "s|/\"$||" \
                 | grep -vxE "jupiter-(main|ci-test)" \
                 | sort -rV \
                 | tr "\n" " " \
@@ -121,7 +141,22 @@ podman run \
         printf "Downloading headers...\n"
 
         mkdir -p /kernel-root
+        # This is Fedora container-local /tmp. Rootless Podman stores it under
+        # its graph root on /home, so it does not consume the SteamOS rootfs.
         curl -fL "$HEADER_URL" -o "/tmp/$HEADERS_FILENAME"
+
+        BUILD_JOBS="$(nproc)"
+
+        {
+            printf "header_package=%s\n" "$HEADERS_FILENAME"
+            printf "header_repository=%s\n" "$HEADER_REPO"
+            printf "header_url=%s\n" "$HEADER_URL"
+            printf "header_sha256=%s\n" "$(sha256sum "/tmp/$HEADERS_FILENAME" | awk "{print \$1}")"
+            printf "compiler_version=%s\n" "$(gcc -dumpfullversion -dumpversion)"
+            printf "binutils_version=%s\n" "$(ld --version | sed -n "1p")"
+            printf "make_version=%s\n" "$(make --version | sed -n "1p")"
+        } > /build-state/last-build-environment
+
         bsdtar -xf "/tmp/$HEADERS_FILENAME" -C /kernel-root
 
         KERNEL_TREE="/kernel-root/usr/lib/modules/$TARGET_KERNEL/build"
@@ -145,13 +180,22 @@ podman run \
             exit 1
         }
 
+        {
+            printf "build_jobs=%s\n" "$BUILD_JOBS"
+            printf "build_target=modules\n"
+            printf "build_syssrc=%s\n" "$KERNEL_TREE"
+            printf "build_sysout=%s\n" "$KERNEL_TREE"
+            printf "kernel_compiler_definition=%s\n" \
+                "$(grep -m1 "^#define LINUX_COMPILER " "$KERNEL_TREE/include/generated/compile.h" || true)"
+        } >> /build-state/last-build-environment
+
         printf "\nUsing isolated SteamOS kernel tree:\n"
         printf "  %s\n\n" "$KERNEL_TREE"
 
         make clean || true
 
         make modules \
-            -j"$(nproc)" \
+            -j"$BUILD_JOBS" \
             SYSSRC="$KERNEL_TREE" \
             SYSOUT="$KERNEL_TREE"
 
@@ -180,6 +224,12 @@ podman run \
             }
         done
     '
+
+CONTAINER_DIGEST="$(
+    podman image inspect "$NVIDIA_BUILD_IMAGE" --format '{{.Digest}}' 2>/dev/null ||
+        true
+)"
+printf 'container_digest=%s\n' "${CONTAINER_DIGEST:-unknown}" >> "$BUILD_ENV_FILE"
 
 mapfile -t MODULES < <(
     find "${SOURCE_DIR}/kernel-open" -maxdepth 1 -type f -name '*.ko' | sort

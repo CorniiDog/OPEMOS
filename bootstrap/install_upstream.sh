@@ -9,6 +9,26 @@ YES=0
 BUILD_ONLY=0
 NVIDIA_VERSION=""
 
+usage()
+{
+    cat <<EOF
+Usage: install_upstream.sh [options] NVIDIA_VERSION
+
+Build pristine NVIDIA open kernel modules for the current SteamOS kernel.
+
+Options:
+      --build-only   Preserve the archive and checksum under the project cache;
+                     do not install modules, run depmod, or rebuild initramfs.
+  -y, --yes          Automatically confirm the requested operation.
+  -h, --help         Show this help.
+
+NVIDIA_VERSION must be exact, for example: 580.119.02
+
+Without --build-only, the resulting modules are installed through install.sh.
+Project patches are never applied by this upstream-control workflow.
+EOF
+}
+
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -y|--yes)
@@ -18,6 +38,10 @@ while [[ $# -gt 0 ]]; do
         --build-only)
             BUILD_ONLY=1
             shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
             ;;
         *)
             if [[ -z "$NVIDIA_VERSION" ]]; then
@@ -34,10 +58,11 @@ done
     die "Exact NVIDIA version required."
 
 require_steamos
-need_cmd sudo
-
-log "Requesting administrator privileges..."
-sudo -v
+if [[ "$BUILD_ONLY" != "1" ]]; then
+    need_cmd sudo
+    log "Requesting administrator privileges..."
+    sudo -v
+fi
 need_cmd git
 need_cmd tar
 need_cmd sha256sum
@@ -82,6 +107,13 @@ printf "[%s]   Kernel:        %s\n" "$PROJECT_NAME" "$KERNEL_VERSION"
 printf "[%s]   NVIDIA:        %s\n" "$PROJECT_NAME" "$NVIDIA_VERSION"
 printf "[%s]   Provider:      NVIDIA upstream\n" "$PROJECT_NAME"
 printf "[%s]   Project fixes: NOT APPLIED\n" "$PROJECT_NAME"
+if [[ "$BUILD_ONLY" == "1" ]]; then
+    printf "[%s]   Action:        build and preserve artifact only (no sudo)\n" "$PROJECT_NAME"
+    printf "[%s]   Kernel modules: unchanged\n" "$PROJECT_NAME"
+else
+    printf "[%s]   Action:        build and install pristine modules\n" "$PROJECT_NAME"
+    printf "[%s]   Kernel modules: replaced after confirmation\n" "$PROJECT_NAME"
+fi
 printf "\n"
 
 if [[ "$YES" != "1" ]]; then
@@ -154,9 +186,14 @@ for module in "${MODULES[@]}"; do
     install -m 0644 "$module" "${PACKAGE_DIR}/modules/$(basename "$module")"
 done
 
+SUPPORT_COMMIT="$(git -C "$SUPPORT_ROOT" rev-parse HEAD 2>/dev/null || printf 'unknown')"
+SUPPORT_DIRTY=0
+[[ -z "$(git -C "$SUPPORT_ROOT" status --porcelain 2>/dev/null)" ]] || SUPPORT_DIRTY=1
+
 cat > "${PACKAGE_DIR}/BUILD-INFO.txt" <<EOF
 open-gpu-kernel-modules-steamos build information
 
+schema_version=1
 built_at=$(date --iso-8601=seconds)
 steamos_version=${STEAMOS_VERSION}
 kernel_version=${KERNEL_VERSION}
@@ -167,10 +204,26 @@ source_commit=${UPSTREAM_COMMIT}
 source_dirty=0
 nvidia_upstream_commit=${UPSTREAM_COMMIT}
 support_repository=${SUPPORT_REPO}
-support_commit=unknown
+support_commit=${SUPPORT_COMMIT}
+support_dirty=${SUPPORT_DIRTY}
 source_provider=upstream
 project_patches=0
 EOF
+
+if [[ -f "${STATE_DIR}/last-build-environment" ]]; then
+    printf '\n' >> "${PACKAGE_DIR}/BUILD-INFO.txt"
+    cat "${STATE_DIR}/last-build-environment" >> "${PACKAGE_DIR}/BUILD-INFO.txt"
+fi
+
+{
+    printf '\nmodules:\n'
+    for module in "${PACKAGE_DIR}/modules/"*.ko; do
+        printf '  %s  %s  vermagic=%s\n' \
+            "$(sha256_file "$module")" \
+            "$(basename "$module")" \
+            "$(modinfo -F vermagic "$module" | awk '{print $1}')"
+    done
+} >> "${PACKAGE_DIR}/BUILD-INFO.txt"
 
 ARCHIVE="${WORK_DIR}/nvidia-open-upstream-${NVIDIA_VERSION}-${KERNEL_VERSION}.tar.gz"
 CHECKSUM="${ARCHIVE}.sha256"

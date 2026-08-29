@@ -100,8 +100,33 @@ if [[ "$FUZZY" == "0" ]]; then
         die "SteamOS mismatch: release is ${BUILD_STEAMOS}; system is ${CURRENT_STEAMOS}. Use --fuzzy for a nearby published SteamOS build."
 fi
 
-mapfile -t MODULES < <(find "$MODULE_DIR" -maxdepth 1 -type f -name '*.ko' | sort)
-(( ${#MODULES[@]} > 0 )) || die "Release contains no kernel modules."
+mapfile -t MODULES < <(
+    find "$MODULE_DIR" -maxdepth 1 -type f \
+        \( -name '*.ko' -o -name '*.ko.zst' \) -print |
+        sort
+)
+
+EXPECTED_MODULES=(
+    nvidia-drm.ko
+    nvidia-modeset.ko
+    nvidia-peermem.ko
+    nvidia-uvm.ko
+    nvidia.ko
+)
+
+(( ${#MODULES[@]} == ${#EXPECTED_MODULES[@]} )) ||
+    die "Release must contain exactly the five expected NVIDIA kernel modules."
+
+ACTUAL_MODULE_NAMES=()
+for module in "${MODULES[@]}"; do
+    module_name="$(basename "$module")"
+    ACTUAL_MODULE_NAMES+=("${module_name%.zst}")
+done
+
+mapfile -t ACTUAL_MODULE_NAMES < <(printf '%s\n' "${ACTUAL_MODULE_NAMES[@]}" | sort)
+
+[[ "${ACTUAL_MODULE_NAMES[*]}" == "${EXPECTED_MODULES[*]}" ]] ||
+    die "Release module set does not match the five expected NVIDIA modules."
 
 for module in "${MODULES[@]}"; do
     VM="$(modinfo -F vermagic "$module")"
@@ -129,6 +154,7 @@ fi
 
 log "Requesting administrator privileges..."
 sudo -v
+acquire_lifecycle_lock
 
 TARGET_DIR="/usr/lib/modules/${CURRENT_KERNEL}/updates/open-gpu-kernel-modules-steamos"
 STATE_ROOT="/var/lib/open-gpu-kernel-modules-steamos-support"
@@ -226,7 +252,20 @@ STAGE="$(project_mktemp_dir install-stage)"
 
 for module in "${MODULES[@]}"; do
     module_name="$(basename "$module")"
-    zstd -q -f -T0 "$module" -o "$STAGE/${module_name}.zst"
+
+    case "$module_name" in
+        *.ko.zst)
+            zstd -q -t -- "$module" ||
+                die "Compressed module is invalid: $module_name"
+            install -m 0644 "$module" "$STAGE/$module_name"
+            ;;
+        *.ko)
+            zstd -q -f -T0 "$module" -o "$STAGE/${module_name}.zst"
+            ;;
+        *)
+            die "Unsupported module file: $module_name"
+            ;;
+    esac
 done
 
 NEW_BYTES="$(du -s -B1 "$STAGE" | awk '{print $1}')"
@@ -245,7 +284,9 @@ printf '\n[%s] Root filesystem preflight\n' "$PROJECT_NAME"
 printf '[%s]   New compressed modules: %d MiB\n' "$PROJECT_NAME" "$((NEW_BYTES / 1024 / 1024))"
 printf '[%s]   Currently available:    %d MiB\n' "$PROJECT_NAME" "$((AVAILABLE_BYTES / 1024 / 1024))"
 printf '[%s]   Reclaimable old target: %d MiB\n' "$PROJECT_NAME" "$((CURRENT_BYTES / 1024 / 1024))"
-printf '[%s]   Safety reserve:         %d MiB\n\n' "$PROJECT_NAME" "$((SAFETY_BYTES / 1024 / 1024))"
+printf '[%s]   Effective after replace: %d MiB\n' "$PROJECT_NAME" "$((EFFECTIVE_BYTES / 1024 / 1024))"
+printf '[%s]   Safety reserve:         %d MiB\n' "$PROJECT_NAME" "$((SAFETY_BYTES / 1024 / 1024))"
+printf '[%s]   Required with reserve:  %d MiB\n\n' "$PROJECT_NAME" "$((REQUIRED_BYTES / 1024 / 1024))"
 
 (( EFFECTIVE_BYTES >= REQUIRED_BYTES )) ||
     die "Insufficient SteamOS root space for safe module replacement."
@@ -254,6 +295,16 @@ TARGET_TOUCHED=1
 sudo rm -rf "$TARGET_DIR"
 sudo mkdir -p "$TARGET_DIR"
 sudo cp -a "$STAGE/." "$TARGET_DIR/"
+
+for staged_module in "$STAGE"/*.ko.zst; do
+    installed_module="$TARGET_DIR/$(basename "$staged_module")"
+
+    [[ -f "$installed_module" ]] ||
+        die "Installed module is missing after copy: $(basename "$staged_module")"
+
+    [[ "$(sha256_file "$staged_module")" == "$(sha256_file "$installed_module")" ]] ||
+        die "Installed module checksum verification failed: $(basename "$staged_module")"
+done
 
 log "Refreshing module dependency database..."
 sudo depmod -a "$CURRENT_KERNEL"

@@ -60,6 +60,8 @@ need python3
 SUPPORT_REV="$(git ls-remote "https://github.com/${SUPPORT_REPO}.git" "refs/heads/${SUPPORT_BRANCH}" | awk 'NR==1 {print $1}')"
 [[ "$SUPPORT_REV" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "Could not resolve support revision." >&2; exit 1; }
 
+# common.sh is not available until the support repository is cloned, so this
+# bootstrap entry point must create its cache-rooted temporary directory itself.
 mkdir -p "${HOME}/.cache/open-gpu-kernel-modules-steamos-support"
 TMP="$(mktemp -d "${HOME}/.cache/open-gpu-kernel-modules-steamos-support/online-install.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
@@ -128,7 +130,9 @@ already_installed()
     local target_dir="/usr/lib/modules/${KERNEL_VERSION}/updates/open-gpu-kernel-modules-steamos"
     local check_dir="${TMP}/installed-check"
     local resolved resolved_real target_real module module_name installed module_sha installed_sha
+    local installed_module_count expected_module
     local checked_modules=0
+    local checked_module_names=()
 
     [[ -f "$installed_info" && -d "$target_dir" ]] || return 1
 
@@ -194,6 +198,7 @@ already_installed()
 
         module_name="$(basename "$module")"
         module_name="${module_name%.zst}"
+        checked_module_names+=("$module_name")
 
         if [[ -f "$target_dir/${module_name}.zst" ]]; then
             installed="$target_dir/${module_name}.zst"
@@ -211,6 +216,27 @@ already_installed()
     done < <(find "$check_dir/modules" -maxdepth 1 -type f \( -name '*.ko' -o -name '*.ko.zst' \) -print | sort)
 
     (( checked_modules > 0 )) || return 1
+
+    (( checked_modules == 5 )) || return 1
+
+    for expected_module in \
+        nvidia-drm.ko \
+        nvidia-modeset.ko \
+        nvidia-peermem.ko \
+        nvidia-uvm.ko \
+        nvidia.ko
+    do
+        [[ " ${checked_module_names[*]} " == *" ${expected_module} "* ]] ||
+            return 1
+    done
+
+    installed_module_count="$(
+        find "$target_dir" -maxdepth 1 -type f \
+            \( -name '*.ko' -o -name '*.ko.zst' \) -print |
+            wc -l
+    )"
+
+    [[ "$installed_module_count" == "5" ]] || return 1
 
     return 0
 }

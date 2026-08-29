@@ -58,9 +58,11 @@ fi
 
 log "Requesting administrator privileges..."
 sudo -v
+acquire_lifecycle_lock
 
 STAMP="$(date +%Y%m%d-%H%M%S)"
-BACKUP_DIR="${STATE_ROOT}/backups/${CURRENT_KERNEL}/uninstall-${STAMP}"
+CACHE_ROOT="${HOME}/.cache/${PROJECT_NAME}"
+BACKUP_DIR="${CACHE_ROOT}/backups/${CURRENT_KERNEL}/uninstall-${STAMP}"
 
 RO_WAS_ENABLED=0
 TARGET_TOUCHED=0
@@ -93,6 +95,11 @@ cleanup()
                 sudo mkinitcpio -P >/dev/null 2>&1 || true
             fi
         fi
+
+        if [[ -d "$BACKUP_DIR/state" ]]; then
+            sudo mkdir -p "$STATE_ROOT" || true
+            sudo cp -a "$BACKUP_DIR/state/." "$STATE_ROOT/" || true
+        fi
     fi
 
     restore_readonly
@@ -110,8 +117,21 @@ if command -v steamos-readonly >/dev/null 2>&1 &&
     sudo steamos-readonly disable
 fi
 
-sudo mkdir -p "$BACKUP_DIR"
+mkdir -p "$BACKUP_DIR/state"
 sudo cp -a "$TARGET_DIR" "$BACKUP_DIR/modules"
+
+for state_file in \
+    installed-build-info.txt \
+    installed-archive.txt \
+    installed-kernel.txt \
+    installed-nvidia.txt
+do
+    if [[ -f "${STATE_ROOT}/${state_file}" ]]; then
+        sudo cp -a "${STATE_ROOT}/${state_file}" "$BACKUP_DIR/state/"
+    fi
+done
+
+sudo chown -R "$USER":"$(id -gn)" "$BACKUP_DIR"
 
 TARGET_TOUCHED=1
 sudo rm -rf "$TARGET_DIR"

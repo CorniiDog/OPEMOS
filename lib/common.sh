@@ -170,3 +170,19 @@ project_mktemp_file()
     mkdir -p "$root"
     mktemp "${root}/${prefix}.XXXXXX"
 }
+
+acquire_lifecycle_lock()
+{
+    need_cmd flock
+
+    local lock_file="/run/lock/${PROJECT_NAME}.lock"
+
+    # Preserve one inode so concurrent lifecycle operations cannot lock
+    # different files after a pathname replacement.
+    sudo touch "$lock_file"
+    sudo chmod 0666 "$lock_file"
+
+    exec 9>"$lock_file"
+    flock -n 9 ||
+        die "Another ${PROJECT_NAME} install or uninstall is already running."
+}

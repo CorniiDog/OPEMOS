@@ -8,6 +8,12 @@ source "${SUPPORT_ROOT}/lib/common.sh"
 YES=0
 COMMIT_MESSAGE=""
 
+usage()
+{
+    printf 'Usage: %s [-y] [-m MESSAGE]\n' "$0"
+    printf 'Commit and push changes from the configured project NVIDIA source branch.\n'
+}
+
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -y|--yes)
@@ -18,6 +24,10 @@ while [[ $# -gt 0 ]]; do
             [[ $# -ge 2 ]] || die "Missing commit message."
             COMMIT_MESSAGE="$2"
             shift 2
+            ;;
+        -h|--help)
+            usage
+            exit 0
             ;;
         *)
             die "Unknown argument: $1"

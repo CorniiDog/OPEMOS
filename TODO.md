@@ -19,8 +19,8 @@ Below is the consolidated project checklist based on our work so far. I’m trea
 * [x] Preserve the known-good SteamOS 3.8.16 / NVIDIA 575.64.05 release.
 * [x] Separate production/certified behavior from development behavior.
 * [x] Separate pristine-upstream testing from patched-project testing.
-* [ ] Document that architecture clearly in the README.
-* [ ] Document which repository owns:
+* [x] Document that architecture clearly in the README.
+* [x] Document which repository owns:
 
   * source history,
   * patches,
@@ -56,7 +56,7 @@ Below is the consolidated project checklist based on our work so far. I’m trea
   * `steamos-3.8.16-nvidia-575.64.05-k6.16.12-valve24.5-1-neptune-616-gb2f7cfe85e45`
 * [x] Preserve backward compatibility with that release format.
 * [ ] Re-test the 575 production release after all installer changes.
-* [ ] Verify the new compressed-install logic can consume the old raw-`.ko` 575 release.
+* [x] Verify the installer accepts and normalizes the old raw-`.ko` 575 release format.
 * [ ] Verify idempotency against the old 575 release.
 
 ---
@@ -109,7 +109,7 @@ Below is the consolidated project checklist based on our work so far. I’m trea
 * [x] Distinguish the Realtek `XID 541` line from NVIDIA Xid faults.
 * [x] Establish 580.119.02 pristine upstream as the control case.
 * [x] Accept that graphics bugs may still exist in this control case.
-* [ ] Preserve a reproducible 580 pristine build artifact for regression testing.
+* [x] Preserve a source-identifiable 580 pristine build artifact for regression testing.
 * [ ] Add automated comparison between pristine-upstream and project-patched 580 builds.
 
 ---
@@ -144,9 +144,9 @@ Below is the consolidated project checklist based on our work so far. I’m trea
   * `explicit`
   * to `development`
 * [x] Keep development mode distinct from pristine-upstream mode.
-* [ ] Make runtime output more self-documenting.
-* [ ] Explicitly print what development mode does to kernel modules.
-* [ ] Explicitly print that it is intended for project/patched-module development.
+* [x] Make runtime output more self-documenting.
+* [x] Explicitly print what development mode does to kernel modules.
+* [x] Explicitly print that it is intended for project/patched-module development.
 
 ## Upstream development
 
@@ -159,7 +159,7 @@ Below is the consolidated project checklist based on our work so far. I’m trea
 
   * `source_provider=upstream`
   * `project_patches=0`
-* [ ] Add polished `--help` descriptions for all modes.
+* [x] Add polished `--help` descriptions for all modes.
 
 ## Mode semantics target
 
@@ -172,7 +172,7 @@ Below is the consolidated project checklist based on our work so far. I’m trea
 * [x] `--use-upstream VERSION`:
 
   * pristine upstream control build.
-* [ ] Document all three side by side in README.
+* [x] Document all three side by side in README.
 
 ---
 
@@ -209,8 +209,8 @@ Below is the consolidated project checklist based on our work so far. I’m trea
 * [x] Reduce installed module footprint from roughly 111 MiB to roughly 30 MiB.
 * [x] Successfully boot compressed modules.
 * [x] Verify `modinfo` resolves compressed project modules.
-* [ ] Audit every script for assumptions that installed modules end in `.ko`.
-* [ ] Test compressed release archives if future release packaging moves to `.ko.zst`.
+* [x] Audit every script for assumptions that installed modules end in `.ko`.
+* [x] Test compressed release archives if future release packaging moves to `.ko.zst`.
 * [ ] Decide whether release archives themselves remain raw `.ko` or become compressed.
 
 ---
@@ -230,7 +230,7 @@ Below is the consolidated project checklist based on our work so far. I’m trea
 * [x] Account for replacement of the existing project module directory.
 * [x] Successfully install 580 with the new preflight logic.
 * [ ] Add a test for deliberately insufficient root space.
-* [ ] Make preflight output especially clear when replacement space is what makes installation possible.
+* [x] Make preflight output especially clear when replacement space is what makes installation possible.
 
 ---
 
@@ -271,10 +271,17 @@ Below is the consolidated project checklist based on our work so far. I’m trea
 
   * `PROJECT_NAME: unbound variable`
 * [x] Determine container `/tmp` is backed by rootless Podman graph storage under `/home`.
-* [ ] **Currently pending:** revert the `build.sh` header archive back to container `/tmp`.
-* [ ] Re-run syntax validation after revert.
-* [ ] Re-run temp audit and explicitly allow the container `/tmp` usage.
-* [ ] Add a comment explaining why container `/tmp` is intentional so it is not “fixed” again later.
+* [x] Revert the `build.sh` header archive back to container `/tmp`.
+* [x] Re-run syntax validation after revert.
+* [x] Re-run temp audit and explicitly allow the container `/tmp` usage.
+* [x] Add a comment explaining why container `/tmp` is intentional so it is not “fixed” again later.
+
+## Cache ownership regression tests
+
+* [ ] Verify project temp and staging directories are owned by the invoking `deck`/user account.
+* [ ] Verify non-root `zstd` can create its output in every project staging directory.
+* [ ] Verify sudo-backed install/uninstall operations leave no root-owned cache files that poison later non-root runs.
+* [ ] Re-run a build, local validation, and install preflight after a sudo-backed operation to catch ownership regressions.
 
 ---
 
@@ -295,7 +302,7 @@ Below is the consolidated project checklist based on our work so far. I’m trea
 * [ ] Potentially avoid host package mutation entirely if a safer SteamOS-compatible approach exists.
 * [ ] Cache header package efficiently inside container/build storage.
 * [ ] Reduce giant Fedora dependency-install verbosity if desired.
-* [ ] Fix grep warning:
+* [x] Fix grep warning:
 
   * `grep: warning: stray \ before "`
 * [ ] Audit Valve repository discovery regex.
@@ -310,8 +317,13 @@ Below is the consolidated project checklist based on our work so far. I’m trea
 * [x] Work with detached HEAD upstream source.
 * [x] Use Fedora build environment when needed.
 * [x] Record build-container information.
-* [ ] Revert header download to container `/tmp`.
-* [ ] Add comment explaining `/tmp` is container-local.
+* [x] Revert header download to container `/tmp`.
+* [x] Add comment explaining `/tmp` is container-local.
+* [ ] Add an automated detached-HEAD regression test:
+
+  * pristine upstream records/accepts `source_branch=HEAD`,
+  * an empty `git branch --show-current` result is treated as detached HEAD,
+  * it must not fail with `Source branch is ; expected HEAD`.
 * [ ] Audit duplicate/environment setup logic between callers and `build.sh`.
 * [ ] Decide whether `build.sh` itself or callers own environment preparation.
 * [ ] Ensure headers are reused between builds where safe.
@@ -357,16 +369,17 @@ Below is the consolidated project checklist based on our work so far. I’m trea
   * `~/.cache/open-gpu-kernel-modules-steamos-support/upstream-builds`
 * [x] Ensure build-only exits before `install.sh`.
 * [x] Print artifact/checksum paths.
-* [ ] **Current blocker:** build-only test failed because `build.sh` used `${PROJECT_NAME}` inside the Fedora container.
-* [ ] Revert container header path.
-* [ ] Retry:
+* [x] Resolve the build-only blocker caused by using `${PROJECT_NAME}` inside the Fedora container.
+* [x] Revert container header path.
+* [x] Retry:
 
   * `./bootstrap/install_upstream.sh --build-only 580.119.02`
-* [ ] Confirm archive persists after cleanup trap.
-* [ ] Confirm checksum persists.
-* [ ] Confirm installed modules are completely untouched by `--build-only`.
-* [ ] Add actual `--help` handling.
-* [ ] Add usage text documenting positional version and `--build-only`.
+* [x] Confirm archive persists after cleanup trap.
+* [x] Confirm checksum persists and validates from its persistent location.
+* [x] Confirm installed modules are completely untouched by `--build-only`.
+* [x] Add actual `--help` handling.
+* [x] Add usage text documenting positional version and `--build-only`.
+* [x] Avoid requesting sudo in build-only mode when Podman is already installed.
 
 ---
 
@@ -404,14 +417,14 @@ Below is the consolidated project checklist based on our work so far. I’m trea
 * [x] Track whether target directory was touched.
 * [x] Maintain rollback mechanism.
 * [x] Restore read-only filesystem state on cleanup.
-* [ ] Audit rollback after all backup-location and compression changes.
+* [x] Audit rollback after all backup-location and compression changes.
 * [ ] Explicitly test forced failure after old target removal.
 * [ ] Explicitly test forced failure midway through copy.
 * [ ] Verify rollback restores compressed/raw state correctly.
 * [ ] Verify state metadata rollback.
 * [ ] Verify initramfs consistency after rollback.
 * [ ] Verify no orphaned stage directories remain.
-* [ ] Consider checksum verification after final target copy.
+* [x] Add checksum verification after final target copy.
 * [ ] Consider fsync/durability if you want stronger transactional guarantees.
 
 ---
@@ -455,18 +468,20 @@ Below is the consolidated project checklist based on our work so far. I’m trea
 * [x] Reject empty `modules/` directory.
 * [x] Syntax-check new logic.
 * [x] `git diff --check` new logic.
-* [ ] Build exact 580 pristine package again.
-* [ ] Run `online_install.sh --local` against that exact package.
-* [ ] Verify healthy compressed installation hits idempotent fast path.
-* [ ] Verify no module replacement occurs.
-* [ ] Verify no `mkinitcpio`.
-* [ ] Verify no reboot prompt.
+* [x] Build a new pristine 580 package from the exact upstream source identity.
+* [x] Run `online_install.sh --local` against that rebuilt package.
+* [x] Confirm the rebuilt package correctly requests repair when binary content or BUILD-INFO differs from the installed build.
+* [x] Verify raw archive `.ko` versus installed `.ko.zst` hits the idempotent fast path using an exact-content fixture.
+* [x] Verify no module replacement occurs on the idempotent fast path.
+* [x] Verify no `mkinitcpio` on the idempotent fast path.
+* [x] Verify no reboot prompt on the idempotent fast path.
 * [ ] Verify a deliberately modified installed module causes repair path.
-* [ ] Verify a deliberately altered BUILD-INFO causes repair path.
-* [ ] Verify an invalid checksum causes failure.
+* [x] Verify altered module content causes the repair path.
+* [x] Verify a deliberately altered BUILD-INFO causes repair path.
+* [x] Verify an invalid checksum causes failure.
 * [ ] Verify raw archive ↔ compressed installed comparison with old 575 release.
-* [ ] Verify compressed archive ↔ compressed installed comparison if future releases use compressed archives.
-* [ ] Verify exactly five expected NVIDIA modules are present, rather than merely “at least one,” if we want stronger health checking.
+* [x] Verify compressed archive ↔ compressed installed comparison if future releases use compressed archives.
+* [x] Require exactly the five expected NVIDIA modules in install and health validation.
 
 ---
 
@@ -480,7 +495,7 @@ Below is the consolidated project checklist based on our work so far. I’m trea
 * [x] Do not call common helper functions before downloading/cloning support repo.
 * [x] Give these scripts direct cache-root temp creation.
 * [x] Keep temp storage on `/home`.
-* [ ] Add a small comment in each explaining why it does not use `project_mktemp_dir`.
+* [x] Add a small comment in each explaining why it does not use `project_mktemp_dir`.
 * [ ] Test each script from a shell where the repo is not already sourced.
 * [ ] Test scripts via their intended remote/raw invocation, not only from the local checkout.
 
@@ -502,8 +517,8 @@ Below is the consolidated project checklist based on our work so far. I’m trea
 * [x] Rename `--driver` → `--development`.
 * [x] Rename `explicit:` → `development:`.
 * [x] Rename selection display → `development`.
-* [ ] Rename remaining internal variables such as `DRIVER_SPEC` if desired.
-* [ ] Add comments explaining mode responsibilities.
+* [x] Rename remaining internal `DRIVER_SPEC` state to `DEVELOPMENT_SPEC`.
+* [x] Explain mode responsibilities in help and runtime output.
 
 ## Userspace/integration
 
@@ -517,6 +532,20 @@ Below is the consolidated project checklist based on our work so far. I’m trea
 * [ ] Verify normal mode never silently falls back to upstream.
 * [ ] Verify userspace downgrade/upgrade behavior.
 * [ ] Verify partially installed NVIDIA userspace recovery.
+
+## Mode-boundary regression tests
+
+* [ ] Test `--development` semantics:
+
+  * resolves a newer explicitly requested NVIDIA userspace version,
+  * leaves installed kernel modules unchanged,
+  * does not fetch, build, or install pristine upstream modules.
+* [ ] Test `--use-upstream` semantics:
+
+  * resolves userspace matching the selected upstream NVIDIA version,
+  * fetches pristine NVIDIA source at the exact tag/commit,
+  * builds and installs the upstream modules,
+  * records `source_provider=upstream` and `project_patches=0`.
 
 ---
 
@@ -543,12 +572,12 @@ Desired design:
 * [x] Avoid automatic reboot from low-level installer.
 * [x] Allow caller to own user-facing reboot behavior.
 * [x] Current upstream flow successfully completed without automatic reboot.
-* [ ] Audit current scripts to confirm no duplicate reboot prompts.
-* [ ] Make `setup_nvidia.sh` default to no reboot prompt.
-* [ ] Potentially support explicit `--offer-reboot` for standalone dev use.
-* [ ] `install_upstream.sh` should not independently own reboot prompting.
-* [ ] `online_install.sh` should own normal production reboot prompt.
-* [ ] Confirm idempotent install never offers reboot.
+* [x] Audit current scripts to confirm no duplicate reboot prompts.
+* [x] Make `setup_nvidia.sh` default to no reboot prompt.
+* [x] Support explicit `--offer-reboot` for standalone upstream-development use.
+* [x] `install_upstream.sh` does not independently own reboot prompting.
+* [x] `online_install.sh` owns the normal production reboot prompt.
+* [x] Confirm idempotent install never offers reboot.
 * [ ] Confirm changed install offers reboot exactly once.
 
 ---
@@ -608,7 +637,7 @@ Desired design:
 * [x] Persist installed BUILD-INFO.
 * [ ] Ensure `support_commit` is populated rather than `unknown` during normal builds.
 * [ ] Add build container digest to all relevant BUILD-INFO variants if not already consistent.
-* [ ] Add release-schema version.
+* [x] Add `schema_version=1` to newly generated BUILD-INFO files.
 * [ ] Consider module SHA entries in BUILD-INFO.
 * [ ] Consider explicit patch-series identifier.
 * [ ] Consider `gamescope` version/build metadata for reproducibility.
@@ -623,15 +652,18 @@ Desired design:
 * [x] Exact upstream NVIDIA commit recorded.
 * [x] Build container digest determined during compile.
 * [x] Exact Valve kernel header package found.
-* [ ] Record exact header package URL/repository in BUILD-INFO.
-* [ ] Record exact header package SHA256.
-* [ ] Record support repo commit correctly.
-* [ ] Record compiler/GCC version.
-* [ ] Record binutils version.
-* [ ] Record make version.
-* [ ] Record build flags/environment.
+* [x] Record exact header package URL/repository in BUILD-INFO for new builds.
+* [x] Record exact header package SHA256 for new builds.
+* [x] Record support repo commit correctly for new upstream builds.
+* [x] Record compiler/GCC version for new builds.
+* [x] Record binutils version for new builds.
+* [x] Record make version for new builds.
+* [x] Record build target, paths, and parallelism for new builds.
+* [x] Runtime-test the expanded metadata with a fresh build-only artifact.
 * [ ] Make pristine 580 build bit-for-bit reproducible where feasible.
-* [ ] Distinguish deterministic source identity from potentially nondeterministic binary output.
+* [x] Distinguish deterministic source identity from potentially nondeterministic binary output.
+* [x] Prevent build-cache hits for dirty source/support trees and require matching support commit for clean cache hits.
+* [ ] Resolve or intentionally pin the compiler mismatch: Neptune was built with GCC 15.1.1, while Fedora 42 currently provides GCC 15.2.1.
 
 ---
 
@@ -642,6 +674,14 @@ Desired design:
 * [x] Avoid arbitrary cross-version fallback.
 * [x] Require exact kernel when selecting published module artifacts.
 * [x] Normal resolver correctly chooses SteamOS 3.8.16 575 release.
+* [ ] Lock the release-selection policy into automated tests:
+
+  * exact SteamOS release is preferred,
+  * fallback is bounded to the same SteamOS major/minor series,
+  * exact running kernel is always required,
+  * exact NVIDIA version comes from the release selected by the resolver,
+  * certified mode never selects a newer NVIDIA driver merely because one exists,
+  * newer drivers require explicit `--development` or `--use-upstream` mode.
 * [ ] Revisit fuzzy release ranking logic.
 * [ ] Explicitly test:
 
@@ -707,7 +747,7 @@ This still needs an end-to-end test.
 * [x] Enforce userspace/kernel version alignment.
 * [x] Upstream 580 module install required userspace 580.119.02.
 * [x] Production 575 release resolves userspace 575.64.05.
-* [ ] Test mismatch detection intentionally.
+* [x] Test mismatch detection intentionally with a 575 module archive and installed 580 userspace.
 * [ ] Test installed userspace newer than project module.
 * [ ] Test installed userspace older than project module.
 * [ ] Test broken/incomplete `nvidia-utils`.
@@ -806,9 +846,9 @@ This is the ultimate reason for the project and is **not completed**.
 
 # 29. CI / automated checks
 
-* [ ] Run `bash -n` on all shell scripts in CI.
-* [ ] Run `git diff --check`.
-* [ ] ShellCheck where practical.
+* [x] Run `bash -n` on all shell scripts locally and in CI.
+* [x] Run `git diff --check` locally and in CI.
+* [x] Run error-level ShellCheck in CI.
 * [ ] Test resolver parsing.
 * [ ] Test release-tag parsing.
 * [ ] Test archive traversal rejection.
@@ -821,10 +861,14 @@ This is the ultimate reason for the project and is **not completed**.
 * [ ] Test wrong NVIDIA version rejection.
 * [ ] Test wrong SteamOS version rejection.
 * [ ] Test fuzzy selection.
-* [ ] Test temp-helper bootstrap ordering.
+* [ ] Test the complete release-selection policy matrix from section 22.
+* [ ] Test detached-HEAD upstream builds, including the empty-branch-name case.
+* [ ] Test cache/stage ownership before and after sudo-backed operations.
+* [ ] Test `--development` and `--use-upstream` mode boundaries without system mutation where possible.
+* [x] Test temp-helper bootstrap ordering.
 * [ ] Test all scripts for unbound variables under `set -u`.
-* [ ] Test `--help` exits 0.
-* [ ] Test mutually exclusive arguments.
+* [x] Test `--help` exits 0.
+* [x] Test mutually exclusive arguments.
 * [ ] Test build-only mode.
 * [ ] Potentially mock `modinfo`, `nvidia-smi`, GitHub APIs, etc. for non-destructive tests.
 
@@ -834,8 +878,8 @@ This is the ultimate reason for the project and is **not completed**.
 
 * [x] Recognize current commands were insufficiently self-commenting.
 * [x] Rename `--driver` to `--development`.
-* [ ] Add proper `usage()` to `install_upstream.sh`.
-* [ ] Make `--help` work everywhere.
+* [x] Add proper `usage()` to `install_upstream.sh`.
+* [x] Make `--help` work everywhere.
 * [ ] Standardize formatting among scripts.
 * [ ] Every mode should explain:
 
@@ -844,7 +888,7 @@ This is the ultimate reason for the project and is **not completed**.
   * module behavior,
   * source provider,
   * whether project fixes are applied.
-* [ ] Add examples:
+* [x] Add examples in README for:
 
   * certified install
   * development selection
@@ -852,7 +896,7 @@ This is the ultimate reason for the project and is **not completed**.
   * build-only
   * local artifact install
   * in-code build/install.
-* [ ] Make destructive operations visibly distinct from resolution/build-only operations.
+* [x] Make destructive operations visibly distinct from resolution/build-only operations.
 * [ ] Use consistent terminology:
 
   * certified
@@ -868,17 +912,17 @@ This is the ultimate reason for the project and is **not completed**.
 * [ ] Consider common helper for bootstrap cache-root creation.
 * [ ] Avoid duplicating hardcoded project cache path in four online scripts, while still respecting pre-bootstrap limitations.
 * [ ] Audit redundant `mkdir -p "${HOME}/.cache/${PROJECT_NAME}"` calls now helpers do it.
-* [ ] Audit duplicate `setup_build_env.sh` invocation.
+* [x] Audit duplicate `setup_build_env.sh` invocation.
 * [ ] Audit unused variables.
-* [ ] Audit stale `DRIVER_*` names after `--development` rename.
+* [x] Audit stale `DRIVER_*` names after `--development` rename.
 * [ ] Audit comments referring to old mode names.
-* [ ] Audit README for `--driver`.
+* [x] Audit README for `--driver`.
 * [ ] Audit release/action scripts for old naming.
-* [ ] Audit all direct `/tmp` usages and classify:
+* [x] Audit all direct `/tmp` usages and classify:
 
   * host `/tmp` → generally avoid for large work.
   * container `/tmp` → allowed/intended.
-* [ ] Add comments where this distinction matters.
+* [x] Add comments where this distinction matters.
 
 ---
 
@@ -920,37 +964,37 @@ git diff --check
 
 This is the shortest actionable queue from where we are **right now**:
 
-1. [ ] Revert the erroneous `build.sh` header cache change back to **container `/tmp`**.
-2. [ ] Add a comment explaining why that `/tmp` is intentional.
-3. [ ] Validate all shell scripts.
-4. [ ] Retry:
+1. [x] Revert the erroneous `build.sh` header cache change back to **container `/tmp`**.
+2. [x] Add a comment explaining why that `/tmp` is intentional.
+3. [x] Validate all shell scripts.
+4. [x] Retry:
 
    ```bash
    ./bootstrap/install_upstream.sh --build-only 580.119.02
    ```
-5. [ ] Verify the archive and `.sha256` persist under:
+5. [x] Verify the archive and `.sha256` persist under:
 
    ```text
    ~/.cache/open-gpu-kernel-modules-steamos-support/upstream-builds/
    ```
-6. [ ] Verify `--build-only` did not alter installed 580 modules.
-7. [ ] Feed that archive to:
+6. [x] Verify `--build-only` did not alter installed 580 modules.
+7. [x] Feed that archive to:
 
    ```bash
    ./bootstrap/online_install.sh --local <archive>
    ```
-8. [ ] Confirm `.ko.zst` idempotency reports:
+8. [x] Confirm raw `.ko` versus installed `.ko.zst` idempotency reports, using an exact-content fixture:
 
    ```text
    Already installed, healthy, and current.
    Nothing to do.
    ```
-9. [ ] Confirm no initramfs rebuild.
-10. [ ] Confirm no reboot prompt.
-11. [ ] Re-test raw 575 archive ↔ compressed installed module compatibility.
-12. [ ] Audit installer rollback with the new `/home` backup/compressed target design.
-13. [ ] Audit sudo/reboot ownership.
-14. [ ] Add proper `--help` / self-documenting output.
+9. [x] Confirm no initramfs rebuild.
+10. [x] Confirm no reboot prompt.
+11. [x] Re-test raw 575 archive acceptance by the compressed installer (full 575 idempotency still requires a 575 runtime).
+12. [x] Audit installer rollback with the new `/home` backup/compressed target design (forced-failure runtime tests remain).
+13. [x] Audit sudo/reboot ownership (cold/expired-sudo runtime tests remain).
+14. [x] Add proper `--help` / self-documenting output.
 15. [ ] Commit the infrastructure/idempotency/build-only batch.
 16. [ ] Return to the actual **580 Gamescope/NVIDIA graphical bug**.
 17. [ ] Create a patched 580 source branch.

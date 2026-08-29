@@ -7,7 +7,7 @@ source "${SUPPORT_ROOT}/lib/common.sh"
 
 SUPPORT_REPO="${SUPPORT_REPO:-CorniiDog/open-gpu-kernel-modules-steamos-support}"
 
-DRIVER_SPEC=""
+DEVELOPMENT_SPEC=""
 UPSTREAM_SPEC=""
 RESOLVE_ONLY=0
 OFFER_REBOOT=0
@@ -19,15 +19,23 @@ usage()
 Usage: setup_nvidia.sh [options]
 
 Options:
-      --development VERSION   Explicit NVIDIA branch/version prefix.
-                         Examples: 575, 580, 580.105, 580.105.08
-      --offer-reboot    Offer to restart after a complete kernel-module install.
-      --resolve-only     Resolve and print the selected NVIDIA version only.
-  -y, --yes              Automatically confirm setup.
-  -h, --help             Show this help.
+      --development PREFIX   Select/install matching NVIDIA userspace for
+                             patched-module development. Kernel modules are
+                             not installed or replaced by this mode.
+      --use-upstream PREFIX  Select/install matching NVIDIA userspace, then
+                             build and install pristine upstream modules as a
+                             control case. Project fixes are not applied.
+      --offer-reboot         Offer to restart after --use-upstream installs
+                             kernel modules. Disabled by default.
+      --resolve-only         Resolve and describe the selection without making
+                             system changes.
+  -y, --yes                 Automatically confirm setup.
+  -h, --help                Show this help.
 
-Without --development, the NVIDIA version is selected from this projects
-published SteamOS releases:
+PREFIX examples: 575, 580, 580.105, 580.105.08
+
+Without a mode option, the NVIDIA version is selected from this project's
+published certified SteamOS releases:
 
   1. Prefer the current SteamOS version.
   2. Otherwise use the newest older SteamOS release in the same
@@ -35,6 +43,8 @@ published SteamOS releases:
   3. Within that SteamOS release, use the newest published NVIDIA version.
 
 Once selected, NVIDIA userspace is installed at that exact version.
+The matching certified project modules are installed by the normal online
+installer, not by setup_nvidia.sh itself.
 EOF
 }
 
@@ -42,7 +52,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --development)
             [[ $# -ge 2 ]] || die "--development requires a version."
-            DRIVER_SPEC="$2"
+            DEVELOPMENT_SPEC="$2"
             shift 2
             ;;
         --use-upstream)
@@ -72,12 +82,12 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ -n "$DRIVER_SPEC" ]]; then
-    [[ "$DRIVER_SPEC" =~ ^[0-9]+([.][0-9]+)*$ ]] ||
+if [[ -n "$DEVELOPMENT_SPEC" ]]; then
+    [[ "$DEVELOPMENT_SPEC" =~ ^[0-9]+([.][0-9]+)*$ ]] ||
         die "--development must be a numeric NVIDIA version prefix such as 575, 580.105, or 580.105.08."
 fi
 
-if [[ -n "$DRIVER_SPEC" && -n "$UPSTREAM_SPEC" ]]; then
+if [[ -n "$DEVELOPMENT_SPEC" && -n "$UPSTREAM_SPEC" ]]; then
     die "--development and --use-upstream are mutually exclusive."
 fi
 
@@ -261,9 +271,13 @@ SELECTION_MODE=""
 REFERENCE_STEAMOS=""
 REFERENCE_KERNEL=""
 REFERENCE_RELEASE=""
+SELECTION_PURPOSE=""
+MODULE_BEHAVIOR=""
 
 if [[ -n "$UPSTREAM_SPEC" ]]; then
     SELECTION_MODE="upstream-development"
+    SELECTION_PURPOSE="establish a pristine NVIDIA upstream control build"
+    MODULE_BEHAVIOR="build and install pristine upstream modules; project fixes are not applied"
 
     log "Resolving newest NVIDIA upstream driver matching ${UPSTREAM_SPEC}..."
 
@@ -279,12 +293,14 @@ if [[ -n "$UPSTREAM_SPEC" ]]; then
     REFERENCE_KERNEL="$KERNEL_VERSION"
     REFERENCE_RELEASE="upstream:${UPSTREAM_SPEC}"
 
-elif [[ -n "$DRIVER_SPEC" ]]; then
+elif [[ -n "$DEVELOPMENT_SPEC" ]]; then
     SELECTION_MODE="development"
+    SELECTION_PURPOSE="prepare NVIDIA userspace for patched-module development"
+    MODULE_BEHAVIOR="leave installed kernel modules unchanged"
 
-    log "Resolving newest NVIDIA driver matching ${DRIVER_SPEC}..."
+    log "Resolving newest NVIDIA driver matching ${DEVELOPMENT_SPEC}..."
 
-    NVIDIA_UTILS_FILE="$(resolve_arch_package nvidia-utils "$DRIVER_SPEC" prefix)"
+    NVIDIA_UTILS_FILE="$(resolve_arch_package nvidia-utils "$DEVELOPMENT_SPEC" prefix)"
 
     NVIDIA_UTILS_VERREL="${NVIDIA_UTILS_FILE#nvidia-utils-}"
     NVIDIA_UTILS_VERREL="${NVIDIA_UTILS_VERREL%-x86_64.pkg.tar.zst}"
@@ -294,9 +310,11 @@ elif [[ -n "$DRIVER_SPEC" ]]; then
 
     REFERENCE_STEAMOS="$STEAMOS_VERSION"
     REFERENCE_KERNEL="$KERNEL_VERSION"
-    REFERENCE_RELEASE="development:${DRIVER_SPEC}"
+    REFERENCE_RELEASE="development:${DEVELOPMENT_SPEC}"
 else
     SELECTION_MODE="certified"
+    SELECTION_PURPOSE="select userspace for a published certified project release"
+    MODULE_BEHAVIOR="leave modules to the matching certified project installer"
 
     SELECTED="$(resolve_certified_driver)"
 
@@ -351,6 +369,8 @@ printf "[%s]   NVIDIA:            %s\n" "$PROJECT_NAME" "$RESOLVED_NVIDIA"
 printf "[%s]   nvidia-utils:      %s\n" "$PROJECT_NAME" "$NVIDIA_UTILS_FILE"
 printf "[%s]   lib32 utils:       %s\n" "$PROJECT_NAME" "$LIB32_FILE"
 printf "[%s]   Reference:         %s\n" "$PROJECT_NAME" "$REFERENCE_RELEASE"
+printf "[%s]   Purpose:           %s\n" "$PROJECT_NAME" "$SELECTION_PURPOSE"
+printf "[%s]   Kernel modules:    %s\n" "$PROJECT_NAME" "$MODULE_BEHAVIOR"
 
 if [[ "$RESOLVE_ONLY" == "1" ]]; then
     printf "\n%s\n" "$RESOLVED_NVIDIA"
@@ -405,7 +425,7 @@ printf "%s\n" "$SELECTION_MODE" > "$STATE_TMP/selection-mode"
 if [[ -n "$UPSTREAM_SPEC" ]]; then
     printf "%s\n" "$UPSTREAM_SPEC" > "$STATE_TMP/selection-request"
 else
-    printf "%s\n" "${DRIVER_SPEC:-auto}" > "$STATE_TMP/selection-request"
+    printf "%s\n" "${DEVELOPMENT_SPEC:-auto}" > "$STATE_TMP/selection-request"
 fi
 
 if [[ "$SELECTION_MODE" == "upstream-development" ]]; then

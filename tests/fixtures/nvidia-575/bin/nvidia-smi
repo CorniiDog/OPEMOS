@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "$*" == *"--query-gpu=driver_version"* ]]; then
+    printf '575.64.05\n'
+    exit 0
+fi
+
+printf 'Mock nvidia-smi only supports the driver-version query.\n' >&2
+exit 1

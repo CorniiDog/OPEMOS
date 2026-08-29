@@ -5,6 +5,19 @@ set -euo pipefail
 SUPPORT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${SUPPORT_ROOT}/lib/common.sh"
 
+usage()
+{
+    printf 'Usage: %s\n' "$0"
+    printf 'Create or refresh the project NVIDIA source branch matching installed userspace.\n'
+}
+
+if [[ $# -gt 0 ]]; then
+    case "$1" in
+        -h|--help) usage; exit 0 ;;
+        *) die "Unknown argument: $1" ;;
+    esac
+fi
+
 need_cmd git
 need_cmd nvidia-smi
 need_cmd uname
