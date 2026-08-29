@@ -377,10 +377,7 @@ HTTP="$(curl -sS -L --retry 2 -w '%{http_code}' "${BASE_URL}/${SELECTED_ASSET}" 
 
 if [[ "$HTTP" == "404" ]]; then
     rm -f "$ARCHIVE"
-    if [[ "$FUZZY" == "0" ]]; then
-        die "No exact published release exists. Retry with --fuzzy, or use --in-code/--local for testing."
-    fi
-    die "Selected fuzzy release disappeared before download."
+    die "Selected certified release disappeared before download: ${SELECTED_TAG}"
 fi
 [[ "$HTTP" == "200" ]] || die "Unexpected HTTP ${HTTP} downloading release."
 
