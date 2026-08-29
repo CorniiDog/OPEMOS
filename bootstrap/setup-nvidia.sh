@@ -91,6 +91,7 @@ resolve_arch_package()
 {
     local package="$1"
     local spec="$2"
+    local mode="${3:-exact}"
     local first="${package:0:1}"
     local listing="$TMP/${package}.html"
     local file
@@ -100,14 +101,33 @@ resolve_arch_package()
         -o "$listing" ||
         die "Failed to query Arch package archive for ${package}."
 
-    file="$(
-        grep -oE "${package}-${spec}[0-9A-Za-z.+_:~-]*-[0-9]+-x86_64[.]pkg[.]tar[.](zst|xz)" "$listing" \
-            | sort -uV \
-            | tail -n1
-    )"
+    case "$mode" in
+        exact)
+            file="$(
+                grep -oE "${package}-${spec}-[0-9]+-x86_64[.]pkg[.]tar[.](zst|xz)" "$listing" \
+                    | sort -uV \
+                    | tail -n1
+            )"
 
-    [[ -n "$file" ]] ||
-        die "No ${package} package matches NVIDIA version prefix ${spec}."
+            [[ -n "$file" ]] ||
+                die "No exact ${package} package exists for NVIDIA ${spec}."
+            ;;
+
+        prefix)
+            file="$(
+                grep -oE "${package}-${spec}([.][0-9]+)*-[0-9]+-x86_64[.]pkg[.]tar[.](zst|xz)" "$listing" \
+                    | sort -uV \
+                    | tail -n1
+            )"
+
+            [[ -n "$file" ]] ||
+                die "No ${package} package matches NVIDIA version prefix ${spec}."
+            ;;
+
+        *)
+            die "Internal error: unknown NVIDIA package resolution mode: ${mode}"
+            ;;
+    esac
 
     printf "%s\n" "$file"
 }
@@ -208,7 +228,7 @@ if [[ -n "$DRIVER_SPEC" ]]; then
 
     log "Resolving newest NVIDIA driver matching ${DRIVER_SPEC}..."
 
-    NVIDIA_UTILS_FILE="$(resolve_arch_package nvidia-utils "$DRIVER_SPEC")"
+    NVIDIA_UTILS_FILE="$(resolve_arch_package nvidia-utils "$DRIVER_SPEC" prefix)"
 
     NVIDIA_UTILS_VERREL="${NVIDIA_UTILS_FILE#nvidia-utils-}"
     NVIDIA_UTILS_VERREL="${NVIDIA_UTILS_VERREL%-x86_64.pkg.tar.zst}"
@@ -241,7 +261,7 @@ else
         warn "Using newest non-surpassed SteamOS certification: ${REFERENCE_STEAMOS}."
     fi
 
-    NVIDIA_UTILS_FILE="$(resolve_arch_package nvidia-utils "$RESOLVED_NVIDIA")"
+    NVIDIA_UTILS_FILE="$(resolve_arch_package nvidia-utils "$RESOLVED_NVIDIA" exact)"
 fi
 
 # Resolve again from the package filename so pkgrel selection cannot alter
@@ -255,7 +275,7 @@ PACKAGE_NVIDIA_VERSION="${NVIDIA_UTILS_VERREL%-*}"
 [[ "$PACKAGE_NVIDIA_VERSION" == "$RESOLVED_NVIDIA" ]] ||
     die "Resolved nvidia-utils package is ${PACKAGE_NVIDIA_VERSION}; expected ${RESOLVED_NVIDIA}."
 
-LIB32_FILE="$(resolve_arch_package lib32-nvidia-utils "$RESOLVED_NVIDIA")"
+LIB32_FILE="$(resolve_arch_package lib32-nvidia-utils "$RESOLVED_NVIDIA" exact)"
 
 LIB32_VERREL="${LIB32_FILE#lib32-nvidia-utils-}"
 LIB32_VERREL="${LIB32_VERREL%-x86_64.pkg.tar.zst}"
