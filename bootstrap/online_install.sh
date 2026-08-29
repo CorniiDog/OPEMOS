@@ -158,7 +158,7 @@ def ver(v):
     while len(p)<3:p.append(0)
     return tuple(p[:3])
 ts=ver(target_s)
-pat=re.compile(r^"steamos-([0-9]+(?:\.[0-9]+){2})-nvidia-([0-9]+(?:\.[0-9]+){1,2})-k(.+)$")
+pat=re.compile(r"^steamos-([0-9]+(?:\.[0-9]+){2})-nvidia-([0-9]+(?:\.[0-9]+){1,2})-k(.+)$")
 with open(path,encoding="utf-8") as f: releases=json.load(f)
 c=[]
 for r in releases:
@@ -169,7 +169,7 @@ for r in releases:
     if nv != target_n or kv != target_k: continue
     s=ver(sv)
     if s[:2] != ts[:2]: continue
-    asset=f"nvidia-open-{r[\"tag_name\"]}-x86_64.tar.gz"
+    asset=f'nvidia-open-{r["tag_name"]}-x86_64.tar.gz'
     names={a.get("name") for a in r.get("assets",[])}
     if asset not in names or asset+".sha256" not in names: continue
     dist=abs(s[2]-ts[2])

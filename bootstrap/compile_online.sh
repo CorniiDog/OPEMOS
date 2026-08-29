@@ -15,7 +15,6 @@ need git
 need curl
 need nvidia-smi
 
-
 IN_CODE=0
 HAS_OUTPUT=0
 AUTO_UPLOAD=0
@@ -76,7 +75,8 @@ if [[ "$IN_CODE" == "1" ]]; then
     CURRENT_BRANCH="$(git -C "$SOURCE_DIR" branch --show-current)"
 
     [[ "$CURRENT_BRANCH" == "$SOURCE_BRANCH" ]] || {
-        printf "Current branch is %s; expected %s for installed NVIDIA %s.\n"             "${CURRENT_BRANCH:-DETACHED}" "$SOURCE_BRANCH" "$NVIDIA_VERSION" >&2
+        printf "Current branch is %s; expected %s for installed NVIDIA %s.\n" \
+            "${CURRENT_BRANCH:-DETACHED}" "$SOURCE_BRANCH" "$NVIDIA_VERSION" >&2
         exit 1
     }
 
@@ -88,7 +88,8 @@ if [[ "$IN_CODE" == "1" ]]; then
     SOURCE_VERSION="$(sed -n "s/^NVIDIA_VERSION[[:space:]]*=[[:space:]]*//p" "$SOURCE_DIR/version.mk" | head -n1 | tr -d "[:space:]")"
 
     [[ "$SOURCE_VERSION" == "$NVIDIA_VERSION" ]] || {
-        printf "version.mk reports NVIDIA %s; installed NVIDIA is %s.\n"             "${SOURCE_VERSION:-unknown}" "$NVIDIA_VERSION" >&2
+        printf "version.mk reports NVIDIA %s; installed NVIDIA is %s.\n" \
+            "${SOURCE_VERSION:-unknown}" "$NVIDIA_VERSION" >&2
         exit 1
     }
 
@@ -116,7 +117,12 @@ else
     printf "[open-gpu-kernel-modules-steamos-support] Support: %s\n" "${SUPPORT_REV:0:12}"
     printf "[open-gpu-kernel-modules-steamos-support] Source:  %s\n" "${SOURCE_REV:0:12}"
 
-    git clone         --quiet         --depth 1         --branch "$SOURCE_BRANCH"         "https://github.com/${SOURCE_REPO}.git"         "$TMP/source"
+    git clone \
+        --quiet \
+        --depth 1 \
+        --branch "$SOURCE_BRANCH" \
+        "https://github.com/${SOURCE_REPO}.git" \
+        "$TMP/source"
 
     ACTUAL_SOURCE_REV="$(git -C "$TMP/source" rev-parse HEAD)"
 
