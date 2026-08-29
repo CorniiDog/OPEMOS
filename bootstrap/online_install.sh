@@ -78,6 +78,99 @@ printf '[%s] SteamOS: %s\n' "$PROJECT_NAME" "$STEAMOS_VERSION"
 printf '[%s] Kernel:  %s\n' "$PROJECT_NAME" "$KERNEL_VERSION"
 printf '[%s] NVIDIA:  %s\n' "$PROJECT_NAME" "$NVIDIA_VERSION"
 
+INSTALL_CHANGED=0
+
+already_installed()
+{
+    local archive="$1"
+    local checksum="$2"
+    local expected_sha actual_sha entry
+    local state_root="/var/lib/open-gpu-kernel-modules-steamos-support"
+    local installed_info="${state_root}/installed-build-info.txt"
+    local target_dir="/usr/lib/modules/${KERNEL_VERSION}/updates/open-gpu-kernel-modules-steamos"
+    local check_dir="${TMP}/installed-check"
+    local resolved resolved_real target_real module installed module_sha installed_sha
+
+    [[ -f "$installed_info" && -d "$target_dir" ]] || return 1
+
+    expected_sha="$(awk '{print $1}' "$checksum" | head -n1)"
+
+    [[ "$expected_sha" =~ ^[0-9a-fA-F]{64}$ ]] ||
+        return 1
+
+    actual_sha="$(sha256sum "$archive" | awk '{print $1}')"
+
+    [[ "${expected_sha,,}" == "${actual_sha,,}" ]] ||
+        return 1
+
+    while IFS= read -r entry; do
+        [[ "$entry" != /* ]] || return 1
+
+        [[ "$entry" != ".." &&
+           "$entry" != ../* &&
+           "$entry" != */../* &&
+           "$entry" != */.. ]] ||
+            return 1
+    done < <(tar -tzf "$archive") || return 1
+
+    rm -rf "$check_dir"
+    mkdir -p "$check_dir"
+
+    tar -xzf "$archive" -C "$check_dir"
+
+    [[ -f "$check_dir/BUILD-INFO.txt" && -d "$check_dir/modules" ]] ||
+        return 1
+
+    cmp -s "$check_dir/BUILD-INFO.txt" "$installed_info" ||
+        return 1
+
+    resolved="$(modinfo -n nvidia 2>/dev/null || true)"
+    [[ -n "$resolved" ]] || return 1
+
+    resolved_real="$(realpath -m "$resolved")"
+    target_real="$(realpath -m "$target_dir")"
+
+    case "$resolved_real" in
+        "$target_real"/*) ;;
+        *) return 1 ;;
+    esac
+
+    for module in "$check_dir"/modules/*.ko; do
+        [[ -f "$module" ]] || return 1
+
+        installed="$target_dir/$(basename "$module")"
+        [[ -f "$installed" ]] || return 1
+
+        module_sha="$(sha256sum "$module" | awk '{print $1}')"
+        installed_sha="$(sha256sum "$installed" | awk '{print $1}')"
+
+        [[ "$module_sha" == "$installed_sha" ]] ||
+            return 1
+    done
+
+    return 0
+}
+
+offer_reboot()
+{
+    [[ "$INSTALL_CHANGED" == "1" ]] || return 0
+
+    echo
+    read -r -p "[$PROJECT_NAME] Restart the system now? [y/N]: " REBOOT_REPLY
+
+    case "$REBOOT_REPLY" in
+        y|Y|yes|YES|Yes)
+            log "Restarting system..."
+            rm -rf "$TMP"
+            trap - EXIT
+            sudo reboot
+            ;;
+        *)
+            log "Restart skipped."
+            ;;
+    esac
+}
+
 install_archive()
 {
     local archive="$1"
@@ -86,7 +179,20 @@ install_archive()
     local args=(--archive "$archive" --checksum "$checksum")
     [[ "$fuzzy_flag" == "1" ]] && args+=(--fuzzy)
     [[ "$YES" == "1" ]] && args+=(-y)
+
+    if already_installed "$archive" "$checksum"; then
+        ok "Already installed, healthy, and current."
+        log "Nothing to do."
+        INSTALL_CHANGED=0
+        return 0
+    fi
+
+    if [[ -f "/var/lib/open-gpu-kernel-modules-steamos-support/installed-build-info.txt" ]]; then
+        log "Existing NVIDIA open kernel module installation requires update or repair."
+    fi
+
     "$TMP/support/bootstrap/install.sh" "${args[@]}"
+    INSTALL_CHANGED=1
 }
 
 resolve_local()
@@ -127,6 +233,7 @@ if [[ "$IN_CODE" == "1" ]]; then
 
     resolve_local "${bundles[0]}"
     install_archive "$LOCAL_ARCHIVE" "$LOCAL_CHECKSUM" 0
+    offer_reboot
     exit 0
 fi
 
@@ -134,6 +241,7 @@ if [[ -n "$LOCAL_SOURCE" ]]; then
     LOCAL_SOURCE="$(realpath "$LOCAL_SOURCE")"
     resolve_local "$LOCAL_SOURCE"
     install_archive "$LOCAL_ARCHIVE" "$LOCAL_CHECKSUM" 0
+    offer_reboot
     exit 0
 fi
 
@@ -214,18 +322,4 @@ HTTP_SHA="$(curl -sS -L --retry 2 -w '%{http_code}' "${BASE_URL}/${SELECTED_ASSE
 [[ "$HTTP_SHA" == "200" ]] || die "Unexpected HTTP ${HTTP_SHA} downloading checksum."
 
 install_archive "$ARCHIVE" "$CHECKSUM" "$FUZZY"
-
-echo
-read -r -p "[$PROJECT_NAME] Restart the system now? [y/N]: " REBOOT_REPLY
-
-case "$REBOOT_REPLY" in
-    y|Y|yes|YES|Yes)
-        log "Restarting system..."
-        cleanup
-        trap - EXIT
-        sudo reboot
-        ;;
-    *)
-        log "Restart skipped."
-        ;;
-esac
+offer_reboot
