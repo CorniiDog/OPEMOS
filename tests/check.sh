@@ -16,6 +16,9 @@ for script_file in bootstrap/*.sh lib/*.sh commit_myself.sh tests/*.sh; do
     bash -n "$script_file"
 done
 bash -n tests/fixtures/no-sudo/bin/sudo
+for mock_file in tests/fixtures/transaction/bin/*; do
+    bash -n "$mock_file"
+done
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/select_release.py
 
@@ -28,6 +31,7 @@ for script_file in bootstrap/*.sh; do
 done
 ./commit_myself.sh --help >/dev/null
 ./tests/non_sudo.sh --help >/dev/null
+./tests/transaction.sh --help >/dev/null
 
 printf 'Checking mutually exclusive resolver modes...\n'
 if ./bootstrap/setup_nvidia.sh \
@@ -138,5 +142,20 @@ SELECTED="$(python3 "$PROJECT_ROOT/lib/select_release.py" \
 SELECTED="$(python3 "$PROJECT_ROOT/lib/select_release.py" \
     3.9.0 kernel-a "$POLICY_FIXTURE")"
 [[ -z "$SELECTED" ]] || fail "release selector crossed SteamOS major/minor"
+
+printf 'Checking fake-root install/uninstall transactions...\n'
+./tests/transaction.sh
+
+printf 'Checking fake-root path confinement...\n'
+[[ "$(PROJECT_TEST_MODE=1 PROJECT_TEST_ROOT=/tmp/project-test-root \
+    project_system_path /usr/lib/modules)" == "/tmp/project-test-root/usr/lib/modules" ]] ||
+    fail "test system path was not redirected"
+if (
+    PROJECT_TEST_MODE=1
+    PROJECT_TEST_ROOT=/etc
+    project_system_path /usr/lib/modules >/dev/null 2>&1
+); then
+    fail "test system path escaped /tmp or HOME confinement"
+fi
 
 printf 'All local checks passed.\n'

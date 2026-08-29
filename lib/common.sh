@@ -45,9 +45,11 @@ need_cmd()
 
 require_steamos()
 {
-    [[ -r /etc/os-release ]] || die "Cannot read /etc/os-release."
+    local os_release
+    os_release="$(project_system_path /etc/os-release)"
+    [[ -r "$os_release" ]] || die "Cannot read ${os_release}."
 
-    source /etc/os-release
+    source "$os_release"
 
     [[ "${ID:-}" == "steamos" || "${NAME:-}" == *"SteamOS"* ]] ||
         die "This operation is intended for SteamOS."
@@ -56,7 +58,9 @@ require_steamos()
 get_steamos_version()
 {
     require_steamos
-    source /etc/os-release
+    local os_release
+    os_release="$(project_system_path /etc/os-release)"
+    source "$os_release"
     [[ -n "${VERSION_ID:-}" ]] || die "Could not determine SteamOS VERSION_ID."
     printf '%s\n' "$VERSION_ID"
 }
@@ -207,14 +211,38 @@ project_mktemp_file()
     mktemp "${root}/${prefix}.XXXXXX"
 }
 
+project_system_path()
+{
+    local path="$1"
+    [[ "$path" == /* ]] || die "Internal error: system path must be absolute: $path"
+
+    if [[ "${PROJECT_TEST_MODE:-0}" != "1" ]]; then
+        printf '%s\n' "$path"
+        return 0
+    fi
+
+    local test_root="${PROJECT_TEST_ROOT:-}"
+    [[ -n "$test_root" ]] || die "PROJECT_TEST_MODE requires PROJECT_TEST_ROOT."
+    test_root="$(realpath -m "$test_root")"
+
+    case "$test_root" in
+        /tmp/*|"$(realpath -m "$HOME")"/*) ;;
+        *) die "Refusing test root outside /tmp or HOME: $test_root" ;;
+    esac
+
+    printf '%s%s\n' "$test_root" "$path"
+}
+
 acquire_lifecycle_lock()
 {
     need_cmd flock
 
-    local lock_file="/run/lock/${PROJECT_NAME}.lock"
+    local lock_file
+    lock_file="$(project_system_path "/run/lock/${PROJECT_NAME}.lock")"
 
     # Preserve one inode so concurrent lifecycle operations cannot lock
     # different files after a pathname replacement.
+    sudo mkdir -p "$(dirname "$lock_file")"
     sudo touch "$lock_file"
     sudo chmod 0666 "$lock_file"
 

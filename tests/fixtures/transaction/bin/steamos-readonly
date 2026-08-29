@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+state_file="${MOCK_READONLY_STATE:?}"
+
+case "${1:-}" in
+    status)
+        printf '%s\n' "$(<"$state_file")"
+        ;;
+    disable)
+        printf 'disabled\n' > "$state_file"
+        ;;
+    enable)
+        printf 'enabled\n' > "$state_file"
+        ;;
+    *)
+        exit 1
+        ;;
+esac

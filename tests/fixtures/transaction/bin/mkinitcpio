@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+printf 'mkinitcpio %s\n' "$*" >> "${MOCK_COMMAND_LOG:?}"
+
+if [[ "${MOCK_FAIL_POINT:-}" == "initramfs" &&
+      ! -e "${MOCK_FAILURE_MARKER:?}" ]]; then
+    touch "$MOCK_FAILURE_MARKER"
+    printf 'Injected initramfs failure.\n' >&2
+    exit 87
+fi
+
+exit 0

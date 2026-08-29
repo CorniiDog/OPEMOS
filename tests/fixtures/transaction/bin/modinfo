@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+printf 'modinfo %s\n' "$*" >> "${MOCK_COMMAND_LOG:?}"
+
+case "${1:-}" in
+    -F)
+        case "${2:-}" in
+            vermagic) printf '%s SMP preempt mod_unload\n' "${MOCK_KERNEL:?}" ;;
+            version) printf '%s\n' "${MOCK_NVIDIA:?}" ;;
+            *) exit 1 ;;
+        esac
+        ;;
+    -n)
+        [[ "${2:-}" == "nvidia" ]] || exit 1
+        if [[ -f "${MOCK_TARGET_DIR:?}/nvidia.ko.zst" ]]; then
+            printf '%s\n' "${MOCK_TARGET_DIR}/nvidia.ko.zst"
+        else
+            printf '%s\n' "${MOCK_FALLBACK_MODULE:?}"
+        fi
+        ;;
+    *)
+        exit 1
+        ;;
+esac

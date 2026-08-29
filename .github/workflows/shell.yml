@@ -17,7 +17,7 @@ jobs:
           fetch-depth: 2
 
       - name: Install ShellCheck
-        run: sudo apt-get update && sudo apt-get install --yes shellcheck
+        run: sudo apt-get update && sudo apt-get install --yes shellcheck zstd
 
       - name: Run project checks
         run: ./tests/check.sh
@@ -33,3 +33,4 @@ jobs:
           shellcheck --severity=error
           bootstrap/*.sh lib/*.sh commit_myself.sh tests/*.sh
           tests/fixtures/no-sudo/bin/sudo
+          tests/fixtures/transaction/bin/*

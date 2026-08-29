@@ -197,6 +197,7 @@ Below is the consolidated project checklist based on our work so far. I’m trea
 * [x] Change new transactional backups to `$HOME/.cache/...`.
 * [ ] Decide long-term cleanup/retention policy for old backups.
 * [ ] Possibly cap number/age of retained backup generations.
+* [x] Make backup generation names collision-safe for sequential operations in the same second.
 
 ---
 
@@ -281,7 +282,7 @@ Below is the consolidated project checklist based on our work so far. I’m trea
 * [x] Verify project temp and staging directories are owned by the invoking `deck`/user account.
 * [x] Verify non-root `zstd` can create and validate output in project staging.
 * [x] Scan the complete current project cache for root/foreign-owned paths that could poison later non-root runs.
-* [ ] Exercise that cache scan immediately after each forced-failure sudo-backed install/uninstall test.
+* [x] Exercise that cache scan after each fake-root forced-failure install/uninstall test.
 * [ ] Re-run a build, local validation, and install preflight after a sudo-backed operation to catch ownership regressions.
 
 ---
@@ -419,12 +420,13 @@ Below is the consolidated project checklist based on our work so far. I’m trea
 * [x] Maintain rollback mechanism.
 * [x] Restore read-only filesystem state on cleanup.
 * [x] Audit rollback after all backup-location and compression changes.
-* [ ] Explicitly test forced failure after old target removal.
-* [ ] Explicitly test forced failure midway through copy.
-* [ ] Verify rollback restores compressed/raw state correctly.
-* [ ] Verify state metadata rollback.
-* [ ] Verify initramfs consistency after rollback.
-* [ ] Verify no orphaned stage directories remain.
+* [x] Test a fake-root forced failure after old target removal.
+* [x] Test a fake-root forced failure midway through module copy.
+* [x] Verify rollback restores the previous compressed module state byte-for-byte.
+* [x] Verify rollback also restores a legacy raw installed target byte-for-byte.
+* [x] Verify state metadata rollback after an injected partial state write.
+* [x] Verify rollback re-runs mocked `depmod` and `mkinitcpio` after failure.
+* [x] Verify no orphaned stage directories remain after injected failures.
 * [x] Add checksum verification after final target copy.
 * [ ] Consider fsync/durability if you want stronger transactional guarantees.
 
@@ -593,9 +595,9 @@ Desired design:
 * [x] Restore read-only filesystem.
 * [ ] Re-test uninstall with `.ko.zst` project installation.
 * [ ] Verify fallback resolves correctly after 580 project modules.
-* [ ] Verify uninstall after failed/partial transaction.
-* [ ] Verify uninstall does not remove unrelated NVIDIA files.
-* [ ] Verify reinstall after uninstall.
+* [x] Verify fake-root uninstall rollback after a post-removal `depmod` failure.
+* [x] Verify fake-root uninstall does not remove unrelated NVIDIA files outside the project target.
+* [x] Verify fake-root reinstall after successful uninstall.
 
 ---
 
@@ -608,9 +610,9 @@ Desired design:
 
   * `steamos-readonly status: enabled`
 * [ ] Test cleanup path if script receives SIGINT.
-* [ ] Test cleanup path on build/install failure.
+* [x] Test cleanup paths for injected install/uninstall failures in a fake root.
 * [ ] Test cleanup path on checksum failure.
-* [ ] Test cleanup path after target replacement.
+* [x] Test cleanup path after fake-root target replacement.
 * [ ] Ensure every script that disables readonly reliably restores it.
 
 ---
@@ -866,8 +868,9 @@ This is the ultimate reason for the project and is **not completed**.
 * [x] Test detached-HEAD upstream semantics, including the empty-branch-name case.
 * [x] Test current cache/stage ownership and non-root `zstd` operation.
 * [x] Test `--development` and `--use-upstream --resolve-only` boundaries with a failing sudo shim.
-* [ ] Test cache ownership immediately after mocked/forced sudo-backed failure paths.
+* [x] Test cache ownership immediately after mocked/forced sudo-backed failure paths.
 * [x] Add a reusable non-sudo pre/post-reinstall baseline report.
+* [x] Run fake-root install/uninstall rollback transactions in the local/CI check suite.
 * [x] Test temp-helper bootstrap ordering.
 * [ ] Test all scripts for unbound variables under `set -u`.
 * [x] Test `--help` exits 0.

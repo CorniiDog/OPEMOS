@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+printf 'sudo %s\n' "$*" >> "${MOCK_COMMAND_LOG:?}"
+
+if [[ "${1:-}" == "-v" ]]; then
+    exit 0
+fi
+
+command_name="${1:?}"
+shift
+
+failure_marker="${MOCK_FAILURE_MARKER:?}"
+
+if [[ "${MOCK_FAIL_POINT:-}" == "target-copy" &&
+      "$command_name" == "cp" &&
+      ! -e "$failure_marker" ]]; then
+    destination="${*: -1}"
+
+    if [[ "${destination%/}" == "${MOCK_TARGET_DIR:?}" ]]; then
+        source_path=""
+        for argument in "$@"; do
+            [[ "$argument" == -* ]] && continue
+            source_path="$argument"
+            break
+        done
+
+        source_path="${source_path%/.}"
+        first_file="$(find "$source_path" -maxdepth 1 -type f -print | LC_ALL=C sort | head -n1)"
+        [[ -n "$first_file" ]]
+        command cp -a "$first_file" "$destination"
+        touch "$failure_marker"
+        printf 'Injected partial target copy failure.\n' >&2
+        exit 88
+    fi
+fi
+
+if [[ "${MOCK_FAIL_POINT:-}" == "state-write" &&
+      "$command_name" == "tee" &&
+      "$*" == *"installed-nvidia.txt"* &&
+      ! -e "$failure_marker" ]]; then
+    touch "$failure_marker"
+    printf 'Injected state metadata write failure.\n' >&2
+    exit 89
+fi
+
+exec "$command_name" "$@"

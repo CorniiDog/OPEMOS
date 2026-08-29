@@ -137,11 +137,13 @@ log "Requesting administrator privileges..."
 sudo -v
 acquire_lifecycle_lock
 
-TARGET_DIR="/usr/lib/modules/${CURRENT_KERNEL}/updates/open-gpu-kernel-modules-steamos"
-STATE_ROOT="/var/lib/open-gpu-kernel-modules-steamos-support"
+TARGET_DIR="$(project_system_path "/usr/lib/modules/${CURRENT_KERNEL}/updates/open-gpu-kernel-modules-steamos")"
+STATE_ROOT="$(project_system_path "/var/lib/open-gpu-kernel-modules-steamos-support")"
 CACHE_ROOT="${HOME}/.cache/${PROJECT_NAME}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
-BACKUP_DIR="${CACHE_ROOT}/backups/${CURRENT_KERNEL}/${STAMP}"
+BACKUP_ROOT="${CACHE_ROOT}/backups/${CURRENT_KERNEL}"
+mkdir -p "$BACKUP_ROOT"
+BACKUP_DIR="$(mktemp -d "${BACKUP_ROOT}/${STAMP}.XXXXXX")"
 RO_WAS_ENABLED=0
 TARGET_TOUCHED=0
 STATE_TOUCHED=0
@@ -222,7 +224,6 @@ if command -v steamos-readonly >/dev/null 2>&1 &&
     sudo steamos-readonly disable
 fi
 
-mkdir -p "$BACKUP_DIR"
 if [[ -d "$TARGET_DIR" ]]; then
     sudo cp -a "$TARGET_DIR" "$BACKUP_DIR/modules"
     sudo chown -R "$USER":"$(id -gn)" "$BACKUP_DIR"

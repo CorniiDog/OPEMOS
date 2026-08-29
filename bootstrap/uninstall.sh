@@ -27,8 +27,8 @@ need_cmd modinfo
 need_cmd depmod
 
 CURRENT_KERNEL="$(get_kernel_version)"
-STATE_ROOT="/var/lib/open-gpu-kernel-modules-steamos-support"
-TARGET_DIR="/usr/lib/modules/${CURRENT_KERNEL}/updates/open-gpu-kernel-modules-steamos"
+STATE_ROOT="$(project_system_path "/var/lib/open-gpu-kernel-modules-steamos-support")"
+TARGET_DIR="$(project_system_path "/usr/lib/modules/${CURRENT_KERNEL}/updates/open-gpu-kernel-modules-steamos")"
 
 [[ -d "$TARGET_DIR" ]] ||
     die "NVIDIA open kernel module directory is not installed: $TARGET_DIR"
@@ -62,7 +62,9 @@ acquire_lifecycle_lock
 
 STAMP="$(date +%Y%m%d-%H%M%S)"
 CACHE_ROOT="${HOME}/.cache/${PROJECT_NAME}"
-BACKUP_DIR="${CACHE_ROOT}/backups/${CURRENT_KERNEL}/uninstall-${STAMP}"
+BACKUP_ROOT="${CACHE_ROOT}/backups/${CURRENT_KERNEL}"
+mkdir -p "$BACKUP_ROOT"
+BACKUP_DIR="$(mktemp -d "${BACKUP_ROOT}/uninstall-${STAMP}.XXXXXX")"
 
 RO_WAS_ENABLED=0
 TARGET_TOUCHED=0

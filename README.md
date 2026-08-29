@@ -194,6 +194,13 @@ staging, exact module sets, detached-HEAD semantics, certified release policy,
 the cached artifact, the installer validation/cancellation boundary, and all
 three resolver modes. Omit `--online` for a fast offline run.
 
+The fast checks also run `tests/transaction.sh`. This redirects all privileged
+paths into a temporary fake system root and uses mocked lifecycle commands. It
+verifies byte-for-byte rollback after a partial module copy, initramfs failure,
+state-write failure, and post-removal uninstall failure, plus a successful
+install/uninstall cycle. It snapshots the real project module directory before
+and after to prove that the live installation was untouched.
+
 After reinstalling and cloning the same support commit, run:
 
 ```bash
