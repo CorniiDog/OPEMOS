@@ -68,10 +68,34 @@ get_kernel_version()
 
 get_nvidia_version()
 {
-    need_cmd nvidia-smi
-    local version
-    version="$(nvidia-smi --query-gpu=driver_version --format=csv,noheader,nounits | head -n1 | tr -d '[:space:]')"
-    [[ "$version" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || die "Could not determine NVIDIA driver version."
+    local version=""
+
+    if command -v nvidia-smi >/dev/null 2>&1; then
+        version="$(
+            nvidia-smi \
+                --query-gpu=driver_version \
+                --format=csv,noheader,nounits \
+                2>/dev/null |
+            head -n1 |
+            tr -d '[:space:]' ||
+            true
+        )"
+    fi
+
+    if [[ ! "$version" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] &&
+       command -v pacman >/dev/null 2>&1; then
+        version="$(pacman -Q nvidia-utils 2>/dev/null | awk '{print $2}' || true)"
+        version="${version%-*}"
+    fi
+
+    if [[ ! "$version" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] &&
+       [[ -f /var/lib/open-gpu-kernel-modules-steamos-support/nvidia-setup/nvidia-version ]]; then
+        version="$(tr -d '[:space:]' < /var/lib/open-gpu-kernel-modules-steamos-support/nvidia-setup/nvidia-version)"
+    fi
+
+    [[ "$version" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] ||
+        die "Could not determine NVIDIA userspace driver version."
+
     printf '%s\n' "$version"
 }
 

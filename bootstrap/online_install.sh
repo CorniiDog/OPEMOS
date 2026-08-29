@@ -53,7 +53,6 @@ need curl
 need tar
 need sha256sum
 need python3
-need nvidia-smi
 
 SUPPORT_REV="$(git ls-remote "https://github.com/${SUPPORT_REPO}.git" "refs/heads/${SUPPORT_BRANCH}" | awk 'NR==1 {print $1}')"
 [[ "$SUPPORT_REV" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "Could not resolve support revision." >&2; exit 1; }
@@ -71,7 +70,23 @@ require_steamos
 
 STEAMOS_VERSION="$(get_steamos_version)"
 KERNEL_VERSION="$(get_kernel_version)"
-NVIDIA_VERSION="$(get_nvidia_version)"
+
+NVIDIA_VERSION=""
+
+if NVIDIA_VERSION="$(get_nvidia_version 2>/dev/null)"; then
+    log "Existing NVIDIA userspace detected: ${NVIDIA_VERSION}"
+else
+    log "NVIDIA userspace is not installed."
+    log "Running SteamOS NVIDIA userspace setup..."
+
+    SETUP_ARGS=()
+    [[ "$YES" == "1" ]] && SETUP_ARGS+=(-y)
+
+    "$TMP/support/bootstrap/setup-nvidia.sh" "${SETUP_ARGS[@]}"
+
+    NVIDIA_VERSION="$(get_nvidia_version)"
+fi
+
 KERNEL_TAG="$(sanitize_release_component "$KERNEL_VERSION")"
 
 printf '[%s] SteamOS: %s\n' "$PROJECT_NAME" "$STEAMOS_VERSION"
@@ -84,7 +99,7 @@ already_installed()
 {
     local archive="$1"
     local checksum="$2"
-    local expected_sha actual_sha entry
+    local expected_sha actual_sha entry listing
     local state_root="/var/lib/open-gpu-kernel-modules-steamos-support"
     local installed_info="${state_root}/installed-build-info.txt"
     local target_dir="/usr/lib/modules/${KERNEL_VERSION}/updates/open-gpu-kernel-modules-steamos"
@@ -103,15 +118,29 @@ already_installed()
     [[ "${expected_sha,,}" == "${actual_sha,,}" ]] ||
         return 1
 
+    listing="${check_dir}.listing"
+
+    tar -tzf "$archive" > "$listing" || {
+        rm -f "$listing"
+        return 1
+    }
+
     while IFS= read -r entry; do
-        [[ "$entry" != /* ]] || return 1
+        [[ "$entry" != /* ]] || {
+            rm -f "$listing"
+            return 1
+        }
 
         [[ "$entry" != ".." &&
            "$entry" != ../* &&
            "$entry" != */../* &&
-           "$entry" != */.. ]] ||
+           "$entry" != */.. ]] || {
+            rm -f "$listing"
             return 1
-    done < <(tar -tzf "$archive") || return 1
+        }
+    done < "$listing"
+
+    rm -f "$listing"
 
     rm -rf "$check_dir"
     mkdir -p "$check_dir"
