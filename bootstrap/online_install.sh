@@ -169,12 +169,13 @@ for r in releases:
     if nv != target_n or kv != target_k: continue
     s=ver(sv)
     if s[:2] != ts[:2]: continue
-    asset=f'nvidia-open-{r["tag_name"]}-x86_64.tar.gz'
+    tag=r["tag_name"]
+    asset="nvidia-open-"+tag+"-x86_64.tar.gz"
     names={a.get("name") for a in r.get("assets",[])}
     if asset not in names or asset+".sha256" not in names: continue
     dist=abs(s[2]-ts[2])
     newer=1 if s[2]>ts[2] else 0
-    c.append(((dist,newer),sv,r["tag_name"],asset))
+    c.append(((dist,newer),sv,tag,asset))
 if c:
     _,sv,tag,asset=min(c,key=lambda x:x[0])
     print("\t".join((sv,tag,asset)))
