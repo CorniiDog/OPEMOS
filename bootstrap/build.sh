@@ -161,7 +161,7 @@ podman run \
         printf "\nBuilt modules:\n"
 
         for module in "${modules[@]}"; do
-            vermagic="$(modinfo -F vermagic "$module" | awk "{print \\\$1}")"
+            vermagic="$(modinfo -F vermagic "$module")"
 
             printf "  %s -> %s\n" "$(basename "$module")" "$vermagic"
 
