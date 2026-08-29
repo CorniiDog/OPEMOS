@@ -162,10 +162,11 @@ podman run \
 
         for module in "${modules[@]}"; do
             vermagic="$(modinfo -F vermagic "$module")"
+            vermagic_kernel="${vermagic%% *}"
 
             printf "  %s -> %s\n" "$(basename "$module")" "$vermagic"
 
-            [[ "$vermagic" == "$TARGET_KERNEL" ]] || {
+            [[ "$vermagic_kernel" == "$TARGET_KERNEL" ]] || {
                 printf "Vermagic mismatch for %s\n" "$(basename "$module")" >&2
                 printf "Expected: %s\n" "$TARGET_KERNEL" >&2
                 printf "Actual:   %s\n" "$vermagic" >&2
