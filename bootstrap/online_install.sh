@@ -214,3 +214,18 @@ HTTP_SHA="$(curl -sS -L --retry 2 -w '%{http_code}' "${BASE_URL}/${SELECTED_ASSE
 [[ "$HTTP_SHA" == "200" ]] || die "Unexpected HTTP ${HTTP_SHA} downloading checksum."
 
 install_archive "$ARCHIVE" "$CHECKSUM" "$FUZZY"
+
+echo
+read -r -p "[$PROJECT_NAME] Restart the system now? [y/N]: " REBOOT_REPLY
+
+case "$REBOOT_REPLY" in
+    y|Y|yes|YES|Yes)
+        log "Restarting system..."
+        cleanup
+        trap - EXIT
+        sudo reboot
+        ;;
+    *)
+        log "Restart skipped."
+        ;;
+esac
