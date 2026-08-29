@@ -179,6 +179,10 @@ fi
 RELEASE_TAG="$(release_tag)"
 ASSET_NAME="$(release_asset)"
 
+CONTAINER_IMAGE_REF="$(podman image inspect "$NVIDIA_BUILD_IMAGE" --format "{{.Digest}}")"
+[[ "$CONTAINER_IMAGE_REF" == sha256:* ]] || die "Could not determine immutable build container digest."
+CONTAINER_IMAGE_REF="${NVIDIA_BUILD_IMAGE%:*}@${CONTAINER_IMAGE_REF}"
+
 mkdir -p "$OUTPUT_DIR"
 OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd)"
 
@@ -223,7 +227,7 @@ if [[ "$FORCE_REBUILD" == "0" && -f "$BUNDLE" ]]; then
             if [[ "$CACHED_SOURCE" == "$SOURCE_COMMIT" &&
                   "$CACHED_KERNEL" == "$KERNEL_VERSION" &&
                   "$CACHED_NVIDIA" == "$NVIDIA_VERSION" &&
-                  "$CACHED_CONTAINER" == "$NVIDIA_BUILD_IMAGE" &&
+                  "$CACHED_CONTAINER" == "$CONTAINER_IMAGE_REF" &&
                   "$EXPECTED_SHA" =~ ^[0-9a-fA-F]{64}$ &&
                   "${EXPECTED_SHA,,}" == "${ACTUAL_SHA,,}" ]]; then
                 CACHE_HIT=1
@@ -266,7 +270,7 @@ if [[ "$CACHE_HIT" == "0" ]]; then
         printf 'support_repository=%s\n' "$SUPPORT_REPO"
         printf 'support_commit=%s\n\n' "$SUPPORT_COMMIT"
 
-        printf 'container_image=%s\n\n' "$NVIDIA_BUILD_IMAGE"
+        printf 'container_image=%s\n\n' "$CONTAINER_IMAGE_REF"
 
         printf 'modules:\n'
         for module in "${PACKAGE_DIR}/modules/"*.ko; do
@@ -331,7 +335,7 @@ RELEASE_NOTES="Precompiled open-gpu-kernel-modules-steamos build for SteamOS ${S
 NVIDIA fork commit: [${SOURCE_COMMIT:0:7}](https://github.com/${SOURCE_REPO}/commit/${SOURCE_COMMIT})
 NVIDIA upstream commit: [${UPSTREAM_COMMIT:0:7}](https://github.com/NVIDIA/open-gpu-kernel-modules/commit/${UPSTREAM_COMMIT})
 Support commit: [${SUPPORT_COMMIT:0:7}](https://github.com/${SUPPORT_REPO}/commit/${SUPPORT_COMMIT})
-Container: ${NVIDIA_BUILD_IMAGE}"
+Container: ${CONTAINER_IMAGE_REF}"
 
 if gh release view "$RELEASE_TAG" --repo "$SUPPORT_REPO" >/dev/null 2>&1; then
     log "Release already exists; updating metadata and replacing matching artifacts."
