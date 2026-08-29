@@ -233,8 +233,11 @@ log "Refreshing module dependency database..."
 sudo depmod -a "$CURRENT_KERNEL"
 
 RESOLVED="$(modinfo -n nvidia 2>/dev/null || true)"
-case "$RESOLVED" in
-    "$TARGET_DIR"/*) ;;
+RESOLVED_REAL="$(realpath -m "$RESOLVED")"
+TARGET_REAL="$(realpath -m "$TARGET_DIR")"
+
+case "$RESOLVED_REAL" in
+    "$TARGET_REAL"/*) ;;
     *) die "depmod did not select the installed NVIDIA module. Resolved path: ${RESOLVED:-unknown}" ;;
 esac
 
