@@ -494,8 +494,24 @@ sudo ldconfig
 sudo cp -a "$STATE_TMP/." "$STATE_ROOT/"
 
 restore_readonly
+
+if [[ "$SELECTION_MODE" == "upstream-development" ]]; then
+    UPSTREAM_ARGS=("$RESOLVED_NVIDIA")
+    [[ "$YES" == "1" ]] && UPSTREAM_ARGS+=(-y)
+
+    "${SCRIPT_DIR}/install_upstream.sh" "${UPSTREAM_ARGS[@]}"
+fi
+
+rm -rf "$TMP"
 trap - EXIT INT TERM
 
 ok "NVIDIA userspace ${RESOLVED_NVIDIA} installed."
-log "Userspace setup is complete; matching kernel modules must now be installed."
+
+if [[ "$SELECTION_MODE" == "upstream-development" ]]; then
+    warn "NVIDIA ${RESOLVED_NVIDIA} is installed in upstream-development mode."
+    warn "Project kernel fixes are NOT applied."
+else
+    log "Userspace setup is complete; matching project kernel modules must now be installed."
+fi
+
 log "Recorded setup state: ${STATE_ROOT}"
