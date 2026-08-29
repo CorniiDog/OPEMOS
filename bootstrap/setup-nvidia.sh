@@ -136,7 +136,7 @@ resolve_certified_driver()
 {
     local releases="$TMP/releases.json"
 
-    log "Looking for NVIDIA releases compatible with SteamOS ${STEAMOS_VERSION}..."
+    log "Looking for NVIDIA releases compatible with SteamOS ${STEAMOS_VERSION}..." >&2
 
     curl -fsSL --retry 2 \
         "https://api.github.com/repos/${SUPPORT_REPO}/releases?per_page=100" \
