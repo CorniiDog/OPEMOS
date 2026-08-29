@@ -10,6 +10,7 @@ SUPPORT_REPO="${SUPPORT_REPO:-CorniiDog/open-gpu-kernel-modules-steamos-support}
 DRIVER_SPEC=""
 UPSTREAM_SPEC=""
 RESOLVE_ONLY=0
+OFFER_REBOOT=0
 YES=0
 
 usage()
@@ -20,6 +21,7 @@ Usage: setup_nvidia.sh [options]
 Options:
       --driver VERSION   Explicit NVIDIA branch/version prefix.
                          Examples: 575, 580, 580.105, 580.105.08
+      --offer-reboot    Offer to restart after a complete kernel-module install.
       --resolve-only     Resolve and print the selected NVIDIA version only.
   -y, --yes              Automatically confirm setup.
   -h, --help             Show this help.
@@ -47,6 +49,10 @@ while [[ $# -gt 0 ]]; do
             [[ $# -ge 2 ]] || die "--use-upstream requires a version."
             UPSTREAM_SPEC="$2"
             shift 2
+            ;;
+        --offer-reboot)
+            OFFER_REBOOT=1
+            shift
             ;;
         --resolve-only)
             RESOLVE_ONLY=1
@@ -79,6 +85,24 @@ if [[ -n "$UPSTREAM_SPEC" ]]; then
     [[ "$UPSTREAM_SPEC" =~ ^[0-9]+([.][0-9]+)*$ ]] ||
         die "--use-upstream must be a numeric NVIDIA version prefix such as 575 or 580."
 fi
+
+offer_reboot()
+{
+    [[ "$OFFER_REBOOT" == "1" ]] || return 0
+
+    printf "\n"
+    read -r -p "[$PROJECT_NAME] Restart the system now? [y/N]: " REBOOT_REPLY
+
+    case "$REBOOT_REPLY" in
+        y|Y|yes|YES|Yes)
+            log "Restarting system..."
+            sudo reboot
+            ;;
+        *)
+            log "Restart skipped."
+            ;;
+    esac
+}
 
 require_steamos
 
@@ -510,8 +534,13 @@ ok "NVIDIA userspace ${RESOLVED_NVIDIA} installed."
 if [[ "$SELECTION_MODE" == "upstream-development" ]]; then
     warn "NVIDIA ${RESOLVED_NVIDIA} is installed in upstream-development mode."
     warn "Project kernel fixes are NOT applied."
+    log "Reboot required to load the newly installed NVIDIA kernel modules."
 else
     log "Userspace setup is complete; matching project kernel modules must now be installed."
 fi
 
 log "Recorded setup state: ${STATE_ROOT}"
+
+if [[ "$SELECTION_MODE" == "upstream-development" ]]; then
+    offer_reboot
+fi
