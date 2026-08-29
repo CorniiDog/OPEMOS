@@ -7,6 +7,8 @@ PROJECT_NAME="open-gpu-kernel-modules-steamos-support"
 SUPPORT_REPO="${SUPPORT_REPO:-CorniiDog/open-gpu-kernel-modules-steamos-support}"
 SUPPORT_BRANCH="${SUPPORT_BRANCH:-main}"
 
+NVIDIA_BUILD_IMAGE="${NVIDIA_BUILD_IMAGE:-registry.fedoraproject.org/fedora:42}"
+
 SOURCE_REPO="${SOURCE_REPO:-CorniiDog/open-gpu-kernel-modules-steamos}"
 SOURCE_REPO_URL="https://github.com/${SOURCE_REPO}.git"
 UPSTREAM_URL="https://github.com/NVIDIA/open-gpu-kernel-modules.git"
@@ -105,4 +107,19 @@ release_tag()
 release_asset()
 {
     printf 'nvidia-open-%s-x86_64.tar.gz\n' "$(release_tag)"
+}
+
+get_neptune_series()
+{
+    local kernel="${1:-$(get_kernel_version)}"
+    local series
+
+    series="$(printf "%s\n" "$kernel" | sed -n "s/.*-neptune-\([0-9][0-9]*\).*/\1/p")"
+    [[ -n "$series" ]] || die "Could not determine Neptune series from kernel: $kernel"
+    printf "%s\n" "$series"
+}
+
+get_neptune_headers_package()
+{
+    printf "linux-neptune-%s-headers\n" "$(get_neptune_series "${1:-$(get_kernel_version)}")"
 }

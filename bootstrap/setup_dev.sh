@@ -5,12 +5,12 @@ set -euo pipefail
 SUPPORT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${SUPPORT_ROOT}/lib/common.sh"
 
-need git
-need nvidia-smi
-need uname
-need sed
+need_cmd git
+need_cmd nvidia-smi
+need_cmd uname
+need_cmd sed
 
-SOURCE_REPO="${OPEN_GPU_SOURCE_REPO:-${DEFAULT_SOURCE_REPO}}"
+SOURCE_REPO="${OPEN_GPU_SOURCE_REPO:-${DEFAULT_SOURCE_DIR}}"
 
 [[ -r /etc/os-release ]] || die "Cannot read /etc/os-release."
 source /etc/os-release
