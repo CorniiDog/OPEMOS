@@ -29,6 +29,10 @@ done
     die "Exact NVIDIA version required."
 
 require_steamos
+need_cmd sudo
+
+log "Requesting administrator privileges..."
+sudo -v
 need_cmd git
 need_cmd tar
 need_cmd sha256sum
@@ -116,6 +120,9 @@ upstream_version=${NVIDIA_VERSION}
 upstream_commit=${UPSTREAM_COMMIT}
 source_provider=upstream
 EOF
+
+log "Preparing Fedora build environment..."
+"${SCRIPT_DIR}/setup_build_env.sh"
 
 log "Preparing Fedora build environment..."
 "${SCRIPT_DIR}/setup_build_env.sh"

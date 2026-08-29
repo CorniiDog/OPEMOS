@@ -47,6 +47,7 @@ need_cmd modinfo
 need_cmd depmod
 need_cmd find
 need_cmd install
+need_cmd zstd
 
 CURRENT_STEAMOS="$(get_steamos_version)"
 CURRENT_KERNEL="$(get_kernel_version)"
@@ -130,8 +131,9 @@ sudo -v
 
 TARGET_DIR="/usr/lib/modules/${CURRENT_KERNEL}/updates/open-gpu-kernel-modules-steamos"
 STATE_ROOT="/var/lib/open-gpu-kernel-modules-steamos-support"
+CACHE_ROOT="${HOME}/.cache/${PROJECT_NAME}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
-BACKUP_DIR="${STATE_ROOT}/backups/${CURRENT_KERNEL}/${STAMP}"
+BACKUP_DIR="${CACHE_ROOT}/backups/${CURRENT_KERNEL}/${STAMP}"
 RO_WAS_ENABLED=0
 TARGET_TOUCHED=0
 STATE_TOUCHED=0
@@ -183,7 +185,7 @@ cleanup()
     fi
 
     if [[ -n "$STAGE" ]]; then
-        sudo rm -rf "$STAGE" >/dev/null 2>&1 || true
+        rm -rf "$STAGE" >/dev/null 2>&1 || true
     fi
 
     rm -rf "$TMP" || true
@@ -212,22 +214,45 @@ if command -v steamos-readonly >/dev/null 2>&1 &&
     sudo steamos-readonly disable
 fi
 
-sudo mkdir -p "$BACKUP_DIR"
+mkdir -p "$BACKUP_DIR"
 if [[ -d "$TARGET_DIR" ]]; then
     sudo cp -a "$TARGET_DIR" "$BACKUP_DIR/modules"
+    sudo chown -R "$USER":"$(id -gn)" "$BACKUP_DIR"
 fi
 
-STAGE="${TARGET_DIR}.new.$$"
-sudo rm -rf "$STAGE"
-sudo mkdir -p "$STAGE"
+mkdir -p "${HOME}/.cache/${PROJECT_NAME}"
+STAGE="$(mktemp -d "${HOME}/.cache/${PROJECT_NAME}/install-stage.XXXXXX")"
 
 for module in "${MODULES[@]}"; do
-    sudo install -o root -g root -m 0644 "$module" "$STAGE/$(basename "$module")"
+    module_name="$(basename "$module")"
+    zstd -q -f -T0 "$module" -o "$STAGE/${module_name}.zst"
 done
+
+NEW_BYTES="$(du -s -B1 "$STAGE" | awk '{print $1}')"
+AVAILABLE_BYTES="$(df -B1 --output=avail "$(dirname "$TARGET_DIR")" | tail -n1 | tr -d ' ')"
+CURRENT_BYTES=0
+
+if [[ -d "$TARGET_DIR" ]]; then
+    CURRENT_BYTES="$(du -s -B1 "$TARGET_DIR" | awk '{print $1}')"
+fi
+
+SAFETY_BYTES=$((64 * 1024 * 1024))
+EFFECTIVE_BYTES=$((AVAILABLE_BYTES + CURRENT_BYTES))
+REQUIRED_BYTES=$((NEW_BYTES + SAFETY_BYTES))
+
+printf '\n[%s] Root filesystem preflight\n' "$PROJECT_NAME"
+printf '[%s]   New compressed modules: %d MiB\n' "$PROJECT_NAME" "$((NEW_BYTES / 1024 / 1024))"
+printf '[%s]   Currently available:    %d MiB\n' "$PROJECT_NAME" "$((AVAILABLE_BYTES / 1024 / 1024))"
+printf '[%s]   Reclaimable old target: %d MiB\n' "$PROJECT_NAME" "$((CURRENT_BYTES / 1024 / 1024))"
+printf '[%s]   Safety reserve:         %d MiB\n\n' "$PROJECT_NAME" "$((SAFETY_BYTES / 1024 / 1024))"
+
+(( EFFECTIVE_BYTES >= REQUIRED_BYTES )) ||
+    die "Insufficient SteamOS root space for safe module replacement."
 
 TARGET_TOUCHED=1
 sudo rm -rf "$TARGET_DIR"
-sudo mv "$STAGE" "$TARGET_DIR"
+sudo mkdir -p "$TARGET_DIR"
+sudo cp -a "$STAGE/." "$TARGET_DIR/"
 
 log "Refreshing module dependency database..."
 sudo depmod -a "$CURRENT_KERNEL"
@@ -246,7 +271,8 @@ if command -v mkinitcpio >/dev/null 2>&1; then
     sudo mkinitcpio -P
 fi
 
-sudo mkdir -p "$STATE_ROOT" "$BACKUP_DIR/state"
+sudo mkdir -p "$STATE_ROOT"
+mkdir -p "$BACKUP_DIR/state"
 
 for state_file in \
     installed-build-info.txt \
@@ -258,6 +284,8 @@ do
         sudo cp -a "${STATE_ROOT}/${state_file}" "$BACKUP_DIR/state/"
     fi
 done
+
+sudo chown -R "$USER":"$(id -gn)" "$BACKUP_DIR"
 
 STATE_TOUCHED=1
 sudo cp "$INFO" "${STATE_ROOT}/installed-build-info.txt"

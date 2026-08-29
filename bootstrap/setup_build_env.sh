@@ -13,7 +13,7 @@ RO_WAS_ENABLED=0
 restore_readonly()
 {
     if [[ "$RO_WAS_ENABLED" == "1" ]]; then
-        sudo steamos-readonly enable
+        sudo steamos-readonly enable >/dev/null 2>&1 || true
         RO_WAS_ENABLED=0
     fi
 }
@@ -21,7 +21,7 @@ restore_readonly()
 trap restore_readonly EXIT
 
 if ! command -v podman >/dev/null 2>&1; then
-    log "Podman is not installed; installing build-container runtime..."
+    log "Installing Podman for NVIDIA development builds..."
 
     if command -v steamos-readonly >/dev/null 2>&1 &&
        steamos-readonly status 2>/dev/null | grep -qi enabled; then
@@ -33,23 +33,27 @@ if ! command -v podman >/dev/null 2>&1; then
 fi
 
 need_cmd podman
+need_cmd realpath
 
 GRAPH_ROOT="$(podman info --format "{{.Store.GraphRoot}}" 2>/dev/null || true)"
+[[ -n "$GRAPH_ROOT" ]] || die "Could not determine Podman storage directory."
 
-[[ -n "$GRAPH_ROOT" ]] ||
-    die "Could not determine Podman storage location."
+GRAPH_REAL="$(realpath -m "$GRAPH_ROOT")"
+HOME_REAL="$(realpath -m "$HOME")"
 
-case "$(realpath -m "$GRAPH_ROOT")" in
-    "$(realpath -m "$HOME")"/*)
-        ;;
+case "$GRAPH_REAL" in
+    "$HOME_REAL"/*) ;;
     *)
-        die "Refusing build environment: Podman storage is not under /home: ${GRAPH_ROOT}"
+        die "Refusing development build: Podman storage is outside /home: ${GRAPH_ROOT}"
         ;;
 esac
 
 log "Podman storage: ${GRAPH_ROOT}"
-log "Preparing Fedora build environment: ${NVIDIA_BUILD_IMAGE}"
+log "Preparing Fedora build image: ${NVIDIA_BUILD_IMAGE}"
 
 podman pull "$NVIDIA_BUILD_IMAGE"
 
-ok "Fedora build environment ready."
+restore_readonly
+trap - EXIT
+
+ok "Fedora NVIDIA build environment ready."
