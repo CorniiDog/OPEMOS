@@ -121,12 +121,8 @@ podman run \
         printf "Downloading headers...\n"
 
         mkdir -p /kernel-root
-        HEADER_CACHE_DIR="${HOME}/.cache/${PROJECT_NAME}/headers"
-        mkdir -p "$HEADER_CACHE_DIR"
-        HEADER_ARCHIVE="${HEADER_CACHE_DIR}/${HEADERS_FILENAME}"
-
-        curl -fL "$HEADER_URL" -o "$HEADER_ARCHIVE"
-        bsdtar -xf "$HEADER_ARCHIVE" -C /kernel-root
+        curl -fL "$HEADER_URL" -o "/tmp/$HEADERS_FILENAME"
+        bsdtar -xf "/tmp/$HEADERS_FILENAME" -C /kernel-root
 
         KERNEL_TREE="/kernel-root/usr/lib/modules/$TARGET_KERNEL/build"
 

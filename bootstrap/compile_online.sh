@@ -53,7 +53,8 @@ printf '[open-gpu-kernel-modules-steamos-support] Source branch: %s\n' "$SOURCE_
 SUPPORT_REV="$(git ls-remote "https://github.com/${SUPPORT_REPO}.git" "refs/heads/${SUPPORT_BRANCH}" | awk 'NR==1 {print $1}')"
 [[ "$SUPPORT_REV" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "Could not resolve support revision." >&2; exit 1; }
 
-TMP="$(project_mktemp_dir compile-online)"
+mkdir -p "${HOME}/.cache/open-gpu-kernel-modules-steamos-support"
+TMP="$(mktemp -d "${HOME}/.cache/open-gpu-kernel-modules-steamos-support/compile-online.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
 
 git clone --quiet --depth 1 "https://github.com/${SUPPORT_REPO}.git" "$TMP/support"

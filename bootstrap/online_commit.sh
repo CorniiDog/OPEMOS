@@ -11,7 +11,8 @@ command -v curl >/dev/null 2>&1 || { echo "ERROR: curl is required." >&2; exit 1
 REV="$(git ls-remote "$SUPPORT_REPO" refs/heads/main | awk 'NR == 1 { print $1 }')"
 [[ -n "$REV" ]] || { echo "ERROR: Could not resolve support repository main branch." >&2; exit 1; }
 
-TMP="$(project_mktemp_dir online-commit)"
+mkdir -p "${HOME}/.cache/open-gpu-kernel-modules-steamos-support"
+TMP="$(mktemp -d "${HOME}/.cache/open-gpu-kernel-modules-steamos-support/online-commit.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
 
 mkdir -p "$TMP/lib"

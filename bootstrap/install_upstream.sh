@@ -6,12 +6,17 @@ SUPPORT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 source "${SUPPORT_ROOT}/lib/common.sh"
 
 YES=0
+BUILD_ONLY=0
 NVIDIA_VERSION=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -y|--yes)
             YES=1
+            shift
+            ;;
+        --build-only)
+            BUILD_ONLY=1
             shift
             ;;
         *)
@@ -80,7 +85,13 @@ printf "[%s]   Project fixes: NOT APPLIED\n" "$PROJECT_NAME"
 printf "\n"
 
 if [[ "$YES" != "1" ]]; then
-    read -r -p "[$PROJECT_NAME] Build and install pristine upstream modules? [y/N]: " REPLY
+    if [[ "$BUILD_ONLY" == "1" ]]; then
+        PROMPT="Build pristine upstream modules without installing them?"
+    else
+        PROMPT="Build and install pristine upstream modules?"
+    fi
+
+    read -r -p "[$PROJECT_NAME] ${PROMPT} [y/N]: " REPLY
     case "$REPLY" in
         y|Y|yes|YES|Yes) ;;
         *) die "Cancelled." ;;
@@ -92,7 +103,7 @@ mkdir -p "$STATE_DIR"
 STATE_BACKUP=""
 if [[ -f "$STATE_FILE" ]]; then
     mkdir -p "${HOME}/.cache/${PROJECT_NAME}"
-STATE_BACKUP="$(project_mktemp_file upstream-state)"
+    STATE_BACKUP="$(project_mktemp_file upstream-state)"
     cp "$STATE_FILE" "$STATE_BACKUP"
 fi
 
@@ -122,9 +133,6 @@ upstream_version=${NVIDIA_VERSION}
 upstream_commit=${UPSTREAM_COMMIT}
 source_provider=upstream
 EOF
-
-log "Preparing Fedora build environment..."
-"${SCRIPT_DIR}/setup_build_env.sh"
 
 log "Preparing Fedora build environment..."
 "${SCRIPT_DIR}/setup_build_env.sh"
@@ -169,6 +177,27 @@ CHECKSUM="${ARCHIVE}.sha256"
 
 tar -C "$PACKAGE_DIR" -czf "$ARCHIVE" modules BUILD-INFO.txt
 sha256sum "$ARCHIVE" > "$CHECKSUM"
+
+if [[ "$BUILD_ONLY" == "1" ]]; then
+    OUTPUT_DIR="${HOME}/.cache/${PROJECT_NAME}/upstream-builds"
+    mkdir -p "$OUTPUT_DIR"
+
+    OUTPUT_ARCHIVE="${OUTPUT_DIR}/$(basename "$ARCHIVE")"
+    OUTPUT_CHECKSUM="${OUTPUT_ARCHIVE}.sha256"
+
+    cp "$ARCHIVE" "$OUTPUT_ARCHIVE"
+    OUTPUT_SHA="$(sha256sum "$OUTPUT_ARCHIVE" | awk '{print $1}')"
+    printf '%s  %s\n' \
+        "$OUTPUT_SHA" \
+        "$(basename "$OUTPUT_ARCHIVE")" \
+        > "$OUTPUT_CHECKSUM"
+
+    ok "Pristine upstream NVIDIA ${NVIDIA_VERSION} modules built."
+    printf "[%s] Archive:  %s\n" "$PROJECT_NAME" "$OUTPUT_ARCHIVE"
+    printf "[%s] Checksum: %s\n" "$PROJECT_NAME" "$OUTPUT_CHECKSUM"
+    warn "Modules were NOT installed."
+    exit 0
+fi
 
 ARGS=(--archive "$ARCHIVE" --checksum "$CHECKSUM")
 [[ "$YES" == "1" ]] && ARGS+=(-y)

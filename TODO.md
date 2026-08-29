@@ -1,0 +1,963 @@
+Below is the consolidated project checklist based on our work so far. I’m treating the current repository state and the latest tests as authoritative where they supersede earlier failures.
+
+# SteamOS NVIDIA Open Kernel Module Support — Master Checklist
+
+## 1. Core project architecture
+
+* [x] Keep the support/build/install tooling in:
+
+  * `CorniiDog/open-gpu-kernel-modules-steamos-support`
+* [x] Keep NVIDIA source history/patch branches in:
+
+  * `CorniiDog/open-gpu-kernel-modules-steamos`
+* [x] Use NVIDIA upstream as the pristine source baseline:
+
+  * `NVIDIA/open-gpu-kernel-modules`
+* [x] Maintain the known-good 575 source branch:
+
+  * `nvidia/575.64.05`
+* [x] Preserve the known-good SteamOS 3.8.16 / NVIDIA 575.64.05 release.
+* [x] Separate production/certified behavior from development behavior.
+* [x] Separate pristine-upstream testing from patched-project testing.
+* [ ] Document that architecture clearly in the README.
+* [ ] Document which repository owns:
+
+  * source history,
+  * patches,
+  * builds,
+  * releases,
+  * userspace setup,
+  * module installation.
+
+---
+
+# 2. Known-good 575.64.05 baseline
+
+* [x] Build NVIDIA open kernel modules for SteamOS 3.8.16.
+* [x] Build against:
+
+  * `6.16.12-valve24.5-1-neptune-616-gb2f7cfe85e45`
+* [x] Produce all five NVIDIA modules:
+
+  * `nvidia.ko`
+  * `nvidia-drm.ko`
+  * `nvidia-modeset.ko`
+  * `nvidia-peermem.ko`
+  * `nvidia-uvm.ko`
+* [x] Verify exact kernel vermagic.
+* [x] Verify NVIDIA 575.64.05 runtime.
+* [x] Verify `/proc/driver/nvidia/version`.
+* [x] Verify `modinfo` points to project-installed modules.
+* [x] Verify Gamescope/Xwayland actually use the RTX 2060.
+* [x] Verify Gaming Mode works with the project modules.
+* [x] Verify no NVIDIA Xid failures in that working state.
+* [x] Publish known-good 575 release:
+
+  * `steamos-3.8.16-nvidia-575.64.05-k6.16.12-valve24.5-1-neptune-616-gb2f7cfe85e45`
+* [x] Preserve backward compatibility with that release format.
+* [ ] Re-test the 575 production release after all installer changes.
+* [ ] Verify the new compressed-install logic can consume the old raw-`.ko` 575 release.
+* [ ] Verify idempotency against the old 575 release.
+
+---
+
+# 3. NVIDIA 580.119.02 pristine-upstream baseline
+
+## Resolution
+
+* [x] Implement explicit pristine-upstream development mode.
+* [x] Resolve:
+
+  * `--use-upstream 580`
+  * to `580.119.02`
+* [x] Resolve matching NVIDIA userspace packages:
+
+  * `nvidia-utils-580.119.02-1-x86_64.pkg.tar.zst`
+  * `lib32-nvidia-utils-580.119.02-1-x86_64.pkg.tar.zst`
+* [x] Display:
+
+  * `Selection mode: upstream-development`
+  * `Reference: upstream:580`
+
+## Source/build
+
+* [x] Fetch exact NVIDIA upstream tag.
+* [x] Resolve exact upstream commit.
+* [x] Checkout pristine source detached at that commit.
+* [x] Verify `version.mk` matches requested NVIDIA version.
+* [x] Support detached HEAD builds for pristine upstream.
+* [x] Build all five 580.119.02 modules against the current Neptune kernel.
+* [x] Treat objtool `naked return ... MITIGATION_RETHUNK` messages as nonfatal.
+* [x] Treat missing `MODULE_DESCRIPTION` MODPOST warnings as nonfatal.
+* [x] Verify exact vermagic.
+
+## Runtime
+
+* [x] Install pristine upstream 580.119.02 modules.
+* [x] Boot successfully.
+* [x] Verify:
+
+  * `nvidia-smi` = 580.119.02
+  * kernel module version = 580.119.02
+  * `/proc/driver/nvidia/version` = open kernel module 580.119.02
+* [x] Verify Gamescope is using the RTX 2060.
+* [x] Verify Xwayland/Steam/Mangoapp processes use the GPU.
+* [x] Verify installed path:
+
+  * `/lib/modules/.../updates/open-gpu-kernel-modules-steamos/nvidia.ko.zst`
+* [x] Verify no NVIDIA `NVRM: Xid` faults.
+* [x] Distinguish the Realtek `XID 541` line from NVIDIA Xid faults.
+* [x] Establish 580.119.02 pristine upstream as the control case.
+* [x] Accept that graphics bugs may still exist in this control case.
+* [ ] Preserve a reproducible 580 pristine build artifact for regression testing.
+* [ ] Add automated comparison between pristine-upstream and project-patched 580 builds.
+
+---
+
+# 4. Resolver modes
+
+## Certified production
+
+* [x] Normal invocation resolves published project releases.
+* [x] `./bootstrap/setup_nvidia.sh --resolve-only`
+* [x] Current result:
+
+  * SteamOS 3.8.16
+  * kernel exact match
+  * NVIDIA 575.64.05
+  * `Selection mode: certified`
+* [x] Production mode remains anchored to the published known-good project release.
+
+## Development mode
+
+* [x] Rename confusing `--driver` flag.
+* [x] New name:
+
+  * `--development`
+* [x] `--development 580 --resolve-only` resolves 580.119.02.
+* [x] Change reference from:
+
+  * `explicit:580`
+  * to `development:580`
+* [x] Change selection label from:
+
+  * `explicit`
+  * to `development`
+* [x] Keep development mode distinct from pristine-upstream mode.
+* [ ] Make runtime output more self-documenting.
+* [ ] Explicitly print what development mode does to kernel modules.
+* [ ] Explicitly print that it is intended for project/patched-module development.
+
+## Upstream development
+
+* [x] `--use-upstream 580`
+* [x] Resolve newest matching 580.x userspace.
+* [x] Fetch pristine upstream source.
+* [x] Build pristine modules.
+* [x] Install pristine modules.
+* [x] Mark:
+
+  * `source_provider=upstream`
+  * `project_patches=0`
+* [ ] Add polished `--help` descriptions for all modes.
+
+## Mode semantics target
+
+* [x] Normal:
+
+  * certified project release.
+* [x] `--development VERSION`:
+
+  * development/userspace selection for project work.
+* [x] `--use-upstream VERSION`:
+
+  * pristine upstream control build.
+* [ ] Document all three side by side in README.
+
+---
+
+# 5. SteamOS root filesystem storage problem
+
+## Discovery
+
+* [x] Determine root filesystem is only about 5 GiB.
+* [x] Determine `/var` is a separate tiny partition.
+* [x] Determine `/home` has hundreds of GiB available.
+* [x] Determine moving files from `/var` does **not** free `/`.
+* [x] Determine `/usr/lib/modules` consumes root filesystem space.
+* [x] Identify raw project NVIDIA modules were approximately 111 MiB.
+* [x] Identify compressed modules are approximately 30 MiB.
+* [x] Treat `df /` as authoritative for available root capacity.
+
+## Backups
+
+* [x] Move old installer backups from `/var` to `/home`.
+* [x] Preserve old backups rather than deleting them.
+* [x] Recreate empty state backup directory under `/var`.
+* [x] Change new transactional backups to `$HOME/.cache/...`.
+* [ ] Decide long-term cleanup/retention policy for old backups.
+* [ ] Possibly cap number/age of retained backup generations.
+
+---
+
+# 6. Module compression
+
+* [x] Require `zstd` in the installer.
+* [x] Compress built raw `.ko` modules before copying them to `/usr`.
+* [x] Install as `.ko.zst`.
+* [x] Verify SteamOS/kmod resolves compressed modules correctly.
+* [x] Reduce installed module footprint from roughly 111 MiB to roughly 30 MiB.
+* [x] Successfully boot compressed modules.
+* [x] Verify `modinfo` resolves compressed project modules.
+* [ ] Audit every script for assumptions that installed modules end in `.ko`.
+* [ ] Test compressed release archives if future release packaging moves to `.ko.zst`.
+* [ ] Decide whether release archives themselves remain raw `.ko` or become compressed.
+
+---
+
+# 7. Installer root-space preflight
+
+* [x] Stage install data on `/home`.
+* [x] Calculate size of new module set.
+* [x] Calculate available target-filesystem bytes.
+* [x] Calculate reclaimable bytes from existing target directory.
+* [x] Add 64 MiB safety reserve.
+* [x] Evaluate:
+
+  * `effective = available + reclaimable`
+  * `required = new + safety`
+* [x] Refuse installation if effective space is insufficient.
+* [x] Account for replacement of the existing project module directory.
+* [x] Successfully install 580 with the new preflight logic.
+* [ ] Add a test for deliberately insufficient root space.
+* [ ] Make preflight output especially clear when replacement space is what makes installation possible.
+
+---
+
+# 8. Temporary storage policy
+
+## Common helpers
+
+* [x] Add `project_cache_root()`.
+* [x] Add `project_mktemp_dir()`.
+* [x] Add `project_mktemp_file()`.
+* [x] Default project work storage to:
+
+  * `$HOME/.cache/open-gpu-kernel-modules-steamos-support`
+* [x] Use helpers in scripts that already source `common.sh`.
+
+## Converted scripts
+
+* [x] `compile.sh`
+* [x] `install.sh`
+* [x] `install_upstream.sh`
+* [x] `setup_nvidia.sh`
+
+## Bootstrap script issue discovered
+
+* [x] Notice online bootstrap scripts cannot use `project_mktemp_dir` before downloading/sourcing `common.sh`.
+* [x] Fix `online_install.sh` to create its bootstrap temp directory directly under `$HOME/.cache/...`.
+* [x] Fix `compile_online.sh`.
+* [x] Fix `online_commit.sh`.
+* [x] Fix `online_dev.sh`.
+* [x] Audit helper call ordering.
+* [x] Verify every remaining `project_mktemp_*` call occurs after `common.sh` is sourced.
+
+## Container `/tmp` distinction
+
+* [x] Initially change build header download away from `/tmp`.
+* [x] Discover this was incorrect because the header logic runs **inside the Fedora build container**.
+* [x] Observe failure:
+
+  * `PROJECT_NAME: unbound variable`
+* [x] Determine container `/tmp` is backed by rootless Podman graph storage under `/home`.
+* [ ] **Currently pending:** revert the `build.sh` header archive back to container `/tmp`.
+* [ ] Re-run syntax validation after revert.
+* [ ] Re-run temp audit and explicitly allow the container `/tmp` usage.
+* [ ] Add a comment explaining why container `/tmp` is intentional so it is not “fixed” again later.
+
+---
+
+# 9. Fedora/rootless Podman build environment
+
+* [x] Add `setup_build_env.sh`.
+* [x] Detect missing native SteamOS kernel build environment.
+* [x] Use Fedora container for build environment.
+* [x] Install/pull required build tooling.
+* [x] Verify rootless Podman GraphRoot is under `/home`.
+* [x] Avoid filling the tiny SteamOS root filesystem with container layers.
+* [x] Resolve SteamOS Neptune header package.
+* [x] Find exact Valve header package for current kernel.
+* [x] Download/extract headers inside build container.
+* [x] Build NVIDIA modules against exact Neptune kernel headers.
+* [x] Pin/record immutable container digest during successful build.
+* [ ] Revisit `pacman -Sy --needed --noconfirm podman` partial-upgrade risk.
+* [ ] Potentially avoid host package mutation entirely if a safer SteamOS-compatible approach exists.
+* [ ] Cache header package efficiently inside container/build storage.
+* [ ] Reduce giant Fedora dependency-install verbosity if desired.
+* [ ] Fix grep warning:
+
+  * `grep: warning: stray \ before "`
+* [ ] Audit Valve repository discovery regex.
+* [ ] Cache build environment so repeated builds do not repeatedly install hundreds of packages unnecessarily.
+
+---
+
+# 10. `build.sh`
+
+* [x] Build all five NVIDIA open kernel modules.
+* [x] Verify vermagic.
+* [x] Work with detached HEAD upstream source.
+* [x] Use Fedora build environment when needed.
+* [x] Record build-container information.
+* [ ] Revert header download to container `/tmp`.
+* [ ] Add comment explaining `/tmp` is container-local.
+* [ ] Audit duplicate/environment setup logic between callers and `build.sh`.
+* [ ] Decide whether `build.sh` itself or callers own environment preparation.
+* [ ] Ensure headers are reused between builds where safe.
+* [ ] Verify no host-root temp writes remain for large data.
+
+---
+
+# 11. `install_upstream.sh`
+
+## Existing working behavior
+
+* [x] Require exact NVIDIA version.
+* [x] Verify installed NVIDIA userspace matches requested exact version.
+* [x] Clone/fetch upstream source.
+* [x] Checkout exact tag/commit detached.
+* [x] Verify source version.
+* [x] Build pristine modules.
+* [x] Package modules and BUILD-INFO.
+* [x] Call trusted `install.sh`.
+* [x] Preserve/restore state file.
+* [x] Move upstream work directory into `/home` cache.
+* [x] Move state backup into `/home` cache.
+* [x] Request sudo privileges early.
+
+## Bugs found
+
+* [x] Discover duplicate:
+
+  * `setup_build_env.sh`
+  * `setup_build_env.sh`
+* [x] Plan/remove one duplicate call.
+* [x] Notice indentation regression around `STATE_BACKUP`.
+* [x] Plan/fix indentation.
+
+## Build-only mode
+
+* [x] Design `--build-only`.
+* [x] Add `BUILD_ONLY` state.
+* [x] Add argument parsing.
+* [x] Make confirmation text distinguish build-only from install.
+* [x] Persist build-only artifact under:
+
+  * `~/.cache/open-gpu-kernel-modules-steamos-support/upstream-builds`
+* [x] Ensure build-only exits before `install.sh`.
+* [x] Print artifact/checksum paths.
+* [ ] **Current blocker:** build-only test failed because `build.sh` used `${PROJECT_NAME}` inside the Fedora container.
+* [ ] Revert container header path.
+* [ ] Retry:
+
+  * `./bootstrap/install_upstream.sh --build-only 580.119.02`
+* [ ] Confirm archive persists after cleanup trap.
+* [ ] Confirm checksum persists.
+* [ ] Confirm installed modules are completely untouched by `--build-only`.
+* [ ] Add actual `--help` handling.
+* [ ] Add usage text documenting positional version and `--build-only`.
+
+---
+
+# 12. `install.sh` transactional installer
+
+## Validation
+
+* [x] Validate archive checksum.
+* [x] Validate tar traversal safety.
+* [x] Require BUILD-INFO.
+* [x] Validate SteamOS version.
+* [x] Validate kernel exactness.
+* [x] Validate NVIDIA exactness.
+* [x] Support explicit fuzzy SteamOS install where intended.
+* [x] Validate module vermagic.
+* [x] Validate module NVIDIA version.
+* [x] Handle `/lib` versus `/usr/lib` canonicalization.
+* [x] Run `depmod`.
+* [x] Rebuild initramfs.
+* [x] Write installation state.
+* [x] Restore SteamOS read-only state.
+
+## Storage redesign
+
+* [x] Extract archive under `/home`.
+* [x] Stage compressed modules under `/home`.
+* [x] Back up existing installation under `/home`.
+* [x] Avoid root-owned cache staging.
+* [x] Compress modules before target replacement.
+* [x] Add replacement-aware root-space preflight.
+* [x] Successfully install 580 with this architecture.
+
+## Transaction safety
+
+* [x] Track whether target directory was touched.
+* [x] Maintain rollback mechanism.
+* [x] Restore read-only filesystem state on cleanup.
+* [ ] Audit rollback after all backup-location and compression changes.
+* [ ] Explicitly test forced failure after old target removal.
+* [ ] Explicitly test forced failure midway through copy.
+* [ ] Verify rollback restores compressed/raw state correctly.
+* [ ] Verify state metadata rollback.
+* [ ] Verify initramfs consistency after rollback.
+* [ ] Verify no orphaned stage directories remain.
+* [ ] Consider checksum verification after final target copy.
+* [ ] Consider fsync/durability if you want stronger transactional guarantees.
+
+---
+
+# 13. Online installer idempotency
+
+## Old behavior
+
+* [x] `already_installed()` existed.
+* [x] Validate archive SHA.
+* [x] Validate archive traversal.
+* [x] Extract archive into check directory.
+* [x] Compare BUILD-INFO against installed state.
+* [x] Verify `modinfo -n nvidia` resolves into project target.
+* [x] Hash archive modules versus installed modules.
+* [x] Fast path:
+
+  * `Already installed, healthy, and current.`
+  * `Nothing to do.`
+* [x] Avoid unnecessary initramfs rebuild/reboot when nothing changed.
+
+## Compression bug
+
+* [x] Discover old code assumed:
+
+  * archive `*.ko`
+  * installed `*.ko`
+* [x] Recognize installed modules are now `*.ko.zst`.
+* [x] Add `zstd` requirement.
+* [x] Add `modinfo` requirement.
+* [x] Add `realpath` requirement.
+* [x] Add `module_content_sha256()`.
+* [x] Hash raw `.ko` directly.
+* [x] Decompress `.ko.zst` to stdout before hashing.
+* [x] Make comparison independent of storage compression.
+* [x] Allow archive side to be `.ko` or `.ko.zst`.
+* [x] Allow installed side to be `.ko` or `.ko.zst`.
+* [x] Normalize basename by removing `.zst`.
+* [x] Prefer installed `.ko.zst`, fall back to `.ko`.
+* [x] Add `checked_modules` counter.
+* [x] Reject empty `modules/` directory.
+* [x] Syntax-check new logic.
+* [x] `git diff --check` new logic.
+* [ ] Build exact 580 pristine package again.
+* [ ] Run `online_install.sh --local` against that exact package.
+* [ ] Verify healthy compressed installation hits idempotent fast path.
+* [ ] Verify no module replacement occurs.
+* [ ] Verify no `mkinitcpio`.
+* [ ] Verify no reboot prompt.
+* [ ] Verify a deliberately modified installed module causes repair path.
+* [ ] Verify a deliberately altered BUILD-INFO causes repair path.
+* [ ] Verify an invalid checksum causes failure.
+* [ ] Verify raw archive ↔ compressed installed comparison with old 575 release.
+* [ ] Verify compressed archive ↔ compressed installed comparison if future releases use compressed archives.
+* [ ] Verify exactly five expected NVIDIA modules are present, rather than merely “at least one,” if we want stronger health checking.
+
+---
+
+# 14. Online/bootstrap entry points
+
+* [x] Identify scripts that bootstrap before `common.sh` exists.
+* [x] `online_install.sh`
+* [x] `compile_online.sh`
+* [x] `online_commit.sh`
+* [x] `online_dev.sh`
+* [x] Do not call common helper functions before downloading/cloning support repo.
+* [x] Give these scripts direct cache-root temp creation.
+* [x] Keep temp storage on `/home`.
+* [ ] Add a small comment in each explaining why it does not use `project_mktemp_dir`.
+* [ ] Test each script from a shell where the repo is not already sourced.
+* [ ] Test scripts via their intended remote/raw invocation, not only from the local checkout.
+
+---
+
+# 15. `setup_nvidia.sh`
+
+## Resolver
+
+* [x] Resolve certified releases.
+* [x] Resolve explicit development branch/version prefix.
+* [x] Resolve pristine upstream branch/version prefix.
+* [x] Resolve exact `nvidia-utils`.
+* [x] Resolve exact `lib32-nvidia-utils`.
+* [x] Verify all three `--resolve-only` paths.
+
+## Naming
+
+* [x] Rename `--driver` → `--development`.
+* [x] Rename `explicit:` → `development:`.
+* [x] Rename selection display → `development`.
+* [ ] Rename remaining internal variables such as `DRIVER_SPEC` if desired.
+* [ ] Add comments explaining mode responsibilities.
+
+## Userspace/integration
+
+* [x] Successfully install 580.119.02 NVIDIA userspace.
+* [x] Keep userspace and kernel module exact-version matching.
+* [x] Configure NVIDIA DRM modeset/fbdev environment.
+* [ ] Audit fresh-machine prerequisites.
+* [ ] Audit all `/opt` development behavior and clarify its ownership.
+* [ ] Explicitly document what `--development` places under `/opt`, if applicable.
+* [ ] Verify `--development` never silently installs pristine upstream modules.
+* [ ] Verify normal mode never silently falls back to upstream.
+* [ ] Verify userspace downgrade/upgrade behavior.
+* [ ] Verify partially installed NVIDIA userspace recovery.
+
+---
+
+# 16. Sudo/password UX
+
+* [x] Add early:
+
+  * `sudo -v`
+  * to upstream install workflow.
+* [x] Explain that no password prompt can occur if sudo credential timestamp is already cached.
+* [ ] Decide whether top-level `setup_nvidia.sh` should request privileges immediately.
+* [ ] Decide whether long builds need sudo timestamp keepalive.
+* [ ] Avoid nested scripts prompting repeatedly.
+* [ ] Keep privilege boundaries clear.
+* [ ] Test from a cold sudo timestamp.
+* [ ] Test after sudo timestamp expires during a long build.
+
+---
+
+# 17. Reboot ownership
+
+Desired design:
+
+* [x] Avoid automatic reboot from low-level installer.
+* [x] Allow caller to own user-facing reboot behavior.
+* [x] Current upstream flow successfully completed without automatic reboot.
+* [ ] Audit current scripts to confirm no duplicate reboot prompts.
+* [ ] Make `setup_nvidia.sh` default to no reboot prompt.
+* [ ] Potentially support explicit `--offer-reboot` for standalone dev use.
+* [ ] `install_upstream.sh` should not independently own reboot prompting.
+* [ ] `online_install.sh` should own normal production reboot prompt.
+* [ ] Confirm idempotent install never offers reboot.
+* [ ] Confirm changed install offers reboot exactly once.
+
+---
+
+# 18. Uninstall
+
+* [x] Remove project target directory.
+* [x] Run `depmod`.
+* [x] Resolve fallback NVIDIA module after removal.
+* [x] Preserve fallback DKMS modules.
+* [x] Rebuild initramfs.
+* [x] Restore read-only filesystem.
+* [ ] Re-test uninstall with `.ko.zst` project installation.
+* [ ] Verify fallback resolves correctly after 580 project modules.
+* [ ] Verify uninstall after failed/partial transaction.
+* [ ] Verify uninstall does not remove unrelated NVIDIA files.
+* [ ] Verify reinstall after uninstall.
+
+---
+
+# 19. SteamOS read-only filesystem handling
+
+* [x] Detect/handle SteamOS read-only mode.
+* [x] Disable when required for system modifications.
+* [x] Restore afterward.
+* [x] Verify current system returned to:
+
+  * `steamos-readonly status: enabled`
+* [ ] Test cleanup path if script receives SIGINT.
+* [ ] Test cleanup path on build/install failure.
+* [ ] Test cleanup path on checksum failure.
+* [ ] Test cleanup path after target replacement.
+* [ ] Ensure every script that disables readonly reliably restores it.
+
+---
+
+# 20. Release metadata / BUILD-INFO
+
+* [x] Record:
+
+  * build time
+  * SteamOS version
+  * kernel version
+  * NVIDIA version
+  * source repository
+  * source branch
+  * source commit
+  * dirty state
+  * upstream commit
+  * support repository
+  * source provider
+  * project patch state
+* [x] Upstream build records:
+
+  * `source_provider=upstream`
+  * `project_patches=0`
+* [x] Persist installed BUILD-INFO.
+* [ ] Ensure `support_commit` is populated rather than `unknown` during normal builds.
+* [ ] Add build container digest to all relevant BUILD-INFO variants if not already consistent.
+* [ ] Add release-schema version.
+* [ ] Consider module SHA entries in BUILD-INFO.
+* [ ] Consider explicit patch-series identifier.
+* [ ] Consider `gamescope` version/build metadata for reproducibility.
+
+---
+
+# 21. Build/release reproducibility
+
+* [x] Exact SteamOS version recorded.
+* [x] Exact kernel recorded.
+* [x] Exact NVIDIA version recorded.
+* [x] Exact upstream NVIDIA commit recorded.
+* [x] Build container digest determined during compile.
+* [x] Exact Valve kernel header package found.
+* [ ] Record exact header package URL/repository in BUILD-INFO.
+* [ ] Record exact header package SHA256.
+* [ ] Record support repo commit correctly.
+* [ ] Record compiler/GCC version.
+* [ ] Record binutils version.
+* [ ] Record make version.
+* [ ] Record build flags/environment.
+* [ ] Make pristine 580 build bit-for-bit reproducible where feasible.
+* [ ] Distinguish deterministic source identity from potentially nondeterministic binary output.
+
+---
+
+# 22. Release selection / SteamOS compatibility
+
+* [x] Exact release preferred.
+* [x] Same SteamOS major/minor bounded fallback concept implemented.
+* [x] Avoid arbitrary cross-version fallback.
+* [x] Require exact kernel when selecting published module artifacts.
+* [x] Normal resolver correctly chooses SteamOS 3.8.16 575 release.
+* [ ] Revisit fuzzy release ranking logic.
+* [ ] Explicitly test:
+
+  * 3.8.15
+  * 3.8.16
+  * 3.8.17
+  * 3.8.18
+* [ ] Verify desired behavior:
+
+  * e.g. 3.8.17 chooses appropriate existing 3.8.x release according to policy.
+* [ ] Ensure no old-kernel artifact can be installed after SteamOS kernel update.
+* [ ] Improve resolver diagnostics when no compatible release exists.
+
+---
+
+# 23. SteamOS updates / persistence
+
+This is still a major future area.
+
+* [ ] Determine what happens to project modules after an A/B SteamOS update.
+* [ ] Detect new active SteamOS slot/kernel.
+* [ ] Detect that existing module release targets old kernel.
+* [ ] Select/build/install exact matching module for new kernel.
+* [ ] Never copy old-kernel module into new kernel tree.
+* [ ] Determine proper SteamOS update hook mechanism.
+* [ ] Avoid polling if a reliable lifecycle hook exists.
+* [ ] Preserve NVIDIA userspace compatibility across updates.
+* [ ] Preserve project configuration across A/B slot switches.
+* [ ] Test upgrade from one 3.8.x kernel to another.
+* [ ] Test rollback to previous SteamOS slot.
+* [ ] Test missing release for new kernel.
+* [ ] Provide safe fallback behavior if no compatible project build exists.
+
+---
+
+# 24. Fresh-stock installation
+
+This still needs an end-to-end test.
+
+* [ ] Start from stock SteamOS with no project files.
+* [ ] Start from stock SteamOS NVIDIA-incompatible/unsupported state.
+* [ ] Run intended one-line online installer.
+* [ ] Resolve correct certified release.
+* [ ] Install correct NVIDIA userspace.
+* [ ] Install exact matching project modules.
+* [ ] Rebuild initramfs.
+* [ ] Reboot once.
+* [ ] Boot directly into Gamescope.
+* [ ] Verify `nvidia-smi`.
+* [ ] Verify `modinfo`.
+* [ ] Verify `/proc/driver/nvidia/version`.
+* [ ] Verify Gamescope uses the GPU.
+* [ ] Verify desktop mode.
+* [ ] Verify Steam Gaming Mode.
+* [ ] Verify no manual recovery steps required.
+* [ ] Verify installer can be run a second time and returns idempotent success.
+* [ ] Verify uninstall restores a usable fallback.
+
+---
+
+# 25. NVIDIA userspace exact-version policy
+
+* [x] Enforce userspace/kernel version alignment.
+* [x] Upstream 580 module install required userspace 580.119.02.
+* [x] Production 575 release resolves userspace 575.64.05.
+* [ ] Test mismatch detection intentionally.
+* [ ] Test installed userspace newer than project module.
+* [ ] Test installed userspace older than project module.
+* [ ] Test broken/incomplete `nvidia-utils`.
+* [ ] Make error messages explain required remediation.
+
+---
+
+# 26. Actual Gamescope / NVIDIA graphics problem
+
+This is the ultimate reason for the project and is **not completed**.
+
+## Already explored
+
+* [x] Establish that NVIDIA SteamOS Gaming Mode can function at all.
+* [x] Establish known-good 575 state.
+* [x] Establish pristine 580 control state.
+* [x] Test Gamescope/NVIDIA-related session changes experimentally.
+* [x] Experiment with:
+
+  * `--generate-drm-mode fixed`
+* [x] Experiment separately with:
+
+  * `--disable-color-management`
+* [x] Inspect DRM connector state with `modetest`.
+* [x] Observe `DP-1` disconnected in relevant test.
+* [x] Distinguish basic driver bring-up from actual rendering/artifact bugs.
+
+## Next graphics debugging work
+
+* [ ] Reproduce the specific 580 graphical bug consistently.
+* [ ] Define exact visual symptom.
+* [ ] Define exact startup sequence that triggers it.
+* [ ] Capture Gamescope logs.
+* [ ] Capture kernel NVIDIA/DRM logs.
+* [ ] Capture Xwayland logs if relevant.
+* [ ] Compare 575 working versus 580 broken.
+* [ ] Compare NVIDIA module source deltas between 575 and 580.
+* [ ] Determine whether issue is:
+
+  * atomic modesetting,
+  * explicit sync,
+  * DRM leases,
+  * color management,
+  * HDR,
+  * VRR,
+  * modifier negotiation,
+  * plane selection,
+  * direct scanout,
+  * cursor plane,
+  * framebuffer,
+  * PRIME,
+  * Wayland/Xwayland synchronization,
+  * Gamescope assumptions.
+* [ ] Identify the smallest reproducible code path.
+* [ ] Patch NVIDIA source branch for 580.
+* [ ] Build patched 580 modules.
+* [ ] Install patched modules using the hardened installer.
+* [ ] Reboot and compare against pristine upstream.
+* [ ] Keep only changes that affect the target bug.
+* [ ] Bisect if necessary.
+* [ ] Create clean patch commits.
+* [ ] Document rationale for each patch.
+* [ ] Publish patched 580 project release once stable.
+* [ ] Verify project patches do not regress known-good behavior.
+
+---
+
+# 27. Gamescope project integration
+
+* [x] Use `gamescope-nvidia` as a reference project for lifecycle/idempotency patterns.
+* [x] Inspect Gamescope source for NVIDIA-specific/debug behavior.
+* [x] Locate `g_bDebugLayers`.
+* [ ] Decide whether NVIDIA kernel-module project needs any Gamescope patch at all.
+* [ ] Prefer fixing the correct layer rather than permanently carrying unrelated Gamescope hacks.
+* [ ] If Gamescope patch is necessary, isolate it as separate project/release concern.
+* [ ] Record Gamescope commit/version used for every successful test.
+* [ ] Test patched NVIDIA modules against stock Gamescope.
+* [ ] Test patched Gamescope against pristine NVIDIA modules to separate causality.
+
+---
+
+# 28. Source branch strategy for 580
+
+* [ ] Create/confirm project source branch:
+
+  * likely `nvidia/580.119.02`
+* [ ] Base it exactly on NVIDIA upstream 580.119.02 tag/commit.
+* [ ] Preserve pristine base commit.
+* [ ] Add project fixes as individual commits.
+* [ ] Avoid squashing away useful bug-history while developing.
+* [ ] Keep release patch set easy to rebase to future NVIDIA versions.
+* [ ] Add source metadata connecting support release → source commit.
+* [ ] Eventually test next 580.x release against the same fixes.
+
+---
+
+# 29. CI / automated checks
+
+* [ ] Run `bash -n` on all shell scripts in CI.
+* [ ] Run `git diff --check`.
+* [ ] ShellCheck where practical.
+* [ ] Test resolver parsing.
+* [ ] Test release-tag parsing.
+* [ ] Test archive traversal rejection.
+* [ ] Test checksum rejection.
+* [ ] Test BUILD-INFO parsing.
+* [ ] Test raw `.ko` idempotency.
+* [ ] Test `.ko.zst` idempotency.
+* [ ] Test empty modules directory rejection.
+* [ ] Test wrong kernel rejection.
+* [ ] Test wrong NVIDIA version rejection.
+* [ ] Test wrong SteamOS version rejection.
+* [ ] Test fuzzy selection.
+* [ ] Test temp-helper bootstrap ordering.
+* [ ] Test all scripts for unbound variables under `set -u`.
+* [ ] Test `--help` exits 0.
+* [ ] Test mutually exclusive arguments.
+* [ ] Test build-only mode.
+* [ ] Potentially mock `modinfo`, `nvidia-smi`, GitHub APIs, etc. for non-destructive tests.
+
+---
+
+# 30. CLI / self-documentation
+
+* [x] Recognize current commands were insufficiently self-commenting.
+* [x] Rename `--driver` to `--development`.
+* [ ] Add proper `usage()` to `install_upstream.sh`.
+* [ ] Make `--help` work everywhere.
+* [ ] Standardize formatting among scripts.
+* [ ] Every mode should explain:
+
+  * purpose,
+  * userspace behavior,
+  * module behavior,
+  * source provider,
+  * whether project fixes are applied.
+* [ ] Add examples:
+
+  * certified install
+  * development selection
+  * pristine upstream baseline
+  * build-only
+  * local artifact install
+  * in-code build/install.
+* [ ] Make destructive operations visibly distinct from resolution/build-only operations.
+* [ ] Use consistent terminology:
+
+  * certified
+  * development
+  * upstream-development
+  * project-patched.
+
+---
+
+# 31. Code cleanup
+
+* [x] Centralize project temp helpers where usable.
+* [ ] Consider common helper for bootstrap cache-root creation.
+* [ ] Avoid duplicating hardcoded project cache path in four online scripts, while still respecting pre-bootstrap limitations.
+* [ ] Audit redundant `mkdir -p "${HOME}/.cache/${PROJECT_NAME}"` calls now helpers do it.
+* [ ] Audit duplicate `setup_build_env.sh` invocation.
+* [ ] Audit unused variables.
+* [ ] Audit stale `DRIVER_*` names after `--development` rename.
+* [ ] Audit comments referring to old mode names.
+* [ ] Audit README for `--driver`.
+* [ ] Audit release/action scripts for old naming.
+* [ ] Audit all direct `/tmp` usages and classify:
+
+  * host `/tmp` → generally avoid for large work.
+  * container `/tmp` → allowed/intended.
+* [ ] Add comments where this distinction matters.
+
+---
+
+# 32. Git / commits
+
+Completed meaningful commit groups include work around:
+
+* [x] Automatic SteamOS kernel build environment.
+* [x] Installer storage hardening.
+* [x] `/home` cache staging.
+* [x] Module compression.
+* [x] Root-space preflight.
+* [x] Upstream-development workflow.
+* [x] Development-mode rename.
+* [x] Temp helper infrastructure.
+
+Still to commit as a clean logical batch after testing:
+
+* [ ] `.ko.zst`-aware online idempotency.
+* [ ] Bootstrap temp-order fixes.
+* [ ] `install_upstream.sh --build-only`.
+* [ ] Duplicate build-env call removal.
+* [ ] Container `/tmp` correction.
+* [ ] Any resulting self-documentation/comments.
+
+Before that commit:
+
+```bash
+for f in bootstrap/*.sh lib/*.sh; do
+    bash -n "$f" || exit 1
+done
+
+git diff --check
+```
+
+---
+
+# 33. Immediate next actions
+
+This is the shortest actionable queue from where we are **right now**:
+
+1. [ ] Revert the erroneous `build.sh` header cache change back to **container `/tmp`**.
+2. [ ] Add a comment explaining why that `/tmp` is intentional.
+3. [ ] Validate all shell scripts.
+4. [ ] Retry:
+
+   ```bash
+   ./bootstrap/install_upstream.sh --build-only 580.119.02
+   ```
+5. [ ] Verify the archive and `.sha256` persist under:
+
+   ```text
+   ~/.cache/open-gpu-kernel-modules-steamos-support/upstream-builds/
+   ```
+6. [ ] Verify `--build-only` did not alter installed 580 modules.
+7. [ ] Feed that archive to:
+
+   ```bash
+   ./bootstrap/online_install.sh --local <archive>
+   ```
+8. [ ] Confirm `.ko.zst` idempotency reports:
+
+   ```text
+   Already installed, healthy, and current.
+   Nothing to do.
+   ```
+9. [ ] Confirm no initramfs rebuild.
+10. [ ] Confirm no reboot prompt.
+11. [ ] Re-test raw 575 archive ↔ compressed installed module compatibility.
+12. [ ] Audit installer rollback with the new `/home` backup/compressed target design.
+13. [ ] Audit sudo/reboot ownership.
+14. [ ] Add proper `--help` / self-documenting output.
+15. [ ] Commit the infrastructure/idempotency/build-only batch.
+16. [ ] Return to the actual **580 Gamescope/NVIDIA graphical bug**.
+17. [ ] Create a patched 580 source branch.
+18. [ ] Reproduce pristine bug → patch → rebuild → install → compare.
+19. [ ] Publish a 580 project release only after the fix is repeatably better than pristine upstream.
+20. [ ] Eventually do a completely fresh-stock SteamOS end-to-end install/update/uninstall test.
+
+## Overall state
+
+The project has crossed the difficult bring-up threshold. **SteamOS 3.8.16 can boot and run Gamescope on the RTX 2060 using pristine NVIDIA 580.119.02 open kernel modules, and the installation architecture now handles SteamOS’s extremely small root filesystem much more sensibly.** What remains is primarily hardening/testing the tooling and then doing the actual version-specific NVIDIA/Gamescope bug work that motivated the project in the first place.

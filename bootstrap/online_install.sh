@@ -52,12 +52,16 @@ need git
 need curl
 need tar
 need sha256sum
+need zstd
+need modinfo
+need realpath
 need python3
 
 SUPPORT_REV="$(git ls-remote "https://github.com/${SUPPORT_REPO}.git" "refs/heads/${SUPPORT_BRANCH}" | awk 'NR==1 {print $1}')"
 [[ "$SUPPORT_REV" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "Could not resolve support revision." >&2; exit 1; }
 
-TMP="$(project_mktemp_dir online-install)"
+mkdir -p "${HOME}/.cache/open-gpu-kernel-modules-steamos-support"
+TMP="$(mktemp -d "${HOME}/.cache/open-gpu-kernel-modules-steamos-support/online-install.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
 
 git clone --quiet --depth 1 "https://github.com/${SUPPORT_REPO}.git" "$TMP/support"
@@ -95,6 +99,25 @@ printf '[%s] NVIDIA:  %s\n' "$PROJECT_NAME" "$NVIDIA_VERSION"
 
 INSTALL_CHANGED=0
 
+# Hash the actual kernel module contents, independent of on-disk compression.
+# Release archives may contain raw .ko files while installed modules use .ko.zst.
+module_content_sha256()
+{
+    local module="$1"
+
+    case "$module" in
+        *.ko.zst)
+            zstd -q -dc -- "$module" | sha256sum | awk '{print $1}'
+            ;;
+        *.ko)
+            sha256sum "$module" | awk '{print $1}'
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 already_installed()
 {
     local archive="$1"
@@ -104,7 +127,8 @@ already_installed()
     local installed_info="${state_root}/installed-build-info.txt"
     local target_dir="/usr/lib/modules/${KERNEL_VERSION}/updates/open-gpu-kernel-modules-steamos"
     local check_dir="${TMP}/installed-check"
-    local resolved resolved_real target_real module installed module_sha installed_sha
+    local resolved resolved_real target_real module module_name installed module_sha installed_sha
+    local checked_modules=0
 
     [[ -f "$installed_info" && -d "$target_dir" ]] || return 1
 
@@ -164,18 +188,29 @@ already_installed()
         *) return 1 ;;
     esac
 
-    for module in "$check_dir"/modules/*.ko; do
+    while IFS= read -r module; do
         [[ -f "$module" ]] || return 1
+        checked_modules=$((checked_modules + 1))
 
-        installed="$target_dir/$(basename "$module")"
-        [[ -f "$installed" ]] || return 1
+        module_name="$(basename "$module")"
+        module_name="${module_name%.zst}"
 
-        module_sha="$(sha256sum "$module" | awk '{print $1}')"
-        installed_sha="$(sha256sum "$installed" | awk '{print $1}')"
+        if [[ -f "$target_dir/${module_name}.zst" ]]; then
+            installed="$target_dir/${module_name}.zst"
+        elif [[ -f "$target_dir/${module_name}" ]]; then
+            installed="$target_dir/${module_name}"
+        else
+            return 1
+        fi
+
+        module_sha="$(module_content_sha256 "$module")" || return 1
+        installed_sha="$(module_content_sha256 "$installed")" || return 1
 
         [[ "$module_sha" == "$installed_sha" ]] ||
             return 1
-    done
+    done < <(find "$check_dir/modules" -maxdepth 1 -type f \( -name '*.ko' -o -name '*.ko.zst' \) -print | sort)
+
+    (( checked_modules > 0 )) || return 1
 
     return 0
 }
