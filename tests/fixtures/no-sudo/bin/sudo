@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+printf 'Unexpected sudo invocation: sudo %s\n' "$*" >&2
+printf 'sudo %s\n' "$*" >> "${SUDO_GUARD_MARKER:?}"
+exit 97

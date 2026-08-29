@@ -29,4 +29,7 @@ jobs:
           fi
 
       - name: Run ShellCheck
-        run: shellcheck --severity=error bootstrap/*.sh lib/*.sh commit_myself.sh tests/*.sh
+        run: >-
+          shellcheck --severity=error
+          bootstrap/*.sh lib/*.sh commit_myself.sh tests/*.sh
+          tests/fixtures/no-sudo/bin/sudo

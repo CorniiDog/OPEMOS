@@ -278,9 +278,10 @@ Below is the consolidated project checklist based on our work so far. I’m trea
 
 ## Cache ownership regression tests
 
-* [ ] Verify project temp and staging directories are owned by the invoking `deck`/user account.
-* [ ] Verify non-root `zstd` can create its output in every project staging directory.
-* [ ] Verify sudo-backed install/uninstall operations leave no root-owned cache files that poison later non-root runs.
+* [x] Verify project temp and staging directories are owned by the invoking `deck`/user account.
+* [x] Verify non-root `zstd` can create and validate output in project staging.
+* [x] Scan the complete current project cache for root/foreign-owned paths that could poison later non-root runs.
+* [ ] Exercise that cache scan immediately after each forced-failure sudo-backed install/uninstall test.
 * [ ] Re-run a build, local validation, and install preflight after a sudo-backed operation to catch ownership regressions.
 
 ---
@@ -319,7 +320,7 @@ Below is the consolidated project checklist based on our work so far. I’m trea
 * [x] Record build-container information.
 * [x] Revert header download to container `/tmp`.
 * [x] Add comment explaining `/tmp` is container-local.
-* [ ] Add an automated detached-HEAD regression test:
+* [x] Add an automated detached-HEAD regression test:
 
   * pristine upstream records/accepts `source_branch=HEAD`,
   * an empty `git branch --show-current` result is treated as detached HEAD,
@@ -674,7 +675,7 @@ Desired design:
 * [x] Avoid arbitrary cross-version fallback.
 * [x] Require exact kernel when selecting published module artifacts.
 * [x] Normal resolver correctly chooses SteamOS 3.8.16 575 release.
-* [ ] Lock the release-selection policy into automated tests:
+* [x] Lock the release-selection policy into automated offline tests:
 
   * exact SteamOS release is preferred,
   * fallback is bounded to the same SteamOS major/minor series,
@@ -861,10 +862,12 @@ This is the ultimate reason for the project and is **not completed**.
 * [ ] Test wrong NVIDIA version rejection.
 * [ ] Test wrong SteamOS version rejection.
 * [ ] Test fuzzy selection.
-* [ ] Test the complete release-selection policy matrix from section 22.
-* [ ] Test detached-HEAD upstream builds, including the empty-branch-name case.
-* [ ] Test cache/stage ownership before and after sudo-backed operations.
-* [ ] Test `--development` and `--use-upstream` mode boundaries without system mutation where possible.
+* [x] Test the release-selection policy matrix from section 22, including exact-kernel rejection.
+* [x] Test detached-HEAD upstream semantics, including the empty-branch-name case.
+* [x] Test current cache/stage ownership and non-root `zstd` operation.
+* [x] Test `--development` and `--use-upstream --resolve-only` boundaries with a failing sudo shim.
+* [ ] Test cache ownership immediately after mocked/forced sudo-backed failure paths.
+* [x] Add a reusable non-sudo pre/post-reinstall baseline report.
 * [x] Test temp-helper bootstrap ordering.
 * [ ] Test all scripts for unbound variables under `set -u`.
 * [x] Test `--help` exits 0.

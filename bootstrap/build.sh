@@ -36,12 +36,12 @@ NEPTUNE_SERIES="$(get_neptune_series "$KERNEL_VERSION")"
 
 CURRENT_BRANCH="$(git -C "$SOURCE_DIR" branch --show-current)"
 
-if [[ "$EXPECTED_BRANCH" == "HEAD" ]]; then
-    [[ -z "$CURRENT_BRANCH" ]] ||
+if ! source_branch_matches_expected "$EXPECTED_BRANCH" "$CURRENT_BRANCH"; then
+    if [[ "$EXPECTED_BRANCH" == "HEAD" ]]; then
         die "Upstream source must be detached HEAD; currently on branch ${CURRENT_BRANCH}."
-else
-    [[ "$CURRENT_BRANCH" == "$EXPECTED_BRANCH" ]] ||
-        die "Source branch is ${CURRENT_BRANCH}; expected ${EXPECTED_BRANCH}."
+    fi
+
+    die "Source branch is ${CURRENT_BRANCH}; expected ${EXPECTED_BRANCH}."
 fi
 
 SOURCE_VERSION="$(sed -n 's/^NVIDIA_VERSION[[:space:]]*=[[:space:]]*//p' "${SOURCE_DIR}/version.mk" | head -n1 | tr -d '[:space:]')"

@@ -124,6 +124,7 @@ need_cmd tar
 
 STEAMOS_VERSION="$(get_steamos_version)"
 KERNEL_VERSION="$(get_kernel_version)"
+KERNEL_TAG="$(sanitize_release_component "$KERNEL_VERSION")"
 
 TMP="$(project_mktemp_dir setup-nvidia)"
 
@@ -192,79 +193,10 @@ resolve_certified_driver()
         -o "$releases" ||
         die "Failed to query published NVIDIA releases."
 
-    python3 -c '
-import json
-import re
-import sys
-
-target, path = sys.argv[1:]
-
-def sv(v):
-    p = [int(x) for x in v.split(".")]
-    while len(p) < 3:
-        p.append(0)
-    return tuple(p[:3])
-
-def nv(v):
-    return tuple(int(x) for x in v.split("."))
-
-target_v = sv(target)
-
-pattern = re.compile(
-    r"^steamos-"
-    r"([0-9]+(?:\.[0-9]+){2})"
-    r"-nvidia-"
-    r"([0-9]+(?:\.[0-9]+){1,2})"
-    r"-k(.+)$"
-)
-
-with open(path, encoding="utf-8") as f:
-    releases = json.load(f)
-
-candidates = []
-
-for release in releases:
-    if release.get("draft") or release.get("prerelease"):
-        continue
-
-    tag = release.get("tag_name", "")
-    m = pattern.match(tag)
-
-    if not m:
-        continue
-
-    steam, nvidia, kernel = m.groups()
-    steam_v = sv(steam)
-
-    # Never cross SteamOS major/minor automatically.
-    if steam_v[:2] != target_v[:2]:
-        continue
-
-    # Fallback may only move backward, never forward.
-    if steam_v > target_v:
-        continue
-
-    candidates.append((
-        steam_v,
-        nv(nvidia),
-        release.get("published_at", ""),
-        steam,
-        nvidia,
-        kernel,
-        tag,
-    ))
-
-if not candidates:
-    raise SystemExit(0)
-
-# Highest non-surpassed SteamOS first.
-# Within it, highest NVIDIA version wins.
-candidates.sort(reverse=True)
-
-_, _, _, steam, nvidia, kernel, tag = candidates[0]
-
-print("\t".join((steam, nvidia, kernel, tag)))
-' "$STEAMOS_VERSION" "$releases"
+    python3 "${SUPPORT_ROOT}/lib/select_release.py" \
+        "$STEAMOS_VERSION" \
+        "$KERNEL_TAG" \
+        "$releases"
 }
 
 SELECTION_MODE=""

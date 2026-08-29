@@ -130,7 +130,7 @@ already_installed()
     local target_dir="/usr/lib/modules/${KERNEL_VERSION}/updates/open-gpu-kernel-modules-steamos"
     local check_dir="${TMP}/installed-check"
     local resolved resolved_real target_real module module_name installed module_sha installed_sha
-    local installed_module_count expected_module
+    local installed_module_count
     local checked_modules=0
     local checked_module_names=()
 
@@ -215,20 +215,7 @@ already_installed()
             return 1
     done < <(find "$check_dir/modules" -maxdepth 1 -type f \( -name '*.ko' -o -name '*.ko.zst' \) -print | sort)
 
-    (( checked_modules > 0 )) || return 1
-
-    (( checked_modules == 5 )) || return 1
-
-    for expected_module in \
-        nvidia-drm.ko \
-        nvidia-modeset.ko \
-        nvidia-peermem.ko \
-        nvidia-uvm.ko \
-        nvidia.ko
-    do
-        [[ " ${checked_module_names[*]} " == *" ${expected_module} "* ]] ||
-            return 1
-    done
+    validate_nvidia_module_set "${checked_module_names[@]}" || return 1
 
     installed_module_count="$(
         find "$target_dir" -maxdepth 1 -type f \

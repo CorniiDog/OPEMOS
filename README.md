@@ -178,3 +178,34 @@ Run the non-destructive repository checks with:
 
 This checks shell syntax, whitespace, local `--help` behavior, mutually
 exclusive resolver modes, terminology, and pre-bootstrap temp-helper ordering.
+
+## Non-sudo reinstall baseline
+
+Run the user-space regression baseline before reinstalling SteamOS:
+
+```bash
+./tests/non_sudo.sh --online \
+    --report "$HOME/.cache/open-gpu-kernel-modules-steamos-support/baselines/pre-reinstall.txt"
+```
+
+The runner places a failing `sudo` shim first in `PATH`, so any unexpected
+privilege request fails the test. It checks cache ownership, non-root `zstd`
+staging, exact module sets, detached-HEAD semantics, certified release policy,
+the cached artifact, the installer validation/cancellation boundary, and all
+three resolver modes. Omit `--online` for a fast offline run.
+
+After reinstalling and cloning the same support commit, run:
+
+```bash
+./tests/non_sudo.sh --online \
+    --report "$HOME/.cache/open-gpu-kernel-modules-steamos-support/baselines/post-reinstall.txt"
+
+diff -u \
+    "$HOME/.cache/open-gpu-kernel-modules-steamos-support/baselines/pre-reinstall.txt" \
+    "$HOME/.cache/open-gpu-kernel-modules-steamos-support/baselines/post-reinstall.txt"
+```
+
+The report is line-oriented `key=value` data. SteamOS/kernel/module differences
+are expected at specific reinstall stages; `result=pass` and
+`sudo_invocations=0` must remain stable. Preserve the pre-reinstall report
+outside `/home` too if the reinstall procedure will erase the home partition.

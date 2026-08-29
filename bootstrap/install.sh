@@ -106,26 +106,7 @@ mapfile -t MODULES < <(
         sort
 )
 
-EXPECTED_MODULES=(
-    nvidia-drm.ko
-    nvidia-modeset.ko
-    nvidia-peermem.ko
-    nvidia-uvm.ko
-    nvidia.ko
-)
-
-(( ${#MODULES[@]} == ${#EXPECTED_MODULES[@]} )) ||
-    die "Release must contain exactly the five expected NVIDIA kernel modules."
-
-ACTUAL_MODULE_NAMES=()
-for module in "${MODULES[@]}"; do
-    module_name="$(basename "$module")"
-    ACTUAL_MODULE_NAMES+=("${module_name%.zst}")
-done
-
-mapfile -t ACTUAL_MODULE_NAMES < <(printf '%s\n' "${ACTUAL_MODULE_NAMES[@]}" | sort)
-
-[[ "${ACTUAL_MODULE_NAMES[*]}" == "${EXPECTED_MODULES[*]}" ]] ||
+validate_nvidia_module_set "${MODULES[@]}" ||
     die "Release module set does not match the five expected NVIDIA modules."
 
 for module in "${MODULES[@]}"; do

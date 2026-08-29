@@ -133,6 +133,42 @@ release_asset()
     printf 'nvidia-open-%s-x86_64.tar.gz\n' "$(release_tag)"
 }
 
+source_branch_matches_expected()
+{
+    local expected_branch="$1"
+    local current_branch="$2"
+
+    if [[ "$expected_branch" == "HEAD" ]]; then
+        [[ -z "$current_branch" ]]
+    else
+        [[ "$current_branch" == "$expected_branch" ]]
+    fi
+}
+
+validate_nvidia_module_set()
+{
+    local module module_name
+    local -A remaining=(
+        [nvidia-drm.ko]=1
+        [nvidia-modeset.ko]=1
+        [nvidia-peermem.ko]=1
+        [nvidia-uvm.ko]=1
+        [nvidia.ko]=1
+    )
+
+    (( $# == ${#remaining[@]} )) || return 1
+
+    for module in "$@"; do
+        module_name="$(basename "$module")"
+        module_name="${module_name%.zst}"
+
+        [[ -n "${remaining[$module_name]:-}" ]] || return 1
+        unset 'remaining[$module_name]'
+    done
+
+    (( ${#remaining[@]} == 0 ))
+}
+
 get_neptune_series()
 {
     local kernel="${1:-$(get_kernel_version)}"
