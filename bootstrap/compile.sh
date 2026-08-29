@@ -33,6 +33,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 need_cmd git
+need_cmd podman
 need_cmd tar
 need_cmd zip
 need_cmd unzip
@@ -40,6 +41,106 @@ need_cmd sha256sum
 need_cmd modinfo
 
 require_steamos
+
+#
+# Upload preflight. Do this before setup/build work so an authentication or
+# repository-state problem does not waste a kernel-module compilation.
+#
+if [[ "$AUTO_UPLOAD" == "1" ]]; then
+    if ! command -v gh >/dev/null 2>&1; then
+        if [[ "$YES" == "1" ]]; then
+            INSTALL_GH_REPLY="y"
+        else
+            echo
+            read -r -p "[${PROJECT_NAME}] GitHub CLI (gh) is not installed. Install it now? [y/N]: " INSTALL_GH_REPLY
+        fi
+
+        case "$INSTALL_GH_REPLY" in
+            y|Y|yes|YES|Yes)
+                need_cmd sudo
+                need_cmd pacman
+
+                GH_READONLY_WAS_ENABLED=0
+
+                if command -v steamos-readonly >/dev/null 2>&1 &&
+                   steamos-readonly status 2>/dev/null | grep -qi enabled; then
+                    log "Disabling SteamOS read-only mode temporarily..."
+                    sudo steamos-readonly disable
+                    GH_READONLY_WAS_ENABLED=1
+                fi
+
+                log "Installing GitHub CLI..."
+
+                if ! sudo pacman -Sy --needed --noconfirm github-cli; then
+                    if [[ "$GH_READONLY_WAS_ENABLED" == "1" ]]; then
+                        sudo steamos-readonly enable || true
+                    fi
+                    die "GitHub CLI installation failed."
+                fi
+
+                if [[ "$GH_READONLY_WAS_ENABLED" == "1" ]]; then
+                    log "Re-enabling SteamOS read-only mode..."
+                    sudo steamos-readonly enable
+                fi
+
+                command -v gh >/dev/null 2>&1 ||
+                    die "GitHub CLI installation completed but gh was not found."
+                ;;
+            *)
+                die "GitHub CLI is required for --auto-upload."
+                ;;
+        esac
+    fi
+
+    if ! gh auth status --hostname github.com >/dev/null 2>&1; then
+        log "GitHub authentication is required for --auto-upload."
+        echo
+
+        if [[ "$YES" == "1" ]]; then
+            log "-y accepted all automatic confirmations."
+            log "GitHub account authorization cannot be completed automatically."
+        fi
+
+        log "A one-time GitHub browser/device login is required."
+        log "Follow the GitHub CLI instructions shown below."
+        echo
+
+        gh auth login \
+            --hostname github.com \
+            --git-protocol https \
+            --web
+
+        echo
+        log "Verifying GitHub authentication..."
+
+        gh auth status --hostname github.com >/dev/null 2>&1 ||
+            die "GitHub authentication was not completed."
+    fi
+
+    GH_USERNAME="$(gh api user --jq ".login" 2>/dev/null)" ||
+        die "Could not determine the authenticated GitHub account."
+
+    echo
+    printf '[%s] Authenticated GitHub account: %s\n' "$PROJECT_NAME" "$GH_USERNAME"
+    printf '[%s] Target repository: %s\n' "$PROJECT_NAME" "$SUPPORT_REPO"
+    echo
+
+    if [[ "$YES" == "1" ]]; then
+        UPLOAD_REPLY="y"
+    else
+        read -r -p "[${PROJECT_NAME}] Continue with release build/upload? [y/N]: " UPLOAD_REPLY
+    fi
+
+    case "$UPLOAD_REPLY" in
+        y|Y|yes|YES|Yes) ;;
+        *) die "Upload cancelled." ;;
+    esac
+
+    if git -C "$SUPPORT_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        [[ -z "$(git -C "$SUPPORT_ROOT" status --porcelain)" ]] ||
+            die "Support repository working tree is not clean. Commit changes before --auto-upload."
+    fi
+fi
 
 [[ -f "$STATE_FILE" ]] || "${SCRIPT_DIR}/setup_dev.sh"
 
@@ -59,10 +160,20 @@ SOURCE_COMMIT="$(git -C "$SOURCE_DIR" rev-parse HEAD)"
 SOURCE_DIRTY=0
 [[ -z "$(git -C "$SOURCE_DIR" status --porcelain)" ]] || SOURCE_DIRTY=1
 
+if [[ "$AUTO_UPLOAD" == "1" ]]; then
+    [[ "$SOURCE_DIRTY" == "0" ]] ||
+        die "NVIDIA source working tree is not clean. Commit changes before --auto-upload."
+fi
+
 if git -C "$SUPPORT_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     SUPPORT_COMMIT="$(git -C "$SUPPORT_ROOT" rev-parse HEAD)"
 else
     SUPPORT_COMMIT="unknown"
+fi
+
+if [[ "$AUTO_UPLOAD" == "1" ]]; then
+    [[ "$SUPPORT_COMMIT" != "unknown" ]] ||
+        die "Cannot determine support repository commit."
 fi
 
 RELEASE_TAG="$(release_tag)"
@@ -105,15 +216,22 @@ if [[ "$FORCE_REBUILD" == "0" && -f "$BUNDLE" ]]; then
             CACHED_SOURCE="$(metadata_value "$CACHED_INFO" source_commit)"
             CACHED_KERNEL="$(metadata_value "$CACHED_INFO" kernel_version)"
             CACHED_NVIDIA="$(metadata_value "$CACHED_INFO" nvidia_version)"
+            CACHED_CONTAINER="$(metadata_value "$CACHED_INFO" container_image)"
             EXPECTED_SHA="$(awk '{print $1}' "$CACHED_CHECKSUM" | head -n1)"
             ACTUAL_SHA="$(sha256_file "$CACHED_ARCHIVE")"
 
-            if [[ "$CACHED_SOURCE" == "$SOURCE_COMMIT" && "$CACHED_KERNEL" == "$KERNEL_VERSION" && "$CACHED_NVIDIA" == "$NVIDIA_VERSION" && "$EXPECTED_SHA" == "$ACTUAL_SHA" ]]; then
+            if [[ "$CACHED_SOURCE" == "$SOURCE_COMMIT" &&
+                  "$CACHED_KERNEL" == "$KERNEL_VERSION" &&
+                  "$CACHED_NVIDIA" == "$NVIDIA_VERSION" &&
+                  "$CACHED_CONTAINER" == "$NVIDIA_BUILD_IMAGE" &&
+                  "$EXPECTED_SHA" =~ ^[0-9a-fA-F]{64}$ &&
+                  "${EXPECTED_SHA,,}" == "${ACTUAL_SHA,,}" ]]; then
                 CACHE_HIT=1
                 ARCHIVE="$CACHED_ARCHIVE"
                 CHECKSUM="$CACHED_CHECKSUM"
                 BUILD_INFO="$CACHED_INFO"
-                ok "Existing bundle matches source, kernel, and NVIDIA version."
+                ok "Existing bundle matches source, kernel, NVIDIA version, and build image."
+                log "Skipping compilation."
             fi
         fi
     fi
@@ -139,6 +257,7 @@ if [[ "$CACHE_HIT" == "0" ]]; then
         printf 'nvidia_version=%s\n' "$NVIDIA_VERSION"
         printf 'release_tag=%s\n' "$RELEASE_TAG"
         printf 'release_asset=%s\n\n' "$ASSET_NAME"
+
         printf 'source_repository=%s\n' "$SOURCE_REPO"
         printf 'source_branch=%s\n' "$SOURCE_BRANCH"
         printf 'source_commit=%s\n' "$SOURCE_COMMIT"
@@ -146,9 +265,15 @@ if [[ "$CACHE_HIT" == "0" ]]; then
         printf 'nvidia_upstream_commit=%s\n' "$UPSTREAM_COMMIT"
         printf 'support_repository=%s\n' "$SUPPORT_REPO"
         printf 'support_commit=%s\n\n' "$SUPPORT_COMMIT"
+
+        printf 'container_image=%s\n\n' "$NVIDIA_BUILD_IMAGE"
+
         printf 'modules:\n'
         for module in "${PACKAGE_DIR}/modules/"*.ko; do
-            printf '  %s  %s  vermagic=%s\n' "$(sha256_file "$module")" "$(basename "$module")" "$(modinfo -F vermagic "$module" | awk '{print $1}')"
+            printf '  %s  %s  vermagic=%s\n' \
+                "$(sha256_file "$module")" \
+                "$(basename "$module")" \
+                "$(modinfo -F vermagic "$module" | awk '{print $1}')"
         done
     } > "$BUILD_INFO"
 
@@ -157,59 +282,78 @@ if [[ "$CACHE_HIT" == "0" ]]; then
     tar -C "$PACKAGE_DIR" -czf "$ARCHIVE" modules BUILD-INFO.txt
     (cd "$RELEASE_DIR" && sha256sum "$ASSET_NAME" > "$(basename "$CHECKSUM")")
 
-    printf 'archive_sha256=%s\n' "$(sha256_file "$ARCHIVE")" >> "$BUILD_INFO"
+    EXPECTED_SHA="$(awk '{print $1}' "$CHECKSUM" | head -n1)"
+    ACTUAL_SHA="$(sha256_file "$ARCHIVE")"
+
+    [[ "$EXPECTED_SHA" =~ ^[0-9a-fA-F]{64}$ ]] ||
+        die "Generated release checksum is invalid."
+
+    [[ "${EXPECTED_SHA,,}" == "${ACTUAL_SHA,,}" ]] ||
+        die "Generated release archive failed checksum verification."
+
+    printf 'archive_sha256=%s\n' "$ACTUAL_SHA" >> "$BUILD_INFO"
 
     rm -f "$BUNDLE"
-    (cd "$RELEASE_DIR" && zip -q "$BUNDLE" "$(basename "$ARCHIVE")" "$(basename "$CHECKSUM")" "$(basename "$BUILD_INFO")")
+    (
+        cd "$RELEASE_DIR"
+        zip -q "$BUNDLE" \
+            "$(basename "$ARCHIVE")" \
+            "$(basename "$CHECKSUM")" \
+            "$(basename "$BUILD_INFO")"
+    )
 
-    ok "Build bundle created."
+    ok "Build artifacts created."
 fi
 
-printf '\nBundle:     %s\nArchive:    %s\nChecksum:   %s\nBuild info: %s\n' "$BUNDLE" "$ARCHIVE" "$CHECKSUM" "$BUILD_INFO"
+printf '\n'
+printf 'Bundle:           %s\n' "$BUNDLE"
+printf 'Archive:          %s\n' "$ARCHIVE"
+printf 'Checksum:         %s\n' "$CHECKSUM"
+printf 'Build info:       %s\n' "$BUILD_INFO"
+printf '\n'
+printf 'Source commit:    %s\n' "$SOURCE_COMMIT"
+printf 'NVIDIA upstream:  %s\n' "$UPSTREAM_COMMIT"
+printf 'Support commit:   %s\n' "$SUPPORT_COMMIT"
+printf 'Build container:  %s\n' "$NVIDIA_BUILD_IMAGE"
 
 if [[ "$AUTO_UPLOAD" != "1" ]]; then
+    printf '\n'
     log "GitHub upload skipped. Use --auto-upload to publish."
     exit 0
 fi
 
-[[ "$SOURCE_DIRTY" == "0" ]] || die "Refusing to upload a build from a dirty source tree."
-[[ "$SUPPORT_COMMIT" != "unknown" ]] || die "Cannot determine support repository commit."
-
-if ! command -v gh >/dev/null 2>&1; then
-    if [[ "$YES" == "1" ]]; then INSTALL_REPLY=y; else read -r -p "[${PROJECT_NAME}] GitHub CLI is missing. Install it? [y/N]: " INSTALL_REPLY; fi
-    case "$INSTALL_REPLY" in
-        y|Y|yes|YES|Yes)
-            need_cmd sudo
-            need_cmd pacman
-            RO=0
-            if command -v steamos-readonly >/dev/null 2>&1 && steamos-readonly status 2>/dev/null | grep -qi enabled; then
-                sudo steamos-readonly disable
-                RO=1
-            fi
-            sudo pacman -Sy --needed --noconfirm github-cli || { [[ "$RO" == 1 ]] && sudo steamos-readonly enable || true; die "GitHub CLI installation failed."; }
-            [[ "$RO" == 1 ]] && sudo steamos-readonly enable
-            ;;
-        *) die "GitHub CLI is required for --auto-upload." ;;
-    esac
-fi
-
-if ! gh auth status --hostname github.com >/dev/null 2>&1; then
-    log "GitHub authentication is required."
-    [[ "$YES" == "1" ]] && log "-y cannot automate GitHub account authorization."
-    gh auth login --hostname github.com --git-protocol https --web
-    gh auth status --hostname github.com >/dev/null 2>&1 || die "GitHub authentication was not completed."
-fi
-
-if [[ "$YES" != "1" ]]; then
-    read -r -p "[${PROJECT_NAME}] Upload ${RELEASE_TAG}? [y/N]: " REPLY
-    case "$REPLY" in y|Y|yes|YES|Yes) ;; *) die "Upload cancelled." ;; esac
-fi
+log "Uploading ${RELEASE_TAG} to GitHub..."
 
 if gh release view "$RELEASE_TAG" --repo "$SUPPORT_REPO" >/dev/null 2>&1; then
-    log "Release exists; replacing matching assets."
-    gh release upload "$RELEASE_TAG" "$ARCHIVE" "$CHECKSUM" "$BUILD_INFO" --repo "$SUPPORT_REPO" --clobber
+    log "Release already exists; replacing matching assets."
+
+    gh release upload "$RELEASE_TAG" \
+        "$ARCHIVE" \
+        "$CHECKSUM" \
+        "$BUILD_INFO" \
+        --repo "$SUPPORT_REPO" \
+        --clobber
 else
-    gh release create "$RELEASE_TAG" "$ARCHIVE" "$CHECKSUM" "$BUILD_INFO" --repo "$SUPPORT_REPO" --target "$SUPPORT_COMMIT" --title "NVIDIA Open Modules - SteamOS ${STEAMOS_VERSION} - ${NVIDIA_VERSION}" --notes "SteamOS ${STEAMOS_VERSION}\nKernel ${KERNEL_VERSION}\nNVIDIA ${NVIDIA_VERSION}\nSource branch ${SOURCE_BRANCH}\nSource commit ${SOURCE_COMMIT}"
+    gh release create "$RELEASE_TAG" \
+        "$ARCHIVE" \
+        "$CHECKSUM" \
+        "$BUILD_INFO" \
+        --repo "$SUPPORT_REPO" \
+        --target "$SUPPORT_COMMIT" \
+        --title "NVIDIA Open Modules - SteamOS ${STEAMOS_VERSION} - NVIDIA ${NVIDIA_VERSION}" \
+        --notes "Precompiled NVIDIA open kernel modules for SteamOS ${STEAMOS_VERSION}.
+
+Kernel: ${KERNEL_VERSION}
+NVIDIA: ${NVIDIA_VERSION}
+
+NVIDIA source repository: ${SOURCE_REPO}
+NVIDIA source branch: ${SOURCE_BRANCH}
+NVIDIA source commit: ${SOURCE_COMMIT}
+NVIDIA upstream commit: ${UPSTREAM_COMMIT}
+
+Support repository: ${SUPPORT_REPO}
+Support commit: ${SUPPORT_COMMIT}
+Build container: ${NVIDIA_BUILD_IMAGE}"
 fi
 
 ok "Release uploaded successfully."
