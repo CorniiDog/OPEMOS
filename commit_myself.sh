@@ -25,9 +25,9 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-need git
-need nvidia-smi
-need sed
+need_cmd git
+need_cmd nvidia-smi
+need_cmd sed
 
 [[ -f "$STATE_FILE" ]] || die "Missing development state. Run setup_dev.sh first."
 
@@ -80,13 +80,13 @@ if [[ -z "$COMMIT_MESSAGE" ]]; then
     if [[ "$YES" == "1" ]]; then
         COMMIT_MESSAGE="SteamOS NVIDIA ${EXPECTED_NVIDIA} updates"
     else
-        read -r -p "[${SUPPORT_NAME}] Commit message: " COMMIT_MESSAGE
+        read -r -p "[${PROJECT_NAME}] Commit message: " COMMIT_MESSAGE
         [[ -n "$COMMIT_MESSAGE" ]] || die "Commit message cannot be empty."
     fi
 fi
 
 if [[ "$YES" != "1" ]]; then
-    read -r -p "[${SUPPORT_NAME}] Commit and push ${EXPECTED_BRANCH}? [y/N]: " REPLY
+    read -r -p "[${PROJECT_NAME}] Commit and push ${EXPECTED_BRANCH}? [y/N]: " REPLY
     case "$REPLY" in
         y|Y|yes|YES|Yes) ;;
         *) die "Commit cancelled." ;;
