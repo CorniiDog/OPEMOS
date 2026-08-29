@@ -22,7 +22,14 @@ NEPTUNE_SERIES="$(get_neptune_series "$KERNEL_VERSION")"
 [[ -d "${SOURCE_DIR}/.git" ]] || die "Source repository missing: ${SOURCE_DIR}"
 
 CURRENT_BRANCH="$(git -C "$SOURCE_DIR" branch --show-current)"
-[[ "$CURRENT_BRANCH" == "$EXPECTED_BRANCH" ]] || die "Source branch is ${CURRENT_BRANCH}; expected ${EXPECTED_BRANCH}."
+
+if [[ "$EXPECTED_BRANCH" == "HEAD" ]]; then
+    [[ -z "$CURRENT_BRANCH" ]] ||
+        die "Upstream source must be detached HEAD; currently on branch ${CURRENT_BRANCH}."
+else
+    [[ "$CURRENT_BRANCH" == "$EXPECTED_BRANCH" ]] ||
+        die "Source branch is ${CURRENT_BRANCH}; expected ${EXPECTED_BRANCH}."
+fi
 
 SOURCE_VERSION="$(sed -n 's/^NVIDIA_VERSION[[:space:]]*=[[:space:]]*//p' "${SOURCE_DIR}/version.mk" | head -n1 | tr -d '[:space:]')"
 [[ "$SOURCE_VERSION" == "$EXPECTED_NVIDIA" ]] || die "Source version ${SOURCE_VERSION} does not match ${EXPECTED_NVIDIA}."
