@@ -15,7 +15,8 @@ usage()
 Usage: online_install.sh [options]
 
 Options:
-      --fuzzy        Use nearest published SteamOS patch release
+      --fuzzy        Compatibility alias; certified installs already allow
+                     bounded fallback to older same-series SteamOS releases
       --local PATH   Install an explicitly supplied local bundle/archive
       --in-code      Compile the current NVIDIA source working tree, then install it
   -y, --yes          Automatically confirm installer prompts
@@ -322,58 +323,47 @@ if [[ -n "$LOCAL_SOURCE" ]]; then
     exit 0
 fi
 
-EXACT_TAG="$(release_tag)"
-EXACT_ASSET="$(release_asset)"
-SELECTED_TAG="$EXACT_TAG"
-SELECTED_ASSET="$EXACT_ASSET"
-SELECTED_STEAMOS="$STEAMOS_VERSION"
+RELEASES_JSON="$TMP/releases.json"
+
+curl -fsSL --retry 2 \
+    "https://api.github.com/repos/${SUPPORT_REPO}/releases?per_page=100" \
+    -o "$RELEASES_JSON" ||
+    die "Failed to query published releases."
+
+SELECTED="$(
+    python3 "$TMP/support/lib/select_release.py" \
+        "$STEAMOS_VERSION" \
+        "$KERNEL_TAG" \
+        "$RELEASES_JSON"
+)"
+
+[[ -n "$SELECTED" ]] ||
+    die "No certified project release exists for kernel ${KERNEL_VERSION} on SteamOS ${STEAMOS_VERSION} or an older release in ${STEAMOS_VERSION%.*}.x."
+
+IFS=$	 read -r \
+    SELECTED_STEAMOS \
+    SELECTED_NVIDIA \
+    SELECTED_KERNEL \
+    SELECTED_TAG \
+    <<< "$SELECTED"
+
+[[ "$SELECTED_KERNEL" == "$KERNEL_TAG" ]] ||
+    die "Internal release-selection error: selected kernel ${SELECTED_KERNEL}; expected ${KERNEL_TAG}."
+
+[[ "$SELECTED_NVIDIA" == "$NVIDIA_VERSION" ]] ||
+    die "Certified release ${SELECTED_TAG} requires NVIDIA userspace ${SELECTED_NVIDIA}, but ${NVIDIA_VERSION} is installed. Run setup_nvidia.sh to align userspace first."
+
+SELECTED_ASSET="nvidia-open-${SELECTED_TAG}-x86_64.tar.gz"
+
+if [[ "$SELECTED_STEAMOS" == "$STEAMOS_VERSION" ]]; then
+    log "Using exact SteamOS certified release ${SELECTED_TAG}."
+else
+    warn "No exact certified release exists for SteamOS ${STEAMOS_VERSION}."
+    warn "Using newest non-surpassed certification: ${SELECTED_STEAMOS}."
+fi
 
 if [[ "$FUZZY" == "1" ]]; then
-    RELEASES_JSON="$TMP/releases.json"
-    curl -fsSL --retry 2 \
-        "https://api.github.com/repos/${SUPPORT_REPO}/releases?per_page=100" \
-        -o "$RELEASES_JSON" ||
-        die "Failed to query published releases."
-
-    SELECTED="$(python3 -c '
-import json,re,sys
-target_s,target_n,target_k,path=sys.argv[1:]
-def ver(v):
-    p=[int(x) for x in v.split(".")]
-    while len(p)<3:p.append(0)
-    return tuple(p[:3])
-ts=ver(target_s)
-pat=re.compile(r"^steamos-([0-9]+(?:\.[0-9]+){2})-nvidia-([0-9]+(?:\.[0-9]+){1,2})-k(.+)$")
-with open(path,encoding="utf-8") as f: releases=json.load(f)
-c=[]
-for r in releases:
-    if r.get("draft") or r.get("prerelease"): continue
-    m=pat.match(r.get("tag_name",""))
-    if not m: continue
-    sv,nv,kv=m.groups()
-    if nv != target_n or kv != target_k: continue
-    s=ver(sv)
-    if s[:2] != ts[:2]: continue
-    tag=r["tag_name"]
-    asset="nvidia-open-"+tag+"-x86_64.tar.gz"
-    names={a.get("name") for a in r.get("assets",[])}
-    if asset not in names or asset+".sha256" not in names: continue
-    dist=abs(s[2]-ts[2])
-    newer=1 if s[2]>ts[2] else 0
-    c.append(((dist,newer),sv,tag,asset))
-if c:
-    _,sv,tag,asset=min(c,key=lambda x:x[0])
-    print("\t".join((sv,tag,asset)))
-' "$STEAMOS_VERSION" "$NVIDIA_VERSION" "$KERNEL_TAG" "$RELEASES_JSON")"
-
-    [[ -n "$SELECTED" ]] ||
-        die "No published release matches kernel ${KERNEL_VERSION} and NVIDIA ${NVIDIA_VERSION} within SteamOS ${STEAMOS_VERSION%.*}.x. Use --in-code or --local."
-
-    IFS=$'\t' read -r SELECTED_STEAMOS SELECTED_TAG SELECTED_ASSET <<< "$SELECTED"
-
-    if [[ "$SELECTED_STEAMOS" != "$STEAMOS_VERSION" ]]; then
-        warn "Using fuzzy SteamOS release ${SELECTED_STEAMOS} for system ${STEAMOS_VERSION}."
-    fi
+    warn "--fuzzy is retained for compatibility; certified fallback is now always bounded to older releases in the same SteamOS major/minor series."
 fi
 
 BASE_URL="https://github.com/${SUPPORT_REPO}/releases/download/${SELECTED_TAG}"
@@ -398,5 +388,8 @@ HTTP_SHA="$(curl -sS -L --retry 2 -w '%{http_code}' "${BASE_URL}/${SELECTED_ASSE
     die "Failed to download release checksum."
 [[ "$HTTP_SHA" == "200" ]] || die "Unexpected HTTP ${HTTP_SHA} downloading checksum."
 
-install_archive "$ARCHIVE" "$CHECKSUM" "$FUZZY"
+INSTALL_FUZZY=0
+[[ "$SELECTED_STEAMOS" != "$STEAMOS_VERSION" ]] && INSTALL_FUZZY=1
+
+install_archive "$ARCHIVE" "$CHECKSUM" "$INSTALL_FUZZY"
 offer_reboot

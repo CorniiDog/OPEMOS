@@ -312,6 +312,7 @@ fi
 need_cmd sudo
 need_cmd pacman
 need_cmd ldconfig
+need_cmd modinfo
 
 if [[ "$YES" != "1" ]]; then
     printf "\n"
@@ -321,6 +322,20 @@ if [[ "$YES" != "1" ]]; then
         y|Y|yes|YES|Yes) ;;
         *) die "NVIDIA userspace setup cancelled." ;;
     esac
+fi
+
+if [[ "$SELECTION_MODE" == "development" ]]; then
+    CURRENT_MODULE_VERSION="$(modinfo -F version nvidia 2>/dev/null || true)"
+
+    if [[ -n "$CURRENT_MODULE_VERSION" &&
+          "$CURRENT_MODULE_VERSION" != "$RESOLVED_NVIDIA" ]]; then
+        printf "\n"
+        warn "Development mode will install NVIDIA userspace ${RESOLVED_NVIDIA}."
+        warn "The currently resolved NVIDIA kernel module is ${CURRENT_MODULE_VERSION}."
+        warn "Kernel modules will NOT be replaced by this operation."
+        warn "The NVIDIA runtime may remain version-mismatched until matching development modules are built and installed."
+        printf "\n"
+    fi
 fi
 
 log "Requesting administrator privileges..."
