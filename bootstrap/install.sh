@@ -72,7 +72,7 @@ tar -xzf "$ARCHIVE" -C "$TMP"
 
 INFO="$TMP/BUILD-INFO.txt"
 MODULE_DIR="$TMP/modules"
-[[ -f "$INFO" ]] || die "Archhive does not contain BUILD-INFO.txt."
+[[ -f "$INFO" ]] || die "Archive does not contain BUILD-INFO.txt."
 [[ -d "$MODULE_DIR" ]] || die "Archive does not contain modules/."
 
 metadata()
@@ -80,7 +80,7 @@ metadata()
     sed -n "s/^${1}=//p" "$INFO" | head -n1
 }
 
-BUILD_STEAOS="$(metadata steamos_version)"
+BUILD_STEAMOS="$(metadata steamos_version)"
 BUILD_KERNEL="$(metadata kernel_version)"
 BUILD_NVIDIA="$(metadata nvidia_version)"
 

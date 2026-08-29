@@ -146,7 +146,7 @@ SELECTED_STEAMOS="$STEAMOS_VERSION"
 if [[ "$FUZZY" == "1" ]]; then
     RELEASES_JSON="$TMP/releases.json"
     curl -fsSL --retry 2 \
-        "https://api.github.com/repos/${SUPPORT_REP}/releases?per_page=100" \
+        "https://api.github.com/repos/${SUPPORT_REPO}/releases?per_page=100" \
         -o "$RELEASES_JSON" ||
         die "Failed to query published releases."
 
@@ -181,7 +181,7 @@ if c:
 ' "$STEAMOS_VERSION" "$NVIDIA_VERSION" "$KERNEL_TAG" "$RELEASES_JSON")"
 
     [[ -n "$SELECTED" ]] ||
-        die "No published release matches kernel ${KERNEL_VERSION} and NVIDIA ${NVIDIA_VERSION} within SteamOS ${STEAMOS_VERSION.%}.x. Use --in-code or --local."
+        die "No published release matches kernel ${KERNEL_VERSION} and NVIDIA ${NVIDIA_VERSION} within SteamOS ${STEAMOS_VERSION%.*}.x. Use --in-code or --local."
 
     IFS=$'\t' read -r SELECTED_STEAMOS SELECTED_TAG SELECTED_ASSET <<< "$SELECTED"
 
