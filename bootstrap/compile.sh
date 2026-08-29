@@ -324,8 +324,22 @@ fi
 
 log "Uploading ${RELEASE_TAG} to GitHub..."
 
+RELEASE_TITLE="open-gpu-kernel-modules-steamos - SteamOS ${STEAMOS_VERSION}"
+
+RELEASE_NOTES="Precompiled open-gpu-kernel-modules-steamos build for SteamOS ${STEAMOS_VERSION}.
+
+NVIDIA fork commit: [${SOURCE_COMMIT:0:7}](https://github.com/${SOURCE_REPO}/commit/${SOURCE_COMMIT})
+NVIDIA upstream commit: [${UPSTREAM_COMMIT:0:7}](https://github.com/NVIDIA/open-gpu-kernel-modules/commit/${UPSTREAM_COMMIT})
+Support commit: [${SUPPORT_COMMIT:0:7}](https://github.com/${SUPPORT_REPO}/commit/${SUPPORT_COMMIT})
+Container: ${NVIDIA_BUILD_IMAGE}"
+
 if gh release view "$RELEASE_TAG" --repo "$SUPPORT_REPO" >/dev/null 2>&1; then
-    log "Release already exists; replacing matching assets."
+    log "Release already exists; updating metadata and replacing matching artifacts."
+
+    gh release edit "$RELEASE_TAG" \
+        --repo "$SUPPORT_REPO" \
+        --title "$RELEASE_TITLE" \
+        --notes "$RELEASE_NOTES"
 
     gh release upload "$RELEASE_TAG" \
         "$ARCHIVE" \
@@ -340,20 +354,8 @@ else
         "$BUILD_INFO" \
         --repo "$SUPPORT_REPO" \
         --target "$SUPPORT_COMMIT" \
-        --title "NVIDIA Open Modules - SteamOS ${STEAMOS_VERSION} - NVIDIA ${NVIDIA_VERSION}" \
-        --notes "Precompiled NVIDIA open kernel modules for SteamOS ${STEAMOS_VERSION}.
-
-Kernel: ${KERNEL_VERSION}
-NVIDIA: ${NVIDIA_VERSION}
-
-NVIDIA source repository: ${SOURCE_REPO}
-NVIDIA source branch: ${SOURCE_BRANCH}
-NVIDIA source commit: ${SOURCE_COMMIT}
-NVIDIA upstream commit: ${UPSTREAM_COMMIT}
-
-Support repository: ${SUPPORT_REPO}
-Support commit: ${SUPPORT_COMMIT}
-Build container: ${NVIDIA_BUILD_IMAGE}"
+        --title "$RELEASE_TITLE" \
+        --notes "$RELEASE_NOTES"
 fi
 
 ok "Release uploaded successfully."
