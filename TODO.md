@@ -2,6 +2,49 @@ Below is the consolidated project checklist based on our work so far. I’m trea
 
 # SteamOS NVIDIA Open Kernel Module Support — Master Checklist
 
+
+## Current project phase
+
+**Status: development / active dogfooding**
+
+The support infrastructure is now mature enough to use for real NVIDIA
+development work on the primary SteamOS test system. Broad installer construction
+is no longer the main task. The project should now be exercised through the same
+public workflows intended for future users while the remaining validation gates
+are completed.
+
+### Milestone ladder
+
+* [x] Development infrastructure is usable for active dogfooding.
+* [ ] **Alpha:** complete a clean-stock SteamOS one-command certified install.
+* [ ] **Beta:** verify install, idempotency, uninstall/reinstall, SteamOS update,
+  and rollback behavior.
+* [ ] **Release candidate:** verify a patched NVIDIA release across repeated
+  clean installs and additional NVIDIA hardware.
+* [ ] **Stable:** establish reliable SteamOS upgrade/recovery behavior with no
+  manual shell repair required during supported workflows.
+
+### Current priority queue
+
+1. [ ] Re-test the published NVIDIA 575.64.05 certified release through the
+   current public online installer.
+2. [ ] Run the certified installer a second time and verify the idempotent fast
+   path performs no module replacement, initramfs rebuild, or reboot prompt.
+3. [ ] Test uninstall followed by a clean certified reinstall.
+4. [ ] Reboot and verify the 575 runtime with `nvidia-smi`, `modinfo`,
+   `/proc/driver/nvidia/version`, Gamescope, Xwayland, Steam, and Gaming Mode.
+5. [ ] Perform a completely clean-stock SteamOS installation using only the
+   intended public one-line workflow.
+6. [ ] Test behavior across a SteamOS/kernel update and rollback.
+7. [ ] Use the project itself for the NVIDIA 580 patch-development cycle instead
+   of manually copying or installing modules.
+8. [ ] Reproduce the NVIDIA 580 Gamescope graphical bug consistently.
+9. [ ] Create or refresh `nvidia/580.119.02` from exact NVIDIA upstream.
+10. [ ] Develop the smallest possible 580 compatibility patch and compare it
+    directly against the pristine upstream control.
+
+---
+
 ## 1. Core project architecture
 
 * [x] Keep the support/build/install tooling in:
@@ -127,6 +170,14 @@ Below is the consolidated project checklist based on our work so far. I’m trea
   * NVIDIA 575.64.05
   * `Selection mode: certified`
 * [x] Production mode remains anchored to the published known-good project release.
+* [x] Use one shared certified-release selector for userspace setup and online module installation.
+* [x] Prefer exact SteamOS certification.
+* [x] Allow fallback only to the newest older SteamOS patch in the same major/minor series.
+* [x] Require the exact running kernel during certified fallback.
+* [x] Never automatically select a newer SteamOS certification.
+* [x] Remove the separate online fuzzy-selection algorithm.
+* [x] Retain `--fuzzy` only as a compatibility alias for the bounded certified fallback policy.
+* [x] Automatically pass SteamOS compatibility to `install.sh` only when the selected certification differs from the running SteamOS patch.
 
 ## Development mode
 
@@ -147,6 +198,9 @@ Below is the consolidated project checklist based on our work so far. I’m trea
 * [x] Make runtime output more self-documenting.
 * [x] Explicitly print what development mode does to kernel modules.
 * [x] Explicitly print that it is intended for project/patched-module development.
+* [x] Warn when `--development` changes NVIDIA userspace while the currently resolved kernel module is a different NVIDIA version.
+* [x] Explicitly warn that kernel modules are not replaced by development userspace setup.
+* [ ] Decide whether live userspace replacement remains the permanent development model or whether an isolated development userspace is ever worth implementing.
 
 ## Upstream development
 
@@ -553,6 +607,27 @@ Below is the consolidated project checklist based on our work so far. I’m trea
 
 ---
 
+# 15A. NVIDIA userspace transaction safety
+
+Kernel-module installation now has substantially stronger rollback behavior than
+NVIDIA userspace setup. This is the main remaining infrastructure asymmetry.
+
+* [ ] Record the currently installed `nvidia-utils` and `lib32-nvidia-utils`
+  package versions before changing them.
+* [ ] Preserve project-managed modprobe configuration before replacement.
+* [ ] Preserve relevant GRUB configuration before modification.
+* [ ] Define rollback behavior if `pacman -U` succeeds but a later configuration
+  step fails.
+* [ ] Define rollback behavior if only one NVIDIA userspace package changes.
+* [ ] Restore previous configuration when userspace setup aborts after modifying
+  system files.
+* [ ] Add mocked or fake-root failure coverage for userspace setup where practical.
+* [ ] Verify every userspace failure path restores SteamOS read-only state.
+* [ ] Test userspace downgrade and upgrade behavior explicitly.
+* [ ] Test broken or partially installed NVIDIA userspace recovery.
+
+---
+
 # 16. Sudo/password UX
 
 * [x] Add early:
@@ -686,16 +761,15 @@ Desired design:
   * exact NVIDIA version comes from the release selected by the resolver,
   * certified mode never selects a newer NVIDIA driver merely because one exists,
   * newer drivers require explicit `--development` or `--use-upstream` mode.
-* [ ] Revisit fuzzy release ranking logic.
-* [ ] Explicitly test:
+* [x] Remove nearest-distance fuzzy ranking in favor of one bounded certified policy.
+* [x] Ensure certified fallback never moves forward to a newer SteamOS patch.
+* [x] Ensure `setup_nvidia.sh` and `online_install.sh` use the same release selector.
+* [ ] Expand the release-policy fixture with additional explicit SteamOS patch cases such as:
 
   * 3.8.15
   * 3.8.16
   * 3.8.17
   * 3.8.18
-* [ ] Verify desired behavior:
-
-  * e.g. 3.8.17 chooses appropriate existing 3.8.x release according to policy.
 * [ ] Ensure no old-kernel artifact can be installed after SteamOS kernel update.
 * [ ] Improve resolver diagnostics when no compatible release exists.
 
@@ -759,9 +833,11 @@ This still needs an end-to-end test.
 
 ---
 
-# 26. Actual Gamescope / NVIDIA graphics problem
+# 26. Actual Gamescope / NVIDIA graphics problem — ACTIVE
 
-This is the ultimate reason for the project and is **not completed**.
+This is the ultimate reason for the project. The support infrastructure is now
+mature enough that this work should proceed through the project workflows rather
+than waiting for every infrastructure TODO to be completed.
 
 ## Already explored
 
@@ -782,6 +858,9 @@ This is the ultimate reason for the project and is **not completed**.
 ## Next graphics debugging work
 
 * [ ] Reproduce the specific 580 graphical bug consistently.
+* [ ] Use the public/development project workflows for 580 experiments instead of manual module copying.
+* [ ] Record the exact project support commit used for each graphics experiment.
+* [ ] Record the exact NVIDIA source commit used for each graphics experiment.
 * [ ] Define exact visual symptom.
 * [ ] Define exact startup sequence that triggers it.
 * [ ] Capture Gamescope logs.
@@ -969,46 +1048,42 @@ git diff --check
 
 # 33. Immediate next actions
 
-This is the shortest actionable queue from where we are **right now**:
+The project has moved from infrastructure bring-up into active dogfooding and
+compatibility development.
 
-1. [x] Revert the erroneous `build.sh` header cache change back to **container `/tmp`**.
-2. [x] Add a comment explaining why that `/tmp` is intentional.
-3. [x] Validate all shell scripts.
-4. [x] Retry:
+1. [ ] Exercise the real published 575 certified path with the current online installer.
+2. [ ] Verify the second run reaches the real idempotent fast path.
+3. [ ] Test live uninstall and certified reinstall.
+4. [ ] Verify the rebooted 575 Gaming Mode runtime.
+5. [ ] Complete a clean-stock one-command SteamOS installation to reach **Alpha**.
+6. [ ] Test SteamOS/kernel update and rollback behavior to progress toward **Beta**.
+7. [ ] Use the project workflows for all new 580 module experiments.
+8. [ ] Reproduce and characterize the remaining 580 Gamescope graphical bug.
+9. [ ] Create or refresh `nvidia/580.119.02` from the exact upstream base.
+10. [ ] Develop, build, install, and compare the smallest possible compatibility patch.
+11. [ ] Publish a 580 project release only after the improvement is repeatable.
+12. [ ] Expand testing to additional NVIDIA hardware before treating the project as stable.
 
-   ```bash
-   ./bootstrap/install_upstream.sh --build-only 580.119.02
-   ```
-5. [x] Verify the archive and `.sha256` persist under:
+## Non-blocking cleanup
 
-   ```text
-   ~/.cache/open-gpu-kernel-modules-steamos-support/upstream-builds/
-   ```
-6. [x] Verify `--build-only` did not alter installed 580 modules.
-7. [x] Feed that archive to:
+These items are worthwhile but should not delay dogfooding or the 580 graphics
+investigation:
 
-   ```bash
-   ./bootstrap/online_install.sh --local <archive>
-   ```
-8. [x] Confirm raw `.ko` versus installed `.ko.zst` idempotency reports, using an exact-content fixture:
-
-   ```text
-   Already installed, healthy, and current.
-   Nothing to do.
-   ```
-9. [x] Confirm no initramfs rebuild.
-10. [x] Confirm no reboot prompt.
-11. [x] Re-test raw 575 archive acceptance by the compressed installer (full 575 idempotency still requires a 575 runtime).
-12. [x] Audit installer rollback with the new `/home` backup/compressed target design (forced-failure runtime tests remain).
-13. [x] Audit sudo/reboot ownership (cold/expired-sudo runtime tests remain).
-14. [x] Add proper `--help` / self-documenting output.
-15. [ ] Commit the infrastructure/idempotency/build-only batch.
-16. [ ] Return to the actual **580 Gamescope/NVIDIA graphical bug**.
-17. [ ] Create a patched 580 source branch.
-18. [ ] Reproduce pristine bug → patch → rebuild → install → compare.
-19. [ ] Publish a 580 project release only after the fix is repeatably better than pristine upstream.
-20. [ ] Eventually do a completely fresh-stock SteamOS end-to-end install/update/uninstall test.
+* [ ] Decide backup retention policy.
+* [ ] Decide whether release archives should remain raw `.ko` or become `.ko.zst`.
+* [ ] Improve Fedora dependency/header caching.
+* [ ] Reduce Fedora build dependency-install verbosity.
+* [ ] Revisit safe Podman installation when Podman is absent.
+* [ ] Continue CLI/style cleanup where useful.
+* [ ] Pursue stronger bit-for-bit reproducibility only if it becomes operationally useful.
 
 ## Overall state
 
-The project has crossed the difficult bring-up threshold. **SteamOS 3.8.16 can boot and run Gamescope on the RTX 2060 using pristine NVIDIA 580.119.02 open kernel modules, and the installation architecture now handles SteamOS’s extremely small root filesystem much more sensibly.** What remains is primarily hardening/testing the tooling and then doing the actual version-specific NVIDIA/Gamescope bug work that motivated the project in the first place.
+The project has crossed the bring-up threshold. SteamOS 3.8.16 has successfully
+booted and run Gamescope on the RTX 2060 with both the known-good project
+NVIDIA 575.64.05 path and pristine upstream NVIDIA 580.119.02 as a control.
+
+The infrastructure should now be actively dogfooded. The next major validation
+gate is a completely clean-stock one-command certified installation. In parallel,
+the project can now be used for the actual NVIDIA 580 / Gamescope compatibility
+work that motivated it.
