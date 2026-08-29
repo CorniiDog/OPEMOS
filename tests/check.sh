@@ -56,7 +56,8 @@ for bootstrap_entry in \
     bootstrap/online_install.sh \
     bootstrap/compile_online.sh \
     bootstrap/online_commit.sh \
-    bootstrap/online_dev.sh
+    bootstrap/online_dev.sh \
+    bootstrap/online_setup_nvidia.sh
 do
     if grep -qE '^[[:space:]]*[A-Z_]+=.*project_mktemp_' "$bootstrap_entry"; then
         fail "$bootstrap_entry calls common temp helpers before common.sh is available"

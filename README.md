@@ -41,29 +41,43 @@ keeps NVIDIA userspace matched exactly to the selected project modules.
 The normal online installer installs the matching release:
 
 ```bash
-./bootstrap/online_install.sh
+cd ~ && bash <(curl -fsSL "https://raw.githubusercontent.com/CorniiDog/open-gpu-kernel-modules-steamos-support/main/bootstrap/online_install.sh?x=$(date +%s)")
 ```
 
 ### Patched-module development
 
 ```bash
-./bootstrap/setup_nvidia.sh --development 580 --resolve-only
+cd ~ && bash <(curl -fsSL "https://raw.githubusercontent.com/CorniiDog/open-gpu-kernel-modules-steamos-support/main/bootstrap/online_setup_nvidia.sh?x=$(date +%s)") --development 580 --resolve-only
 ```
 
 `--development` selects matching NVIDIA userspace for project source work. It
 does not build or replace kernel modules. This mode is intended for developing
 and testing a project branch such as `nvidia/580.119.02`.
 
+Install the selected userspace, then create or refresh the matching source
+branch from the exact NVIDIA upstream tag in one command:
+
+```bash
+cd ~ && bash <(curl -fsSL "https://raw.githubusercontent.com/CorniiDog/open-gpu-kernel-modules-steamos-support/main/bootstrap/online_setup_nvidia.sh?x=$(date +%s)") --development 580 --yes && bash <(curl -fsSL "https://raw.githubusercontent.com/CorniiDog/open-gpu-kernel-modules-steamos-support/main/bootstrap/online_dev.sh?x=$(date +%s)")
+```
+
 ### Pristine upstream control
 
 ```bash
-./bootstrap/setup_nvidia.sh --use-upstream 580 --resolve-only
+cd ~ && bash <(curl -fsSL "https://raw.githubusercontent.com/CorniiDog/open-gpu-kernel-modules-steamos-support/main/bootstrap/online_setup_nvidia.sh?x=$(date +%s)") --use-upstream 580 --resolve-only
 ```
 
 `--use-upstream` selects matching userspace and, without `--resolve-only`,
 builds and installs pristine NVIDIA upstream modules. Project patches are not
 applied. This establishes the control case used to decide whether a bug belongs
 to NVIDIA modules, Gamescope, or their interaction.
+
+Install the selected userspace and build and install the pristine upstream
+modules in one command:
+
+```bash
+cd ~ && bash <(curl -fsSL "https://raw.githubusercontent.com/CorniiDog/open-gpu-kernel-modules-steamos-support/main/bootstrap/online_setup_nvidia.sh?x=$(date +%s)") --use-upstream 580 --yes --offer-reboot
+```
 
 To build the pristine archive without changing installed modules:
 

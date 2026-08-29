@@ -495,6 +495,7 @@ Below is the consolidated project checklist based on our work so far. I’m trea
 * [x] `compile_online.sh`
 * [x] `online_commit.sh`
 * [x] `online_dev.sh`
+* [x] Add a standalone pinned online entry point for `--development` and `--use-upstream` workflows.
 * [x] Do not call common helper functions before downloading/cloning support repo.
 * [x] Give these scripts direct cache-root temp creation.
 * [x] Keep temp storage on `/home`.
