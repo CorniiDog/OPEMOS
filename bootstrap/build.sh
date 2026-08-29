@@ -65,6 +65,7 @@ podman run \
             kmod \
             curl \
             libarchive \
+            bsdtar \
             findutils \
             perl \
             python3 \
