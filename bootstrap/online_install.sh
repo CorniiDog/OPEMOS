@@ -57,7 +57,7 @@ need python3
 SUPPORT_REV="$(git ls-remote "https://github.com/${SUPPORT_REPO}.git" "refs/heads/${SUPPORT_BRANCH}" | awk 'NR==1 {print $1}')"
 [[ "$SUPPORT_REV" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "Could not resolve support revision." >&2; exit 1; }
 
-TMP="$(mktemp -d)"
+TMP="$(project_mktemp_dir online-install)"
 trap 'rm -rf "$TMP"' EXIT
 
 git clone --quiet --depth 1 "https://github.com/${SUPPORT_REPO}.git" "$TMP/support"

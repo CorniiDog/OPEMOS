@@ -115,7 +115,7 @@ need_cmd tar
 STEAMOS_VERSION="$(get_steamos_version)"
 KERNEL_VERSION="$(get_kernel_version)"
 
-TMP="$(mktemp -d)"
+TMP="$(project_mktemp_dir setup-nvidia)"
 
 cleanup()
 {

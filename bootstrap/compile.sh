@@ -189,7 +189,7 @@ OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd)"
 BUNDLE_NAME="${ASSET_NAME%.tar.gz}.zip"
 BUNDLE="${OUTPUT_DIR}/${BUNDLE_NAME}"
 
-WORK_DIR="$(mktemp -d)"
+WORK_DIR="$(project_mktemp_dir compile)"
 trap 'rm -rf "$WORK_DIR"' EXIT
 
 RELEASE_DIR="${WORK_DIR}/release"

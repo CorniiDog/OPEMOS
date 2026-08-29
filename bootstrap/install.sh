@@ -60,7 +60,8 @@ if [[ -n "$CHECKSUM" ]]; then
     [[ "${EXPECTED_SHA,,}" == "${ACTUAL_SHA,,}" ]] || die "Archive checksum verification failed."
 fi
 
-TMP="$(mktemp -d)"
+mkdir -p "${HOME}/.cache/${PROJECT_NAME}"
+TMP="$(project_mktemp_dir install-extract)"
 trap 'rm -rf "$TMP"' EXIT
 
 while IFS= read -r entry; do
@@ -221,7 +222,7 @@ if [[ -d "$TARGET_DIR" ]]; then
 fi
 
 mkdir -p "${HOME}/.cache/${PROJECT_NAME}"
-STAGE="$(mktemp -d "${HOME}/.cache/${PROJECT_NAME}/install-stage.XXXXXX")"
+STAGE="$(project_mktemp_dir install-stage)"
 
 for module in "${MODULES[@]}"; do
     module_name="$(basename "$module")"

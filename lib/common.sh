@@ -147,3 +147,26 @@ get_neptune_headers_package()
 {
     printf "linux-neptune-%s-headers\n" "$(get_neptune_series "${1:-$(get_kernel_version)}")"
 }
+
+project_cache_root()
+{
+    printf '%s\n' "${HOME}/.cache/${PROJECT_NAME}"
+}
+
+project_mktemp_dir()
+{
+    local prefix="${1:-tmp}"
+    local root
+    root="$(project_cache_root)"
+    mkdir -p "$root"
+    mktemp -d "${root}/${prefix}.XXXXXX"
+}
+
+project_mktemp_file()
+{
+    local prefix="${1:-tmp}"
+    local root
+    root="$(project_cache_root)"
+    mkdir -p "$root"
+    mktemp "${root}/${prefix}.XXXXXX"
+}
