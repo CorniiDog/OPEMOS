@@ -19,14 +19,14 @@ usage()
 Usage: setup_nvidia.sh [options]
 
 Options:
-      --driver VERSION   Explicit NVIDIA branch/version prefix.
+      --development VERSION   Explicit NVIDIA branch/version prefix.
                          Examples: 575, 580, 580.105, 580.105.08
       --offer-reboot    Offer to restart after a complete kernel-module install.
       --resolve-only     Resolve and print the selected NVIDIA version only.
   -y, --yes              Automatically confirm setup.
   -h, --help             Show this help.
 
-Without --driver, the NVIDIA version is selected from this projects
+Without --development, the NVIDIA version is selected from this projects
 published SteamOS releases:
 
   1. Prefer the current SteamOS version.
@@ -40,8 +40,8 @@ EOF
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --driver)
-            [[ $# -ge 2 ]] || die "--driver requires a version."
+        --development)
+            [[ $# -ge 2 ]] || die "--development requires a version."
             DRIVER_SPEC="$2"
             shift 2
             ;;
@@ -74,11 +74,11 @@ done
 
 if [[ -n "$DRIVER_SPEC" ]]; then
     [[ "$DRIVER_SPEC" =~ ^[0-9]+([.][0-9]+)*$ ]] ||
-        die "--driver must be a numeric NVIDIA version prefix such as 575, 580.105, or 580.105.08."
+        die "--development must be a numeric NVIDIA version prefix such as 575, 580.105, or 580.105.08."
 fi
 
 if [[ -n "$DRIVER_SPEC" && -n "$UPSTREAM_SPEC" ]]; then
-    die "--driver and --use-upstream are mutually exclusive."
+    die "--development and --use-upstream are mutually exclusive."
 fi
 
 if [[ -n "$UPSTREAM_SPEC" ]]; then
@@ -280,7 +280,7 @@ if [[ -n "$UPSTREAM_SPEC" ]]; then
     REFERENCE_RELEASE="upstream:${UPSTREAM_SPEC}"
 
 elif [[ -n "$DRIVER_SPEC" ]]; then
-    SELECTION_MODE="explicit"
+    SELECTION_MODE="development"
 
     log "Resolving newest NVIDIA driver matching ${DRIVER_SPEC}..."
 
@@ -294,7 +294,7 @@ elif [[ -n "$DRIVER_SPEC" ]]; then
 
     REFERENCE_STEAMOS="$STEAMOS_VERSION"
     REFERENCE_KERNEL="$KERNEL_VERSION"
-    REFERENCE_RELEASE="explicit:${DRIVER_SPEC}"
+    REFERENCE_RELEASE="development:${DRIVER_SPEC}"
 else
     SELECTION_MODE="certified"
 
