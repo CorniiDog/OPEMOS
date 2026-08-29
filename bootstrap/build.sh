@@ -32,7 +32,13 @@ SOURCE_VERSION="$(sed -n 's/^NVIDIA_VERSION[[:space:]]*=[[:space:]]*//p' "${SOUR
 [[ "$SOURCE_VERSION" == "$EXPECTED_NVIDIA" ]] || die "Source version ${SOURCE_VERSION} does not match installed NVIDIA ${EXPECTED_NVIDIA}."
 
 KERNEL_BUILD="/lib/modules/${KERNEL_VERSION}/build"
-[[ -e "$KERNEL_BUILD" ]] || die "Kernel build directory missing: ${KERNEL_BUILD}"
+
+if [[ ! -e "$KERNEL_BUILD" ]]; then
+    log "Matching kernel build environment is not installed."
+    "${SCRIPT_DIR}/setup_build_env.sh"
+fi
+
+[[ -e "$KERNEL_BUILD" ]] || die "Kernel build directory missing after environment setup: ${KERNEL_BUILD}"
 
 log "Building NVIDIA ${EXPECTED_NVIDIA} modules..."
 log "Kernel: ${KERNEL_VERSION}"
