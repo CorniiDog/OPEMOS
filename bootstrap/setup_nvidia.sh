@@ -15,7 +15,7 @@ YES=0
 usage()
 {
     cat <<EOF
-Usage: setup-nvidia.sh [options]
+Usage: setup_nvidia.sh [options]
 
 Options:
       --driver VERSION   Explicit NVIDIA branch/version prefix.

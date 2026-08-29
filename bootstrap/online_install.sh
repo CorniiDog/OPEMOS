@@ -82,7 +82,7 @@ else
     SETUP_ARGS=()
     [[ "$YES" == "1" ]] && SETUP_ARGS+=(-y)
 
-    "$TMP/support/bootstrap/setup-nvidia.sh" "${SETUP_ARGS[@]}"
+    "$TMP/support/bootstrap/setup_nvidia.sh" "${SETUP_ARGS[@]}"
 
     NVIDIA_VERSION="$(get_nvidia_version)"
 fi
