@@ -133,7 +133,10 @@ STATE_ROOT="/var/lib/open-gpu-kernel-modules-steamos-support"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP_DIR="${STATE_ROOT}/backups/${CURRENT_KERNEL}/${STAMP}"
 RO_WAS_ENABLED=0
-INSTALLED=0
+TARGET_TOUCHED=0
+STATE_TOUCHED=0
+INSTALL_COMPLETE=0
+STAGE=""
 
 restore_readonly()
 {
@@ -143,31 +146,70 @@ restore_readonly()
     fi
 }
 
-rollback()
+cleanup()
 {
     local rc=$?
-    if [[ "$INSTALLED" == "1" ]]; then
+    trap - EXIT INT TERM
+
+    if [[ "$INSTALL_COMPLETE" != "1" && "$TARGET_TOUCHED" == "1" ]]; then
         warn "Install failed; restoring previous updates directory."
+
         sudo rm -rf "$TARGET_DIR" || true
+
         if [[ -d "$BACKUP_DIR/modules" ]]; then
             sudo mkdir -p "$(dirname "$TARGET_DIR")" || true
             sudo cp -a "$BACKUP_DIR/modules" "$TARGET_DIR" || true
         fi
+
         sudo depmod -a "$CURRENT_KERNEL" || true
+
         if command -v mkinitcpio >/dev/null 2>&1; then
             sudo mkinitcpio -P >/dev/null 2>&1 || true
         fi
     fi
+
+    if [[ "$INSTALL_COMPLETE" != "1" && "$STATE_TOUCHED" == "1" ]]; then
+        warn "Restoring previous install state metadata."
+
+        sudo rm -f \
+            "${STATE_ROOT}/installed-build-info.txt" \
+            "${STATE_ROOT}/installed-archive.txt" \
+            "${STATE_ROOT}/installed-kernel.txt" \
+            "${STATE_ROOT}/installed-nvidia.txt" || true
+
+        if [[ -d "$BACKUP_DIR/state" ]]; then
+            sudo cp -a "$BACKUP_DIR/state/." "$STATE_ROOT/" || true
+        fi
+    fi
+
+    if [[ -n "$STAGE" ]]; then
+        sudo rm -rf "$STAGE" >/dev/null 2>&1 || true
+    fi
+
+    rm -rf "$TMP" || true
     restore_readonly
     exit "$rc"
 }
-trap rollback ERR INT TERM
+
+interrupt()
+{
+    exit 130
+}
+
+terminate()
+{
+    exit 143
+}
+
+trap cleanup EXIT
+trap interrupt INT
+trap terminate TERM
 
 if command -v steamos-readonly >/dev/null 2>&1 &&
    steamos-readonly status 2>/dev/null | grep -qi enabled; then
     log "Temporarily disabling SteamOS read-only mode..."
-    sudo steamos-readonly disable
     RO_WAS_ENABLED=1
+    sudo steamos-readonly disable
 fi
 
 sudo mkdir -p "$BACKUP_DIR"
@@ -183,9 +225,9 @@ for module in "${MODULES[@]}"; do
     sudo install -o root -g root -m 0644 "$module" "$STAGE/$(basename "$module")"
 done
 
+TARGET_TOUCHED=1
 sudo rm -rf "$TARGET_DIR"
 sudo mv "$STAGE" "$TARGET_DIR"
-INSTALLED=1
 
 log "Refreshing module dependency database..."
 sudo depmod -a "$CURRENT_KERNEL"
@@ -201,15 +243,29 @@ if command -v mkinitcpio >/dev/null 2>&1; then
     sudo mkinitcpio -P
 fi
 
-sudo mkdir -p "$STATE_ROOT"
+sudo mkdir -p "$STATE_ROOT" "$BACKUP_DIR/state"
+
+for state_file in \
+    installed-build-info.txt \
+    installed-archive.txt \
+    installed-kernel.txt \
+    installed-nvidia.txt
+do
+    if [[ -f "${STATE_ROOT}/${state_file}" ]]; then
+        sudo cp -a "${STATE_ROOT}/${state_file}" "$BACKUP_DIR/state/"
+    fi
+done
+
+STATE_TOUCHED=1
 sudo cp "$INFO" "${STATE_ROOT}/installed-build-info.txt"
 printf '%s\n' "$ARCHIVE" | sudo tee "${STATE_ROOT}/installed-archive.txt" >/dev/null
 printf '%s\n' "$CURRENT_KERNEL" | sudo tee "${STATE_ROOT}/installed-kernel.txt" >/dev/null
 printf '%s\n' "$BUILD_NVIDIA" | sudo tee "${STATE_ROOT}/installed-nvidia.txt" >/dev/null
 
-INSTALLED=0
+INSTALL_COMPLETE=1
 restore_readonly
-trap - ERR INT TERM
+rm -rf "$TMP"
+trap - EXIT INT TERM
 
 ok "NVIDIA open kernel modules installed successfully."
 log "Reboot is required before the new modules will be used."
