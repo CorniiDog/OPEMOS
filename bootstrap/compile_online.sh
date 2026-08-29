@@ -106,7 +106,7 @@ if [[ "$IN_CODE" == "1" ]]; then
         FORWARD_ARGS+=("-o" "$HOME/releases")
     fi
 else
-    SOURCE_REV="$(git ls-remote "https://github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | awk "NR==1 {print \\$1}")"
+    SOURCE_REV="$(git ls-remote "https://github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | awk 'NR==1 {print $1}')"
 
     [[ "$SOURCE_REV" =~ ^[0-9a-fA-F]{40}$ ]] || {
         echo "Source branch ${SOURCE_BRANCH} does not exist on ${SOURCE_REPO}." >&2
