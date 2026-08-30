@@ -95,6 +95,27 @@ Artifacts are preserved under:
 
 ## Local and in-code testing
 
+### Offline image-target resolution
+
+Image builders must resolve compatibility from the mounted target image, not
+from the Fedora appliance or macOS host. Fetch the GitHub releases API response,
+then pass the detected SteamOS identity, exact module-directory kernel, and ELF
+architecture to the versioned JSON resolver:
+
+```bash
+python3 lib/resolve_target.py \
+    --steamos 3.8.16 \
+    --kernel 6.16.12-valve24.5-1-neptune-616-gb2f7cfe85e45 \
+    --architecture x86_64 \
+    --releases releases.json
+```
+
+Schema version `1` returns `status=compatible` with certification, archive, and
+SHA256-sidecar URLs; `no_compatible_artifact`, `unsupported_target`, and
+`invalid_target` are normal fail-closed results and contain no downloadable
+artifact. The resolver requires an exact kernel match and applies only the same
+bounded, non-forward SteamOS major/minor fallback used by the live installer.
+
 Validate or install a local archive through the same online orchestration path:
 
 ```bash

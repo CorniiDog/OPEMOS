@@ -26,6 +26,11 @@ are completed.
 
 ### Current priority queue
 
+The image-builder integration now has a versioned offline-target JSON resolver
+in `lib/resolve_target.py`. The Fedora appliance can supply identity discovered
+from a mounted recovery image without confusing the guest kernel or OS for the
+installation target.
+
 1. [ ] Re-test the published NVIDIA 575.64.05 certified release through the
    current public online installer.
 2. [ ] Run the certified installer a second time and verify the idempotent fast

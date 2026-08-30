@@ -21,6 +21,8 @@ for mock_file in tests/fixtures/transaction/bin/*; do
 done
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/select_release.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/resolve_target.py
 
 printf 'Checking whitespace errors...\n'
 git diff --check
@@ -143,6 +145,45 @@ SELECTED="$(python3 "$PROJECT_ROOT/lib/select_release.py" \
 SELECTED="$(python3 "$PROJECT_ROOT/lib/select_release.py" \
     3.9.0 kernel-a "$POLICY_FIXTURE")"
 [[ -z "$SELECTED" ]] || fail "release selector crossed SteamOS major/minor"
+
+printf 'Checking offline-target JSON resolver contract...\n'
+RESOLVED="$(python3 "$PROJECT_ROOT/lib/resolve_target.py" \
+    --steamos 3.8.16 --kernel kernel-a --architecture x86_64 \
+    --releases "$POLICY_FIXTURE")"
+python3 - "$RESOLVED" <<'PY' || fail "compatible target JSON contract is invalid"
+import json
+import sys
+result = json.loads(sys.argv[1])
+assert result["schemaVersion"] == 1
+assert result["status"] == "compatible"
+assert result["compatibility"] == "exact"
+assert result["target"]["kernelVersion"] == "kernel-a"
+assert result["certification"]["nvidiaVersion"] == "575.64.05"
+assert result["artifact"]["checksum"]["algorithm"] == "sha256"
+PY
+
+RESOLVED="$(python3 "$PROJECT_ROOT/lib/resolve_target.py" \
+    --steamos 3.8.16 --kernel absent-kernel --architecture x86_64 \
+    --releases "$POLICY_FIXTURE")"
+python3 - "$RESOLVED" <<'PY' || fail "no-artifact target JSON contract is invalid"
+import json
+import sys
+result = json.loads(sys.argv[1])
+assert result["status"] == "no_compatible_artifact"
+assert result["reason"] == "no_certified_release"
+assert "artifact" not in result
+PY
+
+RESOLVED="$(python3 "$PROJECT_ROOT/lib/resolve_target.py" \
+    --steamos 3.8.16 --kernel kernel-a --architecture aarch64 \
+    --releases "$POLICY_FIXTURE")"
+python3 - "$RESOLVED" <<'PY' || fail "unsupported-architecture JSON contract is invalid"
+import json
+import sys
+result = json.loads(sys.argv[1])
+assert result["status"] == "unsupported_target"
+assert result["reason"] == "unsupported_architecture"
+PY
 
 printf 'Checking fake-root install/uninstall transactions...\n'
 ./tests/transaction.sh
