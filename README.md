@@ -137,6 +137,13 @@ build-info files. `--source` and `--headers-package` permit pinned local inputs;
 The command intentionally requires an x86_64 Fedora appliance even when QEMU is
 running on an Apple Silicon macOS host.
 
+Before compilation, it validates the package's exact Arch metadata and rejects
+absolute or traversal archive paths. After extraction, the exact-kernel build
+tree and every required prepared-tree file must resolve inside the disposable
+extraction root; symlink escapes are rejected. Extraction also retains
+libarchive's default intermediate-symlink protections, uses atomic safe writes,
+and does not restore package ownership or permissions.
+
 The build records the compiler used by Valve's kernel and the compiler used for
 the external modules. If their major versions differ, it prefers an installed
 `gcc-MAJOR` compatibility compiler and otherwise keeps the output explicitly

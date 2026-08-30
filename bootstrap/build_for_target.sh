@@ -371,32 +371,22 @@ fi
 
 BUILD_PHASE=header_identity_mismatch
 HEADER_SHA256="$(sha256_file "$HEADERS_PACKAGE")"
-PACKAGE_INFO="$(bsdtar -xOf "$HEADERS_PACKAGE" .PKGINFO 2>/dev/null)" ||
-    die "Headers archive does not contain readable Arch package metadata."
-PACKAGE_NAME="$(printf '%s\n' "$PACKAGE_INFO" | sed -n 's/^pkgname = //p' | head -n1)"
-PACKAGE_VERSION="$(printf '%s\n' "$PACKAGE_INFO" | sed -n 's/^pkgver = //p' | head -n1)"
-PACKAGE_ARCH="$(printf '%s\n' "$PACKAGE_INFO" | sed -n 's/^arch = //p' | head -n1)"
-[[ "$PACKAGE_NAME" == "linux-neptune-${NEPTUNE_SERIES}-headers" ]] ||
-    die "Unexpected headers package name: ${PACKAGE_NAME:-missing}"
-[[ "$PACKAGE_VERSION" == "${KERNEL_PKGVER}-${KERNEL_PKGREL}" ]] ||
-    die "Unexpected headers package version: ${PACKAGE_VERSION:-missing}"
-[[ "$PACKAGE_ARCH" == "$ARCHITECTURE" ]] ||
-    die "Unexpected headers package architecture: ${PACKAGE_ARCH:-missing}"
-if bsdtar -tf "$HEADERS_PACKAGE" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
-    die "Headers package contains an unsafe archive path."
-fi
+PACKAGE_NAME="linux-neptune-${NEPTUNE_SERIES}-headers"
+PACKAGE_VERSION="${KERNEL_PKGVER}-${KERNEL_PKGREL}"
+PACKAGE_ARCH="$ARCHITECTURE"
+python3 "$SUPPORT_ROOT/lib/validate_target_headers.py" package \
+    --package "$HEADERS_PACKAGE" --name "$PACKAGE_NAME" \
+    --version "$PACKAGE_VERSION" --architecture "$PACKAGE_ARCH" ||
+    die "Headers package identity or archive paths failed validation."
 
 KERNEL_ROOT="$WORK_DIR/kernel-root"
 mkdir -p "$KERNEL_ROOT"
-run_cancellable bsdtar -xf "$HEADERS_PACKAGE" -C "$KERNEL_ROOT"
+run_cancellable bsdtar -xf "$HEADERS_PACKAGE" -C "$KERNEL_ROOT" \
+    --safe-writes --no-same-owner --no-same-permissions
 BUILD_PHASE=header_tree_incomplete
-KERNEL_TREE="$KERNEL_ROOT/usr/lib/modules/$KERNEL_VERSION/build"
-[[ -n "$KERNEL_TREE" && -f "$KERNEL_TREE/Makefile" ]] ||
-    die "Headers package does not contain the exact target kernel build tree: ${KERNEL_VERSION}"
-[[ -f "$KERNEL_TREE/include/generated/autoconf.h" ]] ||
-    die "Valve kernel headers are not prepared for external modules."
-[[ -f "$KERNEL_TREE/Module.symvers" ]] ||
-    die "Valve kernel headers do not contain Module.symvers."
+KERNEL_TREE="$(python3 "$SUPPORT_ROOT/lib/validate_target_headers.py" tree \
+    --root "$KERNEL_ROOT" --kernel "$KERNEL_VERSION")" ||
+    die "Headers package does not contain a safe, prepared exact-kernel build tree."
 
 KERNEL_COMPILER_DEFINITION="$(grep -m1 '^#define LINUX_COMPILER ' \
     "$KERNEL_TREE/include/generated/compile.h" 2>/dev/null || true)"

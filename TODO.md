@@ -1224,9 +1224,11 @@ signing policy.
 * [x] Run `tests/check.sh` under the same Fedora appliance used for builds.
 * [x] Run the complete fake-root install/uninstall transaction suite under
   Fedora Bash 5; no transaction-test skips are permitted for release validation.
-* [ ] Add fixtures for wrong `.PKGINFO`, wrong full kernel directory, missing
-  `Module.symvers`, unsafe archive paths, duplicate/missing modules, wrong ELF
-  architecture, and wrong vermagic.
+* [x] Add fixtures for wrong `.PKGINFO`, wrong full kernel directory, missing
+  prepared-tree files, unsafe archive paths, and extraction-root escape.
+* [ ] Add file-backed fixtures for duplicate/missing modules, wrong ELF
+  architecture, and wrong vermagic; module-name set logic already has unit
+  coverage.
 * [ ] Test network failure, truncated downloads, cancellation during download,
   cancellation during compilation, and output-directory exhaustion.
 * [ ] Test both automatically downloaded and pinned-local header inputs.
