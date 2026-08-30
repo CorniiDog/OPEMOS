@@ -18,6 +18,10 @@ EXPECTED_MODULES = {
     "nvidia-peermem.ko",
     "nvidia-uvm.ko",
 }
+PACKAGE_SIGNER_MANIFEST = (
+    Path(__file__).resolve().parent.parent
+    / "trust/nvidia-userspace-package-signers.json"
+)
 
 
 def arguments():
@@ -89,6 +93,45 @@ def package_members(path):
     return members
 
 
+def validate_package_links(path):
+    try:
+        completed = subprocess.run(
+            ["bsdtar", "-tvf", str(path)],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as error:
+        fail("userspace_package_invalid", f"Cannot inspect links in {path.name}: {error}")
+    for line in completed.stdout.splitlines():
+        if not line or line[0] not in ("l", "h"):
+            continue
+        fields = line.split(maxsplit=8)
+        if len(fields) != 9:
+            fail("userspace_package_invalid", f"Cannot parse a link in {path.name}")
+        relation = " -> " if line[0] == "l" else " link to "
+        if relation not in fields[8]:
+            fail("userspace_package_invalid", f"Cannot parse a link target in {path.name}")
+        name, target = fields[8].split(relation, 1)
+        member = PurePosixPath(name)
+        destination = PurePosixPath(target)
+        if destination.is_absolute():
+            destination = PurePosixPath(*destination.parts[1:])
+        else:
+            destination = member.parent / destination
+        depth = 0
+        for component in destination.parts:
+            if component in ("", "."):
+                continue
+            if component == "..":
+                depth -= 1
+                if depth < 0:
+                    fail("userspace_package_unsafe", f"{path.name} has an escaping link")
+            else:
+                depth += 1
+
+
 def verify_signature(package, signature, keyring):
     try:
         completed = subprocess.run(
@@ -108,6 +151,27 @@ def verify_signature(package, signature, keyring):
     if len(fingerprints) != 1 or not re.fullmatch(r"[0-9A-F]{40}", fingerprints[0]):
         fail("userspace_signature_invalid", f"No unique full signer fingerprint for {package.name}")
     return fingerprints[0]
+
+
+def require_reviewed_signer(fingerprint, package_name):
+    try:
+        manifest = json.loads(PACKAGE_SIGNER_MANIFEST.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        fail("userspace_trust_invalid", f"Cannot read package signer policy: {error}")
+    if manifest.get("schemaVersion") != 1:
+        fail("userspace_trust_invalid", "unsupported package signer policy schema")
+    matches = [
+        signer
+        for signer in manifest.get("signers", [])
+        if signer.get("fingerprint", "").upper() == fingerprint
+        and signer.get("status") == "active"
+        and package_name in signer.get("packages", [])
+    ]
+    if len(matches) != 1:
+        fail(
+            "userspace_signer_rejected",
+            f"{package_name} signer is not active in reviewed policy",
+        )
 
 
 def plain_os_release(path):
@@ -250,15 +314,23 @@ def validate(args):
         if pkgver.rsplit("-", 1)[0] != nvidia:
             fail("userspace_version_mismatch", f"{expected_name} does not match {nvidia}")
         members = package_members(package)
+        validate_package_links(package)
         signer = verify_signature(package, signature, args.package_keyring)
-        package_records.append((expected_name, pkgver, signer, sha256(package)))
+        require_reviewed_signer(signer, expected_name)
+        pkgver_only, separator, pkgrel = pkgver.rpartition("-")
+        if not separator or pkgver_only != nvidia or not pkgrel:
+            fail("userspace_version_mismatch", f"{expected_name} has invalid pkgver/pkgrel")
+        package_records.append(
+            (expected_name, pkgver, pkgver_only, pkgrel, signer, sha256(package))
+        )
         if expected_name == "nvidia-utils" and not any(
-            re.fullmatch(r"usr/lib/firmware/nvidia/[^/]+/gsp[^/]*\.bin", name)
+            re.fullmatch(
+                rf"usr/lib/firmware/nvidia/{re.escape(nvidia)}/gsp[^/]*\.bin",
+                name,
+            )
             for name in members
         ):
-            fail("gsp_firmware_missing", "nvidia-utils lacks versioned GSP firmware")
-    if package_records[0][1] != package_records[1][1]:
-        fail("userspace_version_mismatch", "userspace package releases differ")
+            fail("gsp_firmware_missing", "nvidia-utils lacks exact-version GSP firmware")
 
     return {
         "schemaVersion": 1,
@@ -271,9 +343,20 @@ def validate(args):
             "architecture": "x86_64",
         },
         "archiveSha256": archive_sha,
+        "keyring": {
+            "name": args.package_keyring.name,
+            "sha256": sha256(args.package_keyring),
+        },
         "packages": [
-            {"name": name, "version": version, "signer": signer, "sha256": digest}
-            for name, version, signer, digest in package_records
+            {
+                "name": name,
+                "fullVersion": full_version,
+                "pkgver": pkgver,
+                "pkgrel": pkgrel,
+                "signer": signer,
+                "sha256": digest,
+            }
+            for name, full_version, pkgver, pkgrel, signer, digest in package_records
         ],
     }
 
@@ -283,6 +366,22 @@ def main():
     try:
         document = validate(args)
     except (ValueError, OSError, json.JSONDecodeError, tarfile.TarError) as error:
+        text = str(error)
+        reason, separator, message = text.partition(": ")
+        if not separator:
+            reason, message = "validation_failed", text
+        document = {
+            "schemaVersion": 1,
+            "status": "failed",
+            "reason": reason,
+            "message": message,
+        }
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        staged = args.output.with_name(f".{args.output.name}.tmp-{os.getpid()}")
+        staged.write_text(
+            json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n"
+        )
+        staged.replace(args.output)
         print(f"validate_install_inputs.py: {error}", file=__import__("sys").stderr)
         return 1
     args.output.parent.mkdir(parents=True, exist_ok=True)

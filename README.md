@@ -175,6 +175,24 @@ schema-1 provenance, callers must provide exact local `nvidia-utils` and
 keyring. No package or source is downloaded during installation. Before
 mutation, the caller must mount the explicit SteamOS root and its corresponding
 boot/EFI partition at `<root>/boot`; the installer refuses to guess an A/B slot.
+Package signatures must resolve to an active package-specific fingerprint in
+`trust/nvidia-userspace-package-signers.json`. Fedora `gpgv` requires a binary
+keyring; an ASCII-armored pacman keyring must be dearmored before use. The
+result records the supplied binary keyring SHA256, both package hashes, complete
+versions/pkgrels, and signer fingerprints so the image builder can additionally
+pin the exact prepared keyring artifact.
+
+Prepare the minimal binary keyring from an existing trusted Arch key source:
+
+```bash
+python3 bootstrap/prepare_nvidia_package_keyring.py \
+  --source /usr/share/pacman/keyrings/archlinux.gpg \
+  --output /shared/approved-package-signers.gpg
+```
+
+The command accepts armored or binary source material, requires every active
+fingerprint in the reviewed manifest, exports only those keys, and refuses to
+overwrite an existing output.
 
 Use `--validate-only` before allowing any image mutation. Validation requires
 the exact target kernel directory, byte-identical external/embedded provenance,

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "signers": [
+    {
+      "fingerprint": "05C7775A9E8B977407FE08E69D4C5AA15426DA0A",
+      "status": "active",
+      "packages": ["nvidia-utils"],
+      "reviewedAt": "2026-08-30",
+      "evidence": "Verified against nvidia-utils 575.64.05-2 from the Arch Linux Archive"
+    },
+    {
+      "fingerprint": "D2E95FEC015CF1F911AAAB0C3D4C5008BB5C8D29",
+      "status": "active",
+      "packages": ["lib32-nvidia-utils"],
+      "reviewedAt": "2026-08-30",
+      "evidence": "Verified against lib32-nvidia-utils 575.64.05-1 from the Arch Linux Archive"
+    }
+  ]
+}

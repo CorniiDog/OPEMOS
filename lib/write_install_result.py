@@ -24,6 +24,7 @@ def parse_args():
     parser.add_argument("--nvidia-utils", default="")
     parser.add_argument("--lib32-nvidia-utils", default="")
     parser.add_argument("--mounts-released", choices=("true", "false"), default="true")
+    parser.add_argument("--validation", type=Path)
     return parser.parse_args()
 
 
@@ -66,6 +67,15 @@ def main():
         },
         "cleanup": {"mountsReleased": args.mounts_released == "true"},
     }
+    if args.validation:
+        validation = json.loads(args.validation.read_text(encoding="utf-8"))
+        if validation.get("status") != "verified":
+            raise SystemExit("Result validation metadata must be a verified document.")
+        document["validation"] = {
+            "archiveSha256": validation["archiveSha256"],
+            "keyring": validation["keyring"],
+            "packages": validation["packages"],
+        }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     staged = args.output.with_name(f".{args.output.name}.tmp-{os.getpid()}")
     staged.write_text(

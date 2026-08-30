@@ -1246,6 +1246,9 @@ signing policy.
 * [x] Add fail-closed validation for target identity, artifact provenance/module
   hashes, userspace signatures/version agreement, safe package paths, and GSP
   firmware presence.
+* [x] Pin active package-specific Arch signer fingerprints for `nvidia-utils`
+  and `lib32-nvidia-utils`, while recording the prepared binary keyring hash in
+  every validated/successful result.
 * [x] Add target-root pacman installation, module compression/configuration,
   offline depmod, target mkinitcpio, reverse-order bind-mount cleanup, and
   structured success/failure/cancellation results.

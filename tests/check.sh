@@ -41,6 +41,8 @@ python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __
     lib/validate_install_inputs.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/write_install_result.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    bootstrap/prepare_nvidia_package_keyring.py
 
 printf 'Checking exact target-header validation...\n'
 python3 tests/header_validation.py
@@ -410,6 +412,31 @@ rm -f "$RESULT_FIXTURE" "${RESULT_FIXTURE}.invalid"
 
 printf 'Checking offline-root installer contract...\n'
 ./bootstrap/install_to_root.sh --help >/dev/null
+python3 bootstrap/prepare_nvidia_package_keyring.py --help >/dev/null
+python3 - "$PROJECT_ROOT/trust/nvidia-userspace-package-signers.json" <<'PY' || \
+    fail "NVIDIA userspace package trust manifest is invalid"
+import json
+import re
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as manifest_file:
+    manifest = json.load(manifest_file)
+assert manifest["schemaVersion"] == 1
+active = {
+    signer["fingerprint"]: tuple(signer["packages"])
+    for signer in manifest["signers"]
+    if signer["status"] == "active"
+}
+assert active == {
+    "05C7775A9E8B977407FE08E69D4C5AA15426DA0A": ("nvidia-utils",),
+    "D2E95FEC015CF1F911AAAB0C3D4C5008BB5C8D29": ("lib32-nvidia-utils",),
+}
+for signer in manifest["signers"]:
+    assert re.fullmatch(r"[0-9A-F]{40}|[0-9A-F]{64}", signer["fingerprint"])
+    assert signer["status"] in ("active", "revoked")
+    assert signer["packages"]
+    assert re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", signer["reviewedAt"])
+PY
 python3 tests/offline_root_validation.py
 INSTALL_RESULT_FIXTURE="$(mktemp /tmp/offline-install-result.XXXXXX)"
 python3 "$PROJECT_ROOT/lib/write_install_result.py" \
