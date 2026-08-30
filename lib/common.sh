@@ -151,26 +151,28 @@ source_branch_matches_expected()
 
 validate_nvidia_module_set()
 {
-    local module module_name
-    local -A remaining=(
-        [nvidia-drm.ko]=1
-        [nvidia-modeset.ko]=1
-        [nvidia-peermem.ko]=1
-        [nvidia-uvm.ko]=1
-        [nvidia.ko]=1
-    )
+    local module module_name seen=""
 
-    (( $# == ${#remaining[@]} )) || return 1
+    # Keep this validator compatible with macOS Bash 3.2. The build paths run
+    # on newer Bash, but the repository's non-destructive checks also run on
+    # the macOS development host.
+    (( $# == 5 )) || return 1
 
     for module in "$@"; do
         module_name="$(basename "$module")"
         module_name="${module_name%.zst}"
 
-        [[ -n "${remaining[$module_name]:-}" ]] || return 1
-        unset 'remaining[$module_name]'
+        case "$module_name" in
+            nvidia.ko|nvidia-drm.ko|nvidia-modeset.ko|nvidia-peermem.ko|nvidia-uvm.ko) ;;
+            *) return 1 ;;
+        esac
+        case " $seen " in
+            *" $module_name "*) return 1 ;;
+        esac
+        seen="${seen}${seen:+ }${module_name}"
     done
 
-    (( ${#remaining[@]} == 0 ))
+    return 0
 }
 
 get_neptune_series()

@@ -176,14 +176,27 @@ if [[ -z "$HEADERS_PACKAGE" ]]; then
 fi
 
 HEADER_SHA256="$(sha256_file "$HEADERS_PACKAGE")"
+PACKAGE_INFO="$(bsdtar -xOf "$HEADERS_PACKAGE" .PKGINFO 2>/dev/null)" ||
+    die "Headers archive does not contain readable Arch package metadata."
+PACKAGE_NAME="$(printf '%s\n' "$PACKAGE_INFO" | sed -n 's/^pkgname = //p' | head -n1)"
+PACKAGE_VERSION="$(printf '%s\n' "$PACKAGE_INFO" | sed -n 's/^pkgver = //p' | head -n1)"
+PACKAGE_ARCH="$(printf '%s\n' "$PACKAGE_INFO" | sed -n 's/^arch = //p' | head -n1)"
+[[ "$PACKAGE_NAME" == "linux-neptune-${NEPTUNE_SERIES}-headers" ]] ||
+    die "Unexpected headers package name: ${PACKAGE_NAME:-missing}"
+[[ "$PACKAGE_VERSION" == "${KERNEL_PKGVER}-${KERNEL_PKGREL}" ]] ||
+    die "Unexpected headers package version: ${PACKAGE_VERSION:-missing}"
+[[ "$PACKAGE_ARCH" == "$ARCHITECTURE" ]] ||
+    die "Unexpected headers package architecture: ${PACKAGE_ARCH:-missing}"
+if bsdtar -tf "$HEADERS_PACKAGE" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
+    die "Headers package contains an unsafe archive path."
+fi
+
 KERNEL_ROOT="$WORK_DIR/kernel-root"
 mkdir -p "$KERNEL_ROOT"
 bsdtar -xf "$HEADERS_PACKAGE" -C "$KERNEL_ROOT"
 KERNEL_TREE="$KERNEL_ROOT/usr/lib/modules/$KERNEL_VERSION/build"
-[[ -d "$KERNEL_TREE" ]] ||
-    KERNEL_TREE="$(find "$KERNEL_ROOT/usr/lib/modules" -mindepth 2 -maxdepth 2 -type d -name build | head -n1)"
 [[ -n "$KERNEL_TREE" && -f "$KERNEL_TREE/Makefile" ]] ||
-    die "Headers package does not contain a kernel build tree."
+    die "Headers package does not contain the exact target kernel build tree: ${KERNEL_VERSION}"
 [[ -f "$KERNEL_TREE/include/generated/autoconf.h" ]] ||
     die "Valve kernel headers are not prepared for external modules."
 [[ -f "$KERNEL_TREE/Module.symvers" ]] ||
@@ -229,6 +242,10 @@ CHECKSUM="$ARCHIVE.sha256"
     printf 'header_package=%s\n' "$HEADERS_FILENAME"
     printf 'header_url=%s\n' "${HEADERS_URL:-local-file}"
     printf 'header_sha256=%s\n' "$HEADER_SHA256"
+    printf 'header_package_name=%s\n' "$PACKAGE_NAME"
+    printf 'header_package_version=%s\n' "$PACKAGE_VERSION"
+    printf 'header_package_architecture=%s\n' "$PACKAGE_ARCH"
+    printf 'header_authentication=https-transport-or-local-input-not-signature-verified\n'
     printf '\nmodules:\n'
     for module in "$PACKAGE_DIR/modules/"*.ko; do
         printf '  %s  %s  vermagic=%s\n' "$(sha256_file "$module")" \
