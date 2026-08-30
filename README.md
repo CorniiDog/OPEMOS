@@ -137,6 +137,14 @@ build-info files. `--source` and `--headers-package` permit pinned local inputs;
 The command intentionally requires an x86_64 Fedora appliance even when QEMU is
 running on an Apple Silicon macOS host.
 
+The build records the compiler used by Valve's kernel and the compiler used for
+the external modules. If their major versions differ, it prefers an installed
+`gcc-MAJOR` compatibility compiler and otherwise keeps the output explicitly
+`development-unverified`. Use `--require-compiler-major-match` when a caller
+must fail instead. Exact compiler version, binutils, make, kmod, Fedora identity,
+support/source commits and dirty state, and per-module hashes/version/vermagic
+are recorded in `BUILD-INFO.txt`.
+
 Validate or install a local archive through the same online orchestration path:
 
 ```bash

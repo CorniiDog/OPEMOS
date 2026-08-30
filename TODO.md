@@ -751,7 +751,12 @@ Desired design:
 * [ ] Make pristine 580 build bit-for-bit reproducible where feasible.
 * [x] Distinguish deterministic source identity from potentially nondeterministic binary output.
 * [x] Prevent build-cache hits for dirty source/support trees and require matching support commit for clean cache hits.
-* [ ] Resolve or intentionally pin the compiler mismatch: Neptune was built with GCC 15.1.1, while Fedora 42 currently provides GCC 15.2.1.
+* [x] Detect and record target/build compiler versions and major-version match.
+* [ ] Prefer an installed matching-major compatibility compiler automatically;
+  validate this path with Fedora `gcc15` after the successful GCC 16.2.1
+  development build against Valve GCC 15.1.1.
+* [ ] Decide whether certification requires compiler-major equality or an exact
+  compiler build after comparative module/runtime testing.
 
 ---
 
@@ -1111,17 +1116,17 @@ signing policy.
 
 ## First real-build gate
 
-* [ ] Complete the dedicated x86_64 Fedora/QEMU build for SteamOS 3.8.14,
+* [x] Complete the dedicated x86_64 Fedora/QEMU build for SteamOS 3.8.14,
   NVIDIA 575.64.05, and kernel
   `6.16.12-valve24.4-1-neptune-616-gfe145653a794`.
-* [ ] Confirm Valve still serves the derived historical package:
+* [x] Confirm Valve still serves the derived historical package:
   `linux-neptune-616-headers-6.16.12.valve24.4-1-x86_64.pkg.tar.zst`.
-* [ ] Confirm the package contains the exact full kernel-release build path.
-* [ ] Confirm NVIDIA 575.64.05 compiles without target-header reconstruction.
-* [ ] Confirm all five output modules report the exact target vermagic and
+* [x] Confirm the package contains the exact full kernel-release build path.
+* [x] Confirm NVIDIA 575.64.05 compiles without target-header reconstruction.
+* [x] Confirm all five output modules report the exact target vermagic and
   NVIDIA version.
 * [ ] Confirm the existing installer accepts the generated archive unchanged.
-* [ ] Preserve the complete build log and generated build metadata from this
+* [x] Preserve the complete build log and generated build metadata from this
   first integration run.
 * [ ] Correct the support contract before image injection if any of these gates
   fail; do not approximate headers, source, kernel, or NVIDIA versions.
@@ -1176,16 +1181,16 @@ signing policy.
 
 ## Complete provenance
 
-* [ ] Record support repository URL, exact commit, and dirty state.
-* [ ] Record NVIDIA source repository, branch/provider, exact commit, dirty
+* [x] Record support repository URL, exact commit, and dirty state.
+* [x] Record NVIDIA source repository, branch/provider, exact commit, dirty
   state, and upstream base commit.
-* [ ] Record Fedora appliance version and architecture.
-* [ ] Record GCC, binutils, make, kmod, and relevant build-tool versions.
+* [x] Record Fedora appliance version and architecture.
+* [x] Record GCC, binutils, make, kmod, and relevant build-tool versions.
 * [x] Record target SteamOS, exact kernel, NVIDIA version, header package
   identity, header URL/local origin, and SHA256.
 * [ ] Record header signer/signature state.
-* [ ] Record build start/end timestamps and build mode.
-* [ ] Record every module filename, SHA256, NVIDIA version, ELF architecture,
+* [ ] Record separate build start/end timestamps; build mode is recorded.
+* [x] Record every module filename, SHA256, NVIDIA version, ELF architecture,
   and full vermagic in machine-readable form.
 * [ ] Ensure provenance is included in both the archive and the image-builder
   manifest.
@@ -1222,8 +1227,8 @@ signing policy.
 
 * [ ] Image builder must determine the actual boot kernel when multiple module
   trees exist; support-side compilation must receive one explicit target.
-* [ ] Image builder must launch an x86_64 build appliance on Apple Silicon;
-  its current aarch64 appliance cannot execute this native build command.
+* [x] Image builder can launch an x86_64 TCG build appliance on Apple Silicon;
+  the first complete build succeeded in 30m15s.
 * [ ] Treat QEMU x86_64 software-emulation slowness as progress/UX concern, not
   permission to weaken compatibility checks.
 * [ ] Image builder must install exactly matching NVIDIA userspace and GSP

@@ -15,6 +15,7 @@ HEADERS_URL=""
 OUTPUT_DIR=""
 RESOLVE_ONLY=0
 INSTALL_DEPENDENCIES=0
+REQUIRE_COMPILER_MAJOR_MATCH=0
 
 usage()
 {
@@ -39,6 +40,9 @@ Source and headers:
 Other:
       --architecture ARCH     Target architecture; currently x86_64 only
       --install-dependencies  Install required packages with sudo dnf
+      --require-compiler-major-match
+                              Fail unless the module compiler major matches the
+                              compiler recorded by the target kernel
       --resolve-only          Validate/describe inputs without downloading/building
   -h, --help                  Show this help
 
@@ -58,6 +62,7 @@ while [[ $# -gt 0 ]]; do
         --headers-url) [[ $# -ge 2 ]] || die "$1 requires a URL."; HEADERS_URL="$2"; shift 2 ;;
         -o|--output) [[ $# -ge 2 ]] || die "$1 requires a directory."; OUTPUT_DIR="$2"; shift 2 ;;
         --install-dependencies) INSTALL_DEPENDENCIES=1; shift ;;
+        --require-compiler-major-match) REQUIRE_COMPILER_MAJOR_MATCH=1; shift ;;
         --resolve-only) RESOLVE_ONLY=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) die "Unknown argument: $1" ;;
@@ -202,9 +207,41 @@ KERNEL_TREE="$KERNEL_ROOT/usr/lib/modules/$KERNEL_VERSION/build"
 [[ -f "$KERNEL_TREE/Module.symvers" ]] ||
     die "Valve kernel headers do not contain Module.symvers."
 
+KERNEL_COMPILER_DEFINITION="$(grep -m1 '^#define LINUX_COMPILER ' \
+    "$KERNEL_TREE/include/generated/compile.h" 2>/dev/null || true)"
+KERNEL_COMPILER_VERSION="$(printf '%s\n' "$KERNEL_COMPILER_DEFINITION" |
+    sed -n 's/.*gcc[^0-9]*\([0-9][0-9.]*\).*/\1/p')"
+KERNEL_COMPILER_MAJOR="${KERNEL_COMPILER_VERSION%%.*}"
+BUILD_CC="${CC:-gcc}"
+BUILD_COMPILER_VERSION="$($BUILD_CC -dumpfullversion -dumpversion)"
+BUILD_COMPILER_MAJOR="${BUILD_COMPILER_VERSION%%.*}"
+
+if [[ "$KERNEL_COMPILER_MAJOR" =~ ^[0-9]+$ &&
+      "$BUILD_COMPILER_MAJOR" != "$KERNEL_COMPILER_MAJOR" &&
+      -x "$(command -v "gcc-${KERNEL_COMPILER_MAJOR}" 2>/dev/null || true)" ]]; then
+    BUILD_CC="gcc-${KERNEL_COMPILER_MAJOR}"
+    BUILD_COMPILER_VERSION="$($BUILD_CC -dumpfullversion -dumpversion)"
+    BUILD_COMPILER_MAJOR="${BUILD_COMPILER_VERSION%%.*}"
+    log "Using installed GCC ${BUILD_COMPILER_MAJOR} compatibility compiler."
+fi
+
+COMPILER_MAJOR_MATCH=unknown
+if [[ "$KERNEL_COMPILER_MAJOR" =~ ^[0-9]+$ ]]; then
+    COMPILER_MAJOR_MATCH=0
+    [[ "$BUILD_COMPILER_MAJOR" == "$KERNEL_COMPILER_MAJOR" ]] && COMPILER_MAJOR_MATCH=1
+fi
+if [[ "$REQUIRE_COMPILER_MAJOR_MATCH" == "1" && "$COMPILER_MAJOR_MATCH" != "1" ]]; then
+    die "Build compiler ${BUILD_COMPILER_VERSION} does not match target kernel compiler major ${KERNEL_COMPILER_MAJOR:-unknown}."
+fi
+if [[ "$COMPILER_MAJOR_MATCH" == "0" ]]; then
+    warn "Target kernel used GCC ${KERNEL_COMPILER_VERSION:-unknown}; modules will use ${BUILD_CC} ${BUILD_COMPILER_VERSION}."
+    warn "The artifact will remain development-unverified."
+fi
+
 log "Building NVIDIA ${NVIDIA_VERSION} for ${KERNEL_VERSION}..."
 make -C "$SOURCE_DIR" clean >/dev/null 2>&1 || true
-make -C "$SOURCE_DIR" modules -j"$(nproc)" SYSSRC="$KERNEL_TREE" SYSOUT="$KERNEL_TREE"
+make -C "$SOURCE_DIR" modules -j"$(nproc)" CC="$BUILD_CC" \
+    SYSSRC="$KERNEL_TREE" SYSOUT="$KERNEL_TREE"
 
 mapfile -t MODULES < <(find "$SOURCE_DIR/kernel-open" -maxdepth 1 -type f -name '*.ko' | sort)
 validate_nvidia_module_set "${MODULES[@]}" ||
@@ -222,6 +259,20 @@ for module in "${MODULES[@]}"; do
 done
 
 SOURCE_COMMIT="$(git -C "$SOURCE_DIR" rev-parse HEAD 2>/dev/null || printf unknown)"
+SOURCE_BRANCH="$(git -C "$SOURCE_DIR" branch --show-current 2>/dev/null || true)"
+SOURCE_DIRTY=unknown
+if git -C "$SOURCE_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    SOURCE_DIRTY=0
+    [[ -z "$(git -C "$SOURCE_DIR" status --porcelain)" ]] || SOURCE_DIRTY=1
+fi
+SUPPORT_COMMIT="$(git -C "$SUPPORT_ROOT" rev-parse HEAD 2>/dev/null || printf unknown)"
+SUPPORT_DIRTY=unknown
+if git -C "$SUPPORT_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    SUPPORT_DIRTY=0
+    [[ -z "$(git -C "$SUPPORT_ROOT" status --porcelain)" ]] || SUPPORT_DIRTY=1
+fi
+BUILD_OS="$(sed -n 's/^PRETTY_NAME=//p' /etc/os-release 2>/dev/null | head -n1 | tr -d '"')"
+TRUST_CLASSIFICATION=development-unverified
 BUILD_INFO_NAME="${ASSET_NAME%.tar.gz}.build-info.txt"
 BUILD_INFO="$OUTPUT_DIR/$BUILD_INFO_NAME"
 ARCHIVE="$OUTPUT_DIR/$ASSET_NAME"
@@ -236,9 +287,24 @@ CHECKSUM="$ARCHIVE.sha256"
     printf 'release_tag=%s\n' "$RELEASE_TAG"
     printf 'release_asset=%s\n' "$ASSET_NAME"
     printf 'source_repository=%s\n' "$SOURCE_REPO"
+    printf 'source_branch=%s\n' "${SOURCE_BRANCH:-detached}"
     printf 'source_commit=%s\n' "$SOURCE_COMMIT"
+    printf 'source_dirty=%s\n' "$SOURCE_DIRTY"
+    printf 'support_repository=%s\n' "$SUPPORT_REPO"
+    printf 'support_commit=%s\n' "$SUPPORT_COMMIT"
+    printf 'support_dirty=%s\n' "$SUPPORT_DIRTY"
     printf 'build_mode=offline-target-fedora\n'
     printf 'build_architecture=%s\n' "$ARCHITECTURE"
+    printf 'build_os=%s\n' "${BUILD_OS:-unknown}"
+    printf 'trust_classification=%s\n' "$TRUST_CLASSIFICATION"
+    printf 'compiler_command=%s\n' "$BUILD_CC"
+    printf 'compiler_version=%s\n' "$BUILD_COMPILER_VERSION"
+    printf 'kernel_compiler_version=%s\n' "${KERNEL_COMPILER_VERSION:-unknown}"
+    printf 'compiler_major_match=%s\n' "$COMPILER_MAJOR_MATCH"
+    printf 'kernel_compiler_definition=%s\n' "${KERNEL_COMPILER_DEFINITION:-unknown}"
+    printf 'binutils_version=%s\n' "$(ld --version | sed -n '1p')"
+    printf 'make_version=%s\n' "$(make --version | sed -n '1p')"
+    printf 'kmod_version=%s\n' "$(modinfo --version 2>&1 | sed -n '1p')"
     printf 'header_package=%s\n' "$HEADERS_FILENAME"
     printf 'header_url=%s\n' "${HEADERS_URL:-local-file}"
     printf 'header_sha256=%s\n' "$HEADER_SHA256"
@@ -248,8 +314,9 @@ CHECKSUM="$ARCHIVE.sha256"
     printf 'header_authentication=https-transport-or-local-input-not-signature-verified\n'
     printf '\nmodules:\n'
     for module in "$PACKAGE_DIR/modules/"*.ko; do
-        printf '  %s  %s  vermagic=%s\n' "$(sha256_file "$module")" \
-            "$(basename "$module")" "$(modinfo -F vermagic "$module" | awk '{print $1}')"
+        printf '  %s  %s  version=%s  architecture=x86_64  vermagic=%s\n' \
+            "$(sha256_file "$module")" "$(basename "$module")" \
+            "$(modinfo -F version "$module")" "$(modinfo -F vermagic "$module")"
     done
 } > "$BUILD_INFO"
 cp "$BUILD_INFO" "$PACKAGE_DIR/BUILD-INFO.txt"
