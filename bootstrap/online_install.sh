@@ -144,7 +144,7 @@ already_installed()
 
     actual_sha="$(sha256sum "$archive" | awk '{print $1}')"
 
-    [[ "${expected_sha,,}" == "${actual_sha,,}" ]] ||
+    strings_equal_case_insensitive "$expected_sha" "$actual_sha" ||
         return 1
 
     listing="${check_dir}.listing"
@@ -185,8 +185,8 @@ already_installed()
     resolved="$(modinfo -n nvidia 2>/dev/null || true)"
     [[ -n "$resolved" ]] || return 1
 
-    resolved_real="$(realpath -m "$resolved")"
-    target_real="$(realpath -m "$target_dir")"
+    resolved_real="$(canonicalize_path "$resolved")"
+    target_real="$(canonicalize_path "$target_dir")"
 
     case "$resolved_real" in
         "$target_real"/*) ;;

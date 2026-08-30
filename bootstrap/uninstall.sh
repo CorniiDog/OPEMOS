@@ -33,9 +33,9 @@ TARGET_DIR="$(project_system_path "/usr/lib/modules/${CURRENT_KERNEL}/updates/op
 [[ -d "$TARGET_DIR" ]] ||
     die "NVIDIA open kernel module directory is not installed: $TARGET_DIR"
 
-TARGET_REAL="$(realpath -m "$TARGET_DIR")"
+TARGET_REAL="$(canonicalize_path "$TARGET_DIR")"
 RESOLVED_BEFORE="$(modinfo -n nvidia 2>/dev/null || true)"
-RESOLVED_BEFORE_REAL="$(realpath -m "$RESOLVED_BEFORE")"
+RESOLVED_BEFORE_REAL="$(canonicalize_path "$RESOLVED_BEFORE")"
 
 case "$RESOLVED_BEFORE_REAL" in
     "$TARGET_REAL"/*) ;;
@@ -146,7 +146,7 @@ RESOLVED_AFTER="$(modinfo -n nvidia 2>/dev/null || true)"
 [[ -n "$RESOLVED_AFTER" ]] ||
     die "No fallback NVIDIA module was found after removing the open modules."
 
-RESOLVED_AFTER_REAL="$(realpath -m "$RESOLVED_AFTER")"
+RESOLVED_AFTER_REAL="$(canonicalize_path "$RESOLVED_AFTER")"
 
 case "$RESOLVED_AFTER_REAL" in
     "$TARGET_REAL"/*)

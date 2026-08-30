@@ -113,6 +113,23 @@ sha256_file()
     sha256sum "$1" | awk '{print $1}'
 }
 
+strings_equal_case_insensitive()
+{
+    [[ "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" == \
+       "$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')" ]]
+}
+
+canonicalize_path()
+{
+    local path="$1"
+
+    if realpath -m / >/dev/null 2>&1; then
+        realpath -m "$path"
+    else
+        python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$path"
+    fi
+}
+
 state_value()
 {
     sed -n "s/^${1}=//p" "$STATE_FILE" | head -n1
@@ -224,11 +241,14 @@ project_system_path()
     fi
 
     local test_root="${PROJECT_TEST_ROOT:-}"
+    local temp_root home_root
     [[ -n "$test_root" ]] || die "PROJECT_TEST_MODE requires PROJECT_TEST_ROOT."
-    test_root="$(realpath -m "$test_root")"
+    test_root="$(canonicalize_path "$test_root")"
+    temp_root="$(canonicalize_path /tmp)"
+    home_root="$(canonicalize_path "$HOME")"
 
     case "$test_root" in
-        /tmp/*|"$(realpath -m "$HOME")"/*) ;;
+        "$temp_root"/*|"$home_root"/*) ;;
         *) die "Refusing test root outside /tmp or HOME: $test_root" ;;
     esac
 

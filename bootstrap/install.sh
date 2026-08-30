@@ -57,7 +57,8 @@ if [[ -n "$CHECKSUM" ]]; then
     EXPECTED_SHA="$(awk '{print $1}' "$CHECKSUM" | head -n1)"
     [[ "$EXPECTED_SHA" =~ ^[0-9a-fA-F]{64}$ ]] || die "Invalid archive checksum."
     ACTUAL_SHA="$(sha256_file "$ARCHIVE")"
-    [[ "${EXPECTED_SHA,,}" == "${ACTUAL_SHA,,}" ]] || die "Archive checksum verification failed."
+    strings_equal_case_insensitive "$EXPECTED_SHA" "$ACTUAL_SHA" ||
+        die "Archive checksum verification failed."
 fi
 
 mkdir -p "${HOME}/.cache/${PROJECT_NAME}"
@@ -292,8 +293,8 @@ log "Refreshing module dependency database..."
 sudo depmod -a "$CURRENT_KERNEL"
 
 RESOLVED="$(modinfo -n nvidia 2>/dev/null || true)"
-RESOLVED_REAL="$(realpath -m "$RESOLVED")"
-TARGET_REAL="$(realpath -m "$TARGET_DIR")"
+RESOLVED_REAL="$(canonicalize_path "$RESOLVED")"
+TARGET_REAL="$(canonicalize_path "$TARGET_DIR")"
 
 case "$RESOLVED_REAL" in
     "$TARGET_REAL"/*) ;;

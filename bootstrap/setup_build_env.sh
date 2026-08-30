@@ -51,8 +51,8 @@ need_cmd realpath
 GRAPH_ROOT="$(podman info --format "{{.Store.GraphRoot}}" 2>/dev/null || true)"
 [[ -n "$GRAPH_ROOT" ]] || die "Could not determine Podman storage directory."
 
-GRAPH_REAL="$(realpath -m "$GRAPH_ROOT")"
-HOME_REAL="$(realpath -m "$HOME")"
+GRAPH_REAL="$(canonicalize_path "$GRAPH_ROOT")"
+HOME_REAL="$(canonicalize_path "$HOME")"
 
 case "$GRAPH_REAL" in
     "$HOME_REAL"/*) ;;

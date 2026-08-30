@@ -237,7 +237,8 @@ if [[ "$FORCE_REBUILD" == "0" &&
                   "$CACHED_CONTAINER" == "$CONTAINER_IMAGE_REF" &&
                   "$CACHED_SUPPORT" == "$SUPPORT_COMMIT" &&
                   "$EXPECTED_SHA" =~ ^[0-9a-fA-F]{64}$ &&
-                  "${EXPECTED_SHA,,}" == "${ACTUAL_SHA,,}" ]]; then
+                  "$(printf '%s' "$EXPECTED_SHA" | tr '[:upper:]' '[:lower:]')" == \
+                  "$(printf '%s' "$ACTUAL_SHA" | tr '[:upper:]' '[:lower:]')" ]]; then
                 CACHE_HIT=1
                 ARCHIVE="$CACHED_ARCHIVE"
                 CHECKSUM="$CACHED_CHECKSUM"
@@ -307,7 +308,7 @@ if [[ "$CACHE_HIT" == "0" ]]; then
     [[ "$EXPECTED_SHA" =~ ^[0-9a-fA-F]{64}$ ]] ||
         die "Generated release checksum is invalid."
 
-    [[ "${EXPECTED_SHA,,}" == "${ACTUAL_SHA,,}" ]] ||
+    strings_equal_case_insensitive "$EXPECTED_SHA" "$ACTUAL_SHA" ||
         die "Generated release archive failed checksum verification."
 
     printf 'archive_sha256=%s\n' "$ACTUAL_SHA" >> "$BUILD_INFO"

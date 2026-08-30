@@ -208,11 +208,17 @@ assert target["assetName"].endswith(
 PY
 
 printf 'Checking fake-root install/uninstall transactions...\n'
-./tests/transaction.sh
+if (( BASH_VERSINFO[0] >= 4 )); then
+    ./tests/transaction.sh
+else
+    printf 'Skipping transaction tests: Bash 4+ is required (found %s).\n' \
+        "$BASH_VERSION"
+fi
 
 printf 'Checking fake-root path confinement...\n'
+EXPECTED_TEST_PATH="$(canonicalize_path /tmp/project-test-root/usr/lib/modules)"
 [[ "$(PROJECT_TEST_MODE=1 PROJECT_TEST_ROOT=/tmp/project-test-root \
-    project_system_path /usr/lib/modules)" == "/tmp/project-test-root/usr/lib/modules" ]] ||
+    project_system_path /usr/lib/modules)" == "$EXPECTED_TEST_PATH" ]] ||
     fail "test system path was not redirected"
 if (
     PROJECT_TEST_MODE=1

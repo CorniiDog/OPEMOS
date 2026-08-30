@@ -73,7 +73,7 @@ if [[ -z "$REPORT" ]]; then
     REPORT="${CACHE_ROOT}/baselines/non-sudo-current.txt"
 fi
 
-REPORT="$(realpath -m "$REPORT")"
+REPORT="$(canonicalize_path "$REPORT")"
 mkdir -p "$(dirname "$REPORT")"
 
 SCRATCH="$(project_mktemp_dir non-sudo-test)"
