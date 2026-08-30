@@ -27,6 +27,30 @@ python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __
     lib/write_build_result.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     bootstrap/prepare_valve_keyring.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/run_in_process_group.py
+
+printf 'Checking cancellable process-group launcher...\n'
+python3 - "$PROJECT_ROOT/lib/run_in_process_group.py" <<'PY' || \
+    fail "cancellable process-group launcher did not terminate cleanly"
+import os
+import signal
+import subprocess
+import sys
+import time
+
+process = subprocess.Popen([sys.executable, sys.argv[1], "sh", "-c", "sleep 30 & wait"])
+deadline = time.monotonic() + 5
+while time.monotonic() < deadline:
+    if os.getpgid(process.pid) == process.pid:
+        break
+    time.sleep(0.05)
+else:
+    process.terminate()
+    raise AssertionError("process group was not created")
+os.killpg(process.pid, signal.SIGTERM)
+assert process.wait(timeout=2) != 0
+PY
 
 python3 - "$PROJECT_ROOT/trust/valve-package-signers.json" <<'PY' || \
     fail "Valve package trust manifest is invalid"

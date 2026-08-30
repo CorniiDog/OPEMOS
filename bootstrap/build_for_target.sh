@@ -146,6 +146,12 @@ BUILD_PHASE=dependency_install_failed
 BUILD_RESULT_WRITTEN=0
 BUILD_COMPLETED=0
 WORK_DIR=""
+ACTIVE_PROCESS_GROUP=""
+BUILD_STARTED_AT="$(date --iso-8601=seconds)"
+FINAL_BUILD_INFO=""
+FINAL_ARCHIVE=""
+FINAL_CHECKSUM=""
+FINAL_OUTPUTS_OWNED=0
 
 write_final_result()
 {
@@ -166,6 +172,11 @@ cleanup_build()
 {
     local rc=$?
     [[ -z "$WORK_DIR" ]] || rm -rf "$WORK_DIR"
+    if [[ "$BUILD_COMPLETED" == "0" && "$FINAL_OUTPUTS_OWNED" == "1" ]]; then
+        [[ -z "$FINAL_BUILD_INFO" ]] || rm -f "$FINAL_BUILD_INFO"
+        [[ -z "$FINAL_ARCHIVE" ]] || rm -f "$FINAL_ARCHIVE"
+        [[ -z "$FINAL_CHECKSUM" ]] || rm -f "$FINAL_CHECKSUM"
+    fi
     if [[ "$BUILD_RESULT_WRITTEN" == "0" && -n "$RESULT_JSON" ]]; then
         if [[ "$rc" == "130" || "$rc" == "143" ]]; then
             write_final_result cancelled cancelled "The offline-target build was cancelled." || true
@@ -177,8 +188,40 @@ cleanup_build()
     return "$rc"
 }
 
+terminate_active_process_group()
+{
+    local attempt
+    [[ -n "$ACTIVE_PROCESS_GROUP" ]] || return 0
+    kill -TERM -- "-${ACTIVE_PROCESS_GROUP}" 2>/dev/null || true
+    for attempt in 1 2 3 4 5 6 7 8 9 10; do
+        kill -0 -- "-${ACTIVE_PROCESS_GROUP}" 2>/dev/null || return 0
+        sleep 0.1
+    done
+    kill -KILL -- "-${ACTIVE_PROCESS_GROUP}" 2>/dev/null || true
+}
+
+cancel_build()
+{
+    BUILD_PHASE=cancelled
+    terminate_active_process_group
+    exit 130
+}
+
+run_cancellable()
+{
+    local rc
+    python3 "$SUPPORT_ROOT/lib/run_in_process_group.py" "$@" &
+    ACTIVE_PROCESS_GROUP=$!
+    set +e
+    wait "$ACTIVE_PROCESS_GROUP"
+    rc=$?
+    set -e
+    ACTIVE_PROCESS_GROUP=""
+    return "$rc"
+}
+
 trap cleanup_build EXIT
-trap 'BUILD_PHASE=cancelled; exit 130' INT TERM
+trap cancel_build INT TERM
 
 if [[ "$INSTALL_DEPENDENCIES" == "1" ]]; then
     need_cmd sudo
@@ -200,12 +243,20 @@ BUILD_PHASE=output_preparation_failed
 mkdir -p "$OUTPUT_DIR"
 OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd)"
 WORK_DIR="$(project_mktemp_dir target-build)"
+FINAL_BUILD_INFO="$OUTPUT_DIR/${ASSET_NAME%.tar.gz}.build-info.txt"
+FINAL_ARCHIVE="$OUTPUT_DIR/$ASSET_NAME"
+FINAL_CHECKSUM="$OUTPUT_DIR/$ASSET_NAME.sha256"
+for final_output in "$FINAL_BUILD_INFO" "$FINAL_ARCHIVE" "$FINAL_CHECKSUM"; do
+    [[ ! -e "$final_output" ]] ||
+        die "Refusing to overwrite existing output: $(basename "$final_output")"
+done
+FINAL_OUTPUTS_OWNED=1
 
 BUILD_PHASE=source_branch_missing
 if [[ -z "$SOURCE_DIR" ]]; then
     SOURCE_DIR="$WORK_DIR/source"
     log "Cloning project NVIDIA source branch nvidia/${NVIDIA_VERSION}..."
-    git clone --quiet --depth 1 --branch "nvidia/${NVIDIA_VERSION}" \
+    run_cancellable git clone --quiet --depth 1 --branch "nvidia/${NVIDIA_VERSION}" \
         "$SOURCE_REPO_URL" "$SOURCE_DIR" ||
         die "Project source branch nvidia/${NVIDIA_VERSION} is unavailable."
 else
@@ -240,7 +291,7 @@ if [[ -z "$HEADERS_PACKAGE" ]]; then
     HEADERS_PACKAGE="$WORK_DIR/$HEADERS_FILENAME"
     log "Downloading exact Valve headers..."
     BUILD_PHASE=header_download_failed
-    curl -fL "$HEADERS_URL" -o "$HEADERS_PACKAGE"
+    run_cancellable curl -fL "$HEADERS_URL" -o "$HEADERS_PACKAGE"
 fi
 
 HEADER_SIGNATURE_STATUS=not-verified
@@ -256,7 +307,7 @@ if [[ -n "$HEADER_KEYRING" ]]; then
         HEADERS_SIGNATURE="$WORK_DIR/$HEADERS_FILENAME.sig"
         BUILD_PHASE=header_signature_missing
         log "Downloading Valve headers-package signature..."
-        curl -fL "${HEADERS_URL}.sig" -o "$HEADERS_SIGNATURE" ||
+        run_cancellable curl -fL "${HEADERS_URL}.sig" -o "$HEADERS_SIGNATURE" ||
             die "Detached Valve headers signature was not available."
     else
         [[ -f "$HEADERS_SIGNATURE" ]] || {
@@ -300,7 +351,7 @@ fi
 
 KERNEL_ROOT="$WORK_DIR/kernel-root"
 mkdir -p "$KERNEL_ROOT"
-bsdtar -xf "$HEADERS_PACKAGE" -C "$KERNEL_ROOT"
+run_cancellable bsdtar -xf "$HEADERS_PACKAGE" -C "$KERNEL_ROOT"
 BUILD_PHASE=header_tree_incomplete
 KERNEL_TREE="$KERNEL_ROOT/usr/lib/modules/$KERNEL_VERSION/build"
 [[ -n "$KERNEL_TREE" && -f "$KERNEL_TREE/Makefile" ]] ||
@@ -344,7 +395,7 @@ fi
 log "Building NVIDIA ${NVIDIA_VERSION} for ${KERNEL_VERSION}..."
 BUILD_PHASE=compilation_failed
 make -C "$SOURCE_DIR" clean >/dev/null 2>&1 || true
-make -C "$SOURCE_DIR" modules -j"$(nproc)" CC="$BUILD_CC" \
+run_cancellable make -C "$SOURCE_DIR" modules -j"$(nproc)" CC="$BUILD_CC" \
     SYSSRC="$KERNEL_TREE" SYSOUT="$KERNEL_TREE"
 
 mapfile -t MODULES < <(find "$SOURCE_DIR/kernel-open" -maxdepth 1 -type f -name '*.ko' | sort)
@@ -387,14 +438,17 @@ if [[ "$HEADER_SIGNATURE_STATUS" == "verified" &&
     TRUST_CLASSIFICATION=locally-built-verified
 fi
 BUILD_INFO_NAME="${ASSET_NAME%.tar.gz}.build-info.txt"
-BUILD_INFO="$OUTPUT_DIR/$BUILD_INFO_NAME"
-ARCHIVE="$OUTPUT_DIR/$ASSET_NAME"
-CHECKSUM="$ARCHIVE.sha256"
+STAGED_OUTPUT="$WORK_DIR/final-output"
+mkdir -p "$STAGED_OUTPUT"
+BUILD_INFO="$STAGED_OUTPUT/$BUILD_INFO_NAME"
+ARCHIVE="$STAGED_OUTPUT/$ASSET_NAME"
+CHECKSUM="$STAGED_OUTPUT/$ASSET_NAME.sha256"
 BUILD_PHASE=packaging_failed
 {
     printf 'open-gpu-kernel-modules-steamos build information\n\n'
     printf 'schema_version=1\n'
-    printf 'built_at=%s\n' "$(date --iso-8601=seconds)"
+    printf 'build_started_at=%s\n' "$BUILD_STARTED_AT"
+    printf 'build_completed_at=%s\n' "$(date --iso-8601=seconds)"
     printf 'steamos_version=%s\n' "$STEAMOS_VERSION"
     printf 'kernel_version=%s\n' "$KERNEL_VERSION"
     printf 'nvidia_version=%s\n' "$NVIDIA_VERSION"
@@ -442,9 +496,15 @@ BUILD_PHASE=packaging_failed
 } > "$BUILD_INFO"
 cp "$BUILD_INFO" "$PACKAGE_DIR/BUILD-INFO.txt"
 tar -C "$PACKAGE_DIR" -czf "$ARCHIVE" modules BUILD-INFO.txt
-(cd "$OUTPUT_DIR" && sha256sum "$ASSET_NAME" > "$(basename "$CHECKSUM")")
+(cd "$STAGED_OUTPUT" && sha256sum "$ASSET_NAME" > "$(basename "$CHECKSUM")")
 
 ARCHIVE_SHA256="$(sha256_file "$ARCHIVE")"
+mv "$BUILD_INFO" "$FINAL_BUILD_INFO"
+mv "$ARCHIVE" "$FINAL_ARCHIVE"
+mv "$CHECKSUM" "$FINAL_CHECKSUM"
+BUILD_INFO="$FINAL_BUILD_INFO"
+ARCHIVE="$FINAL_ARCHIVE"
+CHECKSUM="$FINAL_CHECKSUM"
 write_final_result success build_complete "The offline-target artifact passed structural validation." \
     --archive "$(basename "$ARCHIVE")" --checksum "$(basename "$CHECKSUM")" \
     --build-info "$(basename "$BUILD_INFO")" --archive-sha256 "$ARCHIVE_SHA256"

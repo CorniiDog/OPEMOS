@@ -1198,7 +1198,7 @@ signing policy.
 * [x] Validate the pinned Valve keyring and historical header signature end to
   end in the Fedora appliance; dearmor Valve's published key collection before
   passing it to `gpgv`.
-* [ ] Record separate build start/end timestamps; build mode is recorded.
+* [x] Record separate build start/end timestamps; build mode is recorded.
 * [x] Record every module filename, SHA256, NVIDIA version, ELF architecture,
   and full vermagic in machine-readable form.
 * [ ] Ensure provenance is included in both the archive and the image-builder
@@ -1206,12 +1206,13 @@ signing policy.
 
 ## Cancellation, cleanup, and caching
 
-* [ ] Define a cancellation signal/API suitable for the Rust appliance manager.
-* [ ] Ensure cancellation terminates `make` and all descendant compiler jobs.
-* [ ] Remove temporary source clones, header downloads, extracted trees,
+* [x] Define SIGINT/SIGTERM cancellation suitable for the Rust appliance manager.
+* [x] Ensure cancellation terminates `make` and all descendant compiler jobs.
+* [x] Remove temporary source clones, header downloads, extracted trees,
   modules, and partial archives after cancellation or failure.
-* [ ] Never leave a final-named archive or trusted cache entry after failure.
-* [ ] Emit a machine-readable `cancelled` result after cleanup.
+* [x] Never leave a final-named archive after failure; publish staged output only
+  after package construction and hashing succeed.
+* [x] Emit a machine-readable `cancelled` result after cleanup.
 * [ ] Preserve bounded diagnostic logs without credentials or private host paths.
 * [ ] Cache only authenticated headers/artifacts for normal reuse.
 * [ ] Key caches by exact header identity/hash, source commit, support commit,
@@ -1220,8 +1221,8 @@ signing policy.
 
 ## Fedora/Linux validation
 
-* [ ] Run `tests/check.sh` under the same Fedora appliance used for builds.
-* [ ] Run the complete fake-root install/uninstall transaction suite under
+* [x] Run `tests/check.sh` under the same Fedora appliance used for builds.
+* [x] Run the complete fake-root install/uninstall transaction suite under
   Fedora Bash 5; no transaction-test skips are permitted for release validation.
 * [ ] Add fixtures for wrong `.PKGINFO`, wrong full kernel directory, missing
   `Module.symvers`, unsafe archive paths, duplicate/missing modules, wrong ELF

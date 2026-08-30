@@ -150,6 +150,12 @@ The file is written atomically with schema version `1`, target identity, trust
 classification, a stable success/failure reason, and artifact filenames and
 hash on success. It contains filenames rather than private host paths. Human
 logs remain diagnostic output; callers should branch on this JSON contract.
+The appliance manager cancels a running build by sending SIGTERM (SIGINT is
+also accepted) to the build-script process. Downloads, extraction, and the
+parallel compiler run in dedicated process groups, so cancellation terminates
+their descendants before temporary state is removed. Final artifact filenames
+are published only after packaging and hashing succeed, and existing outputs
+are never overwritten.
 
 For authenticated local builds, provide a reviewed keyring and the exact full
 fingerprint expected to sign the Valve headers package:
