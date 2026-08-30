@@ -1138,9 +1138,12 @@ signing policy.
 * [x] Record signing/primary fingerprint and signature verification result.
 * [ ] Do not describe a post-download SHA256 calculated from the same transport
   as authentication.
-* [ ] Pin the expected Valve package origin and reject redirects to untrusted
+* [x] Pin the expected Valve package origin and reject redirects to untrusted
   origins.
-* [ ] Define key rotation and revocation handling.
+* [x] Pin the reviewed `holo-keyring` package hash, extracted keyring hash, and
+  exact historical-header signer fingerprint in a versioned trust manifest.
+* [ ] Define key rotation and revocation handling beyond explicit reviewed
+  trust-manifest updates.
 * [x] Keep unsigned-header or override builds labeled
   `development-unverified`.
 * [x] Use `locally-built-verified` only for authenticated exact headers, clean

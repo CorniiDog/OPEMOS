@@ -25,6 +25,26 @@ python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __
     lib/resolve_target.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/write_build_result.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    bootstrap/prepare_valve_keyring.py
+
+python3 - "$PROJECT_ROOT/trust/valve-package-signers.json" <<'PY' || \
+    fail "Valve package trust manifest is invalid"
+import json
+import re
+import sys
+with open(sys.argv[1], encoding="utf-8") as manifest_file:
+    manifest = json.load(manifest_file)
+assert manifest["schemaVersion"] == 1
+assert manifest["source"]["url"].startswith(
+    "https://steamdeck-packages.steamos.cloud/archlinux-mirror/"
+)
+assert re.fullmatch(r"[0-9a-f]{64}", manifest["source"]["sha256"])
+assert re.fullmatch(r"[0-9a-f]{64}", manifest["keyring"]["sha256"])
+assert manifest["signers"]
+for signer in manifest["signers"]:
+    assert re.fullmatch(r"[0-9A-F]{40}|[0-9A-F]{64}", signer["fingerprint"])
+PY
 
 printf 'Checking whitespace errors...\n'
 git diff --check

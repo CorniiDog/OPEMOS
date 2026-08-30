@@ -168,6 +168,22 @@ key or its reported primary key must match the pinned fingerprint. Supplying a
 keyring without an exact fingerprint is rejected. The project intentionally
 does not download a keyring and then trust it from the same transaction.
 
+The reviewed trust inputs live in `trust/valve-package-signers.json`. Prepare
+the exact pinned keyring for an appliance with:
+
+```bash
+python3 bootstrap/prepare_valve_keyring.py \
+    --output /appliance/trust/valve-package-signers.gpg
+```
+
+The helper rejects redirects, verifies the committed SHA256 of Valve's official
+`holo-keyring` package, extracts only its declared keyring, verifies that second
+committed hash, and writes the result atomically. For offline/reproducible
+appliance construction, pass the already downloaded package with `--package`.
+The currently pinned historical-header signer is
+`889B5EBDDD505A683621900DAF1D2199EF0A3CCF`, identified in Valve's keyring as
+`GitLab CI Package Builder <ci-package-builder-1@steamos.cloud>`.
+
 Validate or install a local archive through the same online orchestration path:
 
 ```bash

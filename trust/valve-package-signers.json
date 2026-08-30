@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "package": "holo-keyring-20250801-1-any.pkg.tar.zst",
+    "url": "https://steamdeck-packages.steamos.cloud/archlinux-mirror/holo-main/os/x86_64/holo-keyring-20250801-1-any.pkg.tar.zst",
+    "sha256": "a5efa4f9c161ce9607fd9dfcccaf2a587baa9acd35eae04d3c01d967dddc9722"
+  },
+  "keyring": {
+    "path": "usr/share/pacman/keyrings/holo.gpg",
+    "sha256": "408454d076d3a71c0bbbb435c84ee1682eab5e9eb7b93669c5c5a4a4d0abfb97"
+  },
+  "signers": [
+    {
+      "fingerprint": "889B5EBDDD505A683621900DAF1D2199EF0A3CCF",
+      "identity": "GitLab CI Package Builder <ci-package-builder-1@steamos.cloud>",
+      "scope": "Valve SteamOS package signatures",
+      "evidence": {
+        "package": "linux-neptune-616-headers-6.16.12.valve24.4-1-x86_64.pkg.tar.zst",
+        "signatureSha256": "cbc0246409f6154badcb25b5c94c3bbd7cc25357cd90ea7b7f2c2cf5fc4d0421"
+      }
+    }
+  ]
+}
