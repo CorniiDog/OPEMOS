@@ -1055,7 +1055,190 @@ git diff --check
 
 ---
 
-# 33. Immediate next actions
+# 33. Offline SteamOS image-builder integration
+
+## Responsibility boundary
+
+The support repository owns exact Valve header acquisition/authentication,
+NVIDIA source selection, exact-target compilation, module validation, archive
+format, machine-readable results, provenance, Fedora transaction tests, build
+cleanup, and eventual certified-artifact publication.
+
+The image builder owns recovery-image inspection, active boot-kernel selection,
+Valve A/B and installer-layout handling, appliance lifecycle, progress and
+cancellation UX, artifact caching, offline image injection, matching NVIDIA
+userspace/GSP firmware, offline `depmod`, target initramfs work, final-image
+validation, and preservation of the original input.
+
+The patched NVIDIA source repository owns versioned `nvidia/<version>` branches,
+SteamOS-specific patches, and an unambiguous driver-version-to-source-commit
+mapping. It must never silently fall back to pristine upstream.
+
+Maintainers/CI own real NVIDIA hardware boot tests, certification/publication,
+trusted Valve key management, SteamOS update testing, and Secure Boot/module
+signing policy.
+
+## Completed support-side contract
+
+* [x] Add versioned offline-target JSON resolution in `lib/resolve_target.py`.
+* [x] Accept target SteamOS version, exact kernel, and ELF architecture rather
+  than inspecting the Fedora appliance host identity.
+* [x] Apply the normal bounded same-series SteamOS certification fallback while
+  still requiring an exact kernel match.
+* [x] Treat no compatible artifact as a normal fail-closed resolution result.
+* [x] Require both the expected release archive and SHA256 sidecar to be
+  advertised before returning a compatible published artifact.
+* [x] Add native x86_64 Fedora exact-target compilation in
+  `bootstrap/build_for_target.sh`.
+* [x] Derive the exact Neptune headers filename from the full target kernel.
+* [x] Support automatic Valve-repository discovery, an exact Valve URL, or a
+  pinned local headers package.
+* [x] Require the exact target kernel build-tree path; do not accept the first
+  unrelated `/usr/lib/modules/*/build` directory.
+* [x] Validate Arch `.PKGINFO` package name, version, and architecture.
+* [x] Reject unsafe header-archive paths.
+* [x] Require a prepared kernel tree with `autoconf.h` and `Module.symvers`.
+* [x] Build against explicit `SYSSRC`/`SYSOUT`, never the Fedora guest kernel.
+* [x] Require exactly the five expected NVIDIA modules.
+* [x] Validate exact vermagic and x86_64 ELF architecture for every module.
+* [x] Emit the existing installer-compatible archive, checksum, and build-info
+  layout.
+* [x] Add JSON `--resolve-only` build-plan output.
+* [x] Make the shared module-set validator usable by macOS Bash 3.2 checks.
+* [x] Make portable macOS path/checksum helpers explicit.
+* [x] Make `tests/check.sh` clearly skip Bash-4-dependent transaction tests on
+  macOS while keeping them mandatory for Fedora/Linux validation.
+
+## First real-build gate
+
+* [ ] Complete the dedicated x86_64 Fedora/QEMU build for SteamOS 3.8.14,
+  NVIDIA 575.64.05, and kernel
+  `6.16.12-valve24.4-1-neptune-616-gfe145653a794`.
+* [ ] Confirm Valve still serves the derived historical package:
+  `linux-neptune-616-headers-6.16.12.valve24.4-1-x86_64.pkg.tar.zst`.
+* [ ] Confirm the package contains the exact full kernel-release build path.
+* [ ] Confirm NVIDIA 575.64.05 compiles without target-header reconstruction.
+* [ ] Confirm all five output modules report the exact target vermagic and
+  NVIDIA version.
+* [ ] Confirm the existing installer accepts the generated archive unchanged.
+* [ ] Preserve the complete build log and generated build metadata from this
+  first integration run.
+* [ ] Correct the support contract before image injection if any of these gates
+  fail; do not approximate headers, source, kernel, or NVIDIA versions.
+
+## Authentication and trust
+
+* [ ] Add Valve package detached-signature verification using a pinned,
+  reviewed keyring or equally strong trusted checksum provenance.
+* [ ] Record signer fingerprint and signature verification result.
+* [ ] Do not describe a post-download SHA256 calculated from the same transport
+  as authentication.
+* [ ] Pin the expected Valve package origin and reject redirects to untrusted
+  origins.
+* [ ] Define key rotation and revocation handling.
+* [ ] Keep unsigned-header or override builds labeled
+  `development-unverified`.
+* [ ] Use `locally-built-verified` only for authenticated exact headers, clean
+  pinned source, complete provenance, and all structural checks.
+* [ ] Reserve `certified-published` for maintainer-published artifacts that have
+  also passed the required hardware test matrix.
+* [ ] Never silently promote a local successful compilation to certified.
+
+## Machine-readable results and typed failures
+
+* [ ] Add a versioned final build-result JSON document, not only build-plan
+  output and human-readable logs.
+* [ ] Include result status, trust classification, target identity, output
+  paths/names, hashes, and provenance without private host paths.
+* [ ] Provide stable typed failure reasons for at least:
+
+  * `invalid_target`
+  * `unsupported_architecture`
+  * `headers_not_found`
+  * `header_download_failed`
+  * `header_signature_missing`
+  * `header_signature_invalid`
+  * `header_identity_mismatch`
+  * `header_tree_incomplete`
+  * `source_branch_missing`
+  * `source_version_mismatch`
+  * `dependency_install_failed`
+  * `compilation_failed`
+  * `module_set_incomplete`
+  * `module_architecture_mismatch`
+  * `vermagic_mismatch`
+  * `packaging_failed`
+  * `cancelled`
+
+* [ ] Keep missing headers/source and incompatibility as safe, actionable
+  outcomes rather than selecting a nearby build.
+* [ ] Separate concise user-facing messages from detailed maintainer diagnostics.
+
+## Complete provenance
+
+* [ ] Record support repository URL, exact commit, and dirty state.
+* [ ] Record NVIDIA source repository, branch/provider, exact commit, dirty
+  state, and upstream base commit.
+* [ ] Record Fedora appliance version and architecture.
+* [ ] Record GCC, binutils, make, kmod, and relevant build-tool versions.
+* [x] Record target SteamOS, exact kernel, NVIDIA version, header package
+  identity, header URL/local origin, and SHA256.
+* [ ] Record header signer/signature state.
+* [ ] Record build start/end timestamps and build mode.
+* [ ] Record every module filename, SHA256, NVIDIA version, ELF architecture,
+  and full vermagic in machine-readable form.
+* [ ] Ensure provenance is included in both the archive and the image-builder
+  manifest.
+
+## Cancellation, cleanup, and caching
+
+* [ ] Define a cancellation signal/API suitable for the Rust appliance manager.
+* [ ] Ensure cancellation terminates `make` and all descendant compiler jobs.
+* [ ] Remove temporary source clones, header downloads, extracted trees,
+  modules, and partial archives after cancellation or failure.
+* [ ] Never leave a final-named archive or trusted cache entry after failure.
+* [ ] Emit a machine-readable `cancelled` result after cleanup.
+* [ ] Preserve bounded diagnostic logs without credentials or private host paths.
+* [ ] Cache only authenticated headers/artifacts for normal reuse.
+* [ ] Key caches by exact header identity/hash, source commit, support commit,
+  NVIDIA version, target kernel, architecture, and toolchain/appliance identity.
+* [ ] Detect and remove abandoned inactive build sessions on the next run.
+
+## Fedora/Linux validation
+
+* [ ] Run `tests/check.sh` under the same Fedora appliance used for builds.
+* [ ] Run the complete fake-root install/uninstall transaction suite under
+  Fedora Bash 5; no transaction-test skips are permitted for release validation.
+* [ ] Add fixtures for wrong `.PKGINFO`, wrong full kernel directory, missing
+  `Module.symvers`, unsafe archive paths, duplicate/missing modules, wrong ELF
+  architecture, and wrong vermagic.
+* [ ] Test network failure, truncated downloads, cancellation during download,
+  cancellation during compilation, and output-directory exhaustion.
+* [ ] Test both automatically downloaded and pinned-local header inputs.
+* [ ] Verify artifact installation, idempotency, uninstall, and rollback against
+  a fake mounted target before modifying a real recovery-image working copy.
+
+## Known cross-project edge cases
+
+* [ ] Image builder must determine the actual boot kernel when multiple module
+  trees exist; support-side compilation must receive one explicit target.
+* [ ] Image builder must launch an x86_64 build appliance on Apple Silicon;
+  its current aarch64 appliance cannot execute this native build command.
+* [ ] Treat QEMU x86_64 software-emulation slowness as progress/UX concern, not
+  permission to weaken compatibility checks.
+* [ ] Image builder must install exactly matching NVIDIA userspace and GSP
+  firmware; successful `.ko` compilation alone is insufficient.
+* [ ] Image builder must handle offline `depmod`, the correct target initramfs,
+  Valve A/B slots, installer-copy behavior, and first-boot ordering.
+* [ ] Define Secure Boot/module-signing behavior before claiming supported
+  Secure Boot installations.
+* [ ] Verify SteamOS updates and slot changes do not silently leave stale modules.
+* [ ] Preserve a recovery route if NVIDIA initialization fails on first hardware
+  boot.
+
+---
+
+# 34. Immediate next actions
 
 The project has moved from infrastructure bring-up into active dogfooding and
 compatibility development.
