@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Resolve a certified NVIDIA artifact for an offline SteamOS target image."""
+"""Resolve a published NVIDIA artifact for an offline SteamOS target image."""
 
 import argparse
 import json
@@ -10,7 +10,7 @@ from pathlib import Path
 from select_release import select_release
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 SUPPORTED_ARCHITECTURES = {"x86_64"}
 VERSION_PATTERN = re.compile(r"^[0-9]+(?:\.[0-9]+){2}$")
 KERNEL_PATTERN = re.compile(r"^[A-Za-z0-9._+~-]+$")
@@ -42,30 +42,35 @@ def resolve_target(steamos, kernel, architecture, releases, repository):
     if architecture not in SUPPORTED_ARCHITECTURES:
         return result(
             "unsupported_target", target, reason="unsupported_architecture",
-            message=f"No certified NVIDIA artifact format is defined for {architecture}.",
+            message=f"No published NVIDIA artifact format is defined for {architecture}.",
         )
 
     selected = select_release(steamos, kernel, releases)
     if not selected:
         return result(
-            "no_compatible_artifact", target, reason="no_certified_release",
-            message=("No published certified release matches the exact target kernel "
+            "no_compatible_artifact", target, reason="no_compatible_release",
+            message=("No published release matches the exact target kernel "
                      "within the permitted SteamOS compatibility range."),
         )
 
-    certified_steamos, nvidia, selected_kernel, tag = selected
+    published_steamos, nvidia, selected_kernel, tag = selected
     asset_name = f"nvidia-open-{tag}-{architecture}.tar.gz"
     checksum_name = f"{asset_name}.sha256"
+    provenance_name = f"nvidia-open-{tag}-{architecture}.provenance.json"
     release = next(item for item in releases if item.get("tag_name") == tag)
     assets = {
         asset.get("name")
         for asset in release.get("assets", [])
         if isinstance(asset, dict) and asset.get("name")
     }
-    missing = [name for name in (asset_name, checksum_name) if name not in assets]
-    certification = {
+    missing = [
+        name
+        for name in (asset_name, checksum_name, provenance_name)
+        if name not in assets
+    ]
+    publication = {
         "tag": tag,
-        "steamosVersion": certified_steamos,
+        "steamosVersion": published_steamos,
         "kernelVersion": selected_kernel,
         "nvidiaVersion": nvidia,
         "publishedAt": release.get("published_at"),
@@ -73,15 +78,15 @@ def resolve_target(steamos, kernel, architecture, releases, repository):
     if missing:
         return result(
             "no_compatible_artifact", target, reason="release_assets_missing",
-            message="The selected certification is incomplete and cannot be consumed safely.",
-            certification=certification, missingAssets=missing,
+            message="The selected publication is incomplete and cannot be consumed safely.",
+            publication=publication, missingAssets=missing,
         )
 
     base_url = f"https://github.com/{repository}/releases/download/{tag}"
     return result(
         "compatible", target,
-        compatibility=("exact" if certified_steamos == steamos else "same_series_fallback"),
-        certification=certification,
+        compatibility=("exact" if published_steamos == steamos else "same_series_fallback"),
+        publication=publication,
         artifact={
             "name": asset_name,
             "url": f"{base_url}/{asset_name}",
@@ -90,13 +95,22 @@ def resolve_target(steamos, kernel, architecture, releases, repository):
                 "name": checksum_name,
                 "url": f"{base_url}/{checksum_name}",
             },
+            "provenance": {
+                "name": provenance_name,
+                "url": f"{base_url}/{provenance_name}",
+            },
+            "trust": {
+                "classification": "pending-provenance-verification",
+                "source": provenance_name,
+                "requiredVerification": "external-and-embedded-provenance-byte-match",
+            },
         },
     )
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Resolve a certified artifact for an offline SteamOS image target."
+        description="Resolve a published artifact for an offline SteamOS image target."
     )
     parser.add_argument("--steamos", required=True, help="target SteamOS VERSION_ID")
     parser.add_argument("--kernel", required=True, help="exact target kernel version")

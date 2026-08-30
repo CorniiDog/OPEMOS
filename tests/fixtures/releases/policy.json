@@ -10,6 +10,10 @@
       {
         "name": "nvidia-open-steamos-3.8.16-nvidia-575.64.05-kkernel-a-x86_64.tar.gz.sha256",
         "browser_download_url": "https://example.invalid/checksum"
+      },
+      {
+        "name": "nvidia-open-steamos-3.8.16-nvidia-575.64.05-kkernel-a-x86_64.provenance.json",
+        "browser_download_url": "https://example.invalid/provenance"
       }
     ]
   },

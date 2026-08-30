@@ -198,7 +198,7 @@ VALVE_COMPILER_DEFINITION=$'#define LINUX_COMPILER\t\t"gcc (GCC) 15.1.1 20250425
 [[ "$(kernel_compiler_version_from_definition "$VALVE_COMPILER_DEFINITION")" == "15.1.1" ]] ||
     fail "Valve tab-separated compiler metadata was not parsed"
 
-printf 'Checking certified release-selection policy...\n'
+printf 'Checking published release-selection policy...\n'
 POLICY_FIXTURE="${PROJECT_ROOT}/tests/fixtures/releases/policy.json"
 
 SELECTED="$(python3 "$PROJECT_ROOT/lib/select_release.py" \
@@ -227,12 +227,42 @@ python3 - "$RESOLVED" <<'PY' || fail "compatible target JSON contract is invalid
 import json
 import sys
 result = json.loads(sys.argv[1])
-assert result["schemaVersion"] == 1
+assert result["schemaVersion"] == 2
 assert result["status"] == "compatible"
 assert result["compatibility"] == "exact"
 assert result["target"]["kernelVersion"] == "kernel-a"
-assert result["certification"]["nvidiaVersion"] == "575.64.05"
+assert result["publication"]["nvidiaVersion"] == "575.64.05"
 assert result["artifact"]["checksum"]["algorithm"] == "sha256"
+assert result["artifact"]["provenance"]["name"].endswith(".provenance.json")
+assert result["artifact"]["trust"] == {
+    "classification": "pending-provenance-verification",
+    "source": result["artifact"]["provenance"]["name"],
+    "requiredVerification": "external-and-embedded-provenance-byte-match",
+}
+PY
+
+python3 - "$PROJECT_ROOT/lib" "$POLICY_FIXTURE" <<'PY' || \
+    fail "resolver accepted a publication without provenance"
+import json
+import sys
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[1])
+from resolve_target import resolve_target
+
+with open(sys.argv[2], encoding="utf-8") as release_file:
+    releases = json.load(release_file)
+release = releases[0]
+release["assets"] = [
+    asset for asset in release["assets"]
+    if not asset["name"].endswith(".provenance.json")
+]
+result = resolve_target("3.8.16", "kernel-a", "x86_64", releases, "owner/repo")
+assert result["status"] == "no_compatible_artifact"
+assert result["reason"] == "release_assets_missing"
+assert result["missingAssets"] == [
+    "nvidia-open-steamos-3.8.16-nvidia-575.64.05-kkernel-a-x86_64.provenance.json"
+]
 PY
 
 RESOLVED="$(python3 "$PROJECT_ROOT/lib/resolve_target.py" \
@@ -243,7 +273,7 @@ import json
 import sys
 result = json.loads(sys.argv[1])
 assert result["status"] == "no_compatible_artifact"
-assert result["reason"] == "no_certified_release"
+assert result["reason"] == "no_compatible_release"
 assert "artifact" not in result
 PY
 

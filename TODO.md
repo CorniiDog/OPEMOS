@@ -1091,8 +1091,10 @@ signing policy.
 * [x] Apply the normal bounded same-series SteamOS certification fallback while
   still requiring an exact kernel match.
 * [x] Treat no compatible artifact as a normal fail-closed resolution result.
-* [x] Require both the expected release archive and SHA256 sidecar to be
-  advertised before returning a compatible published artifact.
+* [x] Require the expected release archive, SHA256 sidecar, and provenance
+  sidecar to be advertised before returning a compatible published artifact.
+* [x] Keep publication separate from certification and require consumers to
+  verify external/embedded provenance before preserving its trust classification.
 * [x] Add native x86_64 Fedora exact-target compilation in
   `bootstrap/build_for_target.sh`.
 * [x] Derive the exact Neptune headers filename from the full target kernel.

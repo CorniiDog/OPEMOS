@@ -110,14 +110,20 @@ python3 lib/resolve_target.py \
     --releases releases.json
 ```
 
-Schema version `1` returns `status=compatible` with certification, archive, and
-SHA256-sidecar URLs; `no_compatible_artifact`, `unsupported_target`, and
-`invalid_target` are normal fail-closed results and contain no downloadable
-artifact. The resolver requires an exact kernel match and applies only the same
-bounded, non-forward SteamOS major/minor fallback used by the live installer.
+Schema version `2` returns `status=compatible` with publication, archive,
+SHA256-sidecar, and provenance-sidecar URLs; `no_compatible_artifact`,
+`unsupported_target`, and `invalid_target` are normal fail-closed results and
+contain no downloadable artifact. The resolver requires an exact kernel match
+and applies only the same bounded, non-forward SteamOS major/minor fallback used
+by the live installer.
+Resolution reports trust as `pending-provenance-verification`; consumers must
+require the external provenance to be byte-identical to the archive's embedded
+`PROVENANCE.json` before preserving its declared trust classification. A
+published local build therefore remains `locally-built-verified` and is never
+silently promoted to `certified-published`.
 
-When no certified artifact exists, an x86_64 Fedora builder appliance can create
-one without using its running kernel:
+When no compatible published artifact exists, an x86_64 Fedora builder
+appliance can create one without using its running kernel:
 
 ```bash
 ./bootstrap/build_for_target.sh \
