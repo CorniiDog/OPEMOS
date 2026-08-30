@@ -164,6 +164,29 @@ The same data and the validated per-module records are published as a versioned
 The final result contract names the sidecar so the image builder can copy it
 directly into its image manifest without parsing human-readable logs.
 
+### Offline mounted-root installation
+
+`bootstrap/install_to_root.sh` defines the image-builder installation boundary
+for an explicit mounted SteamOS root. It is intended to run only in the managed
+x86_64 Fedora appliance and never examines the appliance kernel or invokes
+`steamos-readonly`. In addition to the verified module archive, checksum, and
+schema-1 provenance, callers must provide exact local `nvidia-utils` and
+`lib32-nvidia-utils` packages, both detached signatures, and a reviewed GPG
+keyring. No package or source is downloaded during installation. Before
+mutation, the caller must mount the explicit SteamOS root and its corresponding
+boot/EFI partition at `<root>/boot`; the installer refuses to guess an A/B slot.
+
+Use `--validate-only` before allowing any image mutation. Validation requires
+the exact target kernel directory, byte-identical external/embedded provenance,
+all five module hashes and metadata, matching signed userspace package releases,
+and versioned GSP firmware. A versioned `--result-json` contains filenames rather
+than host paths. Mutation uses target-root pacman semantics, offline `depmod`,
+explicit NVIDIA mkinitcpio configuration, and the target's own `mkinitcpio` in
+an x86_64 chroot. Synthetic tests cover success, repeated execution, injected
+initramfs failure, and cleanup-safe failure results. On a real recovery image,
+the disposable qcow2 overlay is the authoritative rollback boundary and must be
+discarded after any non-success result.
+
 Pass `--result-json FILE` when invoking the build from an appliance controller.
 The file is written atomically with schema version `1`, target identity, trust
 classification, a stable success/failure reason, and artifact filenames and

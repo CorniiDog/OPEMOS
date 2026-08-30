@@ -37,6 +37,10 @@ python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __
     lib/write_build_provenance.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/validate_valve_signer.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/validate_install_inputs.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/write_install_result.py
 
 printf 'Checking exact target-header validation...\n'
 python3 tests/header_validation.py
@@ -403,6 +407,40 @@ then
     fail "build-result writer accepted an incomplete/path-valued success artifact"
 fi
 rm -f "$RESULT_FIXTURE" "${RESULT_FIXTURE}.invalid"
+
+printf 'Checking offline-root installer contract...\n'
+./bootstrap/install_to_root.sh --help >/dev/null
+python3 tests/offline_root_validation.py
+INSTALL_RESULT_FIXTURE="$(mktemp /tmp/offline-install-result.XXXXXX)"
+python3 "$PROJECT_ROOT/lib/write_install_result.py" \
+    --output "$INSTALL_RESULT_FIXTURE" --status validated \
+    --reason validation_complete --message "fixture validated" --phase validated \
+    --root /target-root --steamos 3.8.16 --kernel kernel-a \
+    --nvidia 575.64.05 --trust locally-built-verified \
+    --archive artifact.tar.gz --provenance artifact.provenance.json \
+    --nvidia-utils nvidia-utils.pkg.tar.zst \
+    --lib32-nvidia-utils lib32-nvidia-utils.pkg.tar.zst
+python3 - "$INSTALL_RESULT_FIXTURE" <<'PY' || fail "offline install-result contract is invalid"
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as result_file:
+    result = json.load(result_file)
+assert result["schemaVersion"] == 1
+assert result["status"] == "validated"
+assert result["reason"] == "validation_complete"
+assert result["cleanup"]["mountsReleased"] is True
+assert result["target"]["root"] == "/target-root"
+assert result["target"]["kernelVersion"] == "kernel-a"
+assert result["inputs"]["provenance"] == "artifact.provenance.json"
+PY
+if python3 "$PROJECT_ROOT/lib/write_install_result.py" \
+    --output "${INSTALL_RESULT_FIXTURE}.invalid" --status success \
+    --reason install_complete --message invalid --phase complete \
+    --root /target-root --kernel kernel-a --mounts-released false >/dev/null 2>&1
+then
+    fail "install-result writer accepted success with active mounts"
+fi
+rm -f "$INSTALL_RESULT_FIXTURE" "${INSTALL_RESULT_FIXTURE}.invalid"
 
 printf 'Checking fake-root install/uninstall transactions...\n'
 if (( BASH_VERSINFO[0] >= 4 )); then

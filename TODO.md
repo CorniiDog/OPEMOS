@@ -1240,6 +1240,19 @@ signing policy.
 * [ ] Test both automatically downloaded and pinned-local header inputs.
 * [ ] Verify artifact installation, idempotency, uninstall, and rollback against
   a fake mounted target before modifying a real recovery-image working copy.
+* [x] Define the x86_64-only explicit-root installer CLI with authenticated
+  `nvidia-utils`/`lib32-nvidia-utils` inputs, `--validate-only`, and a structured
+  result that cannot report success while mounts remain active.
+* [x] Add fail-closed validation for target identity, artifact provenance/module
+  hashes, userspace signatures/version agreement, safe package paths, and GSP
+  firmware presence.
+* [x] Add target-root pacman installation, module compression/configuration,
+  offline depmod, target mkinitcpio, reverse-order bind-mount cleanup, and
+  structured success/failure/cancellation results.
+* [x] Add synthetic success, repeated-execution, corrupt-input, injected
+  initramfs failure, and mounts-released result coverage.
+* [ ] Run the mutation suite with real pacman/mkinitcpio inside Fedora and test
+  cancellation while a real bind mount is active before recovery-image use.
 
 ## Known cross-project edge cases
 
