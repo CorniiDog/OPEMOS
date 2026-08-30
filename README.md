@@ -116,6 +116,27 @@ SHA256-sidecar URLs; `no_compatible_artifact`, `unsupported_target`, and
 artifact. The resolver requires an exact kernel match and applies only the same
 bounded, non-forward SteamOS major/minor fallback used by the live installer.
 
+When no certified artifact exists, an x86_64 Fedora builder appliance can create
+one without using its running kernel:
+
+```bash
+./bootstrap/build_for_target.sh \
+    --steamos 3.8.14 \
+    --kernel 6.16.12-valve24.4-1-neptune-616-gfe145653a794 \
+    --nvidia 575.64.05 \
+    --install-dependencies \
+    --output /shared/artifacts
+```
+
+The command derives and downloads the exact Valve headers package, clones the
+matching project NVIDIA source branch, builds against the extracted SteamOS
+tree, and verifies the five-module set, x86_64 ELF architecture, and exact
+vermagic. It emits the existing installer-compatible `.tar.gz`, `.sha256`, and
+build-info files. `--source` and `--headers-package` permit pinned local inputs;
+`--resolve-only` returns a JSON build plan without network or build activity.
+The command intentionally requires an x86_64 Fedora appliance even when QEMU is
+running on an Apple Silicon macOS host.
+
 Validate or install a local archive through the same online orchestration path:
 
 ```bash

@@ -185,6 +185,28 @@ assert result["status"] == "unsupported_target"
 assert result["reason"] == "unsupported_architecture"
 PY
 
+printf 'Checking Fedora offline-target build plan...\n'
+TARGET_BUILD_PLAN="$(./bootstrap/build_for_target.sh \
+    --steamos 3.8.14 \
+    --kernel 6.16.12-valve24.4-1-neptune-616-gfe145653a794 \
+    --nvidia 575.64.05 \
+    --resolve-only)"
+python3 - "$TARGET_BUILD_PLAN" <<'PY' || fail "offline-target build plan is invalid"
+import json
+import sys
+result = json.loads(sys.argv[1])
+target = result["target"]
+assert result["schemaVersion"] == 1
+assert result["status"] == "ready"
+assert target["architecture"] == "x86_64"
+assert target["headersFilename"] == (
+    "linux-neptune-616-headers-6.16.12.valve24.4-1-x86_64.pkg.tar.zst"
+)
+assert target["assetName"].endswith(
+    "k6.16.12-valve24.4-1-neptune-616-gfe145653a794-x86_64.tar.gz"
+)
+PY
+
 printf 'Checking fake-root install/uninstall transactions...\n'
 ./tests/transaction.sh
 
