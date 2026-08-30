@@ -426,20 +426,24 @@ run_cancellable make -C "$SOURCE_DIR" modules -j"$(nproc)" CC="$BUILD_CC" \
     SYSSRC="$KERNEL_TREE" SYSOUT="$KERNEL_TREE"
 
 mapfile -t MODULES < <(find "$SOURCE_DIR/kernel-open" -maxdepth 1 -type f -name '*.ko' | sort)
-BUILD_PHASE=module_set_incomplete
-validate_nvidia_module_set "${MODULES[@]}" ||
-    die "Build did not produce exactly the five expected NVIDIA modules."
+MODULE_VALIDATION_JSON="$WORK_DIR/module-validation.json"
+set +e
+python3 "$SUPPORT_ROOT/lib/validate_built_modules.py" \
+    --kernel "$KERNEL_VERSION" --nvidia "$NVIDIA_VERSION" \
+    --architecture "$ARCHITECTURE" --output "$MODULE_VALIDATION_JSON" \
+    "${MODULES[@]}"
+MODULE_VALIDATION_RC=$?
+set -e
+if [[ "$MODULE_VALIDATION_RC" != "0" ]]; then
+    BUILD_PHASE="$(python3 -c \
+        'import json,sys; print(json.load(open(sys.argv[1]))["reason"])' \
+        "$MODULE_VALIDATION_JSON" 2>/dev/null || printf module_metadata_invalid)"
+    die "Built NVIDIA modules failed structural validation."
+fi
 
 PACKAGE_DIR="$WORK_DIR/package"
 mkdir -p "$PACKAGE_DIR/modules"
 for module in "${MODULES[@]}"; do
-    BUILD_PHASE=vermagic_mismatch
-    vermagic="$(modinfo -F vermagic "$module")"
-    [[ "${vermagic%% *}" == "$KERNEL_VERSION" ]] ||
-        die "Vermagic mismatch in $(basename "$module"): ${vermagic}"
-    BUILD_PHASE=module_architecture_mismatch
-    readelf -h "$module" | grep -q 'Machine:.*Advanced Micro Devices X86-64' ||
-        die "Module architecture is not x86_64: $(basename "$module")"
     install -m 0644 "$module" "$PACKAGE_DIR/modules/$(basename "$module")"
 done
 

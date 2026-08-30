@@ -130,9 +130,11 @@ one without using its running kernel:
 
 The command derives and downloads the exact Valve headers package, clones the
 matching project NVIDIA source branch, builds against the extracted SteamOS
-tree, and verifies the five-module set, x86_64 ELF architecture, and exact
-vermagic. It emits the existing installer-compatible `.tar.gz`, `.sha256`, and
-build-info files. `--source` and `--headers-package` permit pinned local inputs;
+tree, and verifies the five-module set, matching NVIDIA version, x86_64 ELF
+architecture, and exact vermagic. Module validation also produces a temporary
+machine-readable record containing every module hash and validated property.
+It emits the existing installer-compatible `.tar.gz`, `.sha256`, and build-info
+files. `--source` and `--headers-package` permit pinned local inputs;
 `--resolve-only` returns a JSON build plan without network or build activity.
 The command intentionally requires an x86_64 Fedora appliance even when QEMU is
 running on an Apple Silicon macOS host.

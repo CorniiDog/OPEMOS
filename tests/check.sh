@@ -31,9 +31,14 @@ python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __
     lib/run_in_process_group.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/validate_target_headers.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/validate_built_modules.py
 
 printf 'Checking exact target-header validation...\n'
 python3 tests/header_validation.py
+
+printf 'Checking built-module metadata validation...\n'
+python3 tests/module_validation.py
 
 printf 'Checking cancellable process-group launcher...\n'
 python3 - "$PROJECT_ROOT/lib/run_in_process_group.py" <<'PY' || \

@@ -1174,6 +1174,8 @@ signing policy.
   * `dependency_install_failed`
   * `compilation_failed`
   * `module_set_incomplete`
+  * `module_metadata_invalid`
+  * `module_version_mismatch`
   * `module_architecture_mismatch`
   * `vermagic_mismatch`
   * `packaging_failed`
@@ -1226,9 +1228,8 @@ signing policy.
   Fedora Bash 5; no transaction-test skips are permitted for release validation.
 * [x] Add fixtures for wrong `.PKGINFO`, wrong full kernel directory, missing
   prepared-tree files, unsafe archive paths, and extraction-root escape.
-* [ ] Add file-backed fixtures for duplicate/missing modules, wrong ELF
-  architecture, and wrong vermagic; module-name set logic already has unit
-  coverage.
+* [x] Add file-backed fixtures for duplicate/missing modules, metadata-command
+  failures, wrong NVIDIA version, wrong ELF architecture, and wrong vermagic.
 * [ ] Test network failure, truncated downloads, cancellation during download,
   cancellation during compilation, and output-directory exhaustion.
 * [ ] Test both automatically downloaded and pinned-local header inputs.
