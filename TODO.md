@@ -1151,10 +1151,11 @@ signing policy.
 
 ## Machine-readable results and typed failures
 
-* [ ] Add a versioned final build-result JSON document, not only build-plan
+* [x] Add a versioned final build-result JSON document, not only build-plan
   output and human-readable logs.
-* [ ] Include result status, trust classification, target identity, output
-  paths/names, hashes, and provenance without private host paths.
+* [x] Include result status, trust classification, target identity, output
+  names/hashes, and a reference to provenance-bearing build info without
+  private host paths.
 * [ ] Provide stable typed failure reasons for at least:
 
   * `invalid_target`
@@ -1175,7 +1176,9 @@ signing policy.
   * `packaging_failed`
   * `cancelled`
 
-* [ ] Keep missing headers/source and incompatibility as safe, actionable
+* [x] Emit stable phase-specific reasons for normal build execution; add
+  finer-grained argument/signature reasons as those paths are integrated.
+* [x] Keep missing headers/source and incompatibility as safe, actionable
   outcomes rather than selecting a nearby build.
 * [ ] Separate concise user-facing messages from detailed maintainer diagnostics.
 

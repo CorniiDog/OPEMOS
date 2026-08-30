@@ -23,6 +23,8 @@ python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __
     lib/select_release.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/resolve_target.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/write_build_result.py
 
 printf 'Checking whitespace errors...\n'
 git diff --check
@@ -206,6 +208,29 @@ assert target["assetName"].endswith(
     "k6.16.12-valve24.4-1-neptune-616-gfe145653a794-x86_64.tar.gz"
 )
 PY
+
+printf 'Checking final offline-target build-result contract...\n'
+RESULT_FIXTURE="$(mktemp /tmp/offline-target-result.XXXXXX)"
+python3 "$PROJECT_ROOT/lib/write_build_result.py" \
+    --output "$RESULT_FIXTURE" --status success --reason build_complete \
+    --message "fixture passed" --trust development-unverified \
+    --steamos 3.8.14 --kernel kernel-a --nvidia 575.64.05 \
+    --architecture x86_64 --archive artifact.tar.gz \
+    --checksum artifact.tar.gz.sha256 --build-info artifact.build-info.txt \
+    --archive-sha256 0123456789abcdef
+python3 - "$RESULT_FIXTURE" <<'PY' || fail "final build-result contract is invalid"
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as result_file:
+    result = json.load(result_file)
+assert result["schemaVersion"] == 1
+assert result["status"] == "success"
+assert result["reason"] == "build_complete"
+assert result["trust"] == "development-unverified"
+assert result["artifact"]["archive"] == "artifact.tar.gz"
+assert result["target"]["kernelVersion"] == "kernel-a"
+PY
+rm -f "$RESULT_FIXTURE"
 
 printf 'Checking fake-root install/uninstall transactions...\n'
 if (( BASH_VERSINFO[0] >= 4 )); then

@@ -13,6 +13,7 @@ SOURCE_DIR=""
 HEADERS_PACKAGE=""
 HEADERS_URL=""
 OUTPUT_DIR=""
+RESULT_JSON=""
 RESOLVE_ONLY=0
 INSTALL_DEPENDENCIES=0
 REQUIRE_COMPILER_MAJOR_MATCH=0
@@ -43,6 +44,7 @@ Other:
       --require-compiler-major-match
                               Fail unless the module compiler major matches the
                               compiler recorded by the target kernel
+      --result-json FILE      Write a versioned final success/failure result
       --resolve-only          Validate/describe inputs without downloading/building
   -h, --help                  Show this help
 
@@ -63,6 +65,7 @@ while [[ $# -gt 0 ]]; do
         -o|--output) [[ $# -ge 2 ]] || die "$1 requires a directory."; OUTPUT_DIR="$2"; shift 2 ;;
         --install-dependencies) INSTALL_DEPENDENCIES=1; shift ;;
         --require-compiler-major-match) REQUIRE_COMPILER_MAJOR_MATCH=1; shift ;;
+        --result-json) [[ $# -ge 2 ]] || die "$1 requires a file."; RESULT_JSON="$2"; shift 2 ;;
         --resolve-only) RESOLVE_ONLY=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) die "Unknown argument: $1" ;;
@@ -121,6 +124,44 @@ PY
     exit 0
 fi
 
+BUILD_PHASE=dependency_install_failed
+BUILD_RESULT_WRITTEN=0
+BUILD_COMPLETED=0
+WORK_DIR=""
+
+write_final_result()
+{
+    local status="$1"
+    local reason="$2"
+    local message="$3"
+    shift 3
+    [[ -n "$RESULT_JSON" ]] || return 0
+    python3 "$SUPPORT_ROOT/lib/write_build_result.py" \
+        --output "$RESULT_JSON" --status "$status" --reason "$reason" \
+        --message "$message" --trust "${TRUST_CLASSIFICATION:-development-unverified}" \
+        --steamos "$STEAMOS_VERSION" --kernel "$KERNEL_VERSION" \
+        --nvidia "$NVIDIA_VERSION" --architecture "$ARCHITECTURE" "$@"
+    BUILD_RESULT_WRITTEN=1
+}
+
+cleanup_build()
+{
+    local rc=$?
+    [[ -z "$WORK_DIR" ]] || rm -rf "$WORK_DIR"
+    if [[ "$BUILD_RESULT_WRITTEN" == "0" && -n "$RESULT_JSON" ]]; then
+        if [[ "$rc" == "130" || "$rc" == "143" ]]; then
+            write_final_result cancelled cancelled "The offline-target build was cancelled." || true
+        elif [[ "$BUILD_COMPLETED" == "0" ]]; then
+            write_final_result failed "$BUILD_PHASE" \
+                "The offline-target build failed during ${BUILD_PHASE}." || true
+        fi
+    fi
+    return "$rc"
+}
+
+trap cleanup_build EXIT
+trap 'BUILD_PHASE=cancelled; exit 130' INT TERM
+
 if [[ "$INSTALL_DEPENDENCIES" == "1" ]]; then
     need_cmd sudo
     need_cmd dnf
@@ -137,11 +178,12 @@ command -v bsdtar >/dev/null 2>&1 || need_cmd bsdtar
 [[ "$(uname -m)" == "x86_64" ]] ||
     die "Native target builds require an x86_64 Fedora appliance; found $(uname -m)."
 
+BUILD_PHASE=output_preparation_failed
 mkdir -p "$OUTPUT_DIR"
 OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd)"
 WORK_DIR="$(project_mktemp_dir target-build)"
-trap 'rm -rf "$WORK_DIR"' EXIT
 
+BUILD_PHASE=source_branch_missing
 if [[ -z "$SOURCE_DIR" ]]; then
     SOURCE_DIR="$WORK_DIR/source"
     log "Cloning project NVIDIA source branch nvidia/${NVIDIA_VERSION}..."
@@ -155,10 +197,12 @@ fi
 
 [[ -f "$SOURCE_DIR/version.mk" && -f "$SOURCE_DIR/Makefile" && -d "$SOURCE_DIR/kernel-open" ]] ||
     die "Source directory is not an NVIDIA open kernel-module checkout."
+BUILD_PHASE=source_version_mismatch
 SOURCE_VERSION="$(sed -n 's/^NVIDIA_VERSION[[:space:]]*=[[:space:]]*//p' "$SOURCE_DIR/version.mk" | head -n1 | tr -d '[:space:]')"
 [[ "$SOURCE_VERSION" == "$NVIDIA_VERSION" ]] ||
     die "Source version ${SOURCE_VERSION:-unknown} does not match ${NVIDIA_VERSION}."
 
+BUILD_PHASE=headers_not_found
 if [[ -z "$HEADERS_PACKAGE" ]]; then
     if [[ -z "$HEADERS_URL" ]]; then
         MIRROR="https://steamdeck-packages.steamos.cloud/archlinux-mirror"
@@ -177,9 +221,11 @@ if [[ -z "$HEADERS_PACKAGE" ]]; then
     fi
     HEADERS_PACKAGE="$WORK_DIR/$HEADERS_FILENAME"
     log "Downloading exact Valve headers..."
+    BUILD_PHASE=header_download_failed
     curl -fL "$HEADERS_URL" -o "$HEADERS_PACKAGE"
 fi
 
+BUILD_PHASE=header_identity_mismatch
 HEADER_SHA256="$(sha256_file "$HEADERS_PACKAGE")"
 PACKAGE_INFO="$(bsdtar -xOf "$HEADERS_PACKAGE" .PKGINFO 2>/dev/null)" ||
     die "Headers archive does not contain readable Arch package metadata."
@@ -199,6 +245,7 @@ fi
 KERNEL_ROOT="$WORK_DIR/kernel-root"
 mkdir -p "$KERNEL_ROOT"
 bsdtar -xf "$HEADERS_PACKAGE" -C "$KERNEL_ROOT"
+BUILD_PHASE=header_tree_incomplete
 KERNEL_TREE="$KERNEL_ROOT/usr/lib/modules/$KERNEL_VERSION/build"
 [[ -n "$KERNEL_TREE" && -f "$KERNEL_TREE/Makefile" ]] ||
     die "Headers package does not contain the exact target kernel build tree: ${KERNEL_VERSION}"
@@ -239,20 +286,24 @@ if [[ "$COMPILER_MAJOR_MATCH" == "0" ]]; then
 fi
 
 log "Building NVIDIA ${NVIDIA_VERSION} for ${KERNEL_VERSION}..."
+BUILD_PHASE=compilation_failed
 make -C "$SOURCE_DIR" clean >/dev/null 2>&1 || true
 make -C "$SOURCE_DIR" modules -j"$(nproc)" CC="$BUILD_CC" \
     SYSSRC="$KERNEL_TREE" SYSOUT="$KERNEL_TREE"
 
 mapfile -t MODULES < <(find "$SOURCE_DIR/kernel-open" -maxdepth 1 -type f -name '*.ko' | sort)
+BUILD_PHASE=module_set_incomplete
 validate_nvidia_module_set "${MODULES[@]}" ||
     die "Build did not produce exactly the five expected NVIDIA modules."
 
 PACKAGE_DIR="$WORK_DIR/package"
 mkdir -p "$PACKAGE_DIR/modules"
 for module in "${MODULES[@]}"; do
+    BUILD_PHASE=vermagic_mismatch
     vermagic="$(modinfo -F vermagic "$module")"
     [[ "${vermagic%% *}" == "$KERNEL_VERSION" ]] ||
         die "Vermagic mismatch in $(basename "$module"): ${vermagic}"
+    BUILD_PHASE=module_architecture_mismatch
     readelf -h "$module" | grep -q 'Machine:.*Advanced Micro Devices X86-64' ||
         die "Module architecture is not x86_64: $(basename "$module")"
     install -m 0644 "$module" "$PACKAGE_DIR/modules/$(basename "$module")"
@@ -277,6 +328,7 @@ BUILD_INFO_NAME="${ASSET_NAME%.tar.gz}.build-info.txt"
 BUILD_INFO="$OUTPUT_DIR/$BUILD_INFO_NAME"
 ARCHIVE="$OUTPUT_DIR/$ASSET_NAME"
 CHECKSUM="$ARCHIVE.sha256"
+BUILD_PHASE=packaging_failed
 {
     printf 'open-gpu-kernel-modules-steamos build information\n\n'
     printf 'schema_version=1\n'
@@ -322,6 +374,12 @@ CHECKSUM="$ARCHIVE.sha256"
 cp "$BUILD_INFO" "$PACKAGE_DIR/BUILD-INFO.txt"
 tar -C "$PACKAGE_DIR" -czf "$ARCHIVE" modules BUILD-INFO.txt
 (cd "$OUTPUT_DIR" && sha256sum "$ASSET_NAME" > "$(basename "$CHECKSUM")")
+
+ARCHIVE_SHA256="$(sha256_file "$ARCHIVE")"
+write_final_result success build_complete "The offline-target artifact passed structural validation." \
+    --archive "$(basename "$ARCHIVE")" --checksum "$(basename "$CHECKSUM")" \
+    --build-info "$(basename "$BUILD_INFO")" --archive-sha256 "$ARCHIVE_SHA256"
+BUILD_COMPLETED=1
 
 ok "Offline-target NVIDIA artifact created."
 printf 'Archive:    %s\nChecksum:   %s\nBuild info: %s\n' "$ARCHIVE" "$CHECKSUM" "$BUILD_INFO"

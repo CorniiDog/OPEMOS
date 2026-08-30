@@ -145,6 +145,12 @@ must fail instead. Exact compiler version, binutils, make, kmod, Fedora identity
 support/source commits and dirty state, and per-module hashes/version/vermagic
 are recorded in `BUILD-INFO.txt`.
 
+Pass `--result-json FILE` when invoking the build from an appliance controller.
+The file is written atomically with schema version `1`, target identity, trust
+classification, a stable success/failure reason, and artifact filenames and
+hash on success. It contains filenames rather than private host paths. Human
+logs remain diagnostic output; callers should branch on this JSON contract.
+
 Validate or install a local archive through the same online orchestration path:
 
 ```bash
