@@ -12,6 +12,9 @@ ARCHITECTURE="x86_64"
 SOURCE_DIR=""
 HEADERS_PACKAGE=""
 HEADERS_URL=""
+HEADERS_SIGNATURE=""
+HEADER_KEYRING=""
+HEADER_SIGNER=""
 OUTPUT_DIR=""
 RESULT_JSON=""
 RESOLVE_ONLY=0
@@ -37,6 +40,10 @@ Source and headers:
                               project branch nvidia/VERSION.
       --headers-package FILE  Exact local Valve headers package
       --headers-url URL       Exact Valve HTTPS headers-package URL
+      --headers-signature FILE
+                              Detached signature for a local headers package
+      --header-keyring FILE   Pinned GPG keyring used only by gpgv
+      --header-signer FPR     Exact expected signing-key fingerprint
 
 Other:
       --architecture ARCH     Target architecture; currently x86_64 only
@@ -62,6 +69,9 @@ while [[ $# -gt 0 ]]; do
         --source) [[ $# -ge 2 ]] || die "$1 requires a directory."; SOURCE_DIR="$2"; shift 2 ;;
         --headers-package) [[ $# -ge 2 ]] || die "$1 requires a file."; HEADERS_PACKAGE="$2"; shift 2 ;;
         --headers-url) [[ $# -ge 2 ]] || die "$1 requires a URL."; HEADERS_URL="$2"; shift 2 ;;
+        --headers-signature) [[ $# -ge 2 ]] || die "$1 requires a file."; HEADERS_SIGNATURE="$2"; shift 2 ;;
+        --header-keyring) [[ $# -ge 2 ]] || die "$1 requires a file."; HEADER_KEYRING="$2"; shift 2 ;;
+        --header-signer) [[ $# -ge 2 ]] || die "$1 requires a fingerprint."; HEADER_SIGNER="$2"; shift 2 ;;
         -o|--output) [[ $# -ge 2 ]] || die "$1 requires a directory."; OUTPUT_DIR="$2"; shift 2 ;;
         --install-dependencies) INSTALL_DEPENDENCIES=1; shift ;;
         --require-compiler-major-match) REQUIRE_COMPILER_MAJOR_MATCH=1; shift ;;
@@ -83,6 +93,14 @@ done
 [[ -n "$OUTPUT_DIR" || "$RESOLVE_ONLY" == "1" ]] || die "--output is required."
 [[ -z "$HEADERS_PACKAGE" || -z "$HEADERS_URL" ]] ||
     die "--headers-package and --headers-url are mutually exclusive."
+if [[ -n "$HEADERS_SIGNATURE$HEADER_KEYRING$HEADER_SIGNER" ]]; then
+    [[ -n "$HEADER_KEYRING" && -n "$HEADER_SIGNER" ]] ||
+        die "Signature verification requires --header-keyring and --header-signer."
+    [[ "$HEADER_SIGNER" =~ ^[0-9A-Fa-f]{40}([0-9A-Fa-f]{24})?$ ]] ||
+        die "--header-signer must be a full 40- or 64-character fingerprint."
+    HEADER_SIGNER="$(printf '%s' "$HEADER_SIGNER" | tr '[:lower:]' '[:upper:]')"
+    [[ -f "$HEADER_KEYRING" ]] || die "Pinned header keyring not found: $HEADER_KEYRING"
+fi
 
 NEPTUNE_SERIES="$(get_neptune_series "$KERNEL_VERSION")"
 KERNEL_BASE="${KERNEL_VERSION%%-neptune-*}"
@@ -168,7 +186,7 @@ if [[ "$INSTALL_DEPENDENCIES" == "1" ]]; then
     log "Installing Fedora offline-target build dependencies..."
     sudo dnf install -y \
         bc binutils bsdtar curl diffutils elfutils-libelf-devel findutils \
-        gcc gcc-c++ git kmod make openssl-devel pahole perl python3 zstd
+        gcc gcc-c++ git gnupg2 kmod make openssl-devel pahole perl python3 zstd
 fi
 
 for command in bash curl find gcc git ld make modinfo nproc python3 readelf sha256sum tar zstd; do
@@ -223,6 +241,44 @@ if [[ -z "$HEADERS_PACKAGE" ]]; then
     log "Downloading exact Valve headers..."
     BUILD_PHASE=header_download_failed
     curl -fL "$HEADERS_URL" -o "$HEADERS_PACKAGE"
+fi
+
+HEADER_SIGNATURE_STATUS=not-verified
+HEADER_SIGNER_VALIDATED=""
+HEADER_PRIMARY_SIGNER_VALIDATED=""
+if [[ -n "$HEADER_KEYRING" ]]; then
+    need_cmd gpgv
+    if [[ -z "$HEADERS_SIGNATURE" ]]; then
+        [[ -n "$HEADERS_URL" ]] || {
+            BUILD_PHASE=header_signature_missing
+            die "A detached signature is required for a local headers package."
+        }
+        HEADERS_SIGNATURE="$WORK_DIR/$HEADERS_FILENAME.sig"
+        BUILD_PHASE=header_signature_missing
+        log "Downloading Valve headers-package signature..."
+        curl -fL "${HEADERS_URL}.sig" -o "$HEADERS_SIGNATURE" ||
+            die "Detached Valve headers signature was not available."
+    else
+        [[ -f "$HEADERS_SIGNATURE" ]] || {
+            BUILD_PHASE=header_signature_missing
+            die "Headers signature not found: $HEADERS_SIGNATURE"
+        }
+    fi
+
+    BUILD_PHASE=header_signature_invalid
+    GPG_STATUS="$(gpgv --status-fd 1 --keyring "$HEADER_KEYRING" \
+        "$HEADERS_SIGNATURE" "$HEADERS_PACKAGE")" ||
+        die "Valve headers-package signature verification failed."
+    HEADER_SIGNER_VALIDATED="$(printf '%s\n' "$GPG_STATUS" |
+        sed -n 's/^\[GNUPG:\] VALIDSIG \([0-9A-Fa-f]*\) .*/\1/p' | head -n1 |
+        tr '[:lower:]' '[:upper:]')"
+    HEADER_PRIMARY_SIGNER_VALIDATED="$(printf '%s\n' "$GPG_STATUS" |
+        awk '/^\[GNUPG:\] VALIDSIG / && $NF ~ /^[0-9A-Fa-f]{40,64}$/ {print $NF; exit}' |
+        tr '[:lower:]' '[:upper:]')"
+    [[ "$HEADER_SIGNER_VALIDATED" == "$HEADER_SIGNER" ||
+       "$HEADER_PRIMARY_SIGNER_VALIDATED" == "$HEADER_SIGNER" ]] ||
+        die "Headers signature is valid but signer fingerprint does not match the pinned signer."
+    HEADER_SIGNATURE_STATUS=verified
 fi
 
 BUILD_PHASE=header_identity_mismatch
@@ -324,6 +380,12 @@ if git -C "$SUPPORT_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
 fi
 BUILD_OS="$(sed -n 's/^PRETTY_NAME=//p' /etc/os-release 2>/dev/null | head -n1 | tr -d '"')"
 TRUST_CLASSIFICATION=development-unverified
+if [[ "$HEADER_SIGNATURE_STATUS" == "verified" &&
+      "$COMPILER_MAJOR_MATCH" == "1" &&
+      "$SOURCE_DIRTY" == "0" && "$SUPPORT_DIRTY" == "0" &&
+      "$SOURCE_COMMIT" != "unknown" && "$SUPPORT_COMMIT" != "unknown" ]]; then
+    TRUST_CLASSIFICATION=locally-built-verified
+fi
 BUILD_INFO_NAME="${ASSET_NAME%.tar.gz}.build-info.txt"
 BUILD_INFO="$OUTPUT_DIR/$BUILD_INFO_NAME"
 ARCHIVE="$OUTPUT_DIR/$ASSET_NAME"
@@ -363,7 +425,14 @@ BUILD_PHASE=packaging_failed
     printf 'header_package_name=%s\n' "$PACKAGE_NAME"
     printf 'header_package_version=%s\n' "$PACKAGE_VERSION"
     printf 'header_package_architecture=%s\n' "$PACKAGE_ARCH"
-    printf 'header_authentication=https-transport-or-local-input-not-signature-verified\n'
+    printf 'header_signature_status=%s\n' "$HEADER_SIGNATURE_STATUS"
+    printf 'header_signing_key_fingerprint=%s\n' "${HEADER_SIGNER_VALIDATED:-not-verified}"
+    printf 'header_primary_key_fingerprint=%s\n' "${HEADER_PRIMARY_SIGNER_VALIDATED:-not-reported}"
+    if [[ "$HEADER_SIGNATURE_STATUS" == "verified" ]]; then
+        printf 'header_authentication=detached-signature-verified-with-pinned-keyring\n'
+    else
+        printf 'header_authentication=https-transport-or-local-input-not-signature-verified\n'
+    fi
     printf '\nmodules:\n'
     for module in "$PACKAGE_DIR/modules/"*.ko; do
         printf '  %s  %s  version=%s  architecture=x86_64  vermagic=%s\n' \

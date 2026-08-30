@@ -151,6 +151,23 @@ classification, a stable success/failure reason, and artifact filenames and
 hash on success. It contains filenames rather than private host paths. Human
 logs remain diagnostic output; callers should branch on this JSON contract.
 
+For authenticated local builds, provide a reviewed keyring and the exact full
+fingerprint expected to sign the Valve headers package:
+
+```bash
+./bootstrap/build_for_target.sh \
+    ... \
+    --header-keyring /appliance/trust/valve-package-signers.gpg \
+    --header-signer FULL_HEXADECIMAL_FINGERPRINT
+```
+
+The detached `${headers_url}.sig` is downloaded automatically from the same
+Valve package location. With `--headers-package`, also pass
+`--headers-signature`. `gpgv` must validate the package and the actual signing
+key or its reported primary key must match the pinned fingerprint. Supplying a
+keyring without an exact fingerprint is rejected. The project intentionally
+does not download a keyring and then trust it from the same transaction.
+
 Validate or install a local archive through the same online orchestration path:
 
 ```bash

@@ -1133,17 +1133,17 @@ signing policy.
 
 ## Authentication and trust
 
-* [ ] Add Valve package detached-signature verification using a pinned,
+* [x] Add Valve package detached-signature verification using a caller-supplied,
   reviewed keyring or equally strong trusted checksum provenance.
-* [ ] Record signer fingerprint and signature verification result.
+* [x] Record signing/primary fingerprint and signature verification result.
 * [ ] Do not describe a post-download SHA256 calculated from the same transport
   as authentication.
 * [ ] Pin the expected Valve package origin and reject redirects to untrusted
   origins.
 * [ ] Define key rotation and revocation handling.
-* [ ] Keep unsigned-header or override builds labeled
+* [x] Keep unsigned-header or override builds labeled
   `development-unverified`.
-* [ ] Use `locally-built-verified` only for authenticated exact headers, clean
+* [x] Use `locally-built-verified` only for authenticated exact headers, clean
   pinned source, complete provenance, and all structural checks.
 * [ ] Reserve `certified-published` for maintainer-published artifacts that have
   also passed the required hardware test matrix.
@@ -1191,7 +1191,7 @@ signing policy.
 * [x] Record GCC, binutils, make, kmod, and relevant build-tool versions.
 * [x] Record target SteamOS, exact kernel, NVIDIA version, header package
   identity, header URL/local origin, and SHA256.
-* [ ] Record header signer/signature state.
+* [x] Record header signer/signature state.
 * [ ] Record separate build start/end timestamps; build mode is recorded.
 * [x] Record every module filename, SHA256, NVIDIA version, ELF architecture,
   and full vermagic in machine-readable form.

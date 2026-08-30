@@ -209,6 +209,14 @@ assert target["assetName"].endswith(
 )
 PY
 
+if ./bootstrap/build_for_target.sh \
+    --steamos 3.8.14 --kernel 6.16.12-valve24.4-1-neptune-616-gfe145653a794 \
+    --nvidia 575.64.05 --header-keyring /tmp/untrusted-keyring \
+    --resolve-only >/dev/null 2>&1
+then
+    fail "offline-target build accepted a keyring without a pinned signer"
+fi
+
 printf 'Checking final offline-target build-result contract...\n'
 RESULT_FIXTURE="$(mktemp /tmp/offline-target-result.XXXXXX)"
 python3 "$PROJECT_ROOT/lib/write_build_result.py" \
