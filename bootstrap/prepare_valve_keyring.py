@@ -31,6 +31,28 @@ def require_hash(path, expected, description):
         )
 
 
+def require_command(command):
+    if shutil.which(command) is None:
+        raise SystemExit(
+            f"Required command not found: {command}. "
+            "Install bsdtar and GnuPG before preparing the Valve keyring."
+        )
+
+
+def key_fingerprints(path):
+    completed = subprocess.run(
+        ["gpg", "--batch", "--show-keys", "--with-colons", str(path)],
+        check=True,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    return {
+        fields[9].upper()
+        for line in completed.stdout.splitlines()
+        if (fields := line.split(":"))[0] == "fpr" and len(fields) > 9
+    }
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Download and prepare the repository-pinned Valve package keyring."
@@ -47,6 +69,8 @@ def parse_args():
 
 def main():
     args = parse_args()
+    require_command("bsdtar")
+    require_command("gpg")
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
     if manifest.get("schemaVersion") != 1:
         raise SystemExit("Unsupported Valve trust-manifest schema.")
@@ -74,16 +98,40 @@ def main():
         keyring = extraction / manifest["keyring"]["path"]
         require_hash(keyring, manifest["keyring"]["sha256"], "Extracted Valve keyring")
 
+        expected_signers = {
+            signer["fingerprint"].upper() for signer in manifest["signers"]
+        }
+        missing_signers = expected_signers - key_fingerprints(keyring)
+        if missing_signers:
+            raise SystemExit(
+                "Pinned Valve signer is absent from the authenticated keyring: "
+                + ", ".join(sorted(missing_signers))
+            )
+
         args.output.parent.mkdir(parents=True, exist_ok=True)
         staged = args.output.with_name(f".{args.output.name}.tmp")
-        shutil.copyfile(keyring, staged)
+        staged.unlink(missing_ok=True)
+        subprocess.run(
+            [
+                "gpg",
+                "--batch",
+                "--yes",
+                "--dearmor",
+                "--output",
+                str(staged),
+                str(keyring),
+            ],
+            check=True,
+        )
         staged.replace(args.output)
 
     result = {
         "schemaVersion": 1,
         "status": "ready",
         "keyring": args.output.name,
-        "keyringSha256": manifest["keyring"]["sha256"],
+        "keyringSha256": sha256(args.output),
+        "sourceKeyringSha256": manifest["keyring"]["sha256"],
+        "format": "gpg-binary-keyring",
         "signers": [signer["fingerprint"] for signer in manifest["signers"]],
     }
     print(json.dumps(result, sort_keys=True, separators=(",", ":")))

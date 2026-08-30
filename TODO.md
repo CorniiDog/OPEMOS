@@ -1195,6 +1195,9 @@ signing policy.
 * [x] Record target SteamOS, exact kernel, NVIDIA version, header package
   identity, header URL/local origin, and SHA256.
 * [x] Record header signer/signature state.
+* [x] Validate the pinned Valve keyring and historical header signature end to
+  end in the Fedora appliance; dearmor Valve's published key collection before
+  passing it to `gpgv`.
 * [ ] Record separate build start/end timestamps; build mode is recorded.
 * [x] Record every module filename, SHA256, NVIDIA version, ELF architecture,
   and full vermagic in machine-readable form.

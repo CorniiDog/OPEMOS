@@ -178,7 +178,9 @@ python3 bootstrap/prepare_valve_keyring.py \
 
 The helper rejects redirects, verifies the committed SHA256 of Valve's official
 `holo-keyring` package, extracts only its declared keyring, verifies that second
-committed hash, and writes the result atomically. For offline/reproducible
+committed hash, confirms the pinned signer is present, converts Valve's armored
+key collection into the binary keyring format required by `gpgv`, and writes the
+result atomically. It requires `bsdtar` and GnuPG (`gpg`/`gpgv`). For offline/reproducible
 appliance construction, pass the already downloaded package with `--package`.
 The currently pinned historical-header signer is
 `889B5EBDDD505A683621900DAF1D2199EF0A3CCF`, identified in Valve's keyring as
