@@ -99,8 +99,12 @@ def main():
         require_hash(keyring, manifest["keyring"]["sha256"], "Extracted Valve keyring")
 
         expected_signers = {
-            signer["fingerprint"].upper() for signer in manifest["signers"]
+            signer["fingerprint"].upper()
+            for signer in manifest["signers"]
+            if signer.get("status") == "active"
         }
+        if not expected_signers:
+            raise SystemExit("Valve trust manifest contains no active signers.")
         missing_signers = expected_signers - key_fingerprints(keyring)
         if missing_signers:
             raise SystemExit(
@@ -132,7 +136,7 @@ def main():
         "keyringSha256": sha256(args.output),
         "sourceKeyringSha256": manifest["keyring"]["sha256"],
         "format": "gpg-binary-keyring",
-        "signers": [signer["fingerprint"] for signer in manifest["signers"]],
+        "signers": sorted(expected_signers),
     }
     print(json.dumps(result, sort_keys=True, separators=(",", ":")))
 

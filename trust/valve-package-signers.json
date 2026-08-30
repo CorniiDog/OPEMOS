@@ -12,6 +12,8 @@
   "signers": [
     {
       "fingerprint": "889B5EBDDD505A683621900DAF1D2199EF0A3CCF",
+      "status": "active",
+      "reviewedAt": "2026-08-30",
       "identity": "GitLab CI Package Builder <ci-package-builder-1@steamos.cloud>",
       "scope": "Valve SteamOS package signatures",
       "evidence": {

@@ -128,6 +128,11 @@ if [[ -n "$HEADERS_SIGNATURE$HEADER_KEYRING$HEADER_SIGNER" ]]; then
         fail_argument invalid_target \
             "--header-signer must be a full 40- or 64-character fingerprint."
     HEADER_SIGNER="$(printf '%s' "$HEADER_SIGNER" | tr '[:lower:]' '[:upper:]')"
+    python3 "$SUPPORT_ROOT/lib/validate_valve_signer.py" \
+        --manifest "$SUPPORT_ROOT/trust/valve-package-signers.json" \
+        --fingerprint "$HEADER_SIGNER" >/dev/null ||
+        fail_argument invalid_target \
+            "Header signer is not active in the reviewed trust manifest."
     [[ -f "$HEADER_KEYRING" ]] ||
         fail_argument invalid_target "Pinned header keyring was not found."
 fi

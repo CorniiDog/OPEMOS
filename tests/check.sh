@@ -35,6 +35,8 @@ python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __
     lib/validate_built_modules.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/write_build_provenance.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/validate_valve_signer.py
 
 printf 'Checking exact target-header validation...\n'
 python3 tests/header_validation.py
@@ -44,6 +46,9 @@ python3 tests/module_validation.py
 
 printf 'Checking structured build provenance...\n'
 python3 tests/provenance.py
+
+printf 'Checking reviewed Valve signer policy...\n'
+python3 tests/trust_policy.py
 
 printf 'Checking cancellable process-group launcher...\n'
 python3 - "$PROJECT_ROOT/lib/run_in_process_group.py" <<'PY' || \
@@ -83,6 +88,8 @@ assert re.fullmatch(r"[0-9a-f]{64}", manifest["keyring"]["sha256"])
 assert manifest["signers"]
 for signer in manifest["signers"]:
     assert re.fullmatch(r"[0-9A-F]{40}|[0-9A-F]{64}", signer["fingerprint"])
+    assert signer["status"] in ("active", "revoked")
+    assert re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", signer["reviewedAt"])
 PY
 
 printf 'Checking whitespace errors...\n'
@@ -274,6 +281,16 @@ if ./bootstrap/build_for_target.sh \
     --resolve-only >/dev/null 2>&1
 then
     fail "offline-target build accepted a keyring without a pinned signer"
+fi
+if ./bootstrap/build_for_target.sh \
+    --steamos 3.8.14 \
+    --kernel 6.16.12-valve24.4-1-neptune-616-gfe145653a794 \
+    --nvidia 575.64.05 \
+    --header-keyring "$PROJECT_ROOT/trust/valve-package-signers.json" \
+    --header-signer 0000000000000000000000000000000000000000 \
+    --resolve-only >/dev/null 2>&1
+then
+    fail "offline-target build accepted a signer absent from reviewed trust"
 fi
 
 printf 'Checking early target-validation result contract...\n'

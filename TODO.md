@@ -1136,14 +1136,15 @@ signing policy.
 * [x] Add Valve package detached-signature verification using a caller-supplied,
   reviewed keyring or equally strong trusted checksum provenance.
 * [x] Record signing/primary fingerprint and signature verification result.
-* [ ] Do not describe a post-download SHA256 calculated from the same transport
-  as authentication.
+* [x] Treat post-download SHA256 as provenance/integrity metadata only;
+  authenticated headers require a detached signature from an active pinned
+  signer.
 * [x] Pin the expected Valve package origin and reject redirects to untrusted
   origins.
 * [x] Pin the reviewed `holo-keyring` package hash, extracted keyring hash, and
   exact historical-header signer fingerprint in a versioned trust manifest.
-* [ ] Define key rotation and revocation handling beyond explicit reviewed
-  trust-manifest updates.
+* [x] Define key rotation and revocation through explicit reviewed manifest
+  entries; only signers marked `active` are accepted by builds or keyring prep.
 * [x] Keep unsigned-header or override builds labeled
   `development-unverified`.
 * [x] Use `locally-built-verified` only for authenticated exact headers, clean

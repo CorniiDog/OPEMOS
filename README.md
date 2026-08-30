@@ -191,7 +191,9 @@ Valve package location. With `--headers-package`, also pass
 `--headers-signature`. `gpgv` must validate the package and the actual signing
 key or its reported primary key must match the pinned fingerprint. Supplying a
 keyring without an exact fingerprint is rejected. The project intentionally
-does not download a keyring and then trust it from the same transaction.
+does not download a keyring and then trust it from the same transaction. A
+SHA256 calculated after downloading headers is recorded as provenance, not
+described as authentication; verified status requires the detached signature.
 
 The reviewed trust inputs live in `trust/valve-package-signers.json`. Prepare
 the exact pinned keyring for an appliance with:
@@ -210,6 +212,11 @@ appliance construction, pass the already downloaded package with `--package`.
 The currently pinned historical-header signer is
 `889B5EBDDD505A683621900DAF1D2199EF0A3CCF`, identified in Valve's keyring as
 `GitLab CI Package Builder <ci-package-builder-1@steamos.cloud>`.
+Builds require the requested fingerprint to be marked `active` in the committed
+trust manifest; an arbitrary caller-supplied keyring cannot confer verified
+status. Key rotation adds a newly reviewed active entry, while revocation keeps
+the historical entry and changes its status to `revoked`, causing builds to
+fail closed before downloading or compiling.
 
 Validate or install a local archive through the same online orchestration path:
 
