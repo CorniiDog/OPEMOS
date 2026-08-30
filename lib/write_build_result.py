@@ -4,6 +4,7 @@
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 
 
@@ -21,12 +22,32 @@ def parse_args():
     parser.add_argument("--archive")
     parser.add_argument("--checksum")
     parser.add_argument("--build-info")
+    parser.add_argument("--provenance")
     parser.add_argument("--archive-sha256")
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
+    if args.status == "success":
+        artifact_names = (
+            args.archive,
+            args.checksum,
+            args.build_info,
+            args.provenance,
+        )
+        if any(
+            not value or Path(value).name != value or value in (".", "..")
+            for value in artifact_names
+        ):
+            raise SystemExit(
+                "Successful results require plain archive, checksum, build-info, "
+                "and provenance filenames."
+            )
+        if not args.archive_sha256 or not re.fullmatch(
+            r"[0-9a-fA-F]{64}", args.archive_sha256
+        ):
+            raise SystemExit("Successful results require a complete archive SHA256.")
     document = {
         "schemaVersion": 1,
         "status": args.status,
@@ -45,6 +66,7 @@ def main():
             "archive": args.archive,
             "checksum": args.checksum,
             "buildInfo": args.build_info,
+            "provenance": args.provenance,
             "sha256": args.archive_sha256,
         }
 

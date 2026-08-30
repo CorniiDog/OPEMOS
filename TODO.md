@@ -1203,8 +1203,9 @@ signing policy.
 * [x] Record separate build start/end timestamps; build mode is recorded.
 * [x] Record every module filename, SHA256, NVIDIA version, ELF architecture,
   and full vermagic in machine-readable form.
-* [ ] Ensure provenance is included in both the archive and the image-builder
-  manifest.
+* [x] Include versioned `PROVENANCE.json` in the archive and publish the same
+  document as a sidecar referenced by the final result contract.
+* [ ] Image builder must copy the referenced provenance into its image manifest.
 
 ## Cancellation, cleanup, and caching
 

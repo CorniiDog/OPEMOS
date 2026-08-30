@@ -33,12 +33,17 @@ python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __
     lib/validate_target_headers.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/validate_built_modules.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/write_build_provenance.py
 
 printf 'Checking exact target-header validation...\n'
 python3 tests/header_validation.py
 
 printf 'Checking built-module metadata validation...\n'
 python3 tests/module_validation.py
+
+printf 'Checking structured build provenance...\n'
+python3 tests/provenance.py
 
 printf 'Checking cancellable process-group launcher...\n'
 python3 - "$PROJECT_ROOT/lib/run_in_process_group.py" <<'PY' || \
@@ -321,7 +326,8 @@ python3 "$PROJECT_ROOT/lib/write_build_result.py" \
     --steamos 3.8.14 --kernel kernel-a --nvidia 575.64.05 \
     --architecture x86_64 --archive artifact.tar.gz \
     --checksum artifact.tar.gz.sha256 --build-info artifact.build-info.txt \
-    --archive-sha256 0123456789abcdef
+    --provenance artifact.provenance.json \
+    --archive-sha256 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 python3 - "$RESULT_FIXTURE" <<'PY' || fail "final build-result contract is invalid"
 import json
 import sys
@@ -332,9 +338,19 @@ assert result["status"] == "success"
 assert result["reason"] == "build_complete"
 assert result["trust"] == "development-unverified"
 assert result["artifact"]["archive"] == "artifact.tar.gz"
+assert result["artifact"]["provenance"] == "artifact.provenance.json"
 assert result["target"]["kernelVersion"] == "kernel-a"
 PY
-rm -f "$RESULT_FIXTURE"
+if python3 "$PROJECT_ROOT/lib/write_build_result.py" \
+    --output "${RESULT_FIXTURE}.invalid" --status success --reason build_complete \
+    --message "invalid fixture" --steamos 3.8.14 --kernel kernel-a \
+    --nvidia 575.64.05 --architecture x86_64 --archive /private/artifact.tar.gz \
+    --checksum artifact.tar.gz.sha256 --build-info artifact.build-info.txt \
+    --archive-sha256 short >/dev/null 2>&1
+then
+    fail "build-result writer accepted an incomplete/path-valued success artifact"
+fi
+rm -f "$RESULT_FIXTURE" "${RESULT_FIXTURE}.invalid"
 
 printf 'Checking fake-root install/uninstall transactions...\n'
 if (( BASH_VERSINFO[0] >= 4 )); then

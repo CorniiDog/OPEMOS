@@ -186,6 +186,7 @@ WORK_DIR=""
 ACTIVE_PROCESS_GROUP=""
 BUILD_STARTED_AT="$(date --iso-8601=seconds)"
 FINAL_BUILD_INFO=""
+FINAL_PROVENANCE=""
 FINAL_ARCHIVE=""
 FINAL_CHECKSUM=""
 FINAL_OUTPUTS_OWNED=0
@@ -211,6 +212,7 @@ cleanup_build()
     [[ -z "$WORK_DIR" ]] || rm -rf "$WORK_DIR"
     if [[ "$BUILD_COMPLETED" == "0" && "$FINAL_OUTPUTS_OWNED" == "1" ]]; then
         [[ -z "$FINAL_BUILD_INFO" ]] || rm -f "$FINAL_BUILD_INFO"
+        [[ -z "$FINAL_PROVENANCE" ]] || rm -f "$FINAL_PROVENANCE"
         [[ -z "$FINAL_ARCHIVE" ]] || rm -f "$FINAL_ARCHIVE"
         [[ -z "$FINAL_CHECKSUM" ]] || rm -f "$FINAL_CHECKSUM"
     fi
@@ -281,9 +283,12 @@ mkdir -p "$OUTPUT_DIR"
 OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd)"
 WORK_DIR="$(project_mktemp_dir target-build)"
 FINAL_BUILD_INFO="$OUTPUT_DIR/${ASSET_NAME%.tar.gz}.build-info.txt"
+FINAL_PROVENANCE="$OUTPUT_DIR/${ASSET_NAME%.tar.gz}.provenance.json"
 FINAL_ARCHIVE="$OUTPUT_DIR/$ASSET_NAME"
 FINAL_CHECKSUM="$OUTPUT_DIR/$ASSET_NAME.sha256"
-for final_output in "$FINAL_BUILD_INFO" "$FINAL_ARCHIVE" "$FINAL_CHECKSUM"; do
+for final_output in \
+    "$FINAL_BUILD_INFO" "$FINAL_PROVENANCE" "$FINAL_ARCHIVE" "$FINAL_CHECKSUM"
+do
     [[ ! -e "$final_output" ]] ||
         die "Refusing to overwrite existing output: $(basename "$final_output")"
 done
@@ -469,9 +474,11 @@ if [[ "$HEADER_SIGNATURE_STATUS" == "verified" &&
     TRUST_CLASSIFICATION=locally-built-verified
 fi
 BUILD_INFO_NAME="${ASSET_NAME%.tar.gz}.build-info.txt"
+PROVENANCE_NAME="${ASSET_NAME%.tar.gz}.provenance.json"
 STAGED_OUTPUT="$WORK_DIR/final-output"
 mkdir -p "$STAGED_OUTPUT"
 BUILD_INFO="$STAGED_OUTPUT/$BUILD_INFO_NAME"
+PROVENANCE="$STAGED_OUTPUT/$PROVENANCE_NAME"
 ARCHIVE="$STAGED_OUTPUT/$ASSET_NAME"
 CHECKSUM="$STAGED_OUTPUT/$ASSET_NAME.sha256"
 BUILD_PHASE=packaging_failed
@@ -526,20 +533,28 @@ BUILD_PHASE=packaging_failed
     done
 } > "$BUILD_INFO"
 cp "$BUILD_INFO" "$PACKAGE_DIR/BUILD-INFO.txt"
-tar -C "$PACKAGE_DIR" -czf "$ARCHIVE" modules BUILD-INFO.txt
+python3 "$SUPPORT_ROOT/lib/write_build_provenance.py" \
+    --build-info "$BUILD_INFO" --modules "$MODULE_VALIDATION_JSON" \
+    --output "$PROVENANCE"
+cp "$PROVENANCE" "$PACKAGE_DIR/PROVENANCE.json"
+tar -C "$PACKAGE_DIR" -czf "$ARCHIVE" modules BUILD-INFO.txt PROVENANCE.json
 (cd "$STAGED_OUTPUT" && sha256sum "$ASSET_NAME" > "$(basename "$CHECKSUM")")
 
 ARCHIVE_SHA256="$(sha256_file "$ARCHIVE")"
 mv "$BUILD_INFO" "$FINAL_BUILD_INFO"
+mv "$PROVENANCE" "$FINAL_PROVENANCE"
 mv "$ARCHIVE" "$FINAL_ARCHIVE"
 mv "$CHECKSUM" "$FINAL_CHECKSUM"
 BUILD_INFO="$FINAL_BUILD_INFO"
+PROVENANCE="$FINAL_PROVENANCE"
 ARCHIVE="$FINAL_ARCHIVE"
 CHECKSUM="$FINAL_CHECKSUM"
 write_final_result success build_complete "The offline-target artifact passed structural validation." \
     --archive "$(basename "$ARCHIVE")" --checksum "$(basename "$CHECKSUM")" \
-    --build-info "$(basename "$BUILD_INFO")" --archive-sha256 "$ARCHIVE_SHA256"
+    --build-info "$(basename "$BUILD_INFO")" \
+    --provenance "$(basename "$PROVENANCE")" --archive-sha256 "$ARCHIVE_SHA256"
 BUILD_COMPLETED=1
 
 ok "Offline-target NVIDIA artifact created."
-printf 'Archive:    %s\nChecksum:   %s\nBuild info: %s\n' "$ARCHIVE" "$CHECKSUM" "$BUILD_INFO"
+printf 'Archive:    %s\nChecksum:   %s\nBuild info: %s\nProvenance: %s\n' \
+    "$ARCHIVE" "$CHECKSUM" "$BUILD_INFO" "$PROVENANCE"

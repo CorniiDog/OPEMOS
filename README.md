@@ -153,6 +153,10 @@ the external modules. If their major versions differ, it prefers an installed
 must fail instead. Exact compiler version, binutils, make, kmod, Fedora identity,
 support/source commits and dirty state, and per-module hashes/version/vermagic
 are recorded in `BUILD-INFO.txt`.
+The same data and the validated per-module records are published as a versioned
+`.provenance.json` sidecar and embedded in the archive as `PROVENANCE.json`.
+The final result contract names the sidecar so the image builder can copy it
+directly into its image manifest without parsing human-readable logs.
 
 Pass `--result-json FILE` when invoking the build from an appliance controller.
 The file is written atomically with schema version `1`, target identity, trust
