@@ -1159,7 +1159,7 @@ signing policy.
 * [x] Include result status, trust classification, target identity, output
   names/hashes, and a reference to provenance-bearing build info without
   private host paths.
-* [ ] Provide stable typed failure reasons for at least:
+* [x] Provide stable typed failure reasons for:
 
   * `invalid_target`
   * `unsupported_architecture`
@@ -1179,8 +1179,8 @@ signing policy.
   * `packaging_failed`
   * `cancelled`
 
-* [x] Emit stable phase-specific reasons for normal build execution; add
-  finer-grained argument/signature reasons as those paths are integrated.
+* [x] Emit stable phase-specific reasons for normal build execution and early
+  argument/target validation.
 * [x] Keep missing headers/source and incompatibility as safe, actionable
   outcomes rather than selecting a nearby build.
 * [ ] Separate concise user-facing messages from detailed maintainer diagnostics.

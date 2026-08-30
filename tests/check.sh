@@ -261,6 +261,48 @@ then
     fail "offline-target build accepted a keyring without a pinned signer"
 fi
 
+printf 'Checking early target-validation result contract...\n'
+INVALID_TARGET_RESULT="$(mktemp /tmp/offline-target-invalid.XXXXXX)"
+UNSUPPORTED_ARCH_RESULT="$(mktemp /tmp/offline-target-arch.XXXXXX)"
+PARSER_RESULT="$(mktemp /tmp/offline-target-parser.XXXXXX)"
+if ./bootstrap/build_for_target.sh \
+    --steamos invalid \
+    --kernel 6.16.12-valve24.4-1-neptune-616-gfe145653a794 \
+    --nvidia 575.64.05 --resolve-only \
+    --result-json "$INVALID_TARGET_RESULT" >/dev/null 2>&1
+then
+    fail "offline-target build accepted an invalid SteamOS target"
+fi
+if ./bootstrap/build_for_target.sh \
+    --steamos 3.8.14 \
+    --kernel 6.16.12-valve24.4-1-neptune-616-gfe145653a794 \
+    --nvidia 575.64.05 --architecture aarch64 --resolve-only \
+    --result-json "$UNSUPPORTED_ARCH_RESULT" >/dev/null 2>&1
+then
+    fail "offline-target build accepted an unsupported architecture"
+fi
+if ./bootstrap/build_for_target.sh \
+    --unknown-option --result-json "$PARSER_RESULT" >/dev/null 2>&1
+then
+    fail "offline-target build accepted an unknown option"
+fi
+python3 - "$INVALID_TARGET_RESULT" "$UNSUPPORTED_ARCH_RESULT" "$PARSER_RESULT" <<'PY' || \
+    fail "early target-validation JSON contract is invalid"
+import json
+import sys
+
+expected = ("invalid_target", "unsupported_architecture", "invalid_target")
+for path, reason in zip(sys.argv[1:], expected):
+    with open(path, encoding="utf-8") as result_file:
+        result = json.load(result_file)
+    assert result["schemaVersion"] == 1
+    assert result["status"] == "failed"
+    assert result["reason"] == reason
+    assert result["trust"] == "development-unverified"
+    assert "artifact" not in result
+PY
+rm -f "$INVALID_TARGET_RESULT" "$UNSUPPORTED_ARCH_RESULT" "$PARSER_RESULT"
+
 printf 'Checking final offline-target build-result contract...\n'
 RESULT_FIXTURE="$(mktemp /tmp/offline-target-result.XXXXXX)"
 python3 "$PROJECT_ROOT/lib/write_build_result.py" \

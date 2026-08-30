@@ -20,6 +20,31 @@ RESULT_JSON=""
 RESOLVE_ONLY=0
 INSTALL_DEPENDENCIES=0
 REQUIRE_COMPILER_MAJOR_MATCH=0
+ORIGINAL_ARGS=("$@")
+
+# Locate the result path before normal parsing so even an earlier malformed
+# option can return the machine-readable failure contract.
+for ((argument_index = 0; argument_index < ${#ORIGINAL_ARGS[@]}; argument_index++)); do
+    if [[ "${ORIGINAL_ARGS[$argument_index]}" == "--result-json" &&
+          $((argument_index + 1)) -lt ${#ORIGINAL_ARGS[@]} ]]; then
+        RESULT_JSON="${ORIGINAL_ARGS[$((argument_index + 1))]}"
+        break
+    fi
+done
+
+fail_argument()
+{
+    local reason="$1"
+    local message="$2"
+    if [[ -n "$RESULT_JSON" ]]; then
+        python3 "$SUPPORT_ROOT/lib/write_build_result.py" \
+            --output "$RESULT_JSON" --status failed --reason "$reason" \
+            --message "$message" --trust development-unverified \
+            --steamos "$STEAMOS_VERSION" --kernel "$KERNEL_VERSION" \
+            --nvidia "$NVIDIA_VERSION" --architecture "$ARCHITECTURE" || true
+    fi
+    die "$message"
+}
 
 usage()
 {
@@ -62,53 +87,62 @@ EOF
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --steamos) [[ $# -ge 2 ]] || die "$1 requires a value."; STEAMOS_VERSION="$2"; shift 2 ;;
-        --kernel) [[ $# -ge 2 ]] || die "$1 requires a value."; KERNEL_VERSION="$2"; shift 2 ;;
-        --nvidia) [[ $# -ge 2 ]] || die "$1 requires a value."; NVIDIA_VERSION="$2"; shift 2 ;;
-        --architecture) [[ $# -ge 2 ]] || die "$1 requires a value."; ARCHITECTURE="$2"; shift 2 ;;
-        --source) [[ $# -ge 2 ]] || die "$1 requires a directory."; SOURCE_DIR="$2"; shift 2 ;;
-        --headers-package) [[ $# -ge 2 ]] || die "$1 requires a file."; HEADERS_PACKAGE="$2"; shift 2 ;;
-        --headers-url) [[ $# -ge 2 ]] || die "$1 requires a URL."; HEADERS_URL="$2"; shift 2 ;;
-        --headers-signature) [[ $# -ge 2 ]] || die "$1 requires a file."; HEADERS_SIGNATURE="$2"; shift 2 ;;
-        --header-keyring) [[ $# -ge 2 ]] || die "$1 requires a file."; HEADER_KEYRING="$2"; shift 2 ;;
-        --header-signer) [[ $# -ge 2 ]] || die "$1 requires a fingerprint."; HEADER_SIGNER="$2"; shift 2 ;;
-        -o|--output) [[ $# -ge 2 ]] || die "$1 requires a directory."; OUTPUT_DIR="$2"; shift 2 ;;
+        --steamos) [[ $# -ge 2 ]] || fail_argument invalid_target "$1 requires a value."; STEAMOS_VERSION="$2"; shift 2 ;;
+        --kernel) [[ $# -ge 2 ]] || fail_argument invalid_target "$1 requires a value."; KERNEL_VERSION="$2"; shift 2 ;;
+        --nvidia) [[ $# -ge 2 ]] || fail_argument invalid_target "$1 requires a value."; NVIDIA_VERSION="$2"; shift 2 ;;
+        --architecture) [[ $# -ge 2 ]] || fail_argument invalid_target "$1 requires a value."; ARCHITECTURE="$2"; shift 2 ;;
+        --source) [[ $# -ge 2 ]] || fail_argument invalid_target "$1 requires a directory."; SOURCE_DIR="$2"; shift 2 ;;
+        --headers-package) [[ $# -ge 2 ]] || fail_argument invalid_target "$1 requires a file."; HEADERS_PACKAGE="$2"; shift 2 ;;
+        --headers-url) [[ $# -ge 2 ]] || fail_argument invalid_target "$1 requires a URL."; HEADERS_URL="$2"; shift 2 ;;
+        --headers-signature) [[ $# -ge 2 ]] || fail_argument invalid_target "$1 requires a file."; HEADERS_SIGNATURE="$2"; shift 2 ;;
+        --header-keyring) [[ $# -ge 2 ]] || fail_argument invalid_target "$1 requires a file."; HEADER_KEYRING="$2"; shift 2 ;;
+        --header-signer) [[ $# -ge 2 ]] || fail_argument invalid_target "$1 requires a fingerprint."; HEADER_SIGNER="$2"; shift 2 ;;
+        -o|--output) [[ $# -ge 2 ]] || fail_argument invalid_target "$1 requires a directory."; OUTPUT_DIR="$2"; shift 2 ;;
         --install-dependencies) INSTALL_DEPENDENCIES=1; shift ;;
         --require-compiler-major-match) REQUIRE_COMPILER_MAJOR_MATCH=1; shift ;;
-        --result-json) [[ $# -ge 2 ]] || die "$1 requires a file."; RESULT_JSON="$2"; shift 2 ;;
+        --result-json) [[ $# -ge 2 ]] || fail_argument invalid_target "$1 requires a file."; RESULT_JSON="$2"; shift 2 ;;
         --resolve-only) RESOLVE_ONLY=1; shift ;;
         -h|--help) usage; exit 0 ;;
-        *) die "Unknown argument: $1" ;;
+        *) fail_argument invalid_target "Unknown argument: $1" ;;
     esac
 done
 
 [[ "$STEAMOS_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
-    die "--steamos must contain three numeric components."
+    fail_argument invalid_target "--steamos must contain three numeric components."
 [[ "$KERNEL_VERSION" =~ ^[A-Za-z0-9._+~-]+$ ]] ||
-    die "--kernel contains unsupported characters."
+    fail_argument invalid_target "--kernel contains unsupported characters."
 [[ "$NVIDIA_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] ||
-    die "--nvidia is not a valid NVIDIA version."
+    fail_argument invalid_target "--nvidia is not a valid NVIDIA version."
 [[ "$ARCHITECTURE" == "x86_64" ]] ||
-    die "Only x86_64 target builds are currently supported."
-[[ -n "$OUTPUT_DIR" || "$RESOLVE_ONLY" == "1" ]] || die "--output is required."
+    fail_argument unsupported_architecture "Only x86_64 target builds are currently supported."
+[[ -n "$OUTPUT_DIR" || "$RESOLVE_ONLY" == "1" ]] ||
+    fail_argument invalid_target "--output is required."
 [[ -z "$HEADERS_PACKAGE" || -z "$HEADERS_URL" ]] ||
-    die "--headers-package and --headers-url are mutually exclusive."
+    fail_argument invalid_target \
+        "--headers-package and --headers-url are mutually exclusive."
 if [[ -n "$HEADERS_SIGNATURE$HEADER_KEYRING$HEADER_SIGNER" ]]; then
     [[ -n "$HEADER_KEYRING" && -n "$HEADER_SIGNER" ]] ||
-        die "Signature verification requires --header-keyring and --header-signer."
+        fail_argument invalid_target \
+            "Signature verification requires --header-keyring and --header-signer."
     [[ "$HEADER_SIGNER" =~ ^[0-9A-Fa-f]{40}([0-9A-Fa-f]{24})?$ ]] ||
-        die "--header-signer must be a full 40- or 64-character fingerprint."
+        fail_argument invalid_target \
+            "--header-signer must be a full 40- or 64-character fingerprint."
     HEADER_SIGNER="$(printf '%s' "$HEADER_SIGNER" | tr '[:lower:]' '[:upper:]')"
-    [[ -f "$HEADER_KEYRING" ]] || die "Pinned header keyring not found: $HEADER_KEYRING"
+    [[ -f "$HEADER_KEYRING" ]] ||
+        fail_argument invalid_target "Pinned header keyring was not found."
 fi
 
-NEPTUNE_SERIES="$(get_neptune_series "$KERNEL_VERSION")"
+NEPTUNE_SERIES="$(printf '%s\n' "$KERNEL_VERSION" |
+    sed -n 's/.*-neptune-\([0-9][0-9]*\).*/\1/p')"
+[[ -n "$NEPTUNE_SERIES" ]] ||
+    fail_argument invalid_target "Could not derive the Neptune series from --kernel."
 KERNEL_BASE="${KERNEL_VERSION%%-neptune-*}"
 KERNEL_PKGREL="$(printf '%s\n' "$KERNEL_BASE" | sed -n 's/.*-\([0-9][0-9]*\)$/\1/p')"
 KERNEL_PKGVER="${KERNEL_BASE%-${KERNEL_PKGREL}}"
 KERNEL_PKGVER="${KERNEL_PKGVER/-valve/.valve}"
 [[ "$KERNEL_PKGREL" =~ ^[0-9]+$ ]] ||
-    die "Could not derive the Valve package release from ${KERNEL_VERSION}."
+    fail_argument invalid_target \
+        "Could not derive the Valve package release from --kernel."
 
 HEADERS_FILENAME="linux-neptune-${NEPTUNE_SERIES}-headers-${KERNEL_PKGVER}-${KERNEL_PKGREL}-x86_64.pkg.tar.zst"
 KERNEL_TAG="$(sanitize_release_component "$KERNEL_VERSION")"
@@ -116,16 +150,19 @@ RELEASE_TAG="steamos-${STEAMOS_VERSION}-nvidia-${NVIDIA_VERSION}-k${KERNEL_TAG}"
 ASSET_NAME="nvidia-open-${RELEASE_TAG}-${ARCHITECTURE}.tar.gz"
 
 if [[ -n "$HEADERS_PACKAGE" ]]; then
-    [[ -f "$HEADERS_PACKAGE" ]] || die "Headers package not found: $HEADERS_PACKAGE"
+    [[ -f "$HEADERS_PACKAGE" ]] ||
+        fail_argument headers_not_found "The requested local headers package was not found."
     HEADERS_PACKAGE="$(cd "$(dirname "$HEADERS_PACKAGE")" && pwd)/$(basename "$HEADERS_PACKAGE")"
     [[ "$(basename "$HEADERS_PACKAGE")" == "$HEADERS_FILENAME" ]] ||
-        die "Headers filename must be exactly ${HEADERS_FILENAME}."
+        fail_argument header_identity_mismatch \
+            "The local headers filename does not match the exact target."
 fi
 
 if [[ -n "$HEADERS_URL" ]]; then
     case "$HEADERS_URL" in
         https://steamdeck-packages.steamos.cloud/archlinux-mirror/*/os/x86_64/"$HEADERS_FILENAME") ;;
-        *) die "--headers-url must name the exact package on Valve's SteamOS package host." ;;
+        *) fail_argument invalid_target \
+            "--headers-url must name the exact package on Valve's SteamOS package host." ;;
     esac
 fi
 
