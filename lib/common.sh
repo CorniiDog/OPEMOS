@@ -140,6 +140,12 @@ sanitize_release_component()
     printf '%s' "$1" | tr '/ :+' '----'
 }
 
+kernel_compiler_version_from_definition()
+{
+    printf '%s\n' "$1" |
+        sed -n 's/.*[Gg][Cc][Cc][^0-9]*\([0-9][0-9.]*\).*/\1/p'
+}
+
 release_tag()
 {
     local steamos kernel nvidia

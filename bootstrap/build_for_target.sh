@@ -398,10 +398,12 @@ KERNEL_TREE="$(python3 "$SUPPORT_ROOT/lib/validate_target_headers.py" tree \
     --root "$KERNEL_ROOT" --kernel "$KERNEL_VERSION")" ||
     die "Headers package does not contain a safe, prepared exact-kernel build tree."
 
-KERNEL_COMPILER_DEFINITION="$(grep -m1 '^#define LINUX_COMPILER ' \
+BUILD_PHASE=compiler_policy_mismatch
+KERNEL_COMPILER_DEFINITION="$(grep -m1 \
+    '^#define[[:space:]][[:space:]]*LINUX_COMPILER[[:space:]][[:space:]]*' \
     "$KERNEL_TREE/include/generated/compile.h" 2>/dev/null || true)"
-KERNEL_COMPILER_VERSION="$(printf '%s\n' "$KERNEL_COMPILER_DEFINITION" |
-    sed -n 's/.*gcc[^0-9]*\([0-9][0-9.]*\).*/\1/p')"
+KERNEL_COMPILER_VERSION="$(kernel_compiler_version_from_definition \
+    "$KERNEL_COMPILER_DEFINITION")"
 KERNEL_COMPILER_MAJOR="${KERNEL_COMPILER_VERSION%%.*}"
 BUILD_CC="${CC:-gcc}"
 BUILD_COMPILER_VERSION="$($BUILD_CC -dumpfullversion -dumpversion)"

@@ -193,6 +193,11 @@ if source_branch_matches_expected nvidia/580.119.02 ""; then
     fail "detached HEAD was accepted for a named project branch"
 fi
 
+printf 'Checking Valve kernel compiler metadata parsing...\n'
+VALVE_COMPILER_DEFINITION=$'#define LINUX_COMPILER\t\t"gcc (GCC) 15.1.1 20250425, GNU ld (GNU Binutils) 2.45"'
+[[ "$(kernel_compiler_version_from_definition "$VALVE_COMPILER_DEFINITION")" == "15.1.1" ]] ||
+    fail "Valve tab-separated compiler metadata was not parsed"
+
 printf 'Checking certified release-selection policy...\n'
 POLICY_FIXTURE="${PROJECT_ROOT}/tests/fixtures/releases/policy.json"
 

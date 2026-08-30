@@ -1173,6 +1173,7 @@ signing policy.
   * `source_branch_missing`
   * `source_version_mismatch`
   * `dependency_install_failed`
+  * `compiler_policy_mismatch`
   * `compilation_failed`
   * `module_set_incomplete`
   * `module_metadata_invalid`
