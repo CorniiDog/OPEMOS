@@ -16,8 +16,10 @@ jobs:
         with:
           fetch-depth: 2
 
-      - name: Install ShellCheck
-        run: sudo apt-get update && sudo apt-get install --yes shellcheck zstd
+      - name: Install test dependencies
+        run: >-
+          sudo apt-get update && sudo apt-get install --yes
+          libarchive-tools shellcheck zstd
 
       - name: Run project checks
         run: ./tests/check.sh
