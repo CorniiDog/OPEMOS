@@ -170,7 +170,10 @@ directly into its image manifest without parsing human-readable logs.
 requires the archive, SHA256 sidecar, build information, and provenance
 sidecar, then validates their canonical basenames, checksum, target identity,
 trust classification, release identity, clean support/source commits, and
-byte-identical embedded metadata before contacting GitHub. `compile.sh
+byte-identical embedded metadata before contacting GitHub. It also rejects
+unsafe or duplicate archive members and independently hashes the exact five
+canonical modules against provenance. Existing releases may be updated only
+when their tag resolves to the provenance support commit. `compile.sh
 --auto-upload` delegates to this command and therefore publishes the same four
 ordered assets with the same generated title and notes.
 
@@ -204,6 +207,10 @@ schema-1 provenance, callers must provide exact local `nvidia-utils` and
 keyring. No package or source is downloaded during installation. Before
 mutation, the caller must mount the explicit SteamOS root and its corresponding
 boot/EFI partition at `<root>/boot`; the installer refuses to guess an A/B slot.
+The root must contain Valve's populated, confined package database at
+`/usr/lib/holo/pacmandb`. The installer passes that exact root-prefixed path to
+pacman and never creates or falls back to `/var/lib/pacman`; validation records
+the canonical database path and observed package count before mutation.
 Package signatures must resolve to an active package-specific fingerprint in
 `trust/nvidia-userspace-package-signers.json`. Fedora `gpgv` requires a binary
 keyring; an ASCII-armored pacman keyring must be dearmored before use. The

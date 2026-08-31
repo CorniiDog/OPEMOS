@@ -72,6 +72,10 @@ TARGET_COMMIT="$(json_value targetCommit)"
 
 if gh release view "$TAG" --repo "$REPOSITORY" >/dev/null 2>&1; then
     (( CREATE_ONLY == 0 )) || die "release already exists: $TAG"
+    EXISTING_COMMIT="$(gh api "repos/$REPOSITORY/commits/$TAG" --jq '.sha' 2>/dev/null)" ||
+        die "existing release tag commit could not be verified"
+    [[ "$EXISTING_COMMIT" == "$TARGET_COMMIT" ]] ||
+        die "existing release tag does not point to provenance support commit"
     gh release edit "$TAG" --repo "$REPOSITORY" --title "$TITLE" --notes-file "$NOTES_FILE"
     gh release upload "$TAG" "$ARCHIVE" "$CHECKSUM" "$BUILD_INFO" "$PROVENANCE" \
         --repo "$REPOSITORY" --clobber

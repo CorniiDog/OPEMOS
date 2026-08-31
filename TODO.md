@@ -1265,10 +1265,14 @@ signing policy.
 * [x] Add target-root pacman installation, module compression/configuration,
   offline depmod, target mkinitcpio, reverse-order bind-mount cleanup, and
   structured success/failure/cancellation results.
+* [x] Require SteamOS's populated `/usr/lib/holo/pacmandb` package database,
+  use it explicitly for installation and ownership queries, and never create an
+  empty `/var/lib/pacman` fallback.
 * [x] Add synthetic success, repeated-execution, corrupt-input, injected
   initramfs failure, and mounts-released result coverage.
-* [ ] Run the mutation suite with real pacman/mkinitcpio inside Fedora and test
-  cancellation while a real bind mount is active before recovery-image use.
+* [ ] Rerun the real Fedora/recovery-overlay mutation suite with the Holo pacman
+  database contract and verify ownership, repeat execution, failure rollback,
+  initramfs output, and mount cleanup before accepting an exported image.
 
 ## Known cross-project edge cases
 

@@ -20,6 +20,10 @@ TAG = f"steamos-{STEAMOS}-nvidia-{NVIDIA}-k{KERNEL}"
 ARCHIVE_NAME = f"nvidia-open-{TAG}-x86_64.tar.gz"
 SUPPORT_COMMIT = "a" * 40
 SOURCE_COMMIT = "b" * 40
+MODULE_NAMES = (
+    "nvidia.ko", "nvidia-drm.ko", "nvidia-modeset.ko", "nvidia-peermem.ko",
+    "nvidia-uvm.ko",
+)
 
 
 def add_bytes(archive, name, content):
@@ -28,11 +32,24 @@ def add_bytes(archive, name, content):
     archive.addfile(member, io.BytesIO(content))
 
 
-def fixture(root):
+def fixture(root, *, duplicate_metadata=False, unsafe_member=False, wrong_module_hash=False):
+    root.mkdir(parents=True, exist_ok=True)
     archive = root / ARCHIVE_NAME
     checksum = root / f"{ARCHIVE_NAME}.sha256"
     build_info = root / f"{ARCHIVE_NAME[:-7]}.build-info.txt"
     provenance_path = root / f"{ARCHIVE_NAME[:-7]}.provenance.json"
+    module_bytes = {name: f"fixture:{name}\n".encode() for name in MODULE_NAMES}
+    modules = [
+        {
+            "name": name,
+            "sha256": ("0" * 64 if wrong_module_hash and index == 0 else
+                       hashlib.sha256(module_bytes[name]).hexdigest()),
+            "version": NVIDIA,
+            "architecture": "x86_64",
+            "vermagic": f"{KERNEL} SMP preempt",
+        }
+        for index, name in enumerate(MODULE_NAMES)
+    ]
     provenance = {
         "schemaVersion": 1,
         "trust": "locally-built-verified",
@@ -53,7 +70,7 @@ def fixture(root):
             "commit": SOURCE_COMMIT,
             "dirty": 0,
         },
-        "modules": [],
+        "modules": modules,
     }
     provenance_bytes = (json.dumps(provenance, sort_keys=True, separators=(",", ":")) + "\n").encode()
     info = "\n".join((
@@ -76,6 +93,12 @@ def fixture(root):
     with tarfile.open(archive, "w:gz") as bundle:
         add_bytes(bundle, "BUILD-INFO.txt", info)
         add_bytes(bundle, "PROVENANCE.json", provenance_bytes)
+        for name in MODULE_NAMES:
+            add_bytes(bundle, f"modules/{name}", module_bytes[name])
+        if duplicate_metadata:
+            add_bytes(bundle, "./PROVENANCE.json", provenance_bytes)
+        if unsafe_member:
+            add_bytes(bundle, "../escape", b"unsafe\n")
     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
     checksum.write_text(f"{digest}  {ARCHIVE_NAME}\n", encoding="utf-8")
     return archive, checksum, build_info, provenance_path
@@ -108,6 +131,14 @@ def main():
         assert command(paths, "--dry-run").returncode != 0
         paths[1].write_text(original, encoding="utf-8")
 
+        for name, options in (
+            ("duplicate", {"duplicate_metadata": True}),
+            ("unsafe", {"unsafe_member": True}),
+            ("module-hash", {"wrong_module_hash": True}),
+        ):
+            invalid_paths = fixture(root / name, **options)
+            assert command(invalid_paths, "--dry-run").returncode != 0
+
         mock_bin = root / "bin"
         mock_bin.mkdir()
         log = root / "gh.log"
@@ -117,6 +148,7 @@ def main():
             "case \"$1 $2\" in\n"
             "  'auth status') exit 0;;\n"
             "  'api repos/CorniiDog/open-gpu-kernel-modules-steamos-support') echo true; exit 0;;\n"
+            "  'api repos/CorniiDog/open-gpu-kernel-modules-steamos-support/commits/'*) echo \"${GH_TAG_COMMIT:-}\"; exit 0;;\n"
             "  'release view') [ \"${GH_RELEASE_EXISTS:-0}\" = 1 ]; exit $?;;\n"
             "esac\nexit 0\n",
             encoding="utf-8",
@@ -129,6 +161,14 @@ def main():
         refused = command(paths, "--create-only", env=env)
         assert refused.returncode != 0
         assert "release already exists" in refused.stderr
+        assert "release edit" not in log.read_text(encoding="utf-8")
+        assert "release upload" not in log.read_text(encoding="utf-8")
+
+        log.write_text("", encoding="utf-8")
+        env.update({"GH_RELEASE_EXISTS": "1", "GH_TAG_COMMIT": "c" * 40})
+        mismatched = command(paths, env=env)
+        assert mismatched.returncode != 0
+        assert "does not point to provenance support commit" in mismatched.stderr
         assert "release edit" not in log.read_text(encoding="utf-8")
         assert "release upload" not in log.read_text(encoding="utf-8")
 

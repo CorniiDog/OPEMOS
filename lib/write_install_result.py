@@ -73,6 +73,7 @@ def main():
             raise SystemExit("Result validation metadata must be a verified document.")
         document["validation"] = {
             "archiveSha256": validation["archiveSha256"],
+            "pacmanDatabase": validation["pacmanDatabase"],
             "keyring": validation["keyring"],
             "packages": validation["packages"],
         }

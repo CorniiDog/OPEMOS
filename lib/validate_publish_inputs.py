@@ -6,11 +6,15 @@ import hashlib
 import json
 import re
 import tarfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 
 CANONICAL_REPOSITORY = "CorniiDog/open-gpu-kernel-modules-steamos-support"
 TRUST_LEVELS = {"locally-built-verified", "certified-published"}
+EXPECTED_MODULES = {
+    "nvidia.ko", "nvidia-drm.ko", "nvidia-modeset.ko", "nvidia-peermem.ko",
+    "nvidia-uvm.ko",
+}
 
 
 def fail(message):
@@ -23,6 +27,22 @@ def sha256(path):
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def stream_sha256(stream):
+    digest = hashlib.sha256()
+    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+        digest.update(chunk)
+    return digest.hexdigest()
+
+
+def normalized_member(name):
+    while name.startswith("./"):
+        name = name[2:]
+    path = PurePosixPath(name)
+    if not name or path.is_absolute() or ".." in path.parts:
+        fail("Archive contains an unsafe member path.")
+    return str(path)
 
 
 def metadata(path):
@@ -130,16 +150,56 @@ def main():
         if info.get(key) != str(expected):
             fail(f"Build information does not match provenance: {key}.")
 
+    module_records = provenance.get("modules")
+    if not isinstance(module_records, list) or len(module_records) != len(EXPECTED_MODULES):
+        fail("Provenance does not contain exactly five NVIDIA modules.")
+    modules = {}
+    for module in module_records:
+        if not isinstance(module, dict) or module.get("name") in modules:
+            fail("Provenance contains a duplicate or malformed module record.")
+        name = module.get("name", "")
+        if (name not in EXPECTED_MODULES
+                or not re.fullmatch(r"[0-9a-fA-F]{64}", module.get("sha256", ""))
+                or module.get("version") != nvidia
+                or module.get("architecture") != architecture
+                or module.get("vermagic", "").split(maxsplit=1)[0] != kernel):
+            fail("Provenance contains invalid NVIDIA module metadata.")
+        modules[name] = module
+    if set(modules) != EXPECTED_MODULES:
+        fail("Provenance NVIDIA module set is incomplete.")
+
     try:
         with tarfile.open(args.archive, "r:gz") as archive_file:
-            embedded_provenance = archive_file.extractfile("PROVENANCE.json")
-            embedded_info = archive_file.extractfile("BUILD-INFO.txt")
+            members = {}
+            for member in archive_file.getmembers():
+                name = normalized_member(member.name)
+                if name in members:
+                    fail("Archive contains duplicate member paths.")
+                members[name] = member
+            required_files = {"BUILD-INFO.txt", "PROVENANCE.json"} | {
+                f"modules/{name}" for name in EXPECTED_MODULES
+            }
+            if any(name not in members or not members[name].isfile() for name in required_files):
+                fail("Archive lacks a regular canonical publication file.")
+            archived_modules = {
+                name.removeprefix("modules/")
+                for name, member in members.items()
+                if name.startswith("modules/") and member.isfile()
+            }
+            if archived_modules != EXPECTED_MODULES:
+                fail("Archive does not contain exactly the canonical five-module set.")
+            embedded_provenance = archive_file.extractfile(members["PROVENANCE.json"])
+            embedded_info = archive_file.extractfile(members["BUILD-INFO.txt"])
             if embedded_provenance is None or embedded_info is None:
                 fail("Archive lacks embedded publication metadata.")
             if embedded_provenance.read() != args.provenance.read_bytes():
                 fail("Embedded and external provenance differ.")
             if embedded_info.read() != args.build_info.read_bytes():
                 fail("Embedded and external build information differ.")
+            for name, record in modules.items():
+                module_stream = archive_file.extractfile(members[f"modules/{name}"])
+                if module_stream is None or stream_sha256(module_stream) != record["sha256"].lower():
+                    fail(f"Archived module does not match provenance: {name}.")
     except (tarfile.TarError, KeyError, OSError):
         fail("Archive publication metadata is unreadable.")
 

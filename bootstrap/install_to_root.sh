@@ -252,14 +252,15 @@ trap cleanup_mutation EXIT
 trap cancel_mutation INT TERM
 
 PHASE=userspace_install
+TARGET_PACMAN_DATABASE="$ROOT/usr/lib/holo/pacmandb"
 run_mutation_command env SYSTEMD_OFFLINE=1 pacman \
-    --root "$ROOT" --dbpath "$ROOT/var/lib/pacman" \
+    --root "$ROOT" --dbpath "$TARGET_PACMAN_DATABASE" \
     --noconfirm --needed -U "$NVIDIA_UTILS" "$LIB32_NVIDIA_UTILS"
 
 installed_package_version()
 {
     local package="$1" version
-    version="$(pacman --root "$ROOT" --dbpath "$ROOT/var/lib/pacman" -Q "$package" | awk '{print $2}')"
+    version="$(pacman --root "$ROOT" --dbpath "$TARGET_PACMAN_DATABASE" -Q "$package" | awk '{print $2}')"
     printf '%s\n' "${version%-*}"
 }
 

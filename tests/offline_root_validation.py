@@ -67,6 +67,11 @@ def make_fixture(root):
     target = root / "target"
     (target / "etc").mkdir(parents=True)
     (target / "usr/lib/modules" / KERNEL).mkdir(parents=True)
+    package_record = target / "usr/lib/holo/pacmandb/local/filesystem-1-1"
+    package_record.mkdir(parents=True)
+    (package_record / "desc").write_text(
+        "%NAME%\nfilesystem\n", encoding="utf-8"
+    )
     (target / "etc/os-release").write_text(
         "ID=steamos\nVERSION_ID=3.8.16\n", encoding="utf-8"
     )
@@ -141,14 +146,17 @@ def make_mocks(root):
     (binaries / "pacman").write_text(
         """#!/bin/sh
 root=
+dbpath=
 previous=
 for argument in "$@"; do
     [ "$previous" != --root ] || root=$argument
+    [ "$previous" != --dbpath ] || dbpath=$argument
     previous=$argument
 done
+[ "$dbpath" = "$root/usr/lib/holo/pacmandb" ] || exit 91
 case " $* " in
   *" -U "*)
-    mkdir -p "$root/usr/lib/firmware/nvidia/$MOCK_NVIDIA" "$root/var/lib/pacman"
+    mkdir -p "$root/usr/lib/firmware/nvidia/$MOCK_NVIDIA"
     printf firmware > "$root/usr/lib/firmware/nvidia/$MOCK_NVIDIA/gsp_ga10x.bin"
     ;;
   *" -Q nvidia-utils "*) echo "nvidia-utils $MOCK_NVIDIA-1" ;;
@@ -299,6 +307,10 @@ def main():
         run(paths, binaries, temporary / "valid.json", True)
         valid = json.loads((temporary / "valid.json").read_text())
         assert valid["status"] == "verified"
+        assert valid["pacmanDatabase"] == {
+            "path": "/usr/lib/holo/pacmandb",
+            "packageCount": 1,
+        }
         assert [package["fullVersion"] for package in valid["packages"]] == [
             f"{NVIDIA}-2",
             f"{NVIDIA}-1",
@@ -314,6 +326,15 @@ def main():
         assert installer_bad_checksum["reason"] == "archive_checksum_mismatch"
         assert installer_bad_checksum["phase"] == "validation"
         paths["checksum"].write_text(original_checksum)
+
+        pacman_local = paths["target"] / "usr/lib/holo/pacmandb/local"
+        hidden_pacman_local = paths["target"] / "usr/lib/holo/pacmandb/local.hidden"
+        pacman_local.rename(hidden_pacman_local)
+        missing_database = run(
+            paths, binaries, temporary / "missing-pacman-database.json", False
+        )
+        assert missing_database["reason"] == "target_pacman_database_invalid"
+        hidden_pacman_local.rename(pacman_local)
 
         run(paths, binaries, temporary / "bad-signature.json", False, MOCK_BAD_SIGNATURE="1")
 
@@ -356,6 +377,10 @@ def main():
         assert successful["status"] == "success"
         assert successful["cleanup"]["mountsReleased"] is True
         assert successful["validation"]["keyring"]["name"] == "approved.gpg"
+        assert successful["validation"]["pacmanDatabase"] == {
+            "path": "/usr/lib/holo/pacmandb",
+            "packageCount": 1,
+        }
         assert len(successful["validation"]["keyring"]["sha256"]) == 64
         assert [
             package["fullVersion"]

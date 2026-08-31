@@ -220,6 +220,27 @@ def validate(args):
     if not (root / "usr/lib/modules" / args.kernel).is_dir():
         fail("kernel_mismatch", "exact target module directory is absent")
 
+    pacman_database = root / "usr/lib/holo/pacmandb"
+    pacman_local = pacman_database / "local"
+    try:
+        resolved_database = pacman_database.resolve(strict=True)
+        resolved_database.relative_to(root)
+    except (FileNotFoundError, RuntimeError, ValueError):
+        fail("target_pacman_database_missing", "target Holo pacman database is absent or unsafe")
+    if (pacman_database.is_symlink() or not resolved_database.is_dir()
+            or pacman_local.is_symlink() or not pacman_local.is_dir()):
+        fail("target_pacman_database_invalid", "target Holo pacman database is not a safe directory")
+    package_descriptions = []
+    for description in pacman_local.glob("*/desc"):
+        try:
+            description.resolve(strict=True).relative_to(resolved_database)
+        except (FileNotFoundError, RuntimeError, ValueError):
+            fail("target_pacman_database_invalid", "target package database escapes its root")
+        if description.is_file() and not description.is_symlink():
+            package_descriptions.append(description)
+    if not package_descriptions:
+        fail("target_pacman_database_empty", "target Holo pacman database has no package records")
+
     for path in (
         args.archive,
         args.checksum,
@@ -343,6 +364,10 @@ def validate(args):
             "architecture": "x86_64",
         },
         "archiveSha256": archive_sha,
+        "pacmanDatabase": {
+            "path": "/usr/lib/holo/pacmandb",
+            "packageCount": len(package_descriptions),
+        },
         "keyring": {
             "name": args.package_keyring.name,
             "sha256": sha256(args.package_keyring),
