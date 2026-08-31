@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "identity": "2025/08/01",
+  "url": "https://archive.archlinux.org/repos/2025/08/01/",
+  "databases": {
+    "core": "a3d902d8f99dd24b3c819f9d72dea70b21a54855154852129e63ca3662381f28",
+    "extra": "e3b682039235a6cefbb3f9162b73b351d2f335f75c1762c285499b3a09203e31",
+    "multilib": "986ed89efdf365a1b4372cf6ea364af7c623a7e1ca3bb35db742f90294ef49bc"
+  },
+  "reviewedAt": "2026-08-31"
+}

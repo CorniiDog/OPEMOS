@@ -1,0 +1,161 @@
+{
+  "keyring": {
+    "filename": "archlinux-nvidia-userspace-2025-08-01.gpg",
+    "provenance": {
+      "candidateSha256": "c203f34ba8904894723c9ecaf2f90b502a60191e5fb74a5fe47dc409712fb4a9",
+      "policySha256": "dbe87b0e11cae8dca671be491ffbf24bcbb22ff3a1712c4156ef88c4b476db95",
+      "reviewedAt": "2026-08-31"
+    },
+    "sha256": "8a2657da58e7efe162cc9ee76f361b085c9f49daa62baa6e077831aa05ea0bd4"
+  },
+  "missingReview": [],
+  "packages": [
+    {
+      "architecture": "x86_64",
+      "dependencies": [
+        "eglexternalplatform",
+        "glibc",
+        "mesa",
+        "libdrm"
+      ],
+      "filename": "egl-gbm-1.1.2.1-1-x86_64.pkg.tar.zst",
+      "installedSize": 28126,
+      "name": "egl-gbm",
+      "packageSha256": "ec116c718ed9501a08cc1e80729d3696df1111830e29798b4fc821e38782e3fb",
+      "provides": [
+        "libnvidia-egl-gbm.so=1"
+      ],
+      "signatureFilename": "egl-gbm-1.1.2.1-1-x86_64.pkg.tar.zst.sig",
+      "signatureSha256": "462a42ca5865d11b78991f91c13e4e3b8cde47e80ff9d30684f37c1f3e02ef23",
+      "signerFingerprint": "8FC15A064950A99DD1BD14DD39E4B877E62EB915",
+      "version": "1.1.2.1-1"
+    },
+    {
+      "architecture": "x86_64",
+      "dependencies": [
+        "eglexternalplatform",
+        "glibc",
+        "libdrm",
+        "wayland"
+      ],
+      "filename": "egl-wayland-4:1.1.19-1-x86_64.pkg.tar.zst",
+      "installedSize": 99887,
+      "name": "egl-wayland",
+      "packageSha256": "8f2da1c7cbfcb80dd8487b5ff665a24646ff60290145a5d249a5907552d1a5ad",
+      "provides": [
+        "libnvidia-egl-wayland.so=1-64"
+      ],
+      "signatureFilename": "egl-wayland-4:1.1.19-1-x86_64.pkg.tar.zst.sig",
+      "signatureSha256": "db84d0d5509bc143195efb1a72f5cc417fa6bcbfcfbfe58861f79e93db906777",
+      "signerFingerprint": "83BC8889351B5DEBBB68416EB8AC08600F108CDF",
+      "version": "4:1.1.19-1"
+    },
+    {
+      "architecture": "x86_64",
+      "dependencies": [
+        "eglexternalplatform",
+        "glibc",
+        "libdrm",
+        "libx11",
+        "libxcb",
+        "mesa"
+      ],
+      "filename": "egl-x11-1.0.2-1-x86_64.pkg.tar.zst",
+      "installedSize": 147679,
+      "name": "egl-x11",
+      "packageSha256": "786143ff807947e0200f9834eb997edd359b99a65548e9bf66a57aa961786c39",
+      "provides": [],
+      "signatureFilename": "egl-x11-1.0.2-1-x86_64.pkg.tar.zst.sig",
+      "signatureSha256": "d43e1971f441398ac6fff21146659b679f4f6cb8178391af072bda2dd044bf0b",
+      "signerFingerprint": "D2E95FEC015CF1F911AAAB0C3D4C5008BB5C8D29",
+      "version": "1.0.2-1"
+    },
+    {
+      "architecture": "any",
+      "dependencies": [
+        "libegl"
+      ],
+      "filename": "eglexternalplatform-1.2.1-1-any.pkg.tar.zst",
+      "installedSize": 18303,
+      "name": "eglexternalplatform",
+      "packageSha256": "70dc6d52f6941b37b859eda84bbf3664dde531803a97a5c84c739283aeb64b8f",
+      "provides": [],
+      "signatureFilename": "eglexternalplatform-1.2.1-1-any.pkg.tar.zst.sig",
+      "signatureSha256": "dfe6115cadadddb51f96274866aa74932a44f941b31624e8edd3dcdfb07fddb5",
+      "signerFingerprint": "83BC8889351B5DEBBB68416EB8AC08600F108CDF",
+      "version": "1.2.1-1"
+    },
+    {
+      "architecture": "x86_64",
+      "dependencies": [
+        "lib32-zlib",
+        "lib32-gcc-libs",
+        "lib32-libglvnd",
+        "nvidia-utils=575.64.05"
+      ],
+      "filename": "lib32-nvidia-utils-575.64.05-1-x86_64.pkg.tar.zst",
+      "installedSize": 269595780,
+      "name": "lib32-nvidia-utils",
+      "packageSha256": "15ee0eded0f7040a096e609601f66338746dcb71bf667cee6552701e2c8b4728",
+      "provides": [
+        "lib32-vulkan-driver",
+        "lib32-opengl-driver",
+        "lib32-nvidia-libgl"
+      ],
+      "signatureFilename": "lib32-nvidia-utils-575.64.05-1-x86_64.pkg.tar.zst.sig",
+      "signatureSha256": "3d6a0256c74bcc8c6632421a4f05cb74fd7d641cfa36efb6a4e9b0db86a3889c",
+      "signerFingerprint": "D2E95FEC015CF1F911AAAB0C3D4C5008BB5C8D29",
+      "version": "575.64.05-1"
+    },
+    {
+      "architecture": "x86_64",
+      "dependencies": [
+        "libglvnd",
+        "egl-wayland",
+        "egl-gbm",
+        "egl-x11"
+      ],
+      "filename": "nvidia-utils-575.64.05-2-x86_64.pkg.tar.zst",
+      "installedSize": 923685184,
+      "name": "nvidia-utils",
+      "packageSha256": "aebf379dd6708772397447c0a652ae167cfb6be346ddd2cb5cec1c6d99211242",
+      "provides": [
+        "vulkan-driver",
+        "opengl-driver",
+        "nvidia-libgl"
+      ],
+      "signatureFilename": "nvidia-utils-575.64.05-2-x86_64.pkg.tar.zst.sig",
+      "signatureSha256": "bc8ff4ca92ae7d5e92f03e71944994c1e20b5981c1907cb62f8685281fd83d49",
+      "signerFingerprint": "05C7775A9E8B977407FE08E69D4C5AA15426DA0A",
+      "version": "575.64.05-2"
+    }
+  ],
+  "schemaVersion": 1,
+  "snapshot": {
+    "identity": "2025/08/01",
+    "repositories": [
+      {
+        "databaseSha256": "a3d902d8f99dd24b3c819f9d72dea70b21a54855154852129e63ca3662381f28",
+        "provenanceManifest": "arch-snapshot-2025-08-01.json",
+        "repository": "core"
+      },
+      {
+        "databaseSha256": "e3b682039235a6cefbb3f9162b73b351d2f335f75c1762c285499b3a09203e31",
+        "provenanceManifest": "arch-snapshot-2025-08-01.json",
+        "repository": "extra"
+      },
+      {
+        "databaseSha256": "986ed89efdf365a1b4372cf6ea364af7c623a7e1ca3bb35db742f90294ef49bc",
+        "provenanceManifest": "arch-snapshot-2025-08-01.json",
+        "repository": "multilib"
+      }
+    ],
+    "url": "https://archive.archlinux.org/repos/2025/08/01/"
+  },
+  "status": "reviewed",
+  "target": {
+    "architecture": "x86_64",
+    "nvidiaVersion": "575.64.05",
+    "steamosVersion": "3.8.14"
+  }
+}

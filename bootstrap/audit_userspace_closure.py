@@ -15,9 +15,12 @@ from pathlib import Path
 import sys
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parent.parent
+KEYRING_PROVENANCE = ROOT / "trust/arch-full-keyring-provenance.json"
+SNAPSHOT_MANIFEST = ROOT / "trust/arch-snapshot-2025-08-01.json"
 sys.path.insert(0, str(ROOT / "lib"))
 from validate_install_inputs import (  # noqa: E402
     dependency_name, package_metadata, pacman_desc_fields, record_satisfies,
+    require_safe_destination,
 )
 
 MAX_DOWNLOAD = 2 * 1024 * 1024 * 1024
@@ -30,10 +33,8 @@ def args():
     parser.add_argument("--snapshot", required=True)
     parser.add_argument("--snapshot-url", required=True)
     parser.add_argument("--full-keyring", required=True, type=Path)
-    parser.add_argument("--full-keyring-sha256", required=True)
-    parser.add_argument("--keyring-source", required=True)
-    parser.add_argument("--keyring-source-sha256", required=True)
-    parser.add_argument("--keyring-reviewed-at", required=True)
+    parser.add_argument("--keyring-source", required=True, type=Path)
+    parser.add_argument("--keyring-source-signature", required=True, type=Path)
     parser.add_argument("--nvidia-utils", required=True, type=Path)
     parser.add_argument("--nvidia-utils-signature", required=True, type=Path)
     parser.add_argument("--lib32-nvidia-utils", required=True, type=Path)
@@ -68,6 +69,10 @@ def download(url, destination):
                 raise ValueError("download exceeds audit size limit")
             output.write(chunk)
     staged.replace(destination)
+
+
+def repository_file_url(base, filename):
+    return base.rstrip("/") + "/" + urllib.parse.quote(filename, safe="@._+-")
 
 
 def verify(path, signature, keyring):
@@ -114,6 +119,10 @@ def repository_records(database, repository):
             required = {key: fields.get(key, []) for key in ("NAME", "VERSION", "FILENAME", "SHA256SUM")}
             if any(len(values) != 1 for values in required.values()):
                 raise ValueError(f"malformed authenticated {repository} repository record")
+            filename = required["FILENAME"][0]
+            if (Path(filename).name != filename or filename in (".", "..")
+                    or not re.fullmatch(r"[A-Za-z0-9@._+:-]+", filename)):
+                raise ValueError(f"unsafe authenticated {repository} repository filename")
             records.append({
                 "name": required["NAME"][0], "version": required["VERSION"][0],
                 "filename": required["FILENAME"][0], "sha256": required["SHA256SUM"][0].lower(),
@@ -124,8 +133,26 @@ def repository_records(database, repository):
 
 
 def installed_records(root):
+    root = root.resolve(strict=True)
+    if root == Path("/"):
+        raise ValueError("refusing appliance root")
+    require_safe_destination(root, "usr/lib/holo/pacmandb/local")
+    database = root / "usr/lib/holo/pacmandb"
+    local = database / "local"
+    resolved_database = database.resolve(strict=True)
+    resolved_database.relative_to(root)
+    if database.is_symlink() or local.is_symlink() or not local.is_dir():
+        raise ValueError("Holo database is not a confined directory")
     records = {}
-    for desc in (root / "usr/lib/holo/pacmandb/local").glob("*/desc"):
+    for entry in local.iterdir():
+        if entry.name == "ALPM_DB_VERSION" and entry.is_file() and not entry.is_symlink():
+            continue
+        if entry.is_symlink() or not entry.is_dir():
+            raise ValueError("unexpected Holo local database entry")
+        desc = entry / "desc"
+        desc.resolve(strict=True).relative_to(resolved_database)
+        if desc.is_symlink() or not desc.is_file():
+            raise ValueError("Holo package record is not confined")
         record = pacman_desc_fields(desc)
         record["source"] = "installed"
         if record["name"] in records:
@@ -169,36 +196,69 @@ def main():
     if (os.environ.get("PROJECT_TEST_MODE") != "1"
             and options.snapshot_url.rstrip("/") + "/" != expected_url):
         raise SystemExit("snapshot URL must be the matching Arch Linux Archive date")
-    if (not re.fullmatch(r"[0-9a-fA-F]{64}", options.full_keyring_sha256)
-            or not re.fullmatch(r"[0-9a-fA-F]{64}", options.keyring_source_sha256)
-            or not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", options.keyring_reviewed_at)):
-        raise SystemExit("keyring provenance is malformed")
-    if sha256(options.full_keyring) != options.full_keyring_sha256.lower():
-        raise SystemExit("full keyring hash mismatch")
+    manifest_url = expected_url
+    if os.environ.get("PROJECT_TEST_MODE") == "1":
+        manifest_url = options.snapshot_url.rstrip("/") + "/"
+    snapshot_manifest_path = SNAPSHOT_MANIFEST
+    if os.environ.get("PROJECT_TEST_MODE") == "1" and os.environ.get("PROJECT_TEST_SNAPSHOT_MANIFEST"):
+        snapshot_manifest_path = Path(os.environ["PROJECT_TEST_SNAPSHOT_MANIFEST"])
+    snapshot_manifest = json.loads(snapshot_manifest_path.read_text(encoding="utf-8"))
+    if (snapshot_manifest.get("schemaVersion") != 1
+            or snapshot_manifest.get("identity") != options.snapshot
+            or snapshot_manifest.get("url") != manifest_url
+            or set(snapshot_manifest.get("databases", {})) != set(REPOS)):
+        raise SystemExit("snapshot is absent from support-owned provenance")
+    provenance_path = KEYRING_PROVENANCE
+    if os.environ.get("PROJECT_TEST_MODE") == "1" and os.environ.get("PROJECT_TEST_KEYRING_PROVENANCE"):
+        provenance_path = Path(os.environ["PROJECT_TEST_KEYRING_PROVENANCE"])
+    provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+    if (provenance.get("schemaVersion") != 1
+            or provenance.get("snapshot") != options.snapshot
+            or options.keyring_source.name != provenance["source"]["package"]
+            or options.keyring_source_signature.name != provenance["source"]["signature"]
+            or sha256(options.keyring_source) != provenance["source"]["sha256"]
+            or sha256(options.keyring_source_signature) != provenance["source"]["signatureSha256"]
+            or sha256(options.full_keyring) != provenance["keyring"]["sha256"]):
+        raise SystemExit("full keyring does not match support-owned provenance")
+    with tempfile.TemporaryDirectory(prefix="arch-keyring-provenance-") as keyring_check:
+        subprocess.run(["bsdtar", "-xf", str(options.keyring_source), "-C", keyring_check], check=True)
+        extracted = Path(keyring_check) / provenance["keyring"]["path"]
+        if sha256(extracted) != provenance["keyring"]["sha256"]:
+            raise SystemExit("source package does not produce the pinned full keyring")
     options.stage.mkdir(parents=True, exist_ok=True)
     if any(options.stage.iterdir()):
         raise SystemExit("stage directory must be empty")
+    verification_keyring = options.stage / "authenticated-full-arch-keyring.gpg"
+    subprocess.run(
+        ["gpg", "--batch", "--yes", "--dearmor", "--output",
+         str(verification_keyring), str(options.full_keyring)],
+        check=True,
+    )
     base = options.snapshot_url.rstrip("/") + "/"
     repo_records = []
     repository_locks = []
     for repository in REPOS:
         repo_base = urllib.parse.urljoin(base, f"{repository}/os/x86_64/")
         database = options.stage / f"{repository}.db"
-        signature = options.stage / f"{repository}.db.sig"
         download(urllib.parse.urljoin(repo_base, f"{repository}.db"), database)
-        download(urllib.parse.urljoin(repo_base, f"{repository}.db.sig"), signature)
-        signer = verify(database, signature, options.full_keyring)
+        database_sha = sha256(database)
+        if database_sha != snapshot_manifest["databases"][repository]:
+            raise ValueError(f"repository database provenance mismatch: {repository}")
         repository_locks.append({
-            "repository": repository, "databaseSha256": sha256(database),
-            "signatureSha256": sha256(signature), "signerFingerprint": signer,
+            "repository": repository, "databaseSha256": database_sha,
+            "provenanceManifest": snapshot_manifest_path.name,
         })
         repo_records.extend(repository_records(database, repository))
     packages = []
-    for package, signature in (
-        (options.nvidia_utils, options.nvidia_utils_signature),
-        (options.lib32_nvidia_utils, options.lib32_nvidia_utils_signature),
+    for package, signature, expected_name in (
+        (options.nvidia_utils, options.nvidia_utils_signature, "nvidia-utils"),
+        (options.lib32_nvidia_utils, options.lib32_nvidia_utils_signature, "lib32-nvidia-utils"),
     ):
-        packages.append(package_record(package, signature, options.full_keyring))
+        seed = package_record(package, signature, verification_keyring)
+        if (seed["name"] != expected_name or seed["architecture"] != "x86_64"
+                or seed["version"].rsplit("-", 1)[0] != options.nvidia):
+            raise ValueError(f"seed package does not match requested identity: {expected_name}")
+        packages.append(seed)
     installed = installed_records(options.root)
     providers = {}
     for record in repo_records:
@@ -226,9 +286,9 @@ def main():
             repo_base = urllib.parse.urljoin(base, f"{selected['repository']}/os/x86_64/")
             package = options.stage / selected["filename"]
             signature = options.stage / f"{selected['filename']}.sig"
-            download(urllib.parse.urljoin(repo_base, selected["filename"]), package)
-            download(urllib.parse.urljoin(repo_base, f"{selected['filename']}.sig"), signature)
-            locked = package_record(package, signature, options.full_keyring, selected["sha256"])
+            download(repository_file_url(repo_base, selected["filename"]), package)
+            download(repository_file_url(repo_base, f"{selected['filename']}.sig"), signature)
+            locked = package_record(package, signature, verification_keyring, selected["sha256"])
             packages.append(locked)
             pending.append(locked)
     reviewed = reviewed_policy()
@@ -244,10 +304,13 @@ def main():
         "snapshot": {"identity": options.snapshot, "url": base,
                      "repositories": repository_locks},
         "keyring": {"filename": options.full_keyring.name,
-                    "sha256": options.full_keyring_sha256.lower(),
-                    "provenance": {"source": options.keyring_source,
-                                   "sourceSha256": options.keyring_source_sha256.lower(),
-                                   "reviewedAt": options.keyring_reviewed_at}},
+                    "sha256": provenance["keyring"]["sha256"],
+                    "verificationKeyringSha256": sha256(verification_keyring),
+                    "provenance": {"manifest": provenance_path.name,
+                                   "manifestSha256": sha256(provenance_path),
+                                   "source": provenance["source"]["package"],
+                                   "sourceSha256": provenance["source"]["sha256"],
+                                   "reviewedAt": provenance["reviewedAt"]}},
         "packages": sorted(packages, key=lambda item: item["name"]),
         "missingReview": sorted(missing_review, key=lambda item: item["packageName"]),
     }

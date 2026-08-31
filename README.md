@@ -252,8 +252,19 @@ verifies them against a hash-pinned full Arch keyring before reading
 production package/signer policy are collected in `missingReview`; invalid
 signatures stop the audit. The audit never mutates the target or trust policy.
 Candidate locks are not installable: maintainers must review every missing
-mapping, publish a minimal keyring, change status to `reviewed`, clear
-`missingReview`, and preserve the audited package metadata exactly.
+mapping and prepare a minimal keyring, then run
+`bootstrap/finalize_userspace_lock.py`. The create-only finalizer recomputes
+review status from the production policy, verifies that the minimal keyring
+contains every required signer, and atomically emits the reviewed lock; manual
+status edits are unsupported.
+
+The first reviewed bundle is
+`locks/userspace/steamos-3.8.14-nvidia-575.64.05.json`, paired with
+`trust/keyrings/archlinux-nvidia-userspace-2025-08-01.gpg`. Its pinned
+2025-08-01 closure is `nvidia-utils`, `lib32-nvidia-utils`, `egl-wayland`,
+`eglexternalplatform`, `egl-gbm`, and `egl-x11`. Support-owned manifests pin the
+full Arch keyring source and the exact dated `core`, `extra`, and `multilib`
+database hashes used by the audit.
 
 During validation, stderr contains throttled lines beginning with
 `STEAMOS_NVIDIA_PROGRESS ` followed by a schema-1 JSON object. Records contain

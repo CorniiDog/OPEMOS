@@ -1297,6 +1297,11 @@ signing policy.
   emits all missing package/signer reviews in one candidate lock.
 * [x] Require normal offline installation to use a reviewed schema-1 userspace
   lock, minimal reviewed keyring, and an exact package set with no extras.
+* [x] Authenticate the audit keyring and dated repository databases with
+  support-owned hash manifests; add create-only lock finalization and executable
+  recursive/negative audit tests.
+* [x] Produce the reviewed SteamOS 3.8.14/NVIDIA 575.64.05 six-package lock and
+  its four-signer minimal binary keyring from the real exported Holo database.
 * [x] Emit conservative root/var/EFI available and required bytes, declared
   package size, final module size, replacement credits, and initramfs reserve;
   fail before mutation with `target_space_insufficient` when any mount cannot fit.

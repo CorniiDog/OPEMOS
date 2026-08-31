@@ -11,16 +11,23 @@
     {
       "fingerprint": "D2E95FEC015CF1F911AAAB0C3D4C5008BB5C8D29",
       "status": "active",
-      "packages": ["lib32-nvidia-utils", "egl-wayland"],
+      "packages": ["lib32-nvidia-utils", "egl-wayland", "egl-x11"],
       "reviewedAt": "2026-08-30",
       "evidence": "Verified against lib32-nvidia-utils 575.64.05-1 and egl-wayland from the Arch Linux Archive"
     },
     {
       "fingerprint": "83BC8889351B5DEBBB68416EB8AC08600F108CDF",
       "status": "active",
-      "packages": ["eglexternalplatform"],
+      "packages": ["eglexternalplatform", "egl-wayland"],
       "reviewedAt": "2026-08-31",
-      "evidence": "Verified against the staged signed eglexternalplatform package"
+      "evidence": "Verified against eglexternalplatform and egl-wayland in the pinned 2025-08-01 Arch snapshot"
+    },
+    {
+      "fingerprint": "8FC15A064950A99DD1BD14DD39E4B877E62EB915",
+      "status": "active",
+      "packages": ["egl-gbm"],
+      "reviewedAt": "2026-08-31",
+      "evidence": "Verified against egl-gbm 1.1.2.1-1 in the pinned 2025-08-01 Arch snapshot"
     }
   ]
 }

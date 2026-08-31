@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "snapshot": "2025/08/01",
+  "source": {
+    "package": "archlinux-keyring-20250716-1-any.pkg.tar.zst",
+    "url": "https://archive.archlinux.org/repos/2025/08/01/core/os/x86_64/archlinux-keyring-20250716-1-any.pkg.tar.zst",
+    "sha256": "7b0da908ece811f9622212b6e0c054aec9c446dabb00ededa95bfbe0fabcf43c",
+    "signature": "archlinux-keyring-20250716-1-any.pkg.tar.zst.sig",
+    "signatureSha256": "58947d420c3c9191f57c1282ee95f2af9fc67e01515a3348db61710eb256eda8"
+  },
+  "keyring": {
+    "path": "usr/share/pacman/keyrings/archlinux.gpg",
+    "sha256": "27886ab8e7f7a631eeb0890cdeb818a4d0e040582d79f0df4d92c1501fcd2e2c"
+  },
+  "reviewedAt": "2026-08-31"
+}

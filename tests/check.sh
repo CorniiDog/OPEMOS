@@ -437,6 +437,17 @@ rm -f "$RESULT_FIXTURE" "${RESULT_FIXTURE}.invalid"
 printf 'Checking offline-root installer contract...\n'
 ./bootstrap/install_to_root.sh --help >/dev/null
 python3 bootstrap/audit_userspace_closure.py --help >/dev/null
+python3 bootstrap/finalize_userspace_lock.py --help >/dev/null
+python3 - "$PROJECT_ROOT/trust/arch-full-keyring-provenance.json" <<'PY' || \
+    fail "Arch full-keyring provenance manifest is invalid"
+import json, re, sys
+manifest = json.load(open(sys.argv[1], encoding="utf-8"))
+assert manifest["schemaVersion"] == 1
+assert re.fullmatch(r"[0-9]{4}/[0-9]{2}/[0-9]{2}", manifest["snapshot"])
+assert re.fullmatch(r"[0-9a-f]{64}", manifest["source"]["sha256"])
+assert re.fullmatch(r"[0-9a-f]{64}", manifest["source"]["signatureSha256"])
+assert re.fullmatch(r"[0-9a-f]{64}", manifest["keyring"]["sha256"])
+PY
 python3 bootstrap/prepare_nvidia_package_keyring.py --help >/dev/null
 python3 - "$PROJECT_ROOT/trust/nvidia-userspace-package-signers.json" <<'PY' || \
     fail "NVIDIA userspace package trust manifest is invalid"
@@ -454,8 +465,9 @@ active = {
 }
 assert active == {
     "05C7775A9E8B977407FE08E69D4C5AA15426DA0A": ("nvidia-utils",),
-    "D2E95FEC015CF1F911AAAB0C3D4C5008BB5C8D29": ("lib32-nvidia-utils", "egl-wayland"),
-    "83BC8889351B5DEBBB68416EB8AC08600F108CDF": ("eglexternalplatform",),
+    "D2E95FEC015CF1F911AAAB0C3D4C5008BB5C8D29": ("lib32-nvidia-utils", "egl-wayland", "egl-x11"),
+    "83BC8889351B5DEBBB68416EB8AC08600F108CDF": ("eglexternalplatform", "egl-wayland"),
+    "8FC15A064950A99DD1BD14DD39E4B877E62EB915": ("egl-gbm",),
 }
 for signer in manifest["signers"]:
     assert re.fullmatch(r"[0-9A-F]{40}|[0-9A-F]{64}", signer["fingerprint"])
@@ -463,7 +475,39 @@ for signer in manifest["signers"]:
     assert signer["packages"]
     assert re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", signer["reviewedAt"])
 PY
+python3 - \
+    "$PROJECT_ROOT/locks/userspace/steamos-3.8.14-nvidia-575.64.05.json" \
+    "$PROJECT_ROOT/trust/keyrings/archlinux-nvidia-userspace-2025-08-01.gpg" \
+    "$PROJECT_ROOT/trust/nvidia-userspace-package-signers.json" <<'PY' || \
+    fail "published reviewed userspace lock is inconsistent"
+import hashlib
+import json
+import pathlib
+import sys
+
+lock_path, keyring_path, policy_path = map(pathlib.Path, sys.argv[1:])
+lock = json.loads(lock_path.read_text(encoding="utf-8"))
+digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
+assert lock["schemaVersion"] == 1
+assert lock["status"] == "reviewed"
+assert lock["missingReview"] == []
+assert lock["target"] == {
+    "architecture": "x86_64",
+    "nvidiaVersion": "575.64.05",
+    "steamosVersion": "3.8.14",
+}
+assert [package["name"] for package in lock["packages"]] == [
+    "egl-gbm", "egl-wayland", "egl-x11", "eglexternalplatform",
+    "lib32-nvidia-utils", "nvidia-utils",
+]
+assert lock["keyring"]["filename"] == keyring_path.name
+assert lock["keyring"]["sha256"] == digest(keyring_path)
+assert lock["keyring"]["provenance"]["policySha256"] == digest(policy_path)
+assert lock["snapshot"]["identity"] == "2025/08/01"
+assert lock["snapshot"]["url"] == "https://archive.archlinux.org/repos/2025/08/01/"
+PY
 python3 tests/offline_root_validation.py
+python3 tests/userspace_audit.py
 INSTALL_RESULT_FIXTURE="$(mktemp /tmp/offline-install-result.XXXXXX)"
 python3 "$PROJECT_ROOT/lib/write_install_result.py" \
     --output "$INSTALL_RESULT_FIXTURE" --status validated \
