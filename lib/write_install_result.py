@@ -86,6 +86,7 @@ def main():
                 for key in (
                     "storage", "packageDependencyClosure", "compression",
                     "missingDependencies", "dependencyRequestedBy",
+                    "packageName", "signerFingerprint",
                 )
                 if key in validation
             }

@@ -465,7 +465,7 @@ def validate_package_links(path):
                 depth += 1
 
 
-def verify_signature(package, signature, keyring):
+def verify_signature(package, signature, keyring, package_name):
     try:
         completed = subprocess.run(
             ["gpgv", "--status-fd", "1", "--keyring", str(keyring), str(signature), str(package)],
@@ -475,14 +475,24 @@ def verify_signature(package, signature, keyring):
             text=True,
         )
     except (OSError, subprocess.CalledProcessError) as error:
-        fail("userspace_signature_invalid", f"Signature verification failed for {package.name}: {error}")
+        fail(
+            "userspace_signature_invalid",
+            f"signature verification failed for package {package_name}",
+            packageName=package_name,
+            signerFingerprint=None,
+        )
     fingerprints = []
     for line in completed.stdout.splitlines():
         fields = line.split()
         if len(fields) >= 3 and fields[1] == "VALIDSIG":
             fingerprints.append(fields[2].upper())
     if len(fingerprints) != 1 or not re.fullmatch(r"[0-9A-F]{40}", fingerprints[0]):
-        fail("userspace_signature_invalid", f"No unique full signer fingerprint for {package.name}")
+        fail(
+            "userspace_signature_invalid",
+            f"no unique full signer fingerprint for package {package_name}",
+            packageName=package_name,
+            signerFingerprint=fingerprints[0] if len(fingerprints) == 1 else None,
+        )
     return fingerprints[0]
 
 
@@ -504,6 +514,8 @@ def require_reviewed_signer(fingerprint, package_name):
         fail(
             "userspace_signer_rejected",
             f"{package_name} signer is not active in reviewed policy",
+            packageName=package_name,
+            signerFingerprint=fingerprint,
         )
 
 
@@ -833,9 +845,10 @@ def validate(args, progress):
         for member in members:
             require_safe_destination(root, member)
         validate_package_links(package)
-        signer = verify_signature(package, signature, args.package_keyring)
-        if is_nvidia_package:
-            require_reviewed_signer(signer, expected_name)
+        signer = verify_signature(
+            package, signature, args.package_keyring, package_name
+        )
+        require_reviewed_signer(signer, package_name)
         pkgver_only, separator, pkgrel = pkgver.rpartition("-")
         if not separator or not pkgver_only or not pkgrel:
             fail("userspace_package_invalid", f"{package_name} has invalid pkgver/pkgrel")

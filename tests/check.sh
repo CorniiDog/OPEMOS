@@ -453,7 +453,8 @@ active = {
 }
 assert active == {
     "05C7775A9E8B977407FE08E69D4C5AA15426DA0A": ("nvidia-utils",),
-    "D2E95FEC015CF1F911AAAB0C3D4C5008BB5C8D29": ("lib32-nvidia-utils",),
+    "D2E95FEC015CF1F911AAAB0C3D4C5008BB5C8D29": ("lib32-nvidia-utils", "egl-wayland"),
+    "83BC8889351B5DEBBB68416EB8AC08600F108CDF": ("eglexternalplatform",),
 }
 for signer in manifest["signers"]:
     assert re.fullmatch(r"[0-9A-F]{40}|[0-9A-F]{64}", signer["fingerprint"])

@@ -19,6 +19,7 @@ KERNEL = "6.16.12-valve24.5-1-neptune-616-gfixture"
 NVIDIA = "575.64.05"
 NVIDIA_SIGNER = "05C7775A9E8B977407FE08E69D4C5AA15426DA0A"
 LIB32_SIGNER = "D2E95FEC015CF1F911AAAB0C3D4C5008BB5C8D29"
+EGL_EXTERNAL_SIGNER = "83BC8889351B5DEBBB68416EB8AC08600F108CDF"
 MODULES = (
     "nvidia.ko",
     "nvidia-drm.ko",
@@ -210,7 +211,7 @@ def make_mocks(root):
         encoding="utf-8",
     )
     (binaries / "gpgv").write_text(
-        f"#!/bin/sh\nsleep \"${{MOCK_GPGV_DELAY:-0}}\"\n[ \"${{MOCK_BAD_SIGNATURE:-0}}\" = 0 ] || exit 1\ncase \"$*\" in *lib32*) signer={LIB32_SIGNER};; *) signer={NVIDIA_SIGNER};; esac\necho \"[GNUPG:] VALIDSIG $signer 2026-01-01 0 4 0 1 10 00 $signer\"\n",
+        f"#!/bin/sh\nsleep \"${{MOCK_GPGV_DELAY:-0}}\"\n[ \"${{MOCK_BAD_SIGNATURE:-0}}\" = 0 ] || exit 1\ncase \"${{MOCK_FORCE_SIGNER:-}}:$*\" in ?*:*) signer=${{MOCK_FORCE_SIGNER}};; *eglexternalplatform*) signer={EGL_EXTERNAL_SIGNER};; *egl-wayland*) signer={LIB32_SIGNER};; *lib32*) signer={LIB32_SIGNER};; *) signer={NVIDIA_SIGNER};; esac\necho \"[GNUPG:] VALIDSIG $signer 2026-01-01 0 4 0 1 10 00 $signer\"\n",
         encoding="utf-8",
     )
     (binaries / "vercmp").write_text(
@@ -583,7 +584,27 @@ def main():
         paths["archive"] = original_archive
         paths["checksum"] = original_checksum_path
 
-        run(paths, binaries, temporary / "bad-signature.json", False, MOCK_BAD_SIGNATURE="1")
+        bad_signature = run(
+            paths, binaries, temporary / "bad-signature.json", False,
+            MOCK_BAD_SIGNATURE="1",
+        )
+        assert bad_signature["reason"] == "userspace_signature_invalid"
+        assert bad_signature["packageName"] == "nvidia-utils"
+        assert bad_signature["signerFingerprint"] is None
+        bad_signature_result = run_installer(
+            paths, binaries, temporary / "bad-signature-result.json", False,
+            MOCK_BAD_SIGNATURE="1",
+        )
+        assert bad_signature_result["validation"]["packageName"] == "nvidia-utils"
+        assert bad_signature_result["validation"]["signerFingerprint"] is None
+
+        cross_package_signer = run(
+            paths, binaries, temporary / "cross-package-signer.json", False,
+            MOCK_FORCE_SIGNER=LIB32_SIGNER,
+        )
+        assert cross_package_signer["reason"] == "userspace_signer_rejected"
+        assert cross_package_signer["packageName"] == "nvidia-utils"
+        assert cross_package_signer["signerFingerprint"] == LIB32_SIGNER
 
         make_package(
             paths["lib32"], "lib32-nvidia-utils",
