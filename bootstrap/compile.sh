@@ -202,6 +202,7 @@ mkdir -p "$RELEASE_DIR" "$PACKAGE_DIR/modules"
 ARCHIVE="${RELEASE_DIR}/${ASSET_NAME}"
 CHECKSUM="${ARCHIVE}.sha256"
 BUILD_INFO="${RELEASE_DIR}/${ASSET_NAME%.tar.gz}.build-info.txt"
+PROVENANCE="${RELEASE_DIR}/${ASSET_NAME%.tar.gz}.provenance.json"
 
 metadata_value()
 {
@@ -221,8 +222,10 @@ if [[ "$FORCE_REBUILD" == "0" &&
         CACHED_ARCHIVE="${CACHE_DIR}/${ASSET_NAME}"
         CACHED_CHECKSUM="${CACHED_ARCHIVE}.sha256"
         CACHED_INFO="${CACHE_DIR}/${ASSET_NAME%.tar.gz}.build-info.txt"
+        CACHED_PROVENANCE="${CACHE_DIR}/${ASSET_NAME%.tar.gz}.provenance.json"
 
-        if [[ -f "$CACHED_ARCHIVE" && -f "$CACHED_CHECKSUM" && -f "$CACHED_INFO" ]]; then
+        if [[ -f "$CACHED_ARCHIVE" && -f "$CACHED_CHECKSUM" &&
+              -f "$CACHED_INFO" && -f "$CACHED_PROVENANCE" ]]; then
             CACHED_SOURCE="$(metadata_value "$CACHED_INFO" source_commit)"
             CACHED_KERNEL="$(metadata_value "$CACHED_INFO" kernel_version)"
             CACHED_NVIDIA="$(metadata_value "$CACHED_INFO" nvidia_version)"
@@ -243,6 +246,7 @@ if [[ "$FORCE_REBUILD" == "0" &&
                 ARCHIVE="$CACHED_ARCHIVE"
                 CHECKSUM="$CACHED_CHECKSUM"
                 BUILD_INFO="$CACHED_INFO"
+                PROVENANCE="$CACHED_PROVENANCE"
                 ok "Existing bundle matches source, support tooling, kernel, NVIDIA version, and build image."
                 log "Skipping compilation."
             fi
@@ -271,6 +275,8 @@ if [[ "$CACHE_HIT" == "0" ]]; then
         printf 'nvidia_version=%s\n' "$NVIDIA_VERSION"
         printf 'release_tag=%s\n' "$RELEASE_TAG"
         printf 'release_asset=%s\n\n' "$ASSET_NAME"
+        printf 'build_architecture=x86_64\n'
+        printf 'trust_classification=locally-built-verified\n'
 
         printf 'source_repository=%s\n' "$SOURCE_REPO"
         printf 'source_branch=%s\n' "$SOURCE_BRANCH"
@@ -298,8 +304,11 @@ if [[ "$CACHE_HIT" == "0" ]]; then
     } > "$BUILD_INFO"
 
     cp "$BUILD_INFO" "${PACKAGE_DIR}/BUILD-INFO.txt"
+    python3 "${SUPPORT_ROOT}/lib/write_compile_provenance.py" \
+        --build-info "$BUILD_INFO" --output "$PROVENANCE"
+    cp "$PROVENANCE" "${PACKAGE_DIR}/PROVENANCE.json"
 
-    tar -C "$PACKAGE_DIR" -czf "$ARCHIVE" modules BUILD-INFO.txt
+    tar -C "$PACKAGE_DIR" -czf "$ARCHIVE" modules BUILD-INFO.txt PROVENANCE.json
     (cd "$RELEASE_DIR" && sha256sum "$ASSET_NAME" > "$(basename "$CHECKSUM")")
 
     EXPECTED_SHA="$(awk '{print $1}' "$CHECKSUM" | head -n1)"
@@ -311,15 +320,14 @@ if [[ "$CACHE_HIT" == "0" ]]; then
     strings_equal_case_insensitive "$EXPECTED_SHA" "$ACTUAL_SHA" ||
         die "Generated release archive failed checksum verification."
 
-    printf 'archive_sha256=%s\n' "$ACTUAL_SHA" >> "$BUILD_INFO"
-
     rm -f "$BUNDLE"
     (
         cd "$RELEASE_DIR"
         zip -q "$BUNDLE" \
             "$(basename "$ARCHIVE")" \
             "$(basename "$CHECKSUM")" \
-            "$(basename "$BUILD_INFO")"
+            "$(basename "$BUILD_INFO")" \
+            "$(basename "$PROVENANCE")"
     )
 
     ok "Build artifacts created."
@@ -330,6 +338,7 @@ printf 'Bundle:           %s\n' "$BUNDLE"
 printf 'Archive:          %s\n' "$ARCHIVE"
 printf 'Checksum:         %s\n' "$CHECKSUM"
 printf 'Build info:       %s\n' "$BUILD_INFO"
+printf 'Provenance:       %s\n' "$PROVENANCE"
 printf '\n'
 printf 'Source commit:    %s\n' "$SOURCE_COMMIT"
 printf 'NVIDIA upstream:  %s\n' "$UPSTREAM_COMMIT"
@@ -342,40 +351,6 @@ if [[ "$AUTO_UPLOAD" != "1" ]]; then
     exit 0
 fi
 
-log "Uploading ${RELEASE_TAG} to GitHub..."
-
-RELEASE_TITLE="open-gpu-kernel-modules-steamos - SteamOS ${STEAMOS_VERSION}"
-
-RELEASE_NOTES="Precompiled open-gpu-kernel-modules-steamos build for SteamOS ${STEAMOS_VERSION}.
-
-NVIDIA fork commit: [${SOURCE_COMMIT:0:7}](https://github.com/${SOURCE_REPO}/commit/${SOURCE_COMMIT})
-NVIDIA upstream commit: [${UPSTREAM_COMMIT:0:7}](https://github.com/NVIDIA/open-gpu-kernel-modules/commit/${UPSTREAM_COMMIT})
-Support commit: [${SUPPORT_COMMIT:0:7}](https://github.com/${SUPPORT_REPO}/commit/${SUPPORT_COMMIT})
-Container: ${CONTAINER_IMAGE_REF}"
-
-if gh release view "$RELEASE_TAG" --repo "$SUPPORT_REPO" >/dev/null 2>&1; then
-    log "Release already exists; updating metadata and replacing matching artifacts."
-
-    gh release edit "$RELEASE_TAG" \
-        --repo "$SUPPORT_REPO" \
-        --title "$RELEASE_TITLE" \
-        --notes "$RELEASE_NOTES"
-
-    gh release upload "$RELEASE_TAG" \
-        "$ARCHIVE" \
-        "$CHECKSUM" \
-        "$BUILD_INFO" \
-        --repo "$SUPPORT_REPO" \
-        --clobber
-else
-    gh release create "$RELEASE_TAG" \
-        "$ARCHIVE" \
-        "$CHECKSUM" \
-        "$BUILD_INFO" \
-        --repo "$SUPPORT_REPO" \
-        --target "$SUPPORT_COMMIT" \
-        --title "$RELEASE_TITLE" \
-        --notes "$RELEASE_NOTES"
-fi
-
-ok "Release uploaded successfully."
+"${SCRIPT_DIR}/publish_artifacts.sh" \
+    --archive "$ARCHIVE" --checksum "$CHECKSUM" --build-info "$BUILD_INFO" \
+    --provenance "$PROVENANCE"

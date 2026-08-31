@@ -43,6 +43,10 @@ python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __
     lib/write_install_result.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     bootstrap/prepare_nvidia_package_keyring.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/validate_publish_inputs.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/write_compile_provenance.py
 
 printf 'Checking exact target-header validation...\n'
 python3 tests/header_validation.py
@@ -52,6 +56,9 @@ python3 tests/module_validation.py
 
 printf 'Checking structured build provenance...\n'
 python3 tests/provenance.py
+
+printf 'Checking canonical artifact publisher...\n'
+python3 tests/publisher.py
 
 printf 'Checking reviewed Valve signer policy...\n'
 python3 tests/trust_policy.py

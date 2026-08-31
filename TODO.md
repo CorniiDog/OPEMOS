@@ -1211,6 +1211,19 @@ signing policy.
   document as a sidecar referenced by the final result contract.
 * [ ] Image builder must copy the referenced provenance into its image manifest.
 
+## Canonical publication
+
+* [x] Provide one Bash-3.2-compatible publisher for archive, checksum,
+  build-info, and provenance assets.
+* [x] Validate canonical names, checksum, target/trust/release identity, clean
+  complete support/source commits, and embedded metadata before GitHub mutation.
+* [x] Provide machine-readable `--dry-run` and fail-closed `--create-only` modes.
+* [x] Pin live publication to the canonical support repository unless an
+  explicit development-only repository override is supplied.
+* [x] Make `compile.sh --auto-upload` delegate to the canonical publisher.
+* [x] Cover malformed input, canonical notes/title, asset ordering, and
+  existing-release refusal without touching a live release.
+
 ## Cancellation, cleanup, and caching
 
 * [x] Define SIGINT/SIGTERM cancellation suitable for the Rust appliance manager.

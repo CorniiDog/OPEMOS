@@ -164,6 +164,35 @@ The same data and the validated per-module records are published as a versioned
 The final result contract names the sidecar so the image builder can copy it
 directly into its image manifest without parsing human-readable logs.
 
+### Canonical artifact publication
+
+`bootstrap/publish_artifacts.sh` is the sole release-publication contract. It
+requires the archive, SHA256 sidecar, build information, and provenance
+sidecar, then validates their canonical basenames, checksum, target identity,
+trust classification, release identity, clean support/source commits, and
+byte-identical embedded metadata before contacting GitHub. `compile.sh
+--auto-upload` delegates to this command and therefore publishes the same four
+ordered assets with the same generated title and notes.
+
+Inspect a non-mutating machine-readable plan first:
+
+```bash
+./bootstrap/publish_artifacts.sh \
+  --archive /shared/nvidia-open-....tar.gz \
+  --checksum /shared/nvidia-open-....tar.gz.sha256 \
+  --build-info /shared/nvidia-open-....build-info.txt \
+  --provenance /shared/nvidia-open-....provenance.json \
+  --dry-run
+```
+
+Live publication is fixed to
+`CorniiDog/open-gpu-kernel-modules-steamos-support`, verifies `gh`
+authentication and push permission, and updates only the derived exact release.
+Add `--create-only` to fail if that release already exists. A noncanonical
+repository requires the conspicuous `--development-repository OWNER/REPO`
+override. The publisher never discovers, deletes, or modifies unrelated
+releases.
+
 ### Offline mounted-root installation
 
 `bootstrap/install_to_root.sh` defines the image-builder installation boundary
