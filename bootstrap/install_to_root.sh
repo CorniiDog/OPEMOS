@@ -18,6 +18,7 @@ PACKAGE_KEYRING=""
 DEPENDENCY_PACKAGES=()
 DEPENDENCY_SIGNATURES=()
 RESULT_JSON=""
+PROGRESS_ATTEMPT=""
 VALIDATE_ONLY=0
 
 usage()
@@ -41,6 +42,7 @@ Required:
 Options:
   --dependency-package FILE       Repeat with its paired signature.
   --dependency-signature FILE     Repeat in the same order as packages.
+  --progress-attempt NUMBER       Correlates progress records (0-1000000).
   --validate-only
   -h, --help
 
@@ -65,6 +67,7 @@ while (( $# > 0 )); do
         --dependency-package) DEPENDENCY_PACKAGES+=("${2:-}"); shift 2 ;;
         --dependency-signature) DEPENDENCY_SIGNATURES+=("${2:-}"); shift 2 ;;
         --result-json) RESULT_JSON="${2:-}"; shift 2 ;;
+        --progress-attempt) PROGRESS_ATTEMPT="${2:-}"; shift 2 ;;
         --validate-only) VALIDATE_ONLY=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) die "Unknown argument: $1" ;;
@@ -72,6 +75,11 @@ while (( $# > 0 )); do
 done
 (( ${#DEPENDENCY_PACKAGES[@]} == ${#DEPENDENCY_SIGNATURES[@]} )) ||
     die "Each dependency package requires one positionally paired signature."
+if [[ -n "$PROGRESS_ATTEMPT" ]]; then
+    [[ "$PROGRESS_ATTEMPT" =~ ^[0-9]+$ ]] || die "Progress attempt must be an integer."
+    (( ${#PROGRESS_ATTEMPT} <= 7 )) || die "Progress attempt exceeds 1000000."
+    (( 10#$PROGRESS_ATTEMPT <= 1000000 )) || die "Progress attempt exceeds 1000000."
+fi
 
 for value in ROOT ARCHIVE CHECKSUM PROVENANCE KERNEL NVIDIA_UTILS \
     NVIDIA_UTILS_SIGNATURE LIB32_NVIDIA_UTILS LIB32_NVIDIA_UTILS_SIGNATURE \
@@ -124,6 +132,7 @@ VALIDATOR_ARGS=(
     --package-keyring "$PACKAGE_KEYRING"
     --output "$VALIDATION_JSON"
 )
+[[ -z "$PROGRESS_ATTEMPT" ]] || VALIDATOR_ARGS+=(--progress-attempt "$PROGRESS_ATTEMPT")
 for (( dependency_index=0; dependency_index<${#DEPENDENCY_PACKAGES[@]}; dependency_index++ )); do
     VALIDATOR_ARGS+=(
         --dependency-package "${DEPENDENCY_PACKAGES[$dependency_index]}"

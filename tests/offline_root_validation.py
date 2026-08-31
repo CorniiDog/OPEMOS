@@ -286,6 +286,8 @@ def run(paths, binaries, output, success, **environment):
             "--dependency-package", str(paths["dependency"]),
             "--dependency-signature", str(paths["dependency_sig"]),
         ])
+    if "progress_attempt" in paths:
+        command.extend(["--progress-attempt", str(paths["progress_attempt"])])
     env = os.environ.copy()
     env.update(
         PATH=f"{binaries}:{env['PATH']}",
@@ -296,6 +298,7 @@ def run(paths, binaries, output, success, **environment):
         **environment,
     )
     completed = subprocess.run(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    output.with_suffix(output.suffix + ".stderr").write_text(completed.stderr, encoding="utf-8")
     accepted = completed.returncode == 0
     if accepted != success:
         raise AssertionError(
@@ -324,6 +327,8 @@ def installer_command(paths, result):
             "--dependency-package", str(paths["dependency"]),
             "--dependency-signature", str(paths["dependency_sig"]),
         ])
+    if "progress_attempt" in paths:
+        command.extend(["--progress-attempt", str(paths["progress_attempt"])])
     return command
 
 
@@ -347,6 +352,7 @@ def run_installer(paths, binaries, result, success, **environment):
     mount_state.write_text("", encoding="utf-8")
     env = installer_environment(binaries, mount_state, **environment)
     completed = subprocess.run(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    result.with_suffix(result.suffix + ".stderr").write_text(completed.stderr, encoding="utf-8")
     if (completed.returncode == 0) != success:
         raise AssertionError(f"installer result did not match expectation: {completed.stderr}")
     assert not mount_state.read_text(encoding="utf-8").strip()
@@ -385,12 +391,39 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
 
 
 def main():
+    excessive_attempt = subprocess.run(
+        [str(INSTALLER), "--progress-attempt", "1000001"],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    assert excessive_attempt.returncode != 0
+    assert "exceeds 1000000" in excessive_attempt.stderr
     with tempfile.TemporaryDirectory(prefix="offline-root-validation-") as temporary:
         temporary = Path(temporary)
         binaries = make_mocks(temporary)
         paths = make_fixture(temporary)
         run(paths, binaries, temporary / "valid.json", True)
         valid = json.loads((temporary / "valid.json").read_text())
+        progress_lines = [
+            line.removeprefix("STEAMOS_NVIDIA_PROGRESS ")
+            for line in (temporary / "valid.json.stderr").read_text(encoding="utf-8").splitlines()
+            if line.startswith("STEAMOS_NVIDIA_PROGRESS ")
+        ]
+        progress_records = [json.loads(line) for line in progress_lines]
+        assert progress_records
+        assert {record["schemaVersion"] for record in progress_records} == {1}
+        assert {record["attempt"] for record in progress_records} == {0}
+        assert {record["phase"] for record in progress_records} >= {
+            "hashing", "holo_database", "archive_layout", "modules",
+            "userspace_packages", "dependency_closure", "storage_calculation",
+        }
+        assert all(
+            set(record) <= {
+                "schemaVersion", "attempt", "phase", "indeterminate",
+                "unit", "completed", "total",
+            }
+            for record in progress_records
+        )
+        assert str(paths["target"]) not in "\n".join(progress_lines)
         assert valid["status"] == "verified"
         assert valid["pacmanDatabase"] == {
             "path": "/usr/lib/holo/pacmandb",
@@ -634,8 +667,17 @@ def main():
         run(paths, binaries, temporary / "wrong-gsp-version.json", False)
 
         make_package(paths["nvidia"], "nvidia-utils", pkgrel="2", gsp=True)
+        paths["progress_attempt"] = 7
         successful = run_installer(paths, binaries, temporary / "install.json", True)
         assert successful["status"] == "success", successful
+        installer_progress = [
+            json.loads(line.removeprefix("STEAMOS_NVIDIA_PROGRESS "))
+            for line in (temporary / "install.json.stderr").read_text(encoding="utf-8").splitlines()
+            if line.startswith("STEAMOS_NVIDIA_PROGRESS ")
+        ]
+        assert installer_progress
+        assert {record["attempt"] for record in installer_progress} == {7}
+        del paths["progress_attempt"]
         assert successful["cleanup"]["mountsReleased"] is True
         assert successful["validation"]["keyring"]["name"] == "approved.gpg"
         assert successful["validation"]["pacmanDatabase"] == {

@@ -242,6 +242,15 @@ repository. An incomplete closure fails with `package_dependency_unsatisfied`,
 their hashes, full versions, roles, and signer fingerprints appear in the
 validated result.
 
+During validation, stderr contains throttled lines beginning with
+`STEAMOS_NVIDIA_PROGRESS ` followed by a schema-1 JSON object. Records contain
+only a bounded numeric attempt, a fixed phase, an indeterminate flag, or numeric
+unit/completed/total fields—never filesystem paths or free-form messages.
+`--progress-attempt 0..1000000` lets the image builder correlate retries. Byte
+progress covers hashing; item progress covers the Holo database, modules, and
+userspace packages; archive layout, dependency closure, and storage calculation
+are explicitly indeterminate phases.
+
 Validation also performs the authoritative storage preflight. It reads each
 authenticated package's declared installed size and dependency/provides fields,
 resolves the complete incoming-plus-installed dependency closure against parsed

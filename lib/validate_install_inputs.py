@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 from pathlib import Path, PurePosixPath
 
 sys.dont_write_bytecode = True
@@ -38,6 +39,9 @@ INITRAMFS_BASE_RESERVE_BYTES = 64 * 1024 * 1024
 ROOT_METADATA_RESERVE_BYTES = 64 * 1024 * 1024
 VAR_RESERVE_BYTES = 16 * 1024 * 1024
 EFI_RESERVE_BYTES = 1024 * 1024
+MAX_PROGRESS_ATTEMPT = 1_000_000
+PROGRESS_MIN_INTERVAL_SECONDS = 0.25
+PROGRESS_MIN_BYTE_DELTA = 4 * 1024 * 1024
 
 
 class ValidationFailure(ValueError):
@@ -46,6 +50,50 @@ class ValidationFailure(ValueError):
         self.reason = reason
         self.message = message
         self.details = details
+
+
+class ProgressReporter:
+    def __init__(self, attempt):
+        self.attempt = attempt
+        self.last = {}
+
+    def emit(self, phase, *, unit=None, completed=None, total=None,
+             indeterminate=False, force=False):
+        now = time.monotonic()
+        previous = self.last.get(phase)
+        if not force and previous is not None:
+            previous_time, previous_completed = previous
+            delta = (completed or 0) - previous_completed
+            threshold = PROGRESS_MIN_BYTE_DELTA if unit == "bytes" else 100
+            if now - previous_time < PROGRESS_MIN_INTERVAL_SECONDS and delta < threshold:
+                return
+        record = {
+            "schemaVersion": 1,
+            "attempt": self.attempt,
+            "phase": phase,
+            "indeterminate": indeterminate,
+        }
+        if not indeterminate:
+            record.update({"unit": unit, "completed": completed, "total": total})
+            self.last[phase] = (now, completed)
+        print(
+            "STEAMOS_NVIDIA_PROGRESS "
+            + json.dumps(record, sort_keys=True, separators=(",", ":")),
+            file=sys.stderr,
+            flush=True,
+        )
+
+
+def bounded_progress_attempt(value):
+    try:
+        attempt = int(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("progress attempt must be an integer") from error
+    if not 0 <= attempt <= MAX_PROGRESS_ATTEMPT:
+        raise argparse.ArgumentTypeError(
+            f"progress attempt must be between 0 and {MAX_PROGRESS_ATTEMPT}"
+        )
+    return attempt
 
 
 def arguments():
@@ -63,6 +111,7 @@ def arguments():
     parser.add_argument("--dependency-signature", action="append", default=[], type=Path)
     parser.add_argument("--package-keyring", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--progress-attempt", type=bounded_progress_attempt, default=0)
     return parser.parse_args()
 
 
@@ -70,11 +119,20 @@ def fail(reason, message, **details):
     raise ValidationFailure(reason, message, **details)
 
 
-def sha256(path):
+def sha256(path, progress=None):
     digest = hashlib.sha256()
+    total = path.stat().st_size
+    completed = 0
+    if progress:
+        progress.emit("hashing", unit="bytes", completed=0, total=total, force=True)
     with path.open("rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
+            completed += len(chunk)
+            if progress:
+                progress.emit("hashing", unit="bytes", completed=completed, total=total)
+    if progress:
+        progress.emit("hashing", unit="bytes", completed=completed, total=total, force=True)
     return digest.hexdigest()
 
 
@@ -471,7 +529,7 @@ def module_metadata(path, field):
         fail("module_metadata_invalid", f"Cannot read {path.name}: {error}")
 
 
-def validate(args):
+def validate(args, progress):
     appliance_architecture = os.uname().machine
     if os.environ.get("PROJECT_TEST_MODE") == "1":
         appliance_architecture = os.environ.get(
@@ -570,7 +628,15 @@ def validate(args):
         fail("target_pacman_database_invalid", "target Holo pacman database is not a safe directory")
     package_descriptions = []
     installed_packages = {}
-    for entry in pacman_local.iterdir():
+    local_entries = list(pacman_local.iterdir())
+    if len(local_entries) > MAX_PACMAN_RECORDS + 1:
+        fail("target_pacman_database_invalid", "target Holo pacman database has too many records")
+    record_entries = [entry for entry in local_entries if entry.name != "ALPM_DB_VERSION"]
+    progress.emit(
+        "holo_database", unit="items", completed=0, total=len(record_entries), force=True
+    )
+    completed_records = 0
+    for entry in local_entries:
         if entry.name == "ALPM_DB_VERSION" and entry.is_file() and not entry.is_symlink():
             continue
         if entry.is_symlink() or not entry.is_dir():
@@ -589,6 +655,15 @@ def validate(args):
         record["source"] = "installed"
         installed_packages[name] = record
         package_descriptions.append(description)
+        completed_records += 1
+        progress.emit(
+            "holo_database", unit="items", completed=completed_records,
+            total=len(record_entries),
+        )
+    progress.emit(
+        "holo_database", unit="items", completed=completed_records,
+        total=len(record_entries), force=True,
+    )
     if not package_descriptions:
         fail("target_pacman_database_empty", "target Holo pacman database has no package records")
     if len(package_descriptions) > MAX_PACMAN_RECORDS:
@@ -622,7 +697,7 @@ def validate(args):
             or not re.fullmatch(r"[0-9a-fA-F]{64}", expected[0])
             or expected[1].lstrip("*") != args.archive.name):
         fail("archive_checksum_invalid", "checksum sidecar is invalid")
-    archive_sha = sha256(args.archive)
+    archive_sha = sha256(args.archive, progress)
     if archive_sha != expected[0].lower():
         fail("archive_checksum_mismatch", "archive checksum does not match")
     provenance_bytes = args.provenance.read_bytes()
@@ -639,6 +714,7 @@ def validate(args):
     if trust not in ("locally-built-verified", "certified-published"):
         fail("artifact_trust_rejected", "artifact trust is not installable")
 
+    progress.emit("archive_layout", indeterminate=True, force=True)
     with tempfile.TemporaryDirectory(prefix="offline-root-modules-") as temporary:
         temporary = Path(temporary)
         with tarfile.open(args.archive, "r:gz") as archive:
@@ -705,13 +781,20 @@ def validate(args):
                 modules.append(temporary / member.name)
         records = []
         module_installed_bytes = 0
-        for module in modules:
+        progress.emit("modules", unit="items", completed=0, total=len(modules), force=True)
+        for module_index, module in enumerate(modules, 1):
             version = module_metadata(module, "version")
             vermagic = module_metadata(module, "vermagic")
             if version != nvidia or vermagic.split(maxsplit=1)[0] != args.kernel:
                 fail("module_metadata_mismatch", f"{module.name} does not match target")
-            records.append((module.name.removesuffix(".zst"), sha256(module)))
+            records.append((module.name.removesuffix(".zst"), sha256(module, progress)))
             module_installed_bytes += compressed_module_bytes(module)
+            progress.emit(
+                "modules", unit="items", completed=module_index, total=len(modules)
+            )
+        progress.emit(
+            "modules", unit="items", completed=len(modules), total=len(modules), force=True
+        )
         expected_modules = {
             item.get("name"): item.get("sha256", "").lower()
             for item in provenance.get("modules", [])
@@ -730,7 +813,11 @@ def validate(args):
         (package, signature, None, False)
         for package, signature in zip(args.dependency_package, args.dependency_signature)
     ]
-    for package, signature, expected_name, is_nvidia_package in package_inputs:
+    progress.emit(
+        "userspace_packages", unit="items", completed=0,
+        total=len(package_inputs), force=True,
+    )
+    for package_index, (package, signature, expected_name, is_nvidia_package) in enumerate(package_inputs, 1):
         metadata = package_metadata(package)
         package_name = metadata.get("pkgname", "")
         if (expected_name is not None and package_name != expected_name):
@@ -755,7 +842,7 @@ def validate(args):
         if is_nvidia_package and pkgver_only != nvidia:
             fail("userspace_version_mismatch", f"{expected_name} has invalid pkgver/pkgrel")
         package_records.append(
-            (package_name, pkgver, pkgver_only, pkgrel, signer, sha256(package), not is_nvidia_package)
+            (package_name, pkgver, pkgver_only, pkgrel, signer, sha256(package, progress), not is_nvidia_package)
         )
         installed_size = metadata.get("size", "")
         if not installed_size.isdigit():
@@ -782,7 +869,16 @@ def validate(args):
             for name in members
         ):
             fail("gsp_firmware_missing", "nvidia-utils lacks exact-version GSP firmware")
+        progress.emit(
+            "userspace_packages", unit="items", completed=package_index,
+            total=len(package_inputs),
+        )
+    progress.emit(
+        "userspace_packages", unit="items", completed=len(package_inputs),
+        total=len(package_inputs), force=True,
+    )
 
+    progress.emit("dependency_closure", indeterminate=True, force=True)
     closure = dependency_closure(incoming_packages, installed_packages)
     replaced_package_bytes = 0
     for name in incoming_packages:
@@ -816,6 +912,7 @@ def validate(args):
         + initramfs_reserve_bytes
         + ROOT_METADATA_RESERVE_BYTES
     )
+    progress.emit("storage_calculation", indeterminate=True, force=True)
     storage = {
         "rootAvailableBytes": available_bytes(root, "ROOT"),
         "rootRequiredBytes": root_required_bytes,
@@ -887,7 +984,7 @@ def validate(args):
         },
         "keyring": {
             "name": args.package_keyring.name,
-            "sha256": sha256(args.package_keyring),
+            "sha256": sha256(args.package_keyring, progress),
         },
         "packages": [
             {
@@ -906,8 +1003,9 @@ def validate(args):
 
 def main():
     args = arguments()
+    progress = ProgressReporter(args.progress_attempt)
     try:
-        document = validate(args)
+        document = validate(args, progress)
     except (ValueError, OSError, UnicodeError, json.JSONDecodeError, tarfile.TarError) as error:
         if isinstance(error, ValidationFailure):
             reason, message = error.reason, error.message

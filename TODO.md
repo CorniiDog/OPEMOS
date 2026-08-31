@@ -1290,6 +1290,8 @@ signing policy.
 * [x] Accept repeated signed, locally staged Arch dependency packages, include
   them in one offline transaction and storage result, and return typed missing
   dependency/requester fields without performing network resolution.
+* [x] Emit throttled schema-1 validation progress on stderr with bounded retry
+  correlation, fixed phases, byte/item counters, and no paths or free-form text.
 * [x] Emit conservative root/var/EFI available and required bytes, declared
   package size, final module size, replacement credits, and initramfs reserve;
   fail before mutation with `target_space_insufficient` when any mount cannot fit.
