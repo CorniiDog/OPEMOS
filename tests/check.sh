@@ -436,6 +436,7 @@ rm -f "$RESULT_FIXTURE" "${RESULT_FIXTURE}.invalid"
 
 printf 'Checking offline-root installer contract...\n'
 ./bootstrap/install_to_root.sh --help >/dev/null
+python3 bootstrap/audit_userspace_closure.py --help >/dev/null
 python3 bootstrap/prepare_nvidia_package_keyring.py --help >/dev/null
 python3 - "$PROJECT_ROOT/trust/nvidia-userspace-package-signers.json" <<'PY' || \
     fail "NVIDIA userspace package trust manifest is invalid"

@@ -110,6 +110,7 @@ def arguments():
     parser.add_argument("--dependency-package", action="append", default=[], type=Path)
     parser.add_argument("--dependency-signature", action="append", default=[], type=Path)
     parser.add_argument("--package-keyring", required=True, type=Path)
+    parser.add_argument("--userspace-lock", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--progress-attempt", type=bounded_progress_attempt, default=0)
     return parser.parse_args()
@@ -696,6 +697,7 @@ def validate(args, progress):
         args.lib32_nvidia_utils,
         args.lib32_nvidia_utils_signature,
         args.package_keyring,
+        args.userspace_lock,
         *args.dependency_package,
         *args.dependency_signature,
     ):
@@ -815,6 +817,7 @@ def validate(args, progress):
             fail("module_hash_mismatch", "module hashes do not match provenance")
 
     package_records = []
+    lock_package_records = []
     incoming_packages = {}
     package_installed_bytes = 0
     package_compressed_bytes = 0
@@ -874,6 +877,19 @@ def validate(args, progress):
             "provides": metadata["provides"],
             "source": "incoming",
         }
+        lock_package_records.append({
+            "name": package_name,
+            "filename": package.name,
+            "signatureFilename": signature.name,
+            "version": pkgver,
+            "architecture": metadata["arch"],
+            "packageSha256": package_records[-1][5],
+            "signatureSha256": sha256(signature, progress),
+            "signerFingerprint": signer,
+            "installedSize": installed_size,
+            "dependencies": metadata["depends"],
+            "provides": metadata["provides"],
+        })
         if package_name == "nvidia-utils" and not any(
             re.fullmatch(
                 rf"usr/lib/firmware/nvidia/{re.escape(nvidia)}/gsp[^/]*\.bin",
@@ -893,6 +909,29 @@ def validate(args, progress):
 
     progress.emit("dependency_closure", indeterminate=True, force=True)
     closure = dependency_closure(incoming_packages, installed_packages)
+    try:
+        userspace_lock = json.loads(args.userspace_lock.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        fail("userspace_lock_invalid", f"cannot read userspace lock: {error}")
+    lock_target = userspace_lock.get("target", {})
+    if (userspace_lock.get("schemaVersion") != 1
+            or userspace_lock.get("status") != "reviewed"
+            or userspace_lock.get("missingReview") != []
+            or lock_target != {
+                "steamosVersion": identity["VERSION_ID"],
+                "nvidiaVersion": nvidia,
+                "architecture": "x86_64",
+            }):
+        fail("userspace_lock_invalid", "userspace lock is not reviewed for the exact target")
+    lock_keyring = userspace_lock.get("keyring", {})
+    if (lock_keyring.get("filename") != args.package_keyring.name
+            or lock_keyring.get("sha256") != sha256(args.package_keyring, progress)):
+        fail("userspace_lock_mismatch", "minimal reviewed keyring does not match userspace lock")
+    expected_lock_packages = userspace_lock.get("packages")
+    if (not isinstance(expected_lock_packages, list)
+            or sorted(expected_lock_packages, key=lambda item: item.get("name", ""))
+            != sorted(lock_package_records, key=lambda item: item["name"])):
+        fail("userspace_lock_mismatch", "incoming package set does not exactly match userspace lock")
     replaced_package_bytes = 0
     for name in incoming_packages:
         replaced = installed_packages.get(name)

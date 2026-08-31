@@ -188,6 +188,7 @@ def make_fixture(root):
         path.with_suffix(path.suffix + ".sig").write_bytes(b"signature\n")
     keyring = root / "approved.gpg"
     keyring.write_bytes(b"keyring\n")
+    userspace_lock = root / "userspace-lock.json"
     return {
         "target": target,
         "archive": archive_path,
@@ -200,7 +201,52 @@ def make_fixture(root):
         "dependency": egl_wayland,
         "dependency_sig": egl_wayland.with_suffix(egl_wayland.suffix + ".sig"),
         "keyring": keyring,
+        "userspace_lock": userspace_lock,
     }
+
+
+def write_userspace_lock(paths):
+    package_paths = [paths["nvidia"], paths["lib32"]]
+    if paths.get("stage_dependency"):
+        package_paths.append(paths["dependency"])
+    packages = []
+    for package in package_paths:
+        with tarfile.open(package, "r:gz") as archive:
+            metadata = archive.extractfile(".PKGINFO").read().decode()
+        fields = {}
+        dependencies = []
+        provides = []
+        for line in metadata.splitlines():
+            if " = " not in line:
+                continue
+            key, value = line.split(" = ", 1)
+            fields.setdefault(key, value)
+            if key == "depend":
+                dependencies.append(value)
+            elif key == "provides":
+                provides.append(value)
+        signature = package.with_suffix(package.suffix + ".sig")
+        signer = LIB32_SIGNER if ("lib32" in package.name or "egl-wayland" in package.name) else NVIDIA_SIGNER
+        packages.append({
+            "name": fields["pkgname"], "filename": package.name,
+            "signatureFilename": signature.name, "version": fields["pkgver"],
+            "architecture": fields["arch"],
+            "packageSha256": hashlib.sha256(package.read_bytes()).hexdigest(),
+            "signatureSha256": hashlib.sha256(signature.read_bytes()).hexdigest(),
+            "signerFingerprint": signer, "installedSize": int(fields["size"]),
+            "dependencies": dependencies, "provides": provides,
+        })
+    document = {
+        "schemaVersion": 1, "status": "reviewed", "missingReview": [],
+        "target": {"steamosVersion": "3.8.16", "nvidiaVersion": NVIDIA,
+                   "architecture": "x86_64"},
+        "snapshot": {"identity": "fixture", "url": "https://invalid.example/fixture/"},
+        "keyring": {"filename": paths["keyring"].name,
+                    "sha256": hashlib.sha256(paths["keyring"].read_bytes()).hexdigest(),
+                    "provenance": "fixture"},
+        "packages": sorted(packages, key=lambda item: item["name"]),
+    }
+    paths["userspace_lock"].write_text(json.dumps(document), encoding="utf-8")
 
 
 def make_mocks(root):
@@ -266,7 +312,9 @@ esac
     return binaries
 
 
-def run(paths, binaries, output, success, **environment):
+def run(paths, binaries, output, success, preserve_lock=False, **environment):
+    if not preserve_lock:
+        write_userspace_lock(paths)
     command = [
         sys.executable,
         str(VALIDATOR),
@@ -280,6 +328,7 @@ def run(paths, binaries, output, success, **environment):
         "--lib32-nvidia-utils", str(paths["lib32"]),
         "--lib32-nvidia-utils-signature", str(paths["lib32_sig"]),
         "--package-keyring", str(paths["keyring"]),
+        "--userspace-lock", str(paths["userspace_lock"]),
         "--output", str(output),
     ]
     if paths.get("stage_dependency"):
@@ -309,6 +358,7 @@ def run(paths, binaries, output, success, **environment):
 
 
 def installer_command(paths, result):
+    write_userspace_lock(paths)
     command = [
         str(INSTALLER),
         "--root", str(paths["target"]),
@@ -321,6 +371,7 @@ def installer_command(paths, result):
         "--lib32-nvidia-utils", str(paths["lib32"]),
         "--lib32-nvidia-utils-signature", str(paths["lib32_sig"]),
         "--package-keyring", str(paths["keyring"]),
+        "--userspace-lock", str(paths["userspace_lock"]),
         "--result-json", str(result),
     ]
     if paths.get("stage_dependency"):
@@ -426,6 +477,15 @@ def main():
         )
         assert str(paths["target"]) not in "\n".join(progress_lines)
         assert valid["status"] == "verified"
+        locked = json.loads(paths["userspace_lock"].read_text())
+        locked["packages"][0]["packageSha256"] = "0" * 64
+        paths["userspace_lock"].write_text(json.dumps(locked), encoding="utf-8")
+        lock_mismatch = run(
+            paths, binaries, temporary / "lock-mismatch.json", False,
+            preserve_lock=True,
+        )
+        assert lock_mismatch["reason"] == "userspace_lock_mismatch"
+        write_userspace_lock(paths)
         assert valid["pacmanDatabase"] == {
             "path": "/usr/lib/holo/pacmandb",
             "packageCount": 4,

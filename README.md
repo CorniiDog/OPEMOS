@@ -232,15 +232,28 @@ result records the supplied binary keyring SHA256, both package hashes, complete
 versions/pkgrels, and signer fingerprints so the image builder can additionally
 pin the exact prepared keyring artifact.
 
-If those packages require Arch packages absent from Holo, callers repeat
-`--dependency-package FILE --dependency-signature FILE` for the complete
-closure. Every dependency is locally staged, signature-verified by the same
-pinned keyring, path-confined, included in size accounting, and installed in the
-single offline `pacman -U` transaction. The installer never accesses a package
-repository. An incomplete closure fails with `package_dependency_unsatisfied`,
-`missingDependencies`, and `dependencyRequestedBy`; dependency packages and
-their hashes, full versions, roles, and signer fingerprints appear in the
-validated result.
+Normal installation requires `--userspace-lock FILE` plus the complete package
+set. The reviewed schema-1 lock pins the exact SteamOS/NVIDIA target, minimal
+keyring hash, package/signature filenames and hashes, versions, architectures,
+installed sizes, dependency/provides metadata, and package-specific signers.
+Repeated `--dependency-package FILE --dependency-signature FILE` arguments must
+match that lock exactly: missing and extra packages both fail closed. Every
+dependency is locally staged, signature-verified, path-confined, size-accounted,
+and installed in one offline `pacman -U` transaction. Production installation
+never accesses a package repository or expands signer trust.
+
+Maintainers create candidate locks with
+`bootstrap/audit_userspace_closure.py`. It authenticates `core`, `extra`, and
+`multilib` databases from one explicit dated Arch Linux Archive snapshot,
+resolves all dependencies absent from the target Holo database, downloads the
+selected packages and detached signatures into an empty staging directory, and
+verifies them against a hash-pinned full Arch keyring before reading
+`.PKGINFO`. Cryptographically valid package/signature pairs absent from the
+production package/signer policy are collected in `missingReview`; invalid
+signatures stop the audit. The audit never mutates the target or trust policy.
+Candidate locks are not installable: maintainers must review every missing
+mapping, publish a minimal keyring, change status to `reviewed`, clear
+`missingReview`, and preserve the audited package metadata exactly.
 
 During validation, stderr contains throttled lines beginning with
 `STEAMOS_NVIDIA_PROGRESS ` followed by a schema-1 JSON object. Records contain

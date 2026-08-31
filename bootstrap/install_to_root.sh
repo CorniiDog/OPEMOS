@@ -15,6 +15,7 @@ NVIDIA_UTILS_SIGNATURE=""
 LIB32_NVIDIA_UTILS=""
 LIB32_NVIDIA_UTILS_SIGNATURE=""
 PACKAGE_KEYRING=""
+USERSPACE_LOCK=""
 DEPENDENCY_PACKAGES=()
 DEPENDENCY_SIGNATURES=()
 RESULT_JSON=""
@@ -37,6 +38,7 @@ Required:
   --lib32-nvidia-utils FILE
   --lib32-nvidia-utils-signature FILE
   --package-keyring FILE
+  --userspace-lock FILE
   --result-json FILE
 
 Options:
@@ -64,6 +66,7 @@ while (( $# > 0 )); do
         --lib32-nvidia-utils) LIB32_NVIDIA_UTILS="${2:-}"; shift 2 ;;
         --lib32-nvidia-utils-signature) LIB32_NVIDIA_UTILS_SIGNATURE="${2:-}"; shift 2 ;;
         --package-keyring) PACKAGE_KEYRING="${2:-}"; shift 2 ;;
+        --userspace-lock) USERSPACE_LOCK="${2:-}"; shift 2 ;;
         --dependency-package) DEPENDENCY_PACKAGES+=("${2:-}"); shift 2 ;;
         --dependency-signature) DEPENDENCY_SIGNATURES+=("${2:-}"); shift 2 ;;
         --result-json) RESULT_JSON="${2:-}"; shift 2 ;;
@@ -83,7 +86,7 @@ fi
 
 for value in ROOT ARCHIVE CHECKSUM PROVENANCE KERNEL NVIDIA_UTILS \
     NVIDIA_UTILS_SIGNATURE LIB32_NVIDIA_UTILS LIB32_NVIDIA_UTILS_SIGNATURE \
-    PACKAGE_KEYRING RESULT_JSON
+    PACKAGE_KEYRING USERSPACE_LOCK RESULT_JSON
 do
     [[ -n "${!value}" ]] || die "Required offline-root argument is missing: $value"
 done
@@ -130,6 +133,7 @@ VALIDATOR_ARGS=(
     --lib32-nvidia-utils "$LIB32_NVIDIA_UTILS"
     --lib32-nvidia-utils-signature "$LIB32_NVIDIA_UTILS_SIGNATURE"
     --package-keyring "$PACKAGE_KEYRING"
+    --userspace-lock "$USERSPACE_LOCK"
     --output "$VALIDATION_JSON"
 )
 [[ -z "$PROGRESS_ATTEMPT" ]] || VALIDATOR_ARGS+=(--progress-attempt "$PROGRESS_ATTEMPT")

@@ -1292,6 +1292,11 @@ signing policy.
   dependency/requester fields without performing network resolution.
 * [x] Emit throttled schema-1 validation progress on stderr with bounded retry
   correlation, fixed phases, byte/item counters, and no paths or free-form text.
+* [x] Add a maintainer-only, non-mutating dated Arch snapshot closure audit that
+  verifies repository databases and packages with a pinned full keyring and
+  emits all missing package/signer reviews in one candidate lock.
+* [x] Require normal offline installation to use a reviewed schema-1 userspace
+  lock, minimal reviewed keyring, and an exact package set with no extras.
 * [x] Emit conservative root/var/EFI available and required bytes, declared
   package size, final module size, replacement credits, and initramfs reserve;
   fail before mutation with `target_space_insufficient` when any mount cannot fit.
