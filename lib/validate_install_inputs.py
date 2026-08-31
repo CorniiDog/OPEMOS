@@ -34,6 +34,18 @@ MAX_TOTAL_MEMBER_BYTES = 2 * 1024 * 1024 * 1024
 MAX_PACMAN_RECORD_BYTES = 1024 * 1024
 MAX_PACMAN_RECORDS = 100_000
 REQUIRED_BASE_PACKAGES = {"filesystem", "glibc", "pacman"}
+INITRAMFS_BASE_RESERVE_BYTES = 64 * 1024 * 1024
+ROOT_METADATA_RESERVE_BYTES = 64 * 1024 * 1024
+VAR_RESERVE_BYTES = 16 * 1024 * 1024
+EFI_RESERVE_BYTES = 1024 * 1024
+
+
+class ValidationFailure(ValueError):
+    def __init__(self, reason, message, **details):
+        super().__init__(f"{reason}: {message}")
+        self.reason = reason
+        self.message = message
+        self.details = details
 
 
 def arguments():
@@ -52,8 +64,8 @@ def arguments():
     return parser.parse_args()
 
 
-def fail(reason, message):
-    raise ValueError(f"{reason}: {message}")
+def fail(reason, message, **details):
+    raise ValidationFailure(reason, message, **details)
 
 
 def sha256(path):
@@ -115,13 +127,168 @@ def pacman_desc_fields(path):
         index += 1
     name = fields.get("NAME", [])
     version = fields.get("VERSION", [])
+    installed_size = fields.get("ISIZE", [])
     if (len(name) != 1 or len(version) != 1
+            or len(installed_size) != 1
             or not re.fullmatch(r"[A-Za-z0-9@._+:-]+", name[0])
-            or not version[0] or any(character.isspace() for character in version[0])):
+            or not version[0] or any(character.isspace() for character in version[0])
+            or not installed_size[0].isdigit()):
         fail("target_pacman_database_invalid", f"malformed package record: {path.name}")
     if path.parent.name != f"{name[0]}-{version[0]}":
         fail("target_pacman_database_invalid", f"package record directory has wrong identity: {path.parent.name}")
-    return name[0]
+    return {
+        "name": name[0],
+        "version": version[0],
+        "installedSize": int(installed_size[0]),
+        "depends": fields.get("DEPENDS", []),
+        "provides": fields.get("PROVIDES", []),
+    }
+
+
+def dependency_name(specification):
+    name = re.split(r"[<>=]", specification, maxsplit=1)[0]
+    if not re.fullmatch(r"[A-Za-z0-9@._+:-]+", name):
+        fail("package_dependency_invalid", f"invalid dependency expression: {specification}")
+    return name
+
+
+def version_satisfies(candidate, operator, required):
+    try:
+        comparison = int(subprocess.run(
+            ["vercmp", candidate, required], check=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        ).stdout.strip())
+    except (OSError, subprocess.CalledProcessError, ValueError) as error:
+        fail("package_dependency_invalid", f"cannot compare dependency versions: {error}")
+    return {
+        "=": comparison == 0,
+        ">": comparison > 0,
+        ">=": comparison >= 0,
+        "<": comparison < 0,
+        "<=": comparison <= 0,
+    }[operator]
+
+
+def record_satisfies(record, specification):
+    match = re.fullmatch(r"([A-Za-z0-9@._+:-]+)(?:(>=|<=|=|>|<)(\S+))?", specification)
+    if not match:
+        fail("package_dependency_invalid", f"invalid dependency expression: {specification}")
+    name, operator, required = match.groups()
+    versions = []
+    if record["name"] == name:
+        versions.append(record["version"])
+    for provided in record.get("provides", []):
+        provided_match = re.fullmatch(r"([A-Za-z0-9@._+:-]+)(?:=(\S+))?", provided)
+        if provided_match and provided_match.group(1) == name:
+            versions.append(provided_match.group(2))
+    if not versions:
+        return False
+    if operator is None:
+        return True
+    return any(version is not None and version_satisfies(version, operator, required) for version in versions)
+
+
+def dependency_closure(incoming, installed):
+    candidates = {record["name"]: record for record in installed.values()}
+    candidates.update({record["name"]: record for record in incoming.values()})
+    providers = {}
+    for record in candidates.values():
+        providers.setdefault(record["name"], []).append(record)
+        for provided in record.get("provides", []):
+            providers.setdefault(dependency_name(provided), []).append(record)
+    closure = {}
+    pending = list(incoming.values())
+    while pending:
+        record = pending.pop()
+        if record["name"] in closure:
+            continue
+        closure[record["name"]] = record
+        for specification in record.get("depends", []):
+            name = dependency_name(specification)
+            matches = [
+                candidate for candidate in providers.get(name, [])
+                if record_satisfies(candidate, specification)
+            ]
+            if not matches:
+                fail(
+                    "package_dependency_unsatisfied",
+                    f"no incoming or installed package satisfies {specification}",
+                )
+            exact = [candidate for candidate in matches if candidate["name"] == name]
+            selected = sorted(exact or matches, key=lambda item: item["name"])[0]
+            pending.append(selected)
+    return [
+        {
+            "name": record["name"],
+            "version": record["version"],
+            "source": record["source"],
+        }
+        for record in sorted(closure.values(), key=lambda item: item["name"])
+    ]
+
+
+def available_bytes(path, test_name):
+    if os.environ.get("PROJECT_TEST_MODE") == "1":
+        override = os.environ.get(f"PROJECT_TEST_{test_name}_AVAILABLE_BYTES")
+        if override is not None:
+            return int(override)
+    filesystem = os.statvfs(path)
+    return filesystem.f_bavail * filesystem.f_frsize
+
+
+def tree_regular_bytes(path):
+    if not path.exists():
+        return 0
+    total = 0
+    for current_root, directories, files in os.walk(path, followlinks=False):
+        current_root = Path(current_root)
+        for name in directories + files:
+            candidate = current_root / name
+            if candidate.is_symlink():
+                fail("target_path_unsafe", f"replacement tree contains a symlink: {candidate}")
+            if candidate.is_file():
+                total += candidate.stat().st_size
+    return total
+
+
+def compressed_module_bytes(path):
+    if path.name.endswith(".zst"):
+        return path.stat().st_size
+    try:
+        with tempfile.TemporaryFile() as compressed:
+            subprocess.run(
+                ["zstd", "-q", "-c", str(path)],
+                check=True,
+                stdout=compressed,
+                stderr=subprocess.PIPE,
+            )
+            return compressed.tell()
+    except (OSError, subprocess.CalledProcessError) as error:
+        fail("module_size_unavailable", f"cannot estimate compressed module size: {error}")
+
+
+def compression_context(root):
+    try:
+        completed = subprocess.run(
+            ["findmnt", "-rn", "-T", str(root), "-o", "FSTYPE,OPTIONS"],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        fields = completed.stdout.strip().split(maxsplit=1)
+    except (OSError, subprocess.CalledProcessError):
+        fields = []
+    filesystem = fields[0] if fields else "unknown"
+    options = fields[1].split(",") if len(fields) == 2 else []
+    compression_options = [option for option in options if option.startswith("compress")]
+    return {
+        "filesystem": filesystem,
+        "enabled": bool(compression_options) if filesystem == "btrfs" else False,
+        "options": compression_options,
+        "admissionBasis": "logical-uncompressed-conservative",
+        "compressionSavingsCreditedBytes": 0,
+    }
 
 
 def package_metadata(path):
@@ -136,10 +303,18 @@ def package_metadata(path):
     except (OSError, subprocess.CalledProcessError) as error:
         fail("userspace_package_invalid", f"Cannot read {path.name} metadata: {error}")
     fields = {}
+    dependencies = []
+    provides = []
     for line in completed.stdout.splitlines():
         if " = " in line:
             key, value = line.split(" = ", 1)
             fields.setdefault(key, value)
+            if key == "depend":
+                dependencies.append(value)
+            elif key == "provides":
+                provides.append(value)
+    fields["depends"] = dependencies
+    fields["provides"] = provides
     return fields
 
 
@@ -321,6 +496,9 @@ def validate(args):
         fail("target_boot_invalid", "target rootfs /boot is absent or unsafe")
     if efi.is_symlink() or not efi.is_dir():
         fail("target_efi_invalid", "target EFI mount is absent or unsafe")
+    target_var = root / "var"
+    if target_var.is_symlink() or not target_var.is_dir():
+        fail("target_var_invalid", "target var-A mount is absent or unsafe")
     try:
         grub_configuration.resolve(strict=True).relative_to(efi.resolve(strict=True))
     except (FileNotFoundError, RuntimeError, ValueError):
@@ -353,7 +531,7 @@ def validate(args):
             or pacman_local.is_symlink() or not pacman_local.is_dir()):
         fail("target_pacman_database_invalid", "target Holo pacman database is not a safe directory")
     package_descriptions = []
-    package_names = set()
+    installed_packages = {}
     for entry in pacman_local.iterdir():
         if entry.name == "ALPM_DB_VERSION" and entry.is_file() and not entry.is_symlink():
             continue
@@ -366,16 +544,18 @@ def validate(args):
             fail("target_pacman_database_invalid", "target package database escapes its root")
         if description.is_symlink() or not description.is_file():
             fail("target_pacman_database_invalid", f"package record lacks a safe desc file: {entry.name}")
-        name = pacman_desc_fields(description)
-        if name in package_names:
+        record = pacman_desc_fields(description)
+        name = record["name"]
+        if name in installed_packages:
             fail("target_pacman_database_invalid", f"duplicate installed package record: {name}")
-        package_names.add(name)
+        record["source"] = "installed"
+        installed_packages[name] = record
         package_descriptions.append(description)
     if not package_descriptions:
         fail("target_pacman_database_empty", "target Holo pacman database has no package records")
     if len(package_descriptions) > MAX_PACMAN_RECORDS:
         fail("target_pacman_database_invalid", "target Holo pacman database has too many records")
-    missing_base_packages = sorted(REQUIRED_BASE_PACKAGES - package_names)
+    missing_base_packages = sorted(REQUIRED_BASE_PACKAGES - set(installed_packages))
     if missing_base_packages:
         fail(
             "target_pacman_database_invalid",
@@ -484,12 +664,14 @@ def validate(args):
                 archive.extract(member, temporary, filter="data")
                 modules.append(temporary / member.name)
         records = []
+        module_installed_bytes = 0
         for module in modules:
             version = module_metadata(module, "version")
             vermagic = module_metadata(module, "vermagic")
             if version != nvidia or vermagic.split(maxsplit=1)[0] != args.kernel:
                 fail("module_metadata_mismatch", f"{module.name} does not match target")
             records.append((module.name.removesuffix(".zst"), sha256(module)))
+            module_installed_bytes += compressed_module_bytes(module)
         expected_modules = {
             item.get("name"): item.get("sha256", "").lower()
             for item in provenance.get("modules", [])
@@ -498,6 +680,9 @@ def validate(args):
             fail("module_hash_mismatch", "module hashes do not match provenance")
 
     package_records = []
+    incoming_packages = {}
+    package_installed_bytes = 0
+    package_compressed_bytes = 0
     for package, signature, expected_name in (
         (args.nvidia_utils, args.nvidia_utils_signature, "nvidia-utils"),
         (args.lib32_nvidia_utils, args.lib32_nvidia_utils_signature, "lib32-nvidia-utils"),
@@ -520,6 +705,23 @@ def validate(args):
         package_records.append(
             (expected_name, pkgver, pkgver_only, pkgrel, signer, sha256(package))
         )
+        installed_size = metadata.get("size", "")
+        if not installed_size.isdigit():
+            fail(
+                "userspace_package_invalid",
+                f"{expected_name} lacks a valid declared installed size",
+            )
+        installed_size = int(installed_size)
+        package_installed_bytes += installed_size
+        package_compressed_bytes += package.stat().st_size
+        incoming_packages[expected_name] = {
+            "name": expected_name,
+            "version": pkgver,
+            "installedSize": installed_size,
+            "depends": metadata["depends"],
+            "provides": metadata["provides"],
+            "source": "incoming",
+        }
         if expected_name == "nvidia-utils" and not any(
             re.fullmatch(
                 rf"usr/lib/firmware/nvidia/{re.escape(nvidia)}/gsp[^/]*\.bin",
@@ -528,6 +730,74 @@ def validate(args):
             for name in members
         ):
             fail("gsp_firmware_missing", "nvidia-utils lacks exact-version GSP firmware")
+
+    closure = dependency_closure(incoming_packages, installed_packages)
+    replaced_package_bytes = sum(
+        installed_packages.get(name, {}).get("installedSize", 0)
+        for name in incoming_packages
+    )
+    existing_module_bytes = tree_regular_bytes(
+        root / "usr/lib/modules" / args.kernel / "updates/open-gpu-kernel-modules-steamos"
+    )
+    initramfs_images = [
+        path for path in (root / "boot").glob("initramfs*.img")
+        if path.is_file() and not path.is_symlink()
+    ]
+    initramfs_reserve_bytes = (
+        INITRAMFS_BASE_RESERVE_BYTES
+        + sum(path.stat().st_size for path in initramfs_images)
+        + module_installed_bytes * max(1, len(initramfs_images))
+    )
+    root_required_bytes = (
+        max(0, package_installed_bytes - replaced_package_bytes)
+        + max(0, module_installed_bytes - existing_module_bytes)
+        + initramfs_reserve_bytes
+        + ROOT_METADATA_RESERVE_BYTES
+    )
+    storage = {
+        "rootAvailableBytes": available_bytes(root, "ROOT"),
+        "rootRequiredBytes": root_required_bytes,
+        "varAvailableBytes": available_bytes(root / "var", "VAR"),
+        "varRequiredBytes": VAR_RESERVE_BYTES,
+        "efiAvailableBytes": available_bytes(root / "efi", "EFI"),
+        "efiRequiredBytes": EFI_RESERVE_BYTES + grub_configuration.stat().st_size,
+        "packageInstalledBytes": package_installed_bytes,
+        "packageCompressedBytes": package_compressed_bytes,
+        "packageReplacedBytes": replaced_package_bytes,
+        "moduleInstalledBytes": module_installed_bytes,
+        "moduleReplacedBytes": existing_module_bytes,
+        "initramfsReserveBytes": initramfs_reserve_bytes,
+    }
+    compression = compression_context(root)
+    compression.update({
+        "declaredPackageBytes": package_installed_bytes,
+        "packageArchiveBytes": package_compressed_bytes,
+        "packageArchiveSavingsBytes": max(
+            0, package_installed_bytes - package_compressed_bytes
+        ),
+        "declaredSizesLikelyConservative": (
+            compression["enabled"]
+            and package_compressed_bytes < package_installed_bytes
+        ),
+        "assessment": "informational-package-archive-proxy-not-admission-credit",
+    })
+    insufficient = [
+        name
+        for name, available, required in (
+            ("root", storage["rootAvailableBytes"], storage["rootRequiredBytes"]),
+            ("var", storage["varAvailableBytes"], storage["varRequiredBytes"]),
+            ("efi", storage["efiAvailableBytes"], storage["efiRequiredBytes"]),
+        )
+        if required > available
+    ]
+    if insufficient:
+        fail(
+            "target_space_insufficient",
+            "insufficient conservative free space on: " + ", ".join(insufficient),
+            storage=storage,
+            packageDependencyClosure=closure,
+            compression=compression,
+        )
 
     return {
         "schemaVersion": 1,
@@ -540,6 +810,9 @@ def validate(args):
             "architecture": "x86_64",
         },
         "archiveSha256": archive_sha,
+        "storage": storage,
+        "packageDependencyClosure": closure,
+        "compression": compression,
         "pacmanDatabase": {
             "path": "/usr/lib/holo/pacmandb",
             "packageCount": len(package_descriptions),
@@ -573,15 +846,21 @@ def main():
     try:
         document = validate(args)
     except (ValueError, OSError, UnicodeError, json.JSONDecodeError, tarfile.TarError) as error:
-        text = str(error)
-        reason, separator, message = text.partition(": ")
-        if not separator:
-            reason, message = "validation_failed", text
+        if isinstance(error, ValidationFailure):
+            reason, message = error.reason, error.message
+            details = error.details
+        else:
+            text = str(error)
+            reason, separator, message = text.partition(": ")
+            if not separator:
+                reason, message = "validation_failed", text
+            details = {}
         document = {
             "schemaVersion": 1,
             "status": "failed",
             "reason": reason,
             "message": message,
+            **details,
         }
         args.output.parent.mkdir(parents=True, exist_ok=True)
         staged = args.output.with_name(f".{args.output.name}.tmp-{os.getpid()}")

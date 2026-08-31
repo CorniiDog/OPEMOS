@@ -69,15 +69,27 @@ def main():
     }
     if args.validation:
         validation = json.loads(args.validation.read_text(encoding="utf-8"))
-        if validation.get("status") != "verified":
-            raise SystemExit("Result validation metadata must be a verified document.")
-        document["validation"] = {
-            "archiveSha256": validation["archiveSha256"],
-            "pacmanDatabase": validation["pacmanDatabase"],
-            "boot": validation["boot"],
-            "keyring": validation["keyring"],
-            "packages": validation["packages"],
-        }
+        if validation.get("status") == "verified":
+            document["validation"] = {
+                "archiveSha256": validation["archiveSha256"],
+                "pacmanDatabase": validation["pacmanDatabase"],
+                "boot": validation["boot"],
+                "keyring": validation["keyring"],
+                "packages": validation["packages"],
+                "storage": validation["storage"],
+                "packageDependencyClosure": validation["packageDependencyClosure"],
+                "compression": validation["compression"],
+            }
+        elif args.status == "failed" and validation.get("status") == "failed":
+            failure_validation = {
+                key: validation[key]
+                for key in ("storage", "packageDependencyClosure", "compression")
+                if key in validation
+            }
+            if failure_validation:
+                document["validation"] = failure_validation
+        else:
+            raise SystemExit("Result validation metadata does not match result status.")
     args.output.parent.mkdir(parents=True, exist_ok=True)
     staged = args.output.with_name(f".{args.output.name}.tmp-{os.getpid()}")
     staged.write_text(

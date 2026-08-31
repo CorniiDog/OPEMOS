@@ -56,12 +56,18 @@ def make_package(
     gsp=False,
     firmware_version=None,
     link_target=None,
+    installed_size=4096,
+    dependencies=(),
 ):
     with tarfile.open(path, "w:gz") as archive:
         add_bytes(
             archive,
             ".PKGINFO",
-            f"pkgname = {name}\npkgver = {version}-{pkgrel}\narch = x86_64\n".encode(),
+            (
+                f"pkgname = {name}\npkgver = {version}-{pkgrel}\n"
+                f"arch = x86_64\nsize = {installed_size}\n"
+                + "".join(f"depend = {dependency}\n" for dependency in dependencies)
+            ).encode(),
         )
         add_bytes(archive, f"usr/lib/{name}/fixture", b"userspace\n")
         if gsp:
@@ -81,14 +87,25 @@ def make_fixture(root):
     target = root / "target"
     (target / "etc").mkdir(parents=True)
     (target / "usr/lib/modules" / KERNEL).mkdir(parents=True)
+    package_dependencies = {
+        "filesystem": (),
+        "glibc": ("filesystem",),
+        "pacman": ("glibc",),
+    }
     for package_name in ("filesystem", "glibc", "pacman"):
         package_record = target / f"usr/lib/holo/pacmandb/local/{package_name}-1-1"
         package_record.mkdir(parents=True)
         (package_record / "desc").write_text(
-            f"%NAME%\n{package_name}\n\n%VERSION%\n1-1\n",
+            (
+                f"%NAME%\n{package_name}\n\n%VERSION%\n1-1\n\n"
+                "%ISIZE%\n1024\n\n"
+                + ("%DEPENDS%\n" + "\n".join(package_dependencies[package_name]) + "\n"
+                   if package_dependencies[package_name] else "")
+            ),
             encoding="utf-8",
         )
     (target / "boot").mkdir()
+    (target / "var").mkdir()
     grub = target / "efi/EFI/steamos/grub.cfg"
     grub.parent.mkdir(parents=True)
     grub.write_text(
@@ -147,8 +164,13 @@ def make_fixture(root):
     )
     nvidia_utils = root / "nvidia-utils.pkg.tar.gz"
     lib32 = root / "lib32-nvidia-utils.pkg.tar.gz"
-    make_package(nvidia_utils, "nvidia-utils", pkgrel="2", gsp=True)
-    make_package(lib32, "lib32-nvidia-utils")
+    make_package(
+        nvidia_utils, "nvidia-utils", pkgrel="2", gsp=True,
+        dependencies=("glibc>=1-1",),
+    )
+    make_package(
+        lib32, "lib32-nvidia-utils", dependencies=("nvidia-utils=575.64.05-2",),
+    )
     for path in (nvidia_utils, lib32):
         path.with_suffix(path.suffix + ".sig").write_bytes(b"signature\n")
     keyring = root / "approved.gpg"
@@ -175,6 +197,10 @@ def make_mocks(root):
     )
     (binaries / "gpgv").write_text(
         f"#!/bin/sh\nsleep \"${{MOCK_GPGV_DELAY:-0}}\"\n[ \"${{MOCK_BAD_SIGNATURE:-0}}\" = 0 ] || exit 1\ncase \"$*\" in *lib32*) signer={LIB32_SIGNER};; *) signer={NVIDIA_SIGNER};; esac\necho \"[GNUPG:] VALIDSIG $signer 2026-01-01 0 4 0 1 10 00 $signer\"\n",
+        encoding="utf-8",
+    )
+    (binaries / "vercmp").write_text(
+        "#!/bin/sh\nif [ \"$1\" = \"$2\" ]; then echo 0; else echo 1; fi\n",
         encoding="utf-8",
     )
     (binaries / "pacman").write_text(
@@ -209,7 +235,7 @@ esac
     )
     (binaries / "mountpoint").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     (binaries / "findmnt").write_text(
-        "#!/bin/sh\neval target=\\${$#}; grep -F -q \"$target\" \"$MOCK_MOUNT_STATE\" 2>/dev/null\n",
+        "#!/bin/sh\ncase \" $* \" in *' -T '*) echo 'btrfs rw,compress=zstd:3'; exit 0;; esac\neval target=\\${$#}; grep -F -q \"$target\" \"$MOCK_MOUNT_STATE\" 2>/dev/null\n",
         encoding="utf-8",
     )
     (binaries / "umount").write_text(
@@ -348,6 +374,63 @@ def main():
         assert valid["boot"]["efiMountPath"] == "/efi"
         assert valid["boot"]["rootfsBootPath"] == "/boot"
         assert valid["boot"]["grubConfiguration"] == "/efi/EFI/steamos/grub.cfg"
+        assert valid["storage"]["packageInstalledBytes"] == 8192
+        assert valid["storage"]["packageCompressedBytes"] > 0
+        assert valid["storage"]["moduleInstalledBytes"] > 0
+        assert valid["storage"]["initramfsReserveBytes"] >= 64 * 1024 * 1024
+        assert valid["storage"]["rootRequiredBytes"] > 0
+        assert [item["name"] for item in valid["packageDependencyClosure"]] == [
+            "filesystem",
+            "glibc",
+            "lib32-nvidia-utils",
+            "nvidia-utils",
+        ]
+        assert valid["compression"]["compressionSavingsCreditedBytes"] == 0
+        assert valid["compression"]["filesystem"] == "btrfs"
+        assert valid["compression"]["enabled"] is True
+        assert valid["compression"]["assessment"] == (
+            "informational-package-archive-proxy-not-admission-credit"
+        )
+
+        insufficient = run(
+            paths,
+            binaries,
+            temporary / "insufficient-space.json",
+            False,
+            PROJECT_TEST_ROOT_AVAILABLE_BYTES="1",
+        )
+        assert insufficient["reason"] == "target_space_insufficient"
+        assert insufficient["storage"]["rootAvailableBytes"] == 1
+        insufficient_result = run_installer(
+            paths,
+            binaries,
+            temporary / "install-insufficient-space.json",
+            False,
+            PROJECT_TEST_ROOT_AVAILABLE_BYTES="1",
+        )
+        assert insufficient_result["reason"] == "target_space_insufficient"
+        assert insufficient_result["validation"]["storage"]["rootAvailableBytes"] == 1
+
+        local_database = paths["target"] / "usr/lib/holo/pacmandb/local"
+        for name, version, installed_size in (
+            ("nvidia-utils", f"{NVIDIA}-1", 3000),
+            ("lib32-nvidia-utils", f"{NVIDIA}-1", 2000),
+        ):
+            record = local_database / f"{name}-{version}"
+            record.mkdir()
+            (record / "desc").write_text(
+                f"%NAME%\n{name}\n\n%VERSION%\n{version}\n\n%ISIZE%\n{installed_size}\n",
+                encoding="utf-8",
+            )
+        replacement = run(paths, binaries, temporary / "replacement-space.json", True)
+        assert replacement["storage"]["packageReplacedBytes"] == 5000
+        for name, version in (
+            ("nvidia-utils", f"{NVIDIA}-1"),
+            ("lib32-nvidia-utils", f"{NVIDIA}-1"),
+        ):
+            record = local_database / f"{name}-{version}"
+            (record / "desc").unlink()
+            record.rmdir()
         assert [package["fullVersion"] for package in valid["packages"]] == [
             f"{NVIDIA}-2",
             f"{NVIDIA}-1",
@@ -426,6 +509,19 @@ def main():
         paths["checksum"] = original_checksum_path
 
         run(paths, binaries, temporary / "bad-signature.json", False, MOCK_BAD_SIGNATURE="1")
+
+        make_package(
+            paths["lib32"], "lib32-nvidia-utils",
+            dependencies=("missing-runtime>=1",),
+        )
+        missing_dependency = run(
+            paths, binaries, temporary / "missing-dependency.json", False
+        )
+        assert missing_dependency["reason"] == "package_dependency_unsatisfied"
+        make_package(
+            paths["lib32"], "lib32-nvidia-utils",
+            dependencies=("nvidia-utils=575.64.05-2",),
+        )
 
         make_package(paths["lib32"], "lib32-nvidia-utils", version="580.1.1")
         run(paths, binaries, temporary / "bad-version.json", False)

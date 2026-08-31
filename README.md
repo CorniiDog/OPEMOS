@@ -228,6 +228,29 @@ result records the supplied binary keyring SHA256, both package hashes, complete
 versions/pkgrels, and signer fingerprints so the image builder can additionally
 pin the exact prepared keyring artifact.
 
+Validation also performs the authoritative storage preflight. It reads each
+authenticated package's declared installed size and dependency/provides fields,
+resolves the complete incoming-plus-installed dependency closure against parsed
+Holo records with pacman's `vercmp`, and accounts for package/module files being
+replaced. The result reports `rootAvailableBytes`, `rootRequiredBytes`,
+`varAvailableBytes`, `varRequiredBytes`, `efiAvailableBytes`,
+`efiRequiredBytes`, `packageInstalledBytes`, `moduleInstalledBytes`, and
+`initramfsReserveBytes` under `validation.storage`, together with the dependency
+closure and filesystem-compression context. An insufficient target fails before
+mutation with `target_space_insufficient` while retaining those fields.
+
+Root admission uses declared logical package sizes, the estimated final zstd
+module sizes, replacement credits, existing initramfs sizes, module growth per
+initramfs, and explicit metadata reserves. Btrfs compression is detected and
+reported. The signed packages' compressed archive bytes and the difference from
+their declared installed sizes are included as an informational proxy indicating
+whether the declarations are likely conservative; that proxy is explicitly not
+a prediction of Btrfs allocation. No hypothetical compression savings are
+credited. This is
+intentionally conservative: a target that fits only under an assumed compression
+ratio remains rejected until a separately reviewed resizing or measured-reserve
+strategy exists.
+
 Prepare the minimal binary keyring from an existing trusted Arch key source:
 
 ```bash

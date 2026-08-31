@@ -1282,6 +1282,13 @@ signing policy.
 * [x] Parse and validate confined Holo package name/version records, reject
   duplicates, and require the SteamOS base `filesystem`, `glibc`, and `pacman`
   records rather than trusting only a nonzero directory count.
+* [x] Resolve the authenticated userspace packages' complete version-checked
+  dependency closure against incoming and installed Holo package/provides data.
+* [x] Emit conservative root/var/EFI available and required bytes, declared
+  package size, final module size, replacement credits, and initramfs reserve;
+  fail before mutation with `target_space_insufficient` when any mount cannot fit.
+* [x] Detect and report Btrfs compression while crediting zero speculative
+  savings, so compression context cannot silently override a space failure.
 * [x] Add synthetic success, repeated-execution, corrupt-input, injected
   initramfs failure, and mounts-released result coverage.
 * [ ] Rerun the real Fedora/recovery-overlay mutation suite with the Holo pacman

@@ -77,12 +77,14 @@ VALIDATOR_PID=""
 
 write_prevalidation_result()
 {
-    python3 "${SUPPORT_ROOT}/lib/write_install_result.py" \
+    set -- python3 "${SUPPORT_ROOT}/lib/write_install_result.py" \
         --output "$RESULT_JSON" --status "$1" --reason "$2" --message "$3" \
         --phase validation --root /target-root --kernel "$KERNEL" \
         --archive "$(basename "$ARCHIVE")" --provenance "$(basename "$PROVENANCE")" \
         --nvidia-utils "$(basename "$NVIDIA_UTILS")" \
         --lib32-nvidia-utils "$(basename "$LIB32_NVIDIA_UTILS")"
+    [[ ! -s "$VALIDATION_JSON" ]] || set -- "$@" --validation "$VALIDATION_JSON"
+    "$@"
 }
 
 cancel_validation()
@@ -191,7 +193,7 @@ if [[ "${PROJECT_TEST_MODE:-0}" != 1 ]]; then
     esac
 fi
 
-for command_name in bsdtar chroot depmod findmnt install mount mountpoint pacman umount zstd; do
+for command_name in bsdtar chroot depmod findmnt install mount mountpoint pacman umount vercmp zstd; do
     need_cmd "$command_name"
 done
 
