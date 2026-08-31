@@ -62,6 +62,21 @@ python3 tests/provenance.py
 printf 'Checking canonical artifact publisher...\n'
 python3 tests/publisher.py
 
+python3 - "$PROJECT_ROOT/lib" <<'PY' || fail "NVIDIA archive limits are inconsistent"
+import sys
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[1])
+import validate_install_inputs as installer
+import validate_publish_inputs as publisher
+gib = 1024 * 1024 * 1024
+assert installer.MAX_MODULE_ARCHIVE_BYTES == gib
+assert installer.MAX_MODULE_MEMBER_BYTES == gib
+assert installer.MAX_TOTAL_MEMBER_BYTES == 2 * gib
+assert publisher.MAX_ARCHIVE_BYTES == gib
+assert publisher.MAX_MODULE_BYTES == gib
+assert publisher.MAX_TOTAL_MEMBER_BYTES == 2 * gib
+PY
+
 printf 'Checking reviewed Valve signer policy...\n'
 python3 tests/trust_policy.py
 

@@ -27,10 +27,10 @@ PACKAGE_SIGNER_MANIFEST = (
     Path(__file__).resolve().parent.parent
     / "trust/nvidia-userspace-package-signers.json"
 )
-MAX_MODULE_ARCHIVE_BYTES = 512 * 1024 * 1024
-MAX_MODULE_MEMBER_BYTES = 256 * 1024 * 1024
+MAX_MODULE_ARCHIVE_BYTES = 1024 * 1024 * 1024
+MAX_MODULE_MEMBER_BYTES = 1024 * 1024 * 1024
 MAX_METADATA_MEMBER_BYTES = 1024 * 1024
-MAX_TOTAL_MEMBER_BYTES = 1024 * 1024 * 1024
+MAX_TOTAL_MEMBER_BYTES = 2 * 1024 * 1024 * 1024
 MAX_PACMAN_RECORD_BYTES = 1024 * 1024
 MAX_PACMAN_RECORDS = 100_000
 REQUIRED_BASE_PACKAGES = {"filesystem", "glibc", "pacman"}
@@ -334,7 +334,10 @@ def validate(args):
     except UnicodeError:
         fail("target_grub_invalid", "target EFI GRUB configuration is not UTF-8 text")
     if not any(
-        re.match(r"^\s*(?:linux|linuxefi|linux16)\s+\S+", line)
+        re.match(
+            r"^\s*(?:steamenv_boot\s+)?(?:linux|linuxefi|linux16)\s+\S+",
+            line,
+        )
         for line in grub_text.splitlines()
     ):
         fail("target_grub_invalid", "target EFI GRUB configuration has no Linux entries")

@@ -1271,9 +1271,14 @@ signing policy.
 * [x] Keep rootfs `/boot` visible for mkinitcpio, require `efi-A` at `/efi`, and
   update its SteamOS GRUB Linux entries atomically and idempotently with the
   project NVIDIA kernel arguments.
+* [x] Recognize and preserve Valve's `steamenv_boot linux ...` command prefix
+  while applying the same exact idempotent kernel-argument policy.
 * [x] Require `/efi` to be a distinct FAT mount before mutation, reject symlinks
   in every installer-owned and package-member target path, and bound the exact
   canonical module archive's compressed and decompressed sizes.
+* [x] Set bounded 1 GiB compressed/member and 2 GiB total module-archive limits
+  compatible with the observed 632.5 MB development artifact while retaining
+  the 1 MiB metadata cap.
 * [x] Parse and validate confined Holo package name/version records, reject
   duplicates, and require the SteamOS base `filesystem`, `glibc`, and `pacman`
   records rather than trusting only a nonzero directory count.

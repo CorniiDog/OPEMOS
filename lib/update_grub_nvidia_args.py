@@ -16,7 +16,10 @@ REQUIRED = (
     "nvidia-drm.fbdev=1",
 )
 REQUIRED_KEYS = {argument.split("=", 1)[0] for argument in REQUIRED}
-LINUX_LINE = re.compile(r"^(\s*(?:linux|linuxefi|linux16)\s+\S+)(?:\s+(.*?))?\s*$")
+LINUX_LINE = re.compile(
+    r"^(\s*(?:steamenv_boot\s+)?(?:linux|linuxefi|linux16)\s+\S+)"
+    r"(?:\s+(.*?))?\s*$"
+)
 
 
 def parse_args():

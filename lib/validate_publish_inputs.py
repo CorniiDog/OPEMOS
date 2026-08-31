@@ -15,10 +15,10 @@ EXPECTED_MODULES = {
     "nvidia.ko", "nvidia-drm.ko", "nvidia-modeset.ko", "nvidia-peermem.ko",
     "nvidia-uvm.ko",
 }
-MAX_ARCHIVE_BYTES = 512 * 1024 * 1024
-MAX_MODULE_BYTES = 256 * 1024 * 1024
+MAX_ARCHIVE_BYTES = 1024 * 1024 * 1024
+MAX_MODULE_BYTES = 1024 * 1024 * 1024
 MAX_METADATA_BYTES = 1024 * 1024
-MAX_TOTAL_MEMBER_BYTES = 1024 * 1024 * 1024
+MAX_TOTAL_MEMBER_BYTES = 2 * 1024 * 1024 * 1024
 
 
 def fail(message):

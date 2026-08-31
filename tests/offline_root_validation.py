@@ -98,7 +98,7 @@ def make_fixture(root):
         "  initrd /initramfs-neptune.img\n"
         "}\n"
         "menuentry 'SteamOS fallback' {\n"
-        "  linuxefi /vmlinuz-neptune root=LABEL=rootfs-A quiet # fallback entry\n"
+        "  steamenv_boot\tlinux /boot/vmlinuz-linux-neptune-616 root=LABEL=rootfs-A quiet # fallback entry\n"
         "}\n",
         encoding="utf-8",
     )
@@ -487,7 +487,8 @@ def main():
         grub_path = paths["target"] / "efi/EFI/steamos/grub.cfg"
         first_grub = grub_path.read_bytes()
         for line in grub_path.read_text(encoding="utf-8").splitlines():
-            if line.lstrip().startswith(("linux ", "linuxefi ", "linux16 ")):
+            stripped = line.lstrip()
+            if stripped.startswith(("linux ", "linuxefi ", "linux16 ", "steamenv_boot")):
                 for argument in (
                     "rd.driver.blacklist=nouveau",
                     "modprobe.blacklist=nouveau",
@@ -498,6 +499,7 @@ def main():
                 assert "nvidia-drm.modeset=0" not in line.split()
                 if "#" in line:
                     assert line.index("nvidia-drm.fbdev=1") < line.index("#")
+        assert b"steamenv_boot\tlinux /boot/vmlinuz-linux-neptune-616" in first_grub
 
         second = run_installer(paths, binaries, temporary / "install-again.json", True)
         assert second["status"] == "success"

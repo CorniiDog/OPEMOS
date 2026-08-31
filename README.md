@@ -211,7 +211,9 @@ refuses to guess an A/B slot. Before mutation, `/efi` must be a distinct FAT
 mount rather than another view of the rootfs. It atomically and idempotently enforces
 `rd.driver.blacklist=nouveau`, `modprobe.blacklist=nouveau`,
 `nvidia-drm.modeset=1`, and `nvidia-drm.fbdev=1` on every recognized Linux entry
-in `<root>/efi/EFI/steamos/grub.cfg`, replacing conflicting values.
+in `<root>/efi/EFI/steamos/grub.cfg`, including Valve's
+`steamenv_boot linux ...` form, replacing conflicting values while preserving
+the original command prefix.
 The root must contain Valve's populated, confined package database at
 `/usr/lib/holo/pacmandb`. The installer passes that exact root-prefixed path to
 pacman and never creates or falls back to `/var/lib/pacman`; validation records
@@ -252,6 +254,11 @@ an x86_64 chroot. Synthetic tests cover success, repeated execution, injected
 initramfs failure, and cleanup-safe failure results. On a real recovery image,
 the disposable qcow2 overlay is the authoritative rollback boundary and must be
 discarded after any non-success result.
+
+The module archive safety policy allows at most 1 GiB compressed, 1 GiB for any
+individual module member, and 2 GiB total expansion. External and embedded
+metadata remain capped at 1 MiB each. These bounds accommodate the observed
+632.5 MB development artifact without permitting unbounded extraction.
 
 Pass `--result-json FILE` when invoking the build from an appliance controller.
 The file is written atomically with schema version `1`, target identity, trust
