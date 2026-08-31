@@ -87,6 +87,9 @@ def main():
                     "storage", "packageDependencyClosure", "compression",
                     "missingDependencies", "dependencyRequestedBy",
                     "packageName", "signerFingerprint",
+                    "missingPackages", "unexpectedPackages",
+                    "duplicatePackages", "packageMismatches",
+                    "packageRecord", "invalidFields",
                 )
                 if key in validation
             }

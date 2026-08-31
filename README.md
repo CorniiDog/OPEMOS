@@ -242,6 +242,16 @@ dependency is locally staged, signature-verified, path-confined, size-accounted,
 and installed in one offline `pacman -U` transaction. Production installation
 never accesses a package repository or expands signer trust.
 
+A lock mismatch reports the complete bounded package-set difference before
+mutation: sorted missing, unexpected, and duplicate identities plus one sorted
+metadata-difference record per affected package. Metadata fields always appear
+in this order: filename, signature filename, version, architecture, package
+hash, signature hash, signer fingerprint, installed size, dependencies, and
+provides. Dependency and provides values are compared as sorted unique sets.
+At most 64 incoming and 64 reviewed packages, with at most 64 bounded relation
+values per package, are accepted; inputs beyond those limits fail closed rather
+than producing unbounded diagnostics.
+
 Maintainers create candidate locks with
 `bootstrap/audit_userspace_closure.py`. It authenticates `core`, `extra`, and
 `multilib` databases from one explicit dated Arch Linux Archive snapshot,

@@ -59,6 +59,8 @@ def make_package(
     link_target=None,
     installed_size=4096,
     dependencies=(),
+    provides=(),
+    architecture="x86_64",
 ):
     with tarfile.open(path, "w:gz") as archive:
         add_bytes(
@@ -66,8 +68,9 @@ def make_package(
             ".PKGINFO",
             (
                 f"pkgname = {name}\npkgver = {version}-{pkgrel}\n"
-                f"arch = x86_64\nsize = {installed_size}\n"
+                f"arch = {architecture}\nsize = {installed_size}\n"
                 + "".join(f"depend = {dependency}\n" for dependency in dependencies)
+                + "".join(f"provides = {provided}\n" for provided in provides)
             ).encode(),
         )
         add_bytes(archive, f"usr/lib/{name}/fixture", b"userspace\n")
@@ -207,7 +210,9 @@ def make_fixture(root):
 
 def write_userspace_lock(paths):
     package_paths = [paths["nvidia"], paths["lib32"]]
-    if paths.get("stage_dependency"):
+    if paths.get("dependency_packages") is not None:
+        package_paths.extend(paths["dependency_packages"])
+    elif paths.get("stage_dependency"):
         package_paths.append(paths["dependency"])
     packages = []
     for package in package_paths:
@@ -331,10 +336,13 @@ def run(paths, binaries, output, success, preserve_lock=False, **environment):
         "--userspace-lock", str(paths["userspace_lock"]),
         "--output", str(output),
     ]
-    if paths.get("stage_dependency"):
+    dependency_packages = paths.get("dependency_packages")
+    if dependency_packages is None:
+        dependency_packages = [paths["dependency"]] if paths.get("stage_dependency") else []
+    for dependency in dependency_packages:
         command.extend([
-            "--dependency-package", str(paths["dependency"]),
-            "--dependency-signature", str(paths["dependency_sig"]),
+            "--dependency-package", str(dependency),
+            "--dependency-signature", str(dependency.with_suffix(dependency.suffix + ".sig")),
         ])
     if "progress_attempt" in paths:
         command.extend(["--progress-attempt", str(paths["progress_attempt"])])
@@ -357,8 +365,9 @@ def run(paths, binaries, output, success, preserve_lock=False, **environment):
     return json.loads(output.read_text(encoding="utf-8"))
 
 
-def installer_command(paths, result):
-    write_userspace_lock(paths)
+def installer_command(paths, result, preserve_lock=False):
+    if not preserve_lock:
+        write_userspace_lock(paths)
     command = [
         str(INSTALLER),
         "--root", str(paths["target"]),
@@ -374,10 +383,13 @@ def installer_command(paths, result):
         "--userspace-lock", str(paths["userspace_lock"]),
         "--result-json", str(result),
     ]
-    if paths.get("stage_dependency"):
+    dependency_packages = paths.get("dependency_packages")
+    if dependency_packages is None:
+        dependency_packages = [paths["dependency"]] if paths.get("stage_dependency") else []
+    for dependency in dependency_packages:
         command.extend([
-            "--dependency-package", str(paths["dependency"]),
-            "--dependency-signature", str(paths["dependency_sig"]),
+            "--dependency-package", str(dependency),
+            "--dependency-signature", str(dependency.with_suffix(dependency.suffix + ".sig")),
         ])
     if "progress_attempt" in paths:
         command.extend(["--progress-attempt", str(paths["progress_attempt"])])
@@ -398,8 +410,8 @@ def installer_environment(binaries, mount_state, **environment):
     return env
 
 
-def run_installer(paths, binaries, result, success, **environment):
-    command = installer_command(paths, result)
+def run_installer(paths, binaries, result, success, preserve_lock=False, **environment):
+    command = installer_command(paths, result, preserve_lock=preserve_lock)
     mount_state = result.with_suffix(".mounts")
     mount_state.write_text("", encoding="utf-8")
     env = installer_environment(binaries, mount_state, **environment)
@@ -485,6 +497,110 @@ def main():
             preserve_lock=True,
         )
         assert lock_mismatch["reason"] == "userspace_lock_mismatch"
+        assert lock_mismatch["packageMismatches"][0]["invalidFields"] == [
+            "packageSha256"
+        ]
+
+        write_userspace_lock(paths)
+        unexpected_one = temporary / "dependency-placeholder.pkg.tar.gz"
+        unexpected_two = temporary / "other-placeholder.pkg.tar.gz"
+        duplicate_nvidia = temporary / "duplicate-nvidia-utils.pkg.tar.gz"
+        make_package(
+            unexpected_one, "dependency-placeholder", version="1.0",
+            dependencies=("glibc",), provides=("placeholder-provider",),
+        )
+        make_package(unexpected_two, "other-placeholder", version="2.0")
+        make_package(
+            duplicate_nvidia, "nvidia-utils", pkgrel="2", gsp=True,
+            dependencies=("glibc>=1-1",),
+        )
+        for package in (unexpected_one, unexpected_two, duplicate_nvidia):
+            package.with_suffix(package.suffix + ".sig").write_bytes(b"signature\n")
+        paths["dependency_packages"] = [
+            unexpected_two, duplicate_nvidia, unexpected_one,
+        ]
+        aggregate_lock = json.loads(paths["userspace_lock"].read_text())
+        by_name = {record["name"]: record for record in aggregate_lock["packages"]}
+        nvidia_expected = by_name["nvidia-utils"]
+        nvidia_expected.update({
+            "filename": "reviewed-nvidia-utils.pkg.tar.zst",
+            "signatureFilename": "reviewed-nvidia-utils.pkg.tar.zst.sig",
+            "version": "575.64.05-99",
+            "architecture": "any",
+            "packageSha256": "1" * 64,
+            "signatureSha256": "2" * 64,
+        })
+        lib32_expected = by_name["lib32-nvidia-utils"]
+        lib32_expected.update({
+            "signerFingerprint": NVIDIA_SIGNER,
+            "installedSize": 987654,
+            "dependencies": ["different-runtime>=2", "nvidia-utils=575.64.05-2"],
+            "provides": ["lib32-opengl-driver"],
+        })
+        for index, name in enumerate(("egl-x11", "egl-gbm"), 3):
+            missing = dict(lib32_expected)
+            missing.update({
+                "name": name,
+                "filename": f"{name}-1-1-x86_64.pkg.tar.zst",
+                "signatureFilename": f"{name}-1-1-x86_64.pkg.tar.zst.sig",
+                "version": "1-1",
+                "packageSha256": str(index) * 64,
+                "signatureSha256": str(index + 2) * 64,
+                "installedSize": 1024,
+                "dependencies": [],
+                "provides": [],
+            })
+            aggregate_lock["packages"].append(missing)
+        paths["userspace_lock"].write_text(json.dumps(aggregate_lock), encoding="utf-8")
+        aggregate = run(
+            paths, binaries, temporary / "aggregate-lock-mismatch.json", False,
+            preserve_lock=True,
+        )
+        aggregate_again = run(
+            paths, binaries, temporary / "aggregate-lock-mismatch-again.json", False,
+            preserve_lock=True,
+        )
+        assert aggregate["reason"] == "userspace_lock_mismatch"
+        assert aggregate["missingPackages"] == ["egl-gbm", "egl-x11"]
+        assert aggregate["unexpectedPackages"] == [
+            "dependency-placeholder", "other-placeholder"
+        ]
+        assert aggregate["duplicatePackages"] == ["nvidia-utils"]
+        assert [item["packageName"] for item in aggregate["packageMismatches"]] == [
+            "lib32-nvidia-utils", "nvidia-utils"
+        ]
+        assert aggregate["packageMismatches"][0]["invalidFields"] == [
+            "signerFingerprint", "installedSize", "dependencies", "provides"
+        ]
+        assert aggregate["packageMismatches"][1]["invalidFields"] == [
+            "filename", "signatureFilename", "version", "architecture",
+            "packageSha256", "signatureSha256",
+        ]
+        for key in (
+            "missingPackages", "unexpectedPackages", "duplicatePackages",
+            "packageMismatches",
+        ):
+            assert aggregate_again[key] == aggregate[key]
+        assert str(paths["target"]) not in json.dumps(aggregate)
+        aggregate_result = run_installer(
+            paths, binaries, temporary / "aggregate-lock-result.json", False,
+            preserve_lock=True,
+        )
+        for key in (
+            "missingPackages", "unexpectedPackages", "duplicatePackages",
+            "packageMismatches",
+        ):
+            assert aggregate_result["validation"][key] == aggregate[key]
+        assert aggregate_result["cleanup"]["mountsReleased"] is True
+        assert "No mutation began." in aggregate_result["message"]
+        paths["dependency_packages"] = [paths["dependency"]] * 63
+        bounded = run(
+            paths, binaries, temporary / "bounded-lock-diagnostics.json", False,
+            preserve_lock=True,
+        )
+        assert bounded["reason"] == "userspace_package_limit_exceeded"
+        assert len(json.dumps(bounded)) < 4096
+        del paths["dependency_packages"]
         write_userspace_lock(paths)
         assert valid["pacmanDatabase"] == {
             "path": "/usr/lib/holo/pacmandb",
@@ -599,6 +715,11 @@ def main():
         assert malformed_database["reason"] == "target_pacman_database_invalid"
         assert malformed_database["packageRecord"] == "filesystem-1-1"
         assert malformed_database["invalidFields"] == ["VERSION"]
+        malformed_database_result = run_installer(
+            paths, binaries, temporary / "malformed-pacman-database-result.json", False
+        )
+        assert malformed_database_result["validation"]["packageRecord"] == "filesystem-1-1"
+        assert malformed_database_result["validation"]["invalidFields"] == ["VERSION"]
         filesystem_desc.write_text(valid_filesystem_desc, encoding="utf-8")
 
         for index, relative in enumerate((
@@ -662,9 +783,11 @@ def main():
             paths, binaries, temporary / "cross-package-signer.json", False,
             MOCK_FORCE_SIGNER=LIB32_SIGNER,
         )
-        assert cross_package_signer["reason"] == "userspace_signer_rejected"
-        assert cross_package_signer["packageName"] == "nvidia-utils"
-        assert cross_package_signer["signerFingerprint"] == LIB32_SIGNER
+        assert cross_package_signer["reason"] == "userspace_lock_mismatch"
+        assert cross_package_signer["packageMismatches"][0]["packageName"] == "nvidia-utils"
+        assert cross_package_signer["packageMismatches"][0]["invalidFields"] == [
+            "signerFingerprint"
+        ]
 
         make_package(
             paths["lib32"], "lib32-nvidia-utils",

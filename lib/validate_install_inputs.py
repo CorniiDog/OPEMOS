@@ -42,6 +42,22 @@ EFI_RESERVE_BYTES = 1024 * 1024
 MAX_PROGRESS_ATTEMPT = 1_000_000
 PROGRESS_MIN_INTERVAL_SECONDS = 0.25
 PROGRESS_MIN_BYTE_DELTA = 4 * 1024 * 1024
+MAX_USERSPACE_PACKAGES = 64
+MAX_USERSPACE_LOCK_BYTES = 1024 * 1024
+MAX_PACKAGE_RELATIONS = 64
+MAX_DIAGNOSTIC_VALUE_CHARS = 256
+LOCK_PACKAGE_FIELDS = (
+    "filename",
+    "signatureFilename",
+    "version",
+    "architecture",
+    "packageSha256",
+    "signatureSha256",
+    "signerFingerprint",
+    "installedSize",
+    "dependencies",
+    "provides",
+)
 
 
 class ValidationFailure(ValueError):
@@ -118,6 +134,124 @@ def arguments():
 
 def fail(reason, message, **details):
     raise ValidationFailure(reason, message, **details)
+
+
+def safe_lock_string(value, pattern=r"[A-Za-z0-9@._+<>=:-]+"):
+    return (
+        isinstance(value, str)
+        and 0 < len(value) <= MAX_DIAGNOSTIC_VALUE_CHARS
+        and re.fullmatch(pattern, value) is not None
+    )
+
+
+def normalized_relations(values, source, reason="userspace_lock_invalid"):
+    if (not isinstance(values, list) or len(values) > MAX_PACKAGE_RELATIONS
+            or any(not safe_lock_string(value) for value in values)):
+        fail(reason, f"{source} has invalid dependency/provides metadata")
+    return sorted(set(values))
+
+
+def normalized_lock_package(record, source):
+    expected_keys = {"name", *LOCK_PACKAGE_FIELDS}
+    if not isinstance(record, dict) or set(record) != expected_keys:
+        fail("userspace_lock_invalid", f"{source} has an invalid package record")
+    name = record.get("name")
+    if not safe_lock_string(name):
+        fail("userspace_lock_invalid", f"{source} has an invalid package identity")
+    for field in ("filename", "signatureFilename"):
+        value = record.get(field)
+        if (not safe_lock_string(value, r"[A-Za-z0-9@._+:-]+")
+                or Path(value).name != value or value in (".", "..")):
+            fail("userspace_lock_invalid", f"{source} has an invalid {field}")
+    for field in ("version", "architecture"):
+        if not safe_lock_string(record.get(field)):
+            fail("userspace_lock_invalid", f"{source} has an invalid {field}")
+    for field in ("packageSha256", "signatureSha256"):
+        if not isinstance(record.get(field), str) or not re.fullmatch(
+                r"[0-9a-f]{64}", record[field]):
+            fail("userspace_lock_invalid", f"{source} has an invalid {field}")
+    if not isinstance(record.get("signerFingerprint"), str) or not re.fullmatch(
+            r"[0-9A-F]{40}|[0-9A-F]{64}", record["signerFingerprint"]):
+        fail("userspace_lock_invalid", f"{source} has an invalid signerFingerprint")
+    if (not isinstance(record.get("installedSize"), int)
+            or isinstance(record["installedSize"], bool)
+            or record["installedSize"] < 0):
+        fail("userspace_lock_invalid", f"{source} has an invalid installedSize")
+    normalized = dict(record)
+    normalized["dependencies"] = normalized_relations(
+        record["dependencies"], f"{source} dependencies"
+    )
+    normalized["provides"] = normalized_relations(
+        record["provides"], f"{source} provides"
+    )
+    return normalized
+
+
+def compare_userspace_lock_packages(expected_records, actual_records):
+    if len(expected_records) > MAX_USERSPACE_PACKAGES:
+        fail("userspace_lock_invalid", "reviewed lock exceeds the package-count limit")
+    if len(actual_records) > MAX_USERSPACE_PACKAGES:
+        fail("userspace_package_limit_exceeded", "incoming package set exceeds the package-count limit")
+    expected_by_name = {}
+    for index, record in enumerate(expected_records):
+        normalized = normalized_lock_package(record, f"reviewed package record {index}")
+        if normalized["name"] in expected_by_name:
+            fail("userspace_lock_invalid", "reviewed lock contains duplicate package identities")
+        expected_by_name[normalized["name"]] = normalized
+    actual_by_name = {}
+    for index, record in enumerate(actual_records):
+        normalized = normalized_lock_package(record, f"incoming package record {index}")
+        actual_by_name.setdefault(normalized["name"], []).append(normalized)
+
+    expected_names = set(expected_by_name)
+    actual_names = set(actual_by_name)
+    missing = sorted(expected_names - actual_names)
+    unexpected = sorted(actual_names - expected_names)
+    duplicates = sorted(
+        name for name, records in actual_by_name.items() if len(records) > 1
+    )
+    mismatches = []
+    for name in sorted(expected_names & actual_names):
+        expected = expected_by_name[name]
+        actual_values = {}
+        invalid_fields = []
+        for field in LOCK_PACKAGE_FIELDS:
+            values = {
+                json.dumps(actual[field], sort_keys=True, separators=(",", ":")):
+                actual[field]
+                for actual in actual_by_name[name]
+            }
+            if len(values) != 1 or next(iter(values.values())) != expected[field]:
+                invalid_fields.append(field)
+                ordered = [values[key] for key in sorted(values)]
+                actual_values[field] = ordered[0] if len(ordered) == 1 else ordered
+        if invalid_fields:
+            mismatches.append({
+                "packageName": name,
+                "invalidFields": invalid_fields,
+                "expected": {field: expected[field] for field in invalid_fields},
+                "actual": {field: actual_values[field] for field in invalid_fields},
+            })
+    if missing or unexpected or duplicates or mismatches:
+        def quantity(count, singular, plural=None):
+            return f"{count} {singular if count == 1 else (plural or singular + 's')}"
+
+        message = (
+            "Userspace lock validation failed: "
+            f"{quantity(len(missing), 'missing package')}, "
+            f"{quantity(len(unexpected), 'unexpected package')}, "
+            f"{quantity(len(duplicates), 'duplicate package identity', 'duplicate package identities')}, "
+            f"and {quantity(len(mismatches), 'package')} with mismatched metadata. "
+            "No mutation began."
+        )
+        fail(
+            "userspace_lock_mismatch",
+            message,
+            missingPackages=missing,
+            unexpectedPackages=unexpected,
+            duplicatePackages=duplicates,
+            packageMismatches=mismatches,
+        )
 
 
 def sha256(path, progress=None):
@@ -816,9 +950,8 @@ def validate(args, progress):
         if dict(records) != expected_modules:
             fail("module_hash_mismatch", "module hashes do not match provenance")
 
-    package_records = []
     lock_package_records = []
-    incoming_packages = {}
+    parsed_packages = []
     package_installed_bytes = 0
     package_compressed_bytes = 0
     package_inputs = [
@@ -828,6 +961,11 @@ def validate(args, progress):
         (package, signature, None, False)
         for package, signature in zip(args.dependency_package, args.dependency_signature)
     ]
+    if len(package_inputs) > MAX_USERSPACE_PACKAGES:
+        fail(
+            "userspace_package_limit_exceeded",
+            "incoming package set exceeds the package-count limit",
+        )
     progress.emit(
         "userspace_packages", unit="items", completed=0,
         total=len(package_inputs), force=True,
@@ -835,30 +973,26 @@ def validate(args, progress):
     for package_index, (package, signature, expected_name, is_nvidia_package) in enumerate(package_inputs, 1):
         metadata = package_metadata(package)
         package_name = metadata.get("pkgname", "")
-        if (expected_name is not None and package_name != expected_name):
-            fail("userspace_package_mismatch", f"{package.name} has wrong identity")
-        if not re.fullmatch(r"[A-Za-z0-9@._+:-]+", package_name) or metadata.get("arch") not in ("x86_64", "any"):
-            fail("userspace_package_mismatch", f"{package.name} has wrong identity or architecture")
-        if package_name in incoming_packages:
-            fail("dependency_input_invalid", f"duplicate incoming package identity: {package_name}")
+        architecture = metadata.get("arch", "")
         pkgver = metadata.get("pkgver", "")
-        if is_nvidia_package and pkgver.rsplit("-", 1)[0] != nvidia:
-            fail("userspace_version_mismatch", f"{expected_name} does not match {nvidia}")
+        if (not safe_lock_string(package_name)
+                or not safe_lock_string(architecture)
+                or not safe_lock_string(pkgver)):
+            fail("userspace_package_mismatch", f"{package.name} has unsafe identity metadata")
+        dependencies = normalized_relations(
+            metadata["depends"], f"incoming package {package_name} dependencies",
+            "userspace_package_invalid",
+        )
+        provides = normalized_relations(
+            metadata["provides"], f"incoming package {package_name} provides",
+            "userspace_package_invalid",
+        )
         members = package_members(package)
         for member in members:
             require_safe_destination(root, member)
         validate_package_links(package)
         signer = verify_signature(
             package, signature, args.package_keyring, package_name
-        )
-        require_reviewed_signer(signer, package_name)
-        pkgver_only, separator, pkgrel = pkgver.rpartition("-")
-        if not separator or not pkgver_only or not pkgrel:
-            fail("userspace_package_invalid", f"{package_name} has invalid pkgver/pkgrel")
-        if is_nvidia_package and pkgver_only != nvidia:
-            fail("userspace_version_mismatch", f"{expected_name} has invalid pkgver/pkgrel")
-        package_records.append(
-            (package_name, pkgver, pkgver_only, pkgrel, signer, sha256(package, progress), not is_nvidia_package)
         )
         installed_size = metadata.get("size", "")
         if not installed_size.isdigit():
@@ -867,37 +1001,30 @@ def validate(args, progress):
                 f"{package_name} lacks a valid declared installed size",
             )
         installed_size = int(installed_size)
+        package_digest = sha256(package, progress)
+        signature_digest = sha256(signature, progress)
         package_installed_bytes += installed_size
         package_compressed_bytes += package.stat().st_size
-        incoming_packages[package_name] = {
-            "name": package_name,
-            "version": pkgver,
-            "installedSize": installed_size,
-            "depends": metadata["depends"],
-            "provides": metadata["provides"],
-            "source": "incoming",
-        }
-        lock_package_records.append({
+        lock_record = {
             "name": package_name,
             "filename": package.name,
             "signatureFilename": signature.name,
             "version": pkgver,
-            "architecture": metadata["arch"],
-            "packageSha256": package_records[-1][5],
-            "signatureSha256": sha256(signature, progress),
+            "architecture": architecture,
+            "packageSha256": package_digest,
+            "signatureSha256": signature_digest,
             "signerFingerprint": signer,
             "installedSize": installed_size,
-            "dependencies": metadata["depends"],
-            "provides": metadata["provides"],
+            "dependencies": dependencies,
+            "provides": provides,
+        }
+        lock_package_records.append(lock_record)
+        parsed_packages.append({
+            "lockRecord": lock_record,
+            "expectedName": expected_name,
+            "isNvidiaPackage": is_nvidia_package,
+            "members": members,
         })
-        if package_name == "nvidia-utils" and not any(
-            re.fullmatch(
-                rf"usr/lib/firmware/nvidia/{re.escape(nvidia)}/gsp[^/]*\.bin",
-                name,
-            )
-            for name in members
-        ):
-            fail("gsp_firmware_missing", "nvidia-utils lacks exact-version GSP firmware")
         progress.emit(
             "userspace_packages", unit="items", completed=package_index,
             total=len(package_inputs),
@@ -907,9 +1034,9 @@ def validate(args, progress):
         total=len(package_inputs), force=True,
     )
 
-    progress.emit("dependency_closure", indeterminate=True, force=True)
-    closure = dependency_closure(incoming_packages, installed_packages)
     try:
+        if args.userspace_lock.stat().st_size > MAX_USERSPACE_LOCK_BYTES:
+            fail("userspace_lock_invalid", "userspace lock exceeds the size limit")
         userspace_lock = json.loads(args.userspace_lock.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
         fail("userspace_lock_invalid", f"cannot read userspace lock: {error}")
@@ -928,10 +1055,51 @@ def validate(args, progress):
             or lock_keyring.get("sha256") != sha256(args.package_keyring, progress)):
         fail("userspace_lock_mismatch", "minimal reviewed keyring does not match userspace lock")
     expected_lock_packages = userspace_lock.get("packages")
-    if (not isinstance(expected_lock_packages, list)
-            or sorted(expected_lock_packages, key=lambda item: item.get("name", ""))
-            != sorted(lock_package_records, key=lambda item: item["name"])):
-        fail("userspace_lock_mismatch", "incoming package set does not exactly match userspace lock")
+    if not isinstance(expected_lock_packages, list):
+        fail("userspace_lock_invalid", "reviewed lock package set is not a list")
+    compare_userspace_lock_packages(expected_lock_packages, lock_package_records)
+
+    package_records = []
+    incoming_packages = {}
+    for parsed in parsed_packages:
+        record = parsed["lockRecord"]
+        package_name = record["name"]
+        expected_name = parsed["expectedName"]
+        is_nvidia_package = parsed["isNvidiaPackage"]
+        if expected_name is not None and package_name != expected_name:
+            fail("userspace_package_mismatch", f"{package_name} has wrong seed identity")
+        if record["architecture"] not in ("x86_64", "any"):
+            fail("userspace_package_mismatch", f"{package_name} has wrong architecture")
+        pkgver_only, separator, pkgrel = record["version"].rpartition("-")
+        if not separator or not pkgver_only or not pkgrel:
+            fail("userspace_package_invalid", f"{package_name} has invalid pkgver/pkgrel")
+        if is_nvidia_package and pkgver_only != nvidia:
+            fail("userspace_version_mismatch", f"{expected_name} does not match {nvidia}")
+        require_reviewed_signer(record["signerFingerprint"], package_name)
+        if package_name == "nvidia-utils" and not any(
+            re.fullmatch(
+                rf"usr/lib/firmware/nvidia/{re.escape(nvidia)}/gsp[^/]*\.bin",
+                name,
+            )
+            for name in parsed["members"]
+        ):
+            fail("gsp_firmware_missing", "nvidia-utils lacks exact-version GSP firmware")
+        package_records.append((
+            package_name, record["version"], pkgver_only, pkgrel,
+            record["signerFingerprint"], record["packageSha256"],
+            not is_nvidia_package,
+        ))
+        incoming_packages[package_name] = {
+            "name": package_name,
+            "version": record["version"],
+            "installedSize": record["installedSize"],
+            "depends": record["dependencies"],
+            "provides": record["provides"],
+            "source": "incoming",
+        }
+
+    progress.emit("dependency_closure", indeterminate=True, force=True)
+    closure = dependency_closure(incoming_packages, installed_packages)
     replaced_package_bytes = 0
     for name in incoming_packages:
         replaced = installed_packages.get(name)
