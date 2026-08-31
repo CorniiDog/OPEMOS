@@ -205,8 +205,12 @@ x86_64 Fedora appliance and never examines the appliance kernel or invokes
 schema-1 provenance, callers must provide exact local `nvidia-utils` and
 `lib32-nvidia-utils` packages, both detached signatures, and a reviewed GPG
 keyring. No package or source is downloaded during installation. Before
-mutation, the caller must mount the explicit SteamOS root and its corresponding
-boot/EFI partition at `<root>/boot`; the installer refuses to guess an A/B slot.
+mutation, the caller must leave the rootfs-owned `<root>/boot` visible and mount
+the corresponding `efi-A` partition separately at `<root>/efi`; the installer
+refuses to guess an A/B slot. It atomically and idempotently enforces
+`rd.driver.blacklist=nouveau`, `modprobe.blacklist=nouveau`,
+`nvidia-drm.modeset=1`, and `nvidia-drm.fbdev=1` on every recognized Linux entry
+in `<root>/efi/EFI/steamos/grub.cfg`, replacing conflicting values.
 The root must contain Valve's populated, confined package database at
 `/usr/lib/holo/pacmandb`. The installer passes that exact root-prefixed path to
 pacman and never creates or falls back to `/var/lib/pacman`; validation records

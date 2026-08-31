@@ -1268,6 +1268,9 @@ signing policy.
 * [x] Require SteamOS's populated `/usr/lib/holo/pacmandb` package database,
   use it explicitly for installation and ownership queries, and never create an
   empty `/var/lib/pacman` fallback.
+* [x] Keep rootfs `/boot` visible for mkinitcpio, require `efi-A` at `/efi`, and
+  update its SteamOS GRUB Linux entries atomically and idempotently with the
+  project NVIDIA kernel arguments.
 * [x] Add synthetic success, repeated-execution, corrupt-input, injected
   initramfs failure, and mounts-released result coverage.
 * [ ] Rerun the real Fedora/recovery-overlay mutation suite with the Holo pacman

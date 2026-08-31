@@ -72,6 +72,20 @@ def make_fixture(root):
     (package_record / "desc").write_text(
         "%NAME%\nfilesystem\n", encoding="utf-8"
     )
+    (target / "boot").mkdir()
+    grub = target / "efi/EFI/steamos/grub.cfg"
+    grub.parent.mkdir(parents=True)
+    grub.write_text(
+        "set default=0\n"
+        "menuentry 'SteamOS' {\n"
+        "  linux /vmlinuz-neptune root=LABEL=rootfs-A quiet nvidia-drm.modeset=0\n"
+        "  initrd /initramfs-neptune.img\n"
+        "}\n"
+        "menuentry 'SteamOS fallback' {\n"
+        "  linuxefi /vmlinuz-neptune root=LABEL=rootfs-A quiet # fallback entry\n"
+        "}\n",
+        encoding="utf-8",
+    )
     (target / "etc/os-release").write_text(
         "ID=steamos\nVERSION_ID=3.8.16\n", encoding="utf-8"
     )
@@ -311,6 +325,9 @@ def main():
             "path": "/usr/lib/holo/pacmandb",
             "packageCount": 1,
         }
+        assert valid["boot"]["efiMountPath"] == "/efi"
+        assert valid["boot"]["rootfsBootPath"] == "/boot"
+        assert valid["boot"]["grubConfiguration"] == "/efi/EFI/steamos/grub.cfg"
         assert [package["fullVersion"] for package in valid["packages"]] == [
             f"{NVIDIA}-2",
             f"{NVIDIA}-1",
@@ -381,6 +398,7 @@ def main():
             "path": "/usr/lib/holo/pacmandb",
             "packageCount": 1,
         }
+        assert successful["validation"]["boot"] == valid["boot"]
         assert len(successful["validation"]["keyring"]["sha256"]) == 64
         assert [
             package["fullVersion"]
@@ -394,9 +412,33 @@ def main():
         assert (module_root / "updates/open-gpu-kernel-modules-steamos/nvidia.ko.zst").is_file()
         assert (module_root / "modules.dep").is_file()
         assert (paths["target"] / "boot/initramfs-fixture.img").is_file()
+        grub_path = paths["target"] / "efi/EFI/steamos/grub.cfg"
+        first_grub = grub_path.read_bytes()
+        for line in grub_path.read_text(encoding="utf-8").splitlines():
+            if line.lstrip().startswith(("linux ", "linuxefi ", "linux16 ")):
+                for argument in (
+                    "rd.driver.blacklist=nouveau",
+                    "modprobe.blacklist=nouveau",
+                    "nvidia-drm.modeset=1",
+                    "nvidia-drm.fbdev=1",
+                ):
+                    assert line.split().count(argument) == 1
+                assert "nvidia-drm.modeset=0" not in line.split()
+                if "#" in line:
+                    assert line.index("nvidia-drm.fbdev=1") < line.index("#")
 
         second = run_installer(paths, binaries, temporary / "install-again.json", True)
         assert second["status"] == "success"
+        assert grub_path.read_bytes() == first_grub
+
+        valid_grub = grub_path.read_bytes()
+        grub_path.write_text("set default=0\n", encoding="utf-8")
+        bad_grub = run_installer(
+            paths, binaries, temporary / "install-bad-grub.json", False
+        )
+        assert bad_grub["reason"] == "target_grub_invalid"
+        assert bad_grub["phase"] == "validation"
+        grub_path.write_bytes(valid_grub)
 
         failed = run_installer(
             paths,

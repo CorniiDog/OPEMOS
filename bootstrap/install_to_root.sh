@@ -173,8 +173,10 @@ fi
 if [[ "${PROJECT_TEST_MODE:-0}" != 1 ]]; then
     [[ "$(uname -m)" == x86_64 ]] || die "Offline-root mutation requires x86_64."
     mountpoint -q "$ROOT" || die "Target root must be an explicit mountpoint."
-    mountpoint -q "$ROOT/boot" ||
-        die "The image builder must mount the target boot/EFI partition at /boot before mutation."
+    ! mountpoint -q "$ROOT/boot" ||
+        die "Target rootfs /boot must remain visible and must not be covered by EFI."
+    mountpoint -q "$ROOT/efi" ||
+        die "The image builder must mount the target efi-A partition at /efi before mutation."
 fi
 
 for command_name in bsdtar chroot depmod findmnt install mount mountpoint pacman umount zstd; do
@@ -298,6 +300,10 @@ printf '%s\n' \
     "# Managed by ${PROJECT_NAME}" \
     'MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm)' \
     > "$ROOT/etc/mkinitcpio.conf.d/90-open-gpu-kernel-modules-steamos.conf"
+
+PHASE=bootloader_config
+run_mutation_command python3 "$SUPPORT_ROOT/lib/update_grub_nvidia_args.py" \
+    --grub-config "$ROOT/efi/EFI/steamos/grub.cfg"
 
 PHASE=depmod
 run_mutation_command depmod -b "$ROOT" -a "$KERNEL"

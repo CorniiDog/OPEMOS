@@ -7,9 +7,13 @@ import json
 import os
 import re
 import subprocess
+import sys
 import tarfile
 import tempfile
 from pathlib import Path, PurePosixPath
+
+sys.dont_write_bytecode = True
+from update_grub_nvidia_args import REQUIRED as REQUIRED_KERNEL_ARGUMENTS
 
 EXPECTED_MODULES = {
     "nvidia.ko",
@@ -219,6 +223,30 @@ def validate(args):
         fail("invalid_target", "target is not a versioned SteamOS root")
     if not (root / "usr/lib/modules" / args.kernel).is_dir():
         fail("kernel_mismatch", "exact target module directory is absent")
+    boot = root / "boot"
+    efi = root / "efi"
+    grub_configuration = efi / "EFI/steamos/grub.cfg"
+    if boot.is_symlink() or not boot.is_dir():
+        fail("target_boot_invalid", "target rootfs /boot is absent or unsafe")
+    if efi.is_symlink() or not efi.is_dir():
+        fail("target_efi_invalid", "target EFI mount is absent or unsafe")
+    try:
+        grub_configuration.resolve(strict=True).relative_to(efi.resolve(strict=True))
+    except (FileNotFoundError, RuntimeError, ValueError):
+        fail("target_grub_invalid", "target EFI GRUB configuration is absent or unsafe")
+    if grub_configuration.is_symlink() or not grub_configuration.is_file():
+        fail("target_grub_invalid", "target EFI GRUB configuration is not a regular file")
+    if grub_configuration.stat().st_size > 1024 * 1024:
+        fail("target_grub_invalid", "target EFI GRUB configuration is unexpectedly large")
+    try:
+        grub_text = grub_configuration.read_text(encoding="utf-8")
+    except UnicodeError:
+        fail("target_grub_invalid", "target EFI GRUB configuration is not UTF-8 text")
+    if not any(
+        re.match(r"^\s*(?:linux|linuxefi|linux16)\s+\S+", line)
+        for line in grub_text.splitlines()
+    ):
+        fail("target_grub_invalid", "target EFI GRUB configuration has no Linux entries")
 
     pacman_database = root / "usr/lib/holo/pacmandb"
     pacman_local = pacman_database / "local"
@@ -368,6 +396,12 @@ def validate(args):
             "path": "/usr/lib/holo/pacmandb",
             "packageCount": len(package_descriptions),
         },
+        "boot": {
+            "rootfsBootPath": "/boot",
+            "efiMountPath": "/efi",
+            "grubConfiguration": "/efi/EFI/steamos/grub.cfg",
+            "requiredKernelArguments": list(REQUIRED_KERNEL_ARGUMENTS),
+        },
         "keyring": {
             "name": args.package_keyring.name,
             "sha256": sha256(args.package_keyring),
@@ -390,7 +424,7 @@ def main():
     args = arguments()
     try:
         document = validate(args)
-    except (ValueError, OSError, json.JSONDecodeError, tarfile.TarError) as error:
+    except (ValueError, OSError, UnicodeError, json.JSONDecodeError, tarfile.TarError) as error:
         text = str(error)
         reason, separator, message = text.partition(": ")
         if not separator:

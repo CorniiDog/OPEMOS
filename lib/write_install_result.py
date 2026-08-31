@@ -74,6 +74,7 @@ def main():
         document["validation"] = {
             "archiveSha256": validation["archiveSha256"],
             "pacmanDatabase": validation["pacmanDatabase"],
+            "boot": validation["boot"],
             "keyring": validation["keyring"],
             "packages": validation["packages"],
         }
