@@ -1271,6 +1271,12 @@ signing policy.
 * [x] Keep rootfs `/boot` visible for mkinitcpio, require `efi-A` at `/efi`, and
   update its SteamOS GRUB Linux entries atomically and idempotently with the
   project NVIDIA kernel arguments.
+* [x] Require `/efi` to be a distinct FAT mount before mutation, reject symlinks
+  in every installer-owned and package-member target path, and bound the exact
+  canonical module archive's compressed and decompressed sizes.
+* [x] Parse and validate confined Holo package name/version records, reject
+  duplicates, and require the SteamOS base `filesystem`, `glibc`, and `pacman`
+  records rather than trusting only a nonzero directory count.
 * [x] Add synthetic success, repeated-execution, corrupt-input, injected
   initramfs failure, and mounts-released result coverage.
 * [ ] Rerun the real Fedora/recovery-overlay mutation suite with the Holo pacman

@@ -177,6 +177,18 @@ if [[ "${PROJECT_TEST_MODE:-0}" != 1 ]]; then
         die "Target rootfs /boot must remain visible and must not be covered by EFI."
     mountpoint -q "$ROOT/efi" ||
         die "The image builder must mount the target efi-A partition at /efi before mutation."
+    ROOT_SOURCE="$(findmnt -rn -M "$ROOT" -o SOURCE)" ||
+        die "Target root mount identity could not be determined."
+    EFI_SOURCE="$(findmnt -rn -M "$ROOT/efi" -o SOURCE)" ||
+        die "Target EFI mount identity could not be determined."
+    EFI_FSTYPE="$(findmnt -rn -M "$ROOT/efi" -o FSTYPE)" ||
+        die "Target EFI filesystem type could not be determined."
+    [[ -n "$ROOT_SOURCE" && -n "$EFI_SOURCE" && "$ROOT_SOURCE" != "$EFI_SOURCE" ]] ||
+        die "Target /efi must be a distinct filesystem from the rootfs."
+    case "$EFI_FSTYPE" in
+        vfat|fat|msdos) ;;
+        *) die "Target /efi must be a FAT filesystem." ;;
+    esac
 fi
 
 for command_name in bsdtar chroot depmod findmnt install mount mountpoint pacman umount zstd; do

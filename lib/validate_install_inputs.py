@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 import tarfile
@@ -26,6 +27,13 @@ PACKAGE_SIGNER_MANIFEST = (
     Path(__file__).resolve().parent.parent
     / "trust/nvidia-userspace-package-signers.json"
 )
+MAX_MODULE_ARCHIVE_BYTES = 512 * 1024 * 1024
+MAX_MODULE_MEMBER_BYTES = 256 * 1024 * 1024
+MAX_METADATA_MEMBER_BYTES = 1024 * 1024
+MAX_TOTAL_MEMBER_BYTES = 1024 * 1024 * 1024
+MAX_PACMAN_RECORD_BYTES = 1024 * 1024
+MAX_PACMAN_RECORDS = 100_000
+REQUIRED_BASE_PACKAGES = {"filesystem", "glibc", "pacman"}
 
 
 def arguments():
@@ -58,7 +66,62 @@ def sha256(path):
 
 def safe_member(name):
     path = PurePosixPath(name)
-    return not path.is_absolute() and ".." not in path.parts
+    return bool(name) and not path.is_absolute() and ".." not in path.parts
+
+
+def require_safe_destination(root, relative):
+    relative_path = PurePosixPath(relative)
+    if relative_path.is_absolute() or ".." in relative_path.parts:
+        fail("target_path_unsafe", f"unsafe target destination: {relative}")
+    current = root
+    for component in relative_path.parts:
+        if component in ("", "."):
+            continue
+        current = current / component
+        try:
+            mode = os.lstat(current).st_mode
+        except FileNotFoundError:
+            continue
+        except NotADirectoryError:
+            fail("target_path_unsafe", f"target destination traverses a non-directory: {relative}")
+        if stat.S_ISLNK(mode):
+            fail("target_path_unsafe", f"target destination traverses a symlink: {relative}")
+        try:
+            current.resolve(strict=True).relative_to(root)
+        except (FileNotFoundError, RuntimeError, ValueError):
+            fail("target_path_unsafe", f"target destination escapes the root: {relative}")
+
+
+def pacman_desc_fields(path):
+    if path.stat().st_size > MAX_PACMAN_RECORD_BYTES:
+        fail("target_pacman_database_invalid", f"oversized package record: {path.name}")
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except UnicodeError:
+        fail("target_pacman_database_invalid", f"non-UTF-8 package record: {path.name}")
+    fields = {}
+    index = 0
+    while index < len(lines):
+        marker = lines[index]
+        if re.fullmatch(r"%[A-Z0-9_]+%", marker):
+            values = []
+            index += 1
+            while index < len(lines) and not re.fullmatch(r"%[A-Z0-9_]+%", lines[index]):
+                if lines[index]:
+                    values.append(lines[index])
+                index += 1
+            fields[marker.strip("%")] = values
+            continue
+        index += 1
+    name = fields.get("NAME", [])
+    version = fields.get("VERSION", [])
+    if (len(name) != 1 or len(version) != 1
+            or not re.fullmatch(r"[A-Za-z0-9@._+:-]+", name[0])
+            or not version[0] or any(character.isspace() for character in version[0])):
+        fail("target_pacman_database_invalid", f"malformed package record: {path.name}")
+    if path.parent.name != f"{name[0]}-{version[0]}":
+        fail("target_pacman_database_invalid", f"package record directory has wrong identity: {path.parent.name}")
+    return name[0]
 
 
 def package_metadata(path):
@@ -213,6 +276,34 @@ def validate(args):
     root = args.root.resolve(strict=True)
     if root == Path("/"):
         fail("unsafe_target_root", "refusing the appliance root")
+    for relative in (
+        "etc",
+        "etc/os-release",
+        "etc/modprobe.d",
+        "etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf",
+        "etc/mkinitcpio.conf.d",
+        "etc/mkinitcpio.conf.d/90-open-gpu-kernel-modules-steamos.conf",
+        "usr",
+        "usr/lib",
+        "usr/lib/firmware",
+        "usr/lib/modules",
+        f"usr/lib/modules/{args.kernel}",
+        f"usr/lib/modules/{args.kernel}/updates",
+        f"usr/lib/modules/{args.kernel}/updates/open-gpu-kernel-modules-steamos",
+        "boot",
+        "efi",
+        "efi/EFI",
+        "efi/EFI/steamos",
+        "efi/EFI/steamos/grub.cfg",
+        "var",
+        "var/lib",
+        "var/lib/open-gpu-kernel-modules-steamos-support",
+        "var/lib/open-gpu-kernel-modules-steamos-support/offline-install",
+        "dev",
+        "proc",
+        "sys",
+    ):
+        require_safe_destination(root, relative)
     os_release = root / "etc/os-release"
     if not os_release.is_file() or os_release.is_symlink():
         fail("invalid_target", "target lacks a safe regular /etc/os-release")
@@ -259,15 +350,34 @@ def validate(args):
             or pacman_local.is_symlink() or not pacman_local.is_dir()):
         fail("target_pacman_database_invalid", "target Holo pacman database is not a safe directory")
     package_descriptions = []
-    for description in pacman_local.glob("*/desc"):
+    package_names = set()
+    for entry in pacman_local.iterdir():
+        if entry.name == "ALPM_DB_VERSION" and entry.is_file() and not entry.is_symlink():
+            continue
+        if entry.is_symlink() or not entry.is_dir():
+            fail("target_pacman_database_invalid", f"unexpected local database entry: {entry.name}")
+        description = entry / "desc"
         try:
             description.resolve(strict=True).relative_to(resolved_database)
         except (FileNotFoundError, RuntimeError, ValueError):
             fail("target_pacman_database_invalid", "target package database escapes its root")
-        if description.is_file() and not description.is_symlink():
-            package_descriptions.append(description)
+        if description.is_symlink() or not description.is_file():
+            fail("target_pacman_database_invalid", f"package record lacks a safe desc file: {entry.name}")
+        name = pacman_desc_fields(description)
+        if name in package_names:
+            fail("target_pacman_database_invalid", f"duplicate installed package record: {name}")
+        package_names.add(name)
+        package_descriptions.append(description)
     if not package_descriptions:
         fail("target_pacman_database_empty", "target Holo pacman database has no package records")
+    if len(package_descriptions) > MAX_PACMAN_RECORDS:
+        fail("target_pacman_database_invalid", "target Holo pacman database has too many records")
+    missing_base_packages = sorted(REQUIRED_BASE_PACKAGES - package_names)
+    if missing_base_packages:
+        fail(
+            "target_pacman_database_invalid",
+            "target Holo pacman database lacks base records: " + ", ".join(missing_base_packages),
+        )
 
     for path in (
         args.archive,
@@ -279,11 +389,15 @@ def validate(args):
         args.lib32_nvidia_utils_signature,
         args.package_keyring,
     ):
-        if not path.is_file():
+        if not path.is_file() or path.is_symlink():
             fail("input_missing", f"required input is absent: {path}")
+    if args.archive.stat().st_size > MAX_MODULE_ARCHIVE_BYTES:
+        fail("archive_too_large", "module archive exceeds the compressed-size limit")
 
     expected = args.checksum.read_text(encoding="utf-8").split()
-    if not expected or not re.fullmatch(r"[0-9a-fA-F]{64}", expected[0]):
+    if (len(expected) != 2
+            or not re.fullmatch(r"[0-9a-fA-F]{64}", expected[0])
+            or expected[1].lstrip("*") != args.archive.name):
         fail("archive_checksum_invalid", "checksum sidecar is invalid")
     archive_sha = sha256(args.archive)
     if archive_sha != expected[0].lower():
@@ -308,21 +422,50 @@ def validate(args):
             members = archive.getmembers()
             if not all(safe_member(member.name) for member in members):
                 fail("archive_path_unsafe", "module archive contains an unsafe path")
+            normalized_members = {}
+            for member in members:
+                name = str(PurePosixPath(member.name))
+                canonical_spelling = {name, f"{name}/"} if member.isdir() else {name}
+                if member.name not in canonical_spelling:
+                    fail("archive_layout_invalid", "module archive contains a noncanonical entry")
+                if name in normalized_members:
+                    fail("archive_layout_invalid", "module archive contains a duplicate entry")
+                normalized_members[name] = member
             allowed_names = {
                 "modules",
-                "modules/",
                 "BUILD-INFO.txt",
                 "PROVENANCE.json",
                 *(f"modules/{name}" for name in EXPECTED_MODULES),
                 *(f"modules/{name}.zst" for name in EXPECTED_MODULES),
             }
             if any(
-                member.name not in allowed_names
+                name not in allowed_names
                 or (not member.isfile() and not member.isdir())
-                for member in members
+                or (member.isdir() and name != "modules")
+                for name, member in normalized_members.items()
             ):
                 fail("archive_layout_invalid", "module archive contains an unexpected entry")
-            embedded = archive.extractfile("PROVENANCE.json")
+            if "modules" not in normalized_members or not normalized_members["modules"].isdir():
+                fail("archive_layout_invalid", "module archive lacks its canonical directory")
+            if any(
+                name not in normalized_members or not normalized_members[name].isfile()
+                for name in ("BUILD-INFO.txt", "PROVENANCE.json")
+            ):
+                fail("archive_layout_invalid", "module archive lacks canonical metadata")
+            total_member_bytes = sum(member.size for member in members)
+            if total_member_bytes > MAX_TOTAL_MEMBER_BYTES:
+                fail("archive_too_large", "module archive exceeds the decompressed-size limit")
+            for name, member in normalized_members.items():
+                if not member.isfile():
+                    continue
+                limit = (
+                    MAX_METADATA_MEMBER_BYTES
+                    if name in ("BUILD-INFO.txt", "PROVENANCE.json")
+                    else MAX_MODULE_MEMBER_BYTES
+                )
+                if member.size > limit:
+                    fail("archive_member_too_large", f"oversized archive member: {name}")
+            embedded = archive.extractfile(normalized_members["PROVENANCE.json"])
             if embedded is None or embedded.read() != provenance_bytes:
                 fail("provenance_mismatch", "external and embedded provenance differ")
             module_members = {
@@ -363,6 +506,8 @@ def validate(args):
         if pkgver.rsplit("-", 1)[0] != nvidia:
             fail("userspace_version_mismatch", f"{expected_name} does not match {nvidia}")
         members = package_members(package)
+        for member in members:
+            require_safe_destination(root, member)
         validate_package_links(package)
         signer = verify_signature(package, signature, args.package_keyring)
         require_reviewed_signer(signer, expected_name)

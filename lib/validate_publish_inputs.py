@@ -15,6 +15,10 @@ EXPECTED_MODULES = {
     "nvidia.ko", "nvidia-drm.ko", "nvidia-modeset.ko", "nvidia-peermem.ko",
     "nvidia-uvm.ko",
 }
+MAX_ARCHIVE_BYTES = 512 * 1024 * 1024
+MAX_MODULE_BYTES = 256 * 1024 * 1024
+MAX_METADATA_BYTES = 1024 * 1024
+MAX_TOTAL_MEMBER_BYTES = 1024 * 1024 * 1024
 
 
 def fail(message):
@@ -74,6 +78,10 @@ def main():
     paths = (args.archive, args.checksum, args.build_info, args.provenance)
     if any(not path.is_file() or path.is_symlink() for path in paths):
         fail("All four publication inputs must be regular files.")
+    if args.archive.stat().st_size > MAX_ARCHIVE_BYTES:
+        fail("Archive exceeds the compressed-size limit.")
+    if args.build_info.stat().st_size > MAX_METADATA_BYTES or args.provenance.stat().st_size > MAX_METADATA_BYTES:
+        fail("External publication metadata exceeds the size limit.")
 
     try:
         provenance = json.loads(args.provenance.read_text(encoding="utf-8"))
@@ -173,14 +181,30 @@ def main():
             members = {}
             for member in archive_file.getmembers():
                 name = normalized_member(member.name)
+                canonical_spelling = {name, f"{name}/"} if member.isdir() else {name}
+                if member.name not in canonical_spelling:
+                    fail("Archive contains a noncanonical member path.")
                 if name in members:
                     fail("Archive contains duplicate member paths.")
                 members[name] = member
             required_files = {"BUILD-INFO.txt", "PROVENANCE.json"} | {
                 f"modules/{name}" for name in EXPECTED_MODULES
             }
+            allowed_members = required_files | {"modules"}
+            if set(members) != allowed_members:
+                fail("Archive contains noncanonical entries.")
             if any(name not in members or not members[name].isfile() for name in required_files):
                 fail("Archive lacks a regular canonical publication file.")
+            if not members["modules"].isdir():
+                fail("Archive lacks its canonical modules directory.")
+            if sum(member.size for member in members.values()) > MAX_TOTAL_MEMBER_BYTES:
+                fail("Archive exceeds the decompressed-size limit.")
+            for name, member in members.items():
+                if not member.isfile():
+                    continue
+                limit = MAX_METADATA_BYTES if name in ("BUILD-INFO.txt", "PROVENANCE.json") else MAX_MODULE_BYTES
+                if member.size > limit:
+                    fail(f"Archive member exceeds the size limit: {name}.")
             archived_modules = {
                 name.removeprefix("modules/")
                 for name, member in members.items()

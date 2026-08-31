@@ -34,6 +34,20 @@ def add_bytes(archive, name, content):
     archive.addfile(member, io.BytesIO(content))
 
 
+def altered_module_archive(source, destination, alteration):
+    with tarfile.open(source, "r:gz") as original, tarfile.open(destination, "w:gz") as output:
+        for member in original.getmembers():
+            if alteration == "oversized" and member.name == "BUILD-INFO.txt":
+                add_bytes(output, member.name, b"x" * (1024 * 1024 + 1))
+                continue
+            stream = original.extractfile(member) if member.isfile() else None
+            output.addfile(member, stream)
+        if alteration == "extra":
+            add_bytes(output, "unexpected.txt", b"unexpected\n")
+        elif alteration == "duplicate":
+            add_bytes(output, "PROVENANCE.json", source.read_bytes()[:16])
+
+
 def make_package(
     path,
     name,
@@ -67,11 +81,13 @@ def make_fixture(root):
     target = root / "target"
     (target / "etc").mkdir(parents=True)
     (target / "usr/lib/modules" / KERNEL).mkdir(parents=True)
-    package_record = target / "usr/lib/holo/pacmandb/local/filesystem-1-1"
-    package_record.mkdir(parents=True)
-    (package_record / "desc").write_text(
-        "%NAME%\nfilesystem\n", encoding="utf-8"
-    )
+    for package_name in ("filesystem", "glibc", "pacman"):
+        package_record = target / f"usr/lib/holo/pacmandb/local/{package_name}-1-1"
+        package_record.mkdir(parents=True)
+        (package_record / "desc").write_text(
+            f"%NAME%\n{package_name}\n\n%VERSION%\n1-1\n",
+            encoding="utf-8",
+        )
     (target / "boot").mkdir()
     grub = target / "efi/EFI/steamos/grub.cfg"
     grub.parent.mkdir(parents=True)
@@ -116,6 +132,10 @@ def make_fixture(root):
     provenance_path.write_bytes(provenance_bytes)
     archive_path = root / "artifact.tar.gz"
     with tarfile.open(archive_path, "w:gz") as archive:
+        directory = tarfile.TarInfo("modules/")
+        directory.type = tarfile.DIRTYPE
+        directory.mode = 0o755
+        archive.addfile(directory)
         for name, content in module_content.items():
             add_bytes(archive, f"modules/{name}", content)
         add_bytes(archive, "BUILD-INFO.txt", b"fixture\n")
@@ -323,7 +343,7 @@ def main():
         assert valid["status"] == "verified"
         assert valid["pacmanDatabase"] == {
             "path": "/usr/lib/holo/pacmandb",
-            "packageCount": 1,
+            "packageCount": 3,
         }
         assert valid["boot"]["efiMountPath"] == "/efi"
         assert valid["boot"]["rootfsBootPath"] == "/boot"
@@ -352,6 +372,58 @@ def main():
         )
         assert missing_database["reason"] == "target_pacman_database_invalid"
         hidden_pacman_local.rename(pacman_local)
+
+        filesystem_desc = pacman_local / "filesystem-1-1/desc"
+        valid_filesystem_desc = filesystem_desc.read_text(encoding="utf-8")
+        filesystem_desc.write_text("%NAME%\nfilesystem\n", encoding="utf-8")
+        malformed_database = run(
+            paths, binaries, temporary / "malformed-pacman-database.json", False
+        )
+        assert malformed_database["reason"] == "target_pacman_database_invalid"
+        filesystem_desc.write_text(valid_filesystem_desc, encoding="utf-8")
+
+        for index, relative in enumerate((
+            "etc/modprobe.d",
+            f"usr/lib/modules/{KERNEL}/updates",
+            "usr/lib/firmware",
+            "var/lib",
+            "dev",
+            "proc",
+            "sys",
+        )):
+            destination = paths["target"] / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            outside = temporary / f"outside-{index}"
+            outside.mkdir()
+            destination.symlink_to(outside, target_is_directory=True)
+            unsafe_destination = run(
+                paths, binaries, temporary / f"unsafe-destination-{index}.json", False
+            )
+            assert unsafe_destination["reason"] == "target_path_unsafe"
+            destination.unlink()
+
+        original_archive = paths["archive"]
+        original_checksum_path = paths["checksum"]
+        for alteration, expected_reason in (
+            ("extra", "archive_layout_invalid"),
+            ("duplicate", "archive_layout_invalid"),
+            ("oversized", "archive_member_too_large"),
+        ):
+            altered = temporary / f"artifact-{alteration}.tar.gz"
+            altered_module_archive(original_archive, altered, alteration)
+            altered_checksum = temporary / f"artifact-{alteration}.sha256"
+            altered_checksum.write_text(
+                f"{hashlib.sha256(altered.read_bytes()).hexdigest()}  {altered.name}\n",
+                encoding="utf-8",
+            )
+            paths["archive"] = altered
+            paths["checksum"] = altered_checksum
+            invalid_archive = run(
+                paths, binaries, temporary / f"invalid-archive-{alteration}.json", False
+            )
+            assert invalid_archive["reason"] == expected_reason
+        paths["archive"] = original_archive
+        paths["checksum"] = original_checksum_path
 
         run(paths, binaries, temporary / "bad-signature.json", False, MOCK_BAD_SIGNATURE="1")
 
@@ -396,7 +468,7 @@ def main():
         assert successful["validation"]["keyring"]["name"] == "approved.gpg"
         assert successful["validation"]["pacmanDatabase"] == {
             "path": "/usr/lib/holo/pacmandb",
-            "packageCount": 1,
+            "packageCount": 3,
         }
         assert successful["validation"]["boot"] == valid["boot"]
         assert len(successful["validation"]["keyring"]["sha256"]) == 64

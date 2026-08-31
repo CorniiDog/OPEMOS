@@ -32,7 +32,10 @@ def add_bytes(archive, name, content):
     archive.addfile(member, io.BytesIO(content))
 
 
-def fixture(root, *, duplicate_metadata=False, unsafe_member=False, wrong_module_hash=False):
+def fixture(
+    root, *, duplicate_metadata=False, unsafe_member=False,
+    wrong_module_hash=False, extra_member=False,
+):
     root.mkdir(parents=True, exist_ok=True)
     archive = root / ARCHIVE_NAME
     checksum = root / f"{ARCHIVE_NAME}.sha256"
@@ -91,6 +94,10 @@ def fixture(root, *, duplicate_metadata=False, unsafe_member=False, wrong_module
     provenance_path.write_bytes(provenance_bytes)
     build_info.write_bytes(info)
     with tarfile.open(archive, "w:gz") as bundle:
+        directory = tarfile.TarInfo("modules/")
+        directory.type = tarfile.DIRTYPE
+        directory.mode = 0o755
+        bundle.addfile(directory)
         add_bytes(bundle, "BUILD-INFO.txt", info)
         add_bytes(bundle, "PROVENANCE.json", provenance_bytes)
         for name in MODULE_NAMES:
@@ -99,6 +106,8 @@ def fixture(root, *, duplicate_metadata=False, unsafe_member=False, wrong_module
             add_bytes(bundle, "./PROVENANCE.json", provenance_bytes)
         if unsafe_member:
             add_bytes(bundle, "../escape", b"unsafe\n")
+        if extra_member:
+            add_bytes(bundle, "unexpected.txt", b"unexpected\n")
     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
     checksum.write_text(f"{digest}  {ARCHIVE_NAME}\n", encoding="utf-8")
     return archive, checksum, build_info, provenance_path
@@ -135,6 +144,7 @@ def main():
             ("duplicate", {"duplicate_metadata": True}),
             ("unsafe", {"unsafe_member": True}),
             ("module-hash", {"wrong_module_hash": True}),
+            ("extra", {"extra_member": True}),
         ):
             invalid_paths = fixture(root / name, **options)
             assert command(invalid_paths, "--dry-run").returncode != 0

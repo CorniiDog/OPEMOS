@@ -207,14 +207,18 @@ schema-1 provenance, callers must provide exact local `nvidia-utils` and
 keyring. No package or source is downloaded during installation. Before
 mutation, the caller must leave the rootfs-owned `<root>/boot` visible and mount
 the corresponding `efi-A` partition separately at `<root>/efi`; the installer
-refuses to guess an A/B slot. It atomically and idempotently enforces
+refuses to guess an A/B slot. Before mutation, `/efi` must be a distinct FAT
+mount rather than another view of the rootfs. It atomically and idempotently enforces
 `rd.driver.blacklist=nouveau`, `modprobe.blacklist=nouveau`,
 `nvidia-drm.modeset=1`, and `nvidia-drm.fbdev=1` on every recognized Linux entry
 in `<root>/efi/EFI/steamos/grub.cfg`, replacing conflicting values.
 The root must contain Valve's populated, confined package database at
 `/usr/lib/holo/pacmandb`. The installer passes that exact root-prefixed path to
 pacman and never creates or falls back to `/var/lib/pacman`; validation records
-the canonical database path and observed package count before mutation.
+the canonical database path and observed package count before mutation. Every
+local record must have a confined regular `desc` file whose package name,
+version, and directory identity agree; duplicate records and databases missing
+the `filesystem`, `glibc`, or `pacman` base records are rejected.
 Package signatures must resolve to an active package-specific fingerprint in
 `trust/nvidia-userspace-package-signers.json`. Fedora `gpgv` requires a binary
 keyring; an ASCII-armored pacman keyring must be dearmored before use. The
@@ -237,7 +241,11 @@ overwrite an existing output.
 Use `--validate-only` before allowing any image mutation. Validation requires
 the exact target kernel directory, byte-identical external/embedded provenance,
 all five module hashes and metadata, matching signed userspace package releases,
-and versioned GSP firmware. A versioned `--result-json` contains filenames rather
+and versioned GSP firmware. Module archives use an exact allowlist with duplicate,
+extra, and oversized compressed/decompressed content rejected. Every existing
+component of every project-owned or package-member mutation destination must be
+confined beneath the target root and must not be a symlink. A versioned
+`--result-json` contains filenames rather
 than host paths. Mutation uses target-root pacman semantics, offline `depmod`,
 explicit NVIDIA mkinitcpio configuration, and the target's own `mkinitcpio` in
 an x86_64 chroot. Synthetic tests cover success, repeated execution, injected
