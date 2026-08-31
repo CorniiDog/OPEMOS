@@ -105,13 +105,15 @@ def require_safe_destination(root, relative):
 
 
 def pacman_desc_fields(path):
+    record_name = path.parent.name
     if path.stat().st_size > MAX_PACMAN_RECORD_BYTES:
-        fail("target_pacman_database_invalid", f"oversized package record: {path.name}")
+        fail("target_pacman_database_invalid", f"oversized package record: {record_name}/desc")
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except UnicodeError:
-        fail("target_pacman_database_invalid", f"non-UTF-8 package record: {path.name}")
+        fail("target_pacman_database_invalid", f"non-UTF-8 package record: {record_name}/desc")
     fields = {}
+    duplicate_fields = set()
     index = 0
     while index < len(lines):
         marker = lines[index]
@@ -122,24 +124,51 @@ def pacman_desc_fields(path):
                 if lines[index]:
                     values.append(lines[index])
                 index += 1
-            fields[marker.strip("%")] = values
+            field_name = marker.strip("%")
+            if field_name in fields:
+                duplicate_fields.add(field_name)
+            else:
+                fields[field_name] = values
             continue
         index += 1
     name = fields.get("NAME", [])
     version = fields.get("VERSION", [])
     installed_size = fields.get("ISIZE", [])
-    if (len(name) != 1 or len(version) != 1
-            or len(installed_size) != 1
-            or not re.fullmatch(r"[A-Za-z0-9@._+:-]+", name[0])
-            or not version[0] or any(character.isspace() for character in version[0])
-            or not installed_size[0].isdigit()):
-        fail("target_pacman_database_invalid", f"malformed package record: {path.name}")
+    invalid_fields = sorted(duplicate_fields)
+    if len(name) != 1 or not re.fullmatch(r"[A-Za-z0-9@._+:-]+", name[0] if name else ""):
+        invalid_fields.append("NAME")
+    if (len(version) != 1 or not version[0]
+            or any(character.isspace() for character in version[0])):
+        invalid_fields.append("VERSION")
+    if invalid_fields:
+        invalid_fields = sorted(set(invalid_fields))
+        fail(
+            "target_pacman_database_invalid",
+            f"malformed package record {record_name}/desc; invalid fields: "
+            + ", ".join(invalid_fields),
+            packageRecord=record_name,
+            invalidFields=invalid_fields,
+        )
     if path.parent.name != f"{name[0]}-{version[0]}":
-        fail("target_pacman_database_invalid", f"package record directory has wrong identity: {path.parent.name}")
+        fail(
+            "target_pacman_database_invalid",
+            f"package record directory has wrong identity: {record_name}; "
+            f"expected {name[0]}-{version[0]}",
+            packageRecord=record_name,
+            invalidFields=["NAME", "VERSION"],
+        )
+    installed_size_valid = (
+        len(installed_size) == 1 and installed_size[0].isdigit()
+    )
     return {
         "name": name[0],
         "version": version[0],
-        "installedSize": int(installed_size[0]),
+        "installedSize": int(installed_size[0]) if installed_size_valid else None,
+        "installedSizeValid": installed_size_valid,
+        "installedSizeIssue": (
+            "missing" if not installed_size else "duplicate-or-nonnumeric"
+        ) if not installed_size_valid else None,
+        "packageRecord": record_name,
         "depends": fields.get("DEPENDS", []),
         "provides": fields.get("PROVIDES", []),
     }
@@ -732,10 +761,20 @@ def validate(args):
             fail("gsp_firmware_missing", "nvidia-utils lacks exact-version GSP firmware")
 
     closure = dependency_closure(incoming_packages, installed_packages)
-    replaced_package_bytes = sum(
-        installed_packages.get(name, {}).get("installedSize", 0)
-        for name in incoming_packages
-    )
+    replaced_package_bytes = 0
+    for name in incoming_packages:
+        replaced = installed_packages.get(name)
+        if replaced is None:
+            continue
+        if not replaced["installedSizeValid"]:
+            fail(
+                "target_pacman_database_invalid",
+                f"replacement package record {replaced['packageRecord']}/desc has "
+                f"{replaced['installedSizeIssue']} ISIZE",
+                packageRecord=replaced["packageRecord"],
+                invalidFields=["ISIZE"],
+            )
+        replaced_package_bytes += replaced["installedSize"]
     existing_module_bytes = tree_regular_bytes(
         root / "usr/lib/modules" / args.kernel / "updates/open-gpu-kernel-modules-steamos"
     )

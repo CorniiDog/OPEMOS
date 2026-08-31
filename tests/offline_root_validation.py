@@ -104,6 +104,16 @@ def make_fixture(root):
             ),
             encoding="utf-8",
         )
+    # Real Holo local databases can contain unrelated package records without
+    # %ISIZE%.  Their identity and dependency metadata remain usable, but they
+    # must not receive replacement-size credit.
+    unrelated_record = target / "usr/lib/holo/pacmandb/local/steamos-customizations-1-1"
+    unrelated_record.mkdir(parents=True)
+    (unrelated_record / "desc").write_text(
+        "%NAME%\nsteamos-customizations\n\n%VERSION%\n1-1\n\n"
+        "%DEPENDS%\nfilesystem\n\n%REASON%\n1\n",
+        encoding="utf-8",
+    )
     (target / "boot").mkdir()
     (target / "var").mkdir()
     grub = target / "efi/EFI/steamos/grub.cfg"
@@ -369,7 +379,7 @@ def main():
         assert valid["status"] == "verified"
         assert valid["pacmanDatabase"] == {
             "path": "/usr/lib/holo/pacmandb",
-            "packageCount": 3,
+            "packageCount": 4,
         }
         assert valid["boot"]["efiMountPath"] == "/efi"
         assert valid["boot"]["rootfsBootPath"] == "/boot"
@@ -431,6 +441,21 @@ def main():
             record = local_database / f"{name}-{version}"
             (record / "desc").unlink()
             record.rmdir()
+
+        missing_size_record = local_database / f"nvidia-utils-{NVIDIA}-1"
+        missing_size_record.mkdir()
+        (missing_size_record / "desc").write_text(
+            f"%NAME%\nnvidia-utils\n\n%VERSION%\n{NVIDIA}-1\n\n",
+            encoding="utf-8",
+        )
+        missing_replacement_size = run(
+            paths, binaries, temporary / "replacement-size-missing.json", False
+        )
+        assert missing_replacement_size["reason"] == "target_pacman_database_invalid"
+        assert missing_replacement_size["packageRecord"] == missing_size_record.name
+        assert missing_replacement_size["invalidFields"] == ["ISIZE"]
+        (missing_size_record / "desc").unlink()
+        missing_size_record.rmdir()
         assert [package["fullVersion"] for package in valid["packages"]] == [
             f"{NVIDIA}-2",
             f"{NVIDIA}-1",
@@ -463,6 +488,8 @@ def main():
             paths, binaries, temporary / "malformed-pacman-database.json", False
         )
         assert malformed_database["reason"] == "target_pacman_database_invalid"
+        assert malformed_database["packageRecord"] == "filesystem-1-1"
+        assert malformed_database["invalidFields"] == ["VERSION"]
         filesystem_desc.write_text(valid_filesystem_desc, encoding="utf-8")
 
         for index, relative in enumerate((
@@ -564,7 +591,7 @@ def main():
         assert successful["validation"]["keyring"]["name"] == "approved.gpg"
         assert successful["validation"]["pacmanDatabase"] == {
             "path": "/usr/lib/holo/pacmandb",
-            "packageCount": 3,
+            "packageCount": 4,
         }
         assert successful["validation"]["boot"] == valid["boot"]
         assert len(successful["validation"]["keyring"]["sha256"]) == 64

@@ -220,7 +220,11 @@ pacman and never creates or falls back to `/var/lib/pacman`; validation records
 the canonical database path and observed package count before mutation. Every
 local record must have a confined regular `desc` file whose package name,
 version, and directory identity agree; duplicate records and databases missing
-the `filesystem`, `glibc`, or `pacman` base records are rejected.
+the `filesystem`, `glibc`, or `pacman` base records are rejected. An unrelated
+installed record may omit `%ISIZE%`; its identity and dependency metadata remain
+usable, but it receives no storage credit. A package that will be replaced must
+have one numeric `%ISIZE%`, otherwise validation fails closed and reports the
+package directory and invalid field names.
 Package signatures must resolve to an active package-specific fingerprint in
 `trust/nvidia-userspace-package-signers.json`. Fedora `gpgv` requires a binary
 keyring; an ASCII-armored pacman keyring must be dearmored before use. The

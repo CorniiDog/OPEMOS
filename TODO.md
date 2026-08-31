@@ -1282,6 +1282,9 @@ signing policy.
 * [x] Parse and validate confined Holo package name/version records, reject
   duplicates, and require the SteamOS base `filesystem`, `glibc`, and `pacman`
   records rather than trusting only a nonzero directory count.
+* [x] Permit unrelated real Holo records without `%ISIZE%`, while requiring a
+  unique numeric installed size for every package receiving replacement credit
+  and emitting the package directory plus invalid field names on failure.
 * [x] Resolve the authenticated userspace packages' complete version-checked
   dependency closure against incoming and installed Holo package/provides data.
 * [x] Emit conservative root/var/EFI available and required bytes, declared
