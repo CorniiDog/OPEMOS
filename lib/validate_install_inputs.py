@@ -59,6 +59,8 @@ def arguments():
     parser.add_argument("--nvidia-utils-signature", required=True, type=Path)
     parser.add_argument("--lib32-nvidia-utils", required=True, type=Path)
     parser.add_argument("--lib32-nvidia-utils-signature", required=True, type=Path)
+    parser.add_argument("--dependency-package", action="append", default=[], type=Path)
+    parser.add_argument("--dependency-signature", action="append", default=[], type=Path)
     parser.add_argument("--package-keyring", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     return parser.parse_args()
@@ -242,6 +244,8 @@ def dependency_closure(incoming, installed):
                 fail(
                     "package_dependency_unsatisfied",
                     f"no incoming or installed package satisfies {specification}",
+                    missingDependencies=[specification],
+                    dependencyRequestedBy=record["name"],
                 )
             exact = [candidate for candidate in matches if candidate["name"] == name]
             selected = sorted(exact or matches, key=lambda item: item["name"])[0]
@@ -475,6 +479,11 @@ def validate(args):
         )
     if appliance_architecture != "x86_64":
         fail("unsupported_appliance_architecture", "installation validation requires x86_64")
+    if len(args.dependency_package) != len(args.dependency_signature):
+        fail(
+            "dependency_input_invalid",
+            "each dependency package requires one positionally paired signature",
+        )
     if not re.fullmatch(r"[A-Za-z0-9._+~-]+", args.kernel):
         fail("invalid_target", "target kernel contains unsupported characters")
     root = args.root.resolve(strict=True)
@@ -600,6 +609,8 @@ def validate(args):
         args.lib32_nvidia_utils,
         args.lib32_nvidia_utils_signature,
         args.package_keyring,
+        *args.dependency_package,
+        *args.dependency_signature,
     ):
         if not path.is_file() or path.is_symlink():
             fail("input_missing", f"required input is absent: {path}")
@@ -712,46 +723,58 @@ def validate(args):
     incoming_packages = {}
     package_installed_bytes = 0
     package_compressed_bytes = 0
-    for package, signature, expected_name in (
-        (args.nvidia_utils, args.nvidia_utils_signature, "nvidia-utils"),
-        (args.lib32_nvidia_utils, args.lib32_nvidia_utils_signature, "lib32-nvidia-utils"),
-    ):
+    package_inputs = [
+        (args.nvidia_utils, args.nvidia_utils_signature, "nvidia-utils", True),
+        (args.lib32_nvidia_utils, args.lib32_nvidia_utils_signature, "lib32-nvidia-utils", True),
+    ] + [
+        (package, signature, None, False)
+        for package, signature in zip(args.dependency_package, args.dependency_signature)
+    ]
+    for package, signature, expected_name, is_nvidia_package in package_inputs:
         metadata = package_metadata(package)
-        if metadata.get("pkgname") != expected_name or metadata.get("arch") != "x86_64":
+        package_name = metadata.get("pkgname", "")
+        if (expected_name is not None and package_name != expected_name):
             fail("userspace_package_mismatch", f"{package.name} has wrong identity")
+        if not re.fullmatch(r"[A-Za-z0-9@._+:-]+", package_name) or metadata.get("arch") not in ("x86_64", "any"):
+            fail("userspace_package_mismatch", f"{package.name} has wrong identity or architecture")
+        if package_name in incoming_packages:
+            fail("dependency_input_invalid", f"duplicate incoming package identity: {package_name}")
         pkgver = metadata.get("pkgver", "")
-        if pkgver.rsplit("-", 1)[0] != nvidia:
+        if is_nvidia_package and pkgver.rsplit("-", 1)[0] != nvidia:
             fail("userspace_version_mismatch", f"{expected_name} does not match {nvidia}")
         members = package_members(package)
         for member in members:
             require_safe_destination(root, member)
         validate_package_links(package)
         signer = verify_signature(package, signature, args.package_keyring)
-        require_reviewed_signer(signer, expected_name)
+        if is_nvidia_package:
+            require_reviewed_signer(signer, expected_name)
         pkgver_only, separator, pkgrel = pkgver.rpartition("-")
-        if not separator or pkgver_only != nvidia or not pkgrel:
+        if not separator or not pkgver_only or not pkgrel:
+            fail("userspace_package_invalid", f"{package_name} has invalid pkgver/pkgrel")
+        if is_nvidia_package and pkgver_only != nvidia:
             fail("userspace_version_mismatch", f"{expected_name} has invalid pkgver/pkgrel")
         package_records.append(
-            (expected_name, pkgver, pkgver_only, pkgrel, signer, sha256(package))
+            (package_name, pkgver, pkgver_only, pkgrel, signer, sha256(package), not is_nvidia_package)
         )
         installed_size = metadata.get("size", "")
         if not installed_size.isdigit():
             fail(
                 "userspace_package_invalid",
-                f"{expected_name} lacks a valid declared installed size",
+                f"{package_name} lacks a valid declared installed size",
             )
         installed_size = int(installed_size)
         package_installed_bytes += installed_size
         package_compressed_bytes += package.stat().st_size
-        incoming_packages[expected_name] = {
-            "name": expected_name,
+        incoming_packages[package_name] = {
+            "name": package_name,
             "version": pkgver,
             "installedSize": installed_size,
             "depends": metadata["depends"],
             "provides": metadata["provides"],
             "source": "incoming",
         }
-        if expected_name == "nvidia-utils" and not any(
+        if package_name == "nvidia-utils" and not any(
             re.fullmatch(
                 rf"usr/lib/firmware/nvidia/{re.escape(nvidia)}/gsp[^/]*\.bin",
                 name,
@@ -874,8 +897,9 @@ def validate(args):
                 "pkgrel": pkgrel,
                 "signer": signer,
                 "sha256": digest,
+                "role": "dependency" if dependency else "nvidia-userspace",
             }
-            for name, full_version, pkgver, pkgrel, signer, digest in package_records
+            for name, full_version, pkgver, pkgrel, signer, digest, dependency in package_records
         ],
     }
 

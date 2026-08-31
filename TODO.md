@@ -1287,6 +1287,9 @@ signing policy.
   and emitting the package directory plus invalid field names on failure.
 * [x] Resolve the authenticated userspace packages' complete version-checked
   dependency closure against incoming and installed Holo package/provides data.
+* [x] Accept repeated signed, locally staged Arch dependency packages, include
+  them in one offline transaction and storage result, and return typed missing
+  dependency/requester fields without performing network resolution.
 * [x] Emit conservative root/var/EFI available and required bytes, declared
   package size, final module size, replacement credits, and initramfs reserve;
   fail before mutation with `target_space_insufficient` when any mount cannot fit.

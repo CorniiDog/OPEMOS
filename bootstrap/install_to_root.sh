@@ -15,6 +15,8 @@ NVIDIA_UTILS_SIGNATURE=""
 LIB32_NVIDIA_UTILS=""
 LIB32_NVIDIA_UTILS_SIGNATURE=""
 PACKAGE_KEYRING=""
+DEPENDENCY_PACKAGES=()
+DEPENDENCY_SIGNATURES=()
 RESULT_JSON=""
 VALIDATE_ONLY=0
 
@@ -37,6 +39,8 @@ Required:
   --result-json FILE
 
 Options:
+  --dependency-package FILE       Repeat with its paired signature.
+  --dependency-signature FILE     Repeat in the same order as packages.
   --validate-only
   -h, --help
 
@@ -58,12 +62,16 @@ while (( $# > 0 )); do
         --lib32-nvidia-utils) LIB32_NVIDIA_UTILS="${2:-}"; shift 2 ;;
         --lib32-nvidia-utils-signature) LIB32_NVIDIA_UTILS_SIGNATURE="${2:-}"; shift 2 ;;
         --package-keyring) PACKAGE_KEYRING="${2:-}"; shift 2 ;;
+        --dependency-package) DEPENDENCY_PACKAGES+=("${2:-}"); shift 2 ;;
+        --dependency-signature) DEPENDENCY_SIGNATURES+=("${2:-}"); shift 2 ;;
         --result-json) RESULT_JSON="${2:-}"; shift 2 ;;
         --validate-only) VALIDATE_ONLY=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) die "Unknown argument: $1" ;;
     esac
 done
+(( ${#DEPENDENCY_PACKAGES[@]} == ${#DEPENDENCY_SIGNATURES[@]} )) ||
+    die "Each dependency package requires one positionally paired signature."
 
 for value in ROOT ARCHIVE CHECKSUM PROVENANCE KERNEL NVIDIA_UTILS \
     NVIDIA_UTILS_SIGNATURE LIB32_NVIDIA_UTILS LIB32_NVIDIA_UTILS_SIGNATURE \
@@ -116,6 +124,12 @@ VALIDATOR_ARGS=(
     --package-keyring "$PACKAGE_KEYRING"
     --output "$VALIDATION_JSON"
 )
+for (( dependency_index=0; dependency_index<${#DEPENDENCY_PACKAGES[@]}; dependency_index++ )); do
+    VALIDATOR_ARGS+=(
+        --dependency-package "${DEPENDENCY_PACKAGES[$dependency_index]}"
+        --dependency-signature "${DEPENDENCY_SIGNATURES[$dependency_index]}"
+    )
+done
 
 python3 "${SUPPORT_ROOT}/lib/run_in_process_group.py" \
     python3 "${SUPPORT_ROOT}/lib/validate_install_inputs.py" \
@@ -269,9 +283,13 @@ trap cancel_mutation INT TERM
 
 PHASE=userspace_install
 TARGET_PACMAN_DATABASE="$ROOT/usr/lib/holo/pacmandb"
+PACMAN_PACKAGES=("$NVIDIA_UTILS" "$LIB32_NVIDIA_UTILS")
+for (( dependency_index=0; dependency_index<${#DEPENDENCY_PACKAGES[@]}; dependency_index++ )); do
+    PACMAN_PACKAGES+=("${DEPENDENCY_PACKAGES[$dependency_index]}")
+done
 run_mutation_command env SYSTEMD_OFFLINE=1 pacman \
     --root "$ROOT" --dbpath "$TARGET_PACMAN_DATABASE" \
-    --noconfirm --needed -U "$NVIDIA_UTILS" "$LIB32_NVIDIA_UTILS"
+    --noconfirm --needed -U "${PACMAN_PACKAGES[@]}"
 
 installed_package_version()
 {

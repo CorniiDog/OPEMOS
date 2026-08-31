@@ -83,7 +83,10 @@ def main():
         elif args.status == "failed" and validation.get("status") == "failed":
             failure_validation = {
                 key: validation[key]
-                for key in ("storage", "packageDependencyClosure", "compression")
+                for key in (
+                    "storage", "packageDependencyClosure", "compression",
+                    "missingDependencies", "dependencyRequestedBy",
+                )
                 if key in validation
             }
             if failure_validation:

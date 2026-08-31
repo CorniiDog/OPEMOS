@@ -174,6 +174,7 @@ def make_fixture(root):
     )
     nvidia_utils = root / "nvidia-utils.pkg.tar.gz"
     lib32 = root / "lib32-nvidia-utils.pkg.tar.gz"
+    egl_wayland = root / "egl-wayland.pkg.tar.gz"
     make_package(
         nvidia_utils, "nvidia-utils", pkgrel="2", gsp=True,
         dependencies=("glibc>=1-1",),
@@ -181,7 +182,8 @@ def make_fixture(root):
     make_package(
         lib32, "lib32-nvidia-utils", dependencies=("nvidia-utils=575.64.05-2",),
     )
-    for path in (nvidia_utils, lib32):
+    make_package(egl_wayland, "egl-wayland", version="4.0.0", installed_size=2048)
+    for path in (nvidia_utils, lib32, egl_wayland):
         path.with_suffix(path.suffix + ".sig").write_bytes(b"signature\n")
     keyring = root / "approved.gpg"
     keyring.write_bytes(b"keyring\n")
@@ -194,6 +196,8 @@ def make_fixture(root):
         "nvidia_sig": nvidia_utils.with_suffix(nvidia_utils.suffix + ".sig"),
         "lib32": lib32,
         "lib32_sig": lib32.with_suffix(lib32.suffix + ".sig"),
+        "dependency": egl_wayland,
+        "dependency_sig": egl_wayland.with_suffix(egl_wayland.suffix + ".sig"),
         "keyring": keyring,
     }
 
@@ -277,6 +281,11 @@ def run(paths, binaries, output, success, **environment):
         "--package-keyring", str(paths["keyring"]),
         "--output", str(output),
     ]
+    if paths.get("stage_dependency"):
+        command.extend([
+            "--dependency-package", str(paths["dependency"]),
+            "--dependency-signature", str(paths["dependency_sig"]),
+        ])
     env = os.environ.copy()
     env.update(
         PATH=f"{binaries}:{env['PATH']}",
@@ -296,7 +305,7 @@ def run(paths, binaries, output, success, **environment):
 
 
 def installer_command(paths, result):
-    return [
+    command = [
         str(INSTALLER),
         "--root", str(paths["target"]),
         "--archive", str(paths["archive"]),
@@ -310,6 +319,12 @@ def installer_command(paths, result):
         "--package-keyring", str(paths["keyring"]),
         "--result-json", str(result),
     ]
+    if paths.get("stage_dependency"):
+        command.extend([
+            "--dependency-package", str(paths["dependency"]),
+            "--dependency-signature", str(paths["dependency_sig"]),
+        ])
+    return command
 
 
 def installer_environment(binaries, mount_state, **environment):
@@ -545,9 +560,43 @@ def main():
             paths, binaries, temporary / "missing-dependency.json", False
         )
         assert missing_dependency["reason"] == "package_dependency_unsatisfied"
+        assert missing_dependency["missingDependencies"] == ["missing-runtime>=1"]
+        assert missing_dependency["dependencyRequestedBy"] == "lib32-nvidia-utils"
+        missing_dependency_result = run_installer(
+            paths, binaries, temporary / "missing-dependency-result.json", False
+        )
+        assert missing_dependency_result["validation"]["missingDependencies"] == [
+            "missing-runtime>=1"
+        ]
         make_package(
             paths["lib32"], "lib32-nvidia-utils",
             dependencies=("nvidia-utils=575.64.05-2",),
+        )
+
+        make_package(
+            paths["nvidia"], "nvidia-utils", pkgrel="2", gsp=True,
+            dependencies=("glibc>=1-1", "egl-wayland>=4.0.0-1"),
+        )
+        unstaged_arch_dependency = run(
+            paths, binaries, temporary / "egl-wayland-missing.json", False
+        )
+        assert unstaged_arch_dependency["missingDependencies"] == ["egl-wayland>=4.0.0-1"]
+        paths["stage_dependency"] = True
+        complete_closure = run(
+            paths, binaries, temporary / "complete-dependency-closure.json", True
+        )
+        assert any(
+            package["name"] == "egl-wayland" and package["role"] == "dependency"
+            for package in complete_closure["packages"]
+        )
+        assert any(
+            package["name"] == "egl-wayland"
+            for package in complete_closure["packageDependencyClosure"]
+        )
+        del paths["stage_dependency"]
+        make_package(
+            paths["nvidia"], "nvidia-utils", pkgrel="2", gsp=True,
+            dependencies=("glibc>=1-1",),
         )
 
         make_package(paths["lib32"], "lib32-nvidia-utils", version="580.1.1")
@@ -586,7 +635,7 @@ def main():
 
         make_package(paths["nvidia"], "nvidia-utils", pkgrel="2", gsp=True)
         successful = run_installer(paths, binaries, temporary / "install.json", True)
-        assert successful["status"] == "success"
+        assert successful["status"] == "success", successful
         assert successful["cleanup"]["mountsReleased"] is True
         assert successful["validation"]["keyring"]["name"] == "approved.gpg"
         assert successful["validation"]["pacmanDatabase"] == {

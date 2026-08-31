@@ -232,6 +232,16 @@ result records the supplied binary keyring SHA256, both package hashes, complete
 versions/pkgrels, and signer fingerprints so the image builder can additionally
 pin the exact prepared keyring artifact.
 
+If those packages require Arch packages absent from Holo, callers repeat
+`--dependency-package FILE --dependency-signature FILE` for the complete
+closure. Every dependency is locally staged, signature-verified by the same
+pinned keyring, path-confined, included in size accounting, and installed in the
+single offline `pacman -U` transaction. The installer never accesses a package
+repository. An incomplete closure fails with `package_dependency_unsatisfied`,
+`missingDependencies`, and `dependencyRequestedBy`; dependency packages and
+their hashes, full versions, roles, and signer fingerprints appear in the
+validated result.
+
 Validation also performs the authoritative storage preflight. It reads each
 authenticated package's declared installed size and dependency/provides fields,
 resolves the complete incoming-plus-installed dependency closure against parsed
