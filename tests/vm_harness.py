@@ -66,6 +66,8 @@ def main():
     assert "--offline-cache-only" in runner
     assert "stop_qemu" in runner and 'rm -f "$BASE_IMAGE.partial"' in runner
     assert 'RUNTIME_DIR="$SCRIPT_DIR/.runtime/fedora"' in runner
+    assert 'RUNTIME_LOCK="$SCRIPT_DIR/.runtime/fedora.lock"' in runner
+    assert "already owned by another invocation" in runner
     assert "tests/transaction.sh" in guest
     assert "unshare --mount" in guest and "mkfs.btrfs" in guest
     assert '"schemaVersion":1' in guest
@@ -92,6 +94,8 @@ def main():
     assert "--offline-cache-only" in arch_runner
     assert "stop_qemu" in arch_runner and "cleanup_partial_downloads" in arch_runner
     assert 'RUNTIME_DIR="$SCRIPT_DIR/.runtime/arch"' in arch_runner
+    assert 'RUNTIME_LOCK="$SCRIPT_DIR/.runtime/arch.lock"' in arch_runner
+    assert "already owned by another invocation" in arch_runner
     assert "pacman -S" in arch_guest and "mkinitcpio -P" in arch_guest
     assert "kill -TERM" in arch_guest and "lsinitcpio" in arch_guest
     assert "tests/authenticated_cache_bundle.py" in arch_guest

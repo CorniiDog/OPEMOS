@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 CACHE_DIR="$SCRIPT_DIR/.cache"
 RUNTIME_DIR="$SCRIPT_DIR/.runtime/fedora"
+RUNTIME_LOCK="$SCRIPT_DIR/.runtime/fedora.lock"
 IMAGE_NAME=Fedora-Cloud-Base-Generic-42-1.1.x86_64.qcow2
 IMAGE_URL="https://archives.fedoraproject.org/pub/archive/fedora/linux/releases/42/Cloud/x86_64/images/$IMAGE_NAME"
 IMAGE_SHA256=e401a4db2e5e04d1967b6729774faa96da629bcf3ba90b67d8d9cce9906bec0f
@@ -37,6 +38,16 @@ for command_name in curl qemu-img qemu-system-x86_64 sha256sum tar; do
         exit 2
     }
 done
+
+mkdir -p "$SCRIPT_DIR/.runtime"
+mkdir "$RUNTIME_LOCK" 2>/dev/null || {
+    printf 'Fedora VM runtime is already owned by another invocation.\n' >&2
+    exit 1
+}
+release_runtime_lock() { rmdir "$RUNTIME_LOCK" 2>/dev/null || true; }
+trap release_runtime_lock EXIT
+trap 'release_runtime_lock; exit 130' INT
+trap 'release_runtime_lock; exit 143' TERM
 
 rm -rf "$RUNTIME_DIR"
 mkdir -p "$CACHE_DIR" "$SEED_DIR"
@@ -131,6 +142,7 @@ stop_qemu()
     kill -KILL "$qemu_pid" 2>/dev/null || true
     wait "$qemu_pid" 2>/dev/null || true
     qemu_pid=""
+    release_runtime_lock
 }
 trap stop_qemu EXIT
 trap 'stop_qemu; exit 130' INT
@@ -158,6 +170,7 @@ wait "$qemu_pid"
 qemu_status=$?
 set -e
 qemu_pid=""
+release_runtime_lock
 trap - EXIT INT TERM
 
 result="$(grep -E '^\{"schemaVersion":1,' "$SERIAL_LOG" | tail -n1 | tr -d '\r' || true)"

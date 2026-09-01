@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 CACHE_DIR="$SCRIPT_DIR/.cache/arch"
 RUNTIME_DIR="$SCRIPT_DIR/.runtime/arch"
+RUNTIME_LOCK="$SCRIPT_DIR/.runtime/arch.lock"
 VERSION=20260815.573966
 IMAGE_NAME="Arch-Linux-x86_64-cloudimg-$VERSION.qcow2"
 BASE_URL="https://geo.mirror.pkgbuild.com/images/v$VERSION"
@@ -37,6 +38,16 @@ for command_name in curl gpg gpgv qemu-img qemu-system-x86_64 sha256sum tar; do
         exit 2
     }
 done
+
+mkdir -p "$SCRIPT_DIR/.runtime"
+mkdir "$RUNTIME_LOCK" 2>/dev/null || {
+    printf 'Arch VM runtime is already owned by another invocation.\n' >&2
+    exit 1
+}
+release_runtime_lock() { rmdir "$RUNTIME_LOCK" 2>/dev/null || true; }
+trap release_runtime_lock EXIT
+trap 'release_runtime_lock; exit 130' INT
+trap 'release_runtime_lock; exit 143' TERM
 
 rm -rf "$RUNTIME_DIR"
 mkdir -p "$CACHE_DIR" "$SEED_DIR"
@@ -130,6 +141,7 @@ stop_qemu()
     kill -KILL "$qemu_pid" 2>/dev/null || true
     wait "$qemu_pid" 2>/dev/null || true
     qemu_pid=""
+    release_runtime_lock
 }
 trap stop_qemu EXIT
 trap 'stop_qemu; exit 130' INT
@@ -152,6 +164,7 @@ while kill -0 "$qemu_pid" 2>/dev/null; do
 done
 set +e; wait "$qemu_pid"; qemu_status=$?; set -e
 qemu_pid=""
+release_runtime_lock
 trap - EXIT INT TERM
 result="$(grep -E '^\{"schemaVersion":1,' "$SERIAL_LOG" | tail -n1 | tr -d '\r' || true)"
 if [[ "$OFFLINE_CACHE_ONLY" == 1 ]]; then

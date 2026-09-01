@@ -175,6 +175,7 @@ def validate_set_document(document):
     if not isinstance(artifacts, list) or not artifacts or len(artifacts) > MAX_SET_FILES:
         fail("bundle artifact count is invalid")
     names = set()
+    payload_paths = set()
     total = 0
     for record in artifacts:
         if (not isinstance(record, dict)
@@ -186,6 +187,10 @@ def validate_set_document(document):
                 or name in names):
             fail("bundle contains an invalid or duplicate artifact name")
         names.add(name)
+        candidate_paths = {record.get("path"), record.get("signature")}
+        if len(candidate_paths) != 2 or payload_paths.intersection(candidate_paths):
+            fail("bundle contains ambiguous artifact or signature paths")
+        payload_paths.update(candidate_paths)
         if (record["path"] != f"payload/{name}" or record["signature"] != f"payload/{name}.sig"
                 or not isinstance(record["size"], int) or not isinstance(record["signatureSize"], int)
                 or record["size"] < 0 or record["signatureSize"] < 0
@@ -339,13 +344,16 @@ def load_set_spec(path):
         fail("artifact-set specification has an unsupported shape")
     result = []
     names = set()
+    payload_names = set()
     for item in document["artifacts"]:
         if not isinstance(item, dict) or set(item) != {"artifact", "signature"}:
             fail("artifact-set specification entry is invalid")
         artifact, signature = Path(item["artifact"]), Path(item["signature"])
-        if artifact.name in names or artifact.name + ".sig" != signature.name:
+        if (artifact.name in names or artifact.name + ".sig" != signature.name
+                or artifact.name in payload_names or signature.name in payload_names):
             fail("artifact-set specification has duplicate names or a mismatched signature")
         names.add(artifact.name)
+        payload_names.update((artifact.name, signature.name))
         result.append((artifact, signature))
     return result
 

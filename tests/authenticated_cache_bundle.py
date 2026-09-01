@@ -185,6 +185,26 @@ def main():
             if rejected.exists():
                 assert not [entry for entry in rejected.iterdir() if entry.name != ".import.lock"]
 
+        ambiguous_artifact = root / "ambiguous.sig"
+        ambiguous_signature = root / "ambiguous.sig.sig"
+        ambiguous_artifact.write_bytes(b"ambiguous authenticated payload")
+        ambiguous_signature.write_text("valid signature\n")
+        ambiguous_spec = root / "ambiguous-spec.json"
+        ambiguous_spec.write_text(json.dumps({"schemaVersion": 1, "artifacts": [
+            packages[0], {"artifact": str(ambiguous_artifact),
+                          "signature": str(ambiguous_signature)}]}) + "\n")
+        # `ambiguous.sig` would otherwise be both the first package signature
+        # and the second package payload.
+        first_with_collision = root / "ambiguous"
+        first_with_collision.write_bytes(b"first authenticated payload")
+        (root / "ambiguous.sig").write_text("valid shared path\n")
+        ambiguous_spec.write_text(json.dumps({"schemaVersion": 1, "artifacts": [
+            {"artifact": str(first_with_collision), "signature": str(root / "ambiguous.sig")},
+            {"artifact": str(root / "ambiguous.sig"), "signature": str(ambiguous_signature)}]}) + "\n")
+        run(["export-set", *common, "--spec", ambiguous_spec, "--policy", policy,
+             "--provenance", provenance, "--output", root / "ambiguous-bundle"],
+            env, success=False)
+
 
 if __name__ == "__main__":
     main()
