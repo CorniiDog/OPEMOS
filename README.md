@@ -514,7 +514,8 @@ identity mismatch fails closed; cleanup will not recursively unmount paths
 through a replaced target mount, revalidating before every owned unmount.
 Before pacman, mutation recursively bind-mounts `/dev`, `/proc`, and
 `/sys` into the confined target, makes each tree recursively slave, verifies
-the source/target mount identities, and bind-mounts a private appliance-backed
+the exact source/target SOURCE, FSTYPE, MAJ:MIN, and derived FSROOT topology
+(so a same-device sibling bind is rejected), and bind-mounts a private appliance-backed
 scratch directory at target `/var/tmp`. The target directory must be confined,
 nonsymlinked, root-owned, and mode 1777. Validation reports a missing directory
 as `preparation-required` without mutating the image; mutation creates only that

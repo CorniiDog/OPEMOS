@@ -10,6 +10,7 @@ RUNNER = ROOT / "tests/vm/run.sh"
 GUEST = ROOT / "tests/vm/guest-checks.sh"
 RECOVERY_AB = ROOT / "tests/vm/recovery-ab.sh"
 CHROOT_HOOKS = ROOT / "tests/vm/chroot-hooks.sh"
+MOUNT_LIFECYCLE = ROOT / "tests/vm/mount-lifecycle.sh"
 ARCH_RUNNER = ROOT / "tests/vm/run-arch.sh"
 ARCH_GUEST = ROOT / "tests/vm/arch-guest-checks.sh"
 IGNORE = ROOT / "tests/vm/.gitignore"
@@ -41,6 +42,7 @@ def main():
     guest = GUEST.read_text(encoding="utf-8")
     recovery_ab = RECOVERY_AB.read_text(encoding="utf-8")
     chroot_hooks = CHROOT_HOOKS.read_text(encoding="utf-8")
+    mount_lifecycle = MOUNT_LIFECYCLE.read_text(encoding="utf-8")
     arch_runner = ARCH_RUNNER.read_text(encoding="utf-8")
     arch_guest = ARCH_GUEST.read_text(encoding="utf-8")
     ignored = IGNORE.read_text(encoding="utf-8")
@@ -61,6 +63,9 @@ def main():
     assert "cpio --reproducible --null -o -H newc" in chroot_hooks
     assert "INJECT_HOOK_FAILURE" in chroot_hooks and "INJECT_HOOK_SLEEP" in chroot_hooks
     assert "AVAILABLE_BYTES" in chroot_hooks and "initramfs-linux.img" in chroot_hooks
+    assert "verify_bind_mount.py" in mount_lifecycle
+    assert "same device identity" in mount_lifecycle
+    assert "fcntl.flock" in mount_lifecycle and "unshare --mount" in mount_lifecycle
     assert "5d8be8d28cfd290f051b0f67df0a6874596ad23de3f3f18b90c91aeb758eb878" in arch_runner
     assert "656E4C5AC1CC3B86E539D97E343635A6859A9174" in arch_runner
     assert "gpgv --keyring" in arch_runner and "sha256sum -c" in arch_runner

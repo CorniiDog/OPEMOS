@@ -673,11 +673,17 @@ require_active_compression_policy()
 
 require_runtime_bind_mount()
 {
-    local source="$1" target="$2" source_device target_device
+    local source="$1" target="$2"
     mountpoint -q "$target" || return 1
-    source_device="$(findmnt -rn -T "$source" -o MAJ:MIN)" || return 1
-    target_device="$(findmnt -rn -M "$target" -o MAJ:MIN)" || return 1
-    [[ -n "$source_device" && "$source_device" == "$target_device" ]]
+    if [[ "${PROJECT_TEST_MODE:-0}" == 1 ]]; then
+        local source_device target_device
+        source_device="$(findmnt -rn -T "$source" -o MAJ:MIN)" || return 1
+        target_device="$(findmnt -rn -M "$target" -o MAJ:MIN)" || return 1
+        [[ -n "$source_device" && "$source_device" == "$target_device" ]]
+        return
+    fi
+    python3 "$SUPPORT_ROOT/lib/verify_bind_mount.py" \
+        --source "$source" --target "$target"
 }
 
 require_runtime_bind_mounts()
