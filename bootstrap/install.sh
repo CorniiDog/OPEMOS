@@ -332,6 +332,10 @@ INSTALL_COMPLETE=1
 restore_readonly
 rm -rf "$TMP"
 trap - EXIT INT TERM
+python3 "$SUPPORT_ROOT/lib/prune_backup_generations.py" \
+    --root "$BACKUP_ROOT" --protect "$(basename "$BACKUP_DIR")" \
+    --keep 10 --max-age-days 90 ||
+    warn "Backup retention could not be applied; preserved all generations."
 
 ok "NVIDIA open kernel modules installed successfully."
 log "Reboot is required before the new modules will be used."

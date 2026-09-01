@@ -687,7 +687,10 @@ Installed state is recorded under:
 Transaction backups are retained under the user cache on `/home`. Install and
 uninstall cleanup paths restore the previous module directory, refresh module
 dependencies, rebuild initramfs when available, and restore SteamOS read-only
-state after a failed transaction.
+state after a failed transaction. After a successful transaction, recognized
+backup generations are limited to the ten newest generations younger than 90
+days; the just-created rollback generation is always protected. Unknown entries
+and symlinks are never pruned, and retention failure preserves every backup.
 
 Low-level installers never reboot automatically. `online_install.sh` owns the
 normal end-to-end reboot prompt. A standalone pristine-upstream workflow may

@@ -303,7 +303,7 @@ and verifying the old 575 release's idempotent path.
 * [x] Preserve old backups rather than deleting them.
 * [x] Recreate empty state backup directory under `/var`.
 * [x] Change new transactional backups to `$HOME/.cache/...`.
-* [ ] Define and implement a bounded age/count retention policy for old backup
+* [x] Define and implement a bounded age/count retention policy for old backup
   generations.
 * [x] Make backup generation names collision-safe for sequential operations in the same second.
 
