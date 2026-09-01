@@ -1292,7 +1292,7 @@ signing policy.
   provenance document into a private immutable staging directory. Validate and
   mutate only from those copies, rejecting any source that changes during
   snapshot creation.
-* [ ] Add an exclusive per-target lifecycle lock to `install_to_root.sh` so
+* [x] Add an exclusive per-target lifecycle lock to `install_to_root.sh` so
   concurrent validation or mutation of one mounted root fails before mutation.
 * [ ] Record and repeatedly verify rootfs and EFI mount identities between
   validation, every destructive phase, and cleanup. Abort on replacement,
@@ -1300,7 +1300,7 @@ signing policy.
 
 ## Mandatory structured post-install verification
 
-* [ ] Make `moduleVerification` mandatory for success and require all five
+* [x] Make `moduleVerification` mandatory for success and require all five
   modules to pass exact payload-hash, ownership, mode, architecture, NVIDIA
   version, and vermagic verification.
 * [ ] Add mandatory structured `userspaceVerification` covering every locked

@@ -465,6 +465,9 @@ esac
         encoding="utf-8",
     )
     (binaries / "mountpoint").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    (binaries / "flock").write_text(
+        "#!/bin/sh\n[ \"${MOCK_FAIL_FLOCK:-0}\" = 0 ]\n", encoding="utf-8"
+    )
     (binaries / "findmnt").write_text(
         r"""#!/bin/sh
 case " $* " in
@@ -791,6 +794,43 @@ def main():
             "exitStatus": 127,
             "hookFailure": False,
         }
+    with tempfile.TemporaryDirectory(prefix="install-result-invariant-") as result_temporary:
+        result_temporary = Path(result_temporary)
+        workspace_result = result_temporary / "workspace.json"
+        workspace_result.write_text(
+            json.dumps({
+                "schemaVersion": 1,
+                "status": "verified",
+                "reason": "initramfs_workspace_available",
+                "phase": "mounted_workspace",
+                "condition": "available",
+                "requiredBytes": 1,
+                "requiredInodes": 1,
+                "availableBytes": 2,
+                "availableInodes": 2,
+                "mode": "1777",
+            }),
+            encoding="utf-8",
+        )
+        missing_modules = subprocess.run(
+            [
+                sys.executable, str(RESULT_WRITER),
+                "--output", str(result_temporary / "false-success.json"),
+                "--status", "success", "--reason", "install_complete",
+                "--message", "fixture", "--phase", "complete",
+                "--root", "/target-root", "--steamos", "3.8.16",
+                "--kernel", KERNEL, "--nvidia", NVIDIA,
+                "--runtime-mounts-expected", "4",
+                "--runtime-mounts-released", "4",
+                "--initramfs-workspace", str(workspace_result),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        assert missing_modules.returncode != 0
+        assert "five-module verification" in missing_modules.stderr
+        assert not (result_temporary / "false-success.json").exists()
     excessive_attempt = subprocess.run(
         [str(INSTALLER), "--progress-attempt", "1000001"],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
@@ -1888,6 +1928,19 @@ def main():
         run(paths, binaries, temporary / "wrong-gsp-version.json", False)
 
         make_package(paths["nvidia"], "nvidia-utils", pkgrel="2", gsp=True)
+        locked = run_installer(
+            paths,
+            binaries,
+            temporary / "target-lifecycle-locked.json",
+            False,
+            MOCK_FAIL_FLOCK="1",
+        )
+        assert locked["status"] == "failed"
+        assert locked["reason"] == "target_lifecycle_locked"
+        assert locked["phase"] == "validation"
+        assert locked["cleanup"]["mountsReleased"] is True
+        assert not (temporary / "target-lifecycle-locked.pacman").exists()
+
         # Leading zeroes are accepted at the CLI but records must contain a
         # canonical JSON integer, never an invalid JSON numeric literal.
         paths["progress_attempt"] = "0000007"

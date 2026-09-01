@@ -714,6 +714,10 @@ def main():
                 "Failed module verification metadata does not match result phase."
             )
         document["moduleVerification"] = module_verification
+    elif args.status == "success":
+        raise SystemExit(
+            "A successful installation requires exact five-module verification metadata."
+        )
     if args.initramfs_workspace:
         workspace = load_initramfs_workspace(args.initramfs_workspace)
         if (args.status == "success"

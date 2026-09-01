@@ -516,7 +516,10 @@ never inherited. Post-install module verification aggregates all five module
 outcomes and returns bounded target-relative diagnostics containing
 representation, expected/actual decompressed hashes, mode, UID/GID, compressed
 size, decompression status, and deterministic invalid-field lists. The final
-installer result preserves this module-verification record.
+installer result preserves this module-verification record. Schema-1 success is
+rejected unless the record verifies exactly all five modules; exact decompressed
+payload equality binds the installed files to the already authenticated module
+architecture, NVIDIA version, and target-kernel vermagic.
 
 The module archive safety policy allows at most 1 GiB compressed, 1 GiB for any
 individual module member, and 2 GiB total expansion. External and embedded

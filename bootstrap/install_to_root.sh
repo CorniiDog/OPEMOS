@@ -222,6 +222,18 @@ write_prevalidation_result()
     "$@"
 }
 
+acquire_target_lifecycle_lock()
+{
+    [[ -d "$ROOT" ]] || return 0
+
+    # Lock the target root directory inode itself. This avoids a shared global
+    # lock and does not create state inside the image being validated. Keep the
+    # descriptor open for the installer lifetime so validation and mutation
+    # are one exclusive operation.
+    exec 8<"$ROOT" || return 1
+    flock -n 8
+}
+
 cancel_validation()
 {
     trap - INT TERM
@@ -236,6 +248,17 @@ cancel_validation()
 
 trap 'rm -f "$VALIDATION_JSON"' EXIT
 trap cancel_validation INT TERM
+
+if ! command -v flock >/dev/null 2>&1; then
+    write_prevalidation_result failed appliance_dependency_missing \
+        "The managed appliance lacks the target lifecycle locking command."
+    exit 1
+fi
+if ! acquire_target_lifecycle_lock; then
+    write_prevalidation_result failed target_lifecycle_locked \
+        "Another offline-root installer operation already owns this target."
+    exit 1
+fi
 
 VALIDATOR_ARGS=(
     --root "$ROOT"
