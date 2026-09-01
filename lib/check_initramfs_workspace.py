@@ -36,12 +36,19 @@ def bounded_nonnegative(value):
 def arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", required=True, type=Path)
-    parser.add_argument("--backing", required=True, type=Path)
+    parser.add_argument("--backing", type=Path)
     parser.add_argument("--required-bytes", required=True, type=bounded_nonnegative)
     parser.add_argument("--required-inodes", required=True, type=bounded_nonnegative)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--mounted", action="store_true")
-    return parser.parse_args()
+    parser.add_argument("--target-only", action="store_true")
+    parser.add_argument("--create-missing-target", action="store_true")
+    args = parser.parse_args()
+    if args.target_only == (args.backing is not None):
+        parser.error("select exactly one target-only or backing workspace check")
+    if args.create_missing_target and not args.target_only:
+        parser.error("target creation is valid only with --target-only")
+    return args
 
 
 def publish(path, document):
@@ -79,21 +86,64 @@ def directory_metadata(path, phase, *, expected_mode=None):
     return metadata
 
 
-def confined_target(root):
+def confined_target(root, *, create_missing=False):
     if not root.is_absolute():
         raise WorkspaceFailure(
             "target_directory", "invalid_type",
             "The target root identity is invalid.",
         )
     directory_metadata(root, "target_directory")
-    current = root
-    for component in ("var", "tmp"):
-        current = current / component
-        directory_metadata(
-            current,
-            "target_directory",
-            expected_mode=0o1777 if component == "tmp" else None,
+    current = root / "var"
+    directory_metadata(current, "target_directory")
+    target = current / "tmp"
+    try:
+        target_metadata = os.lstat(target)
+    except FileNotFoundError:
+        if not create_missing:
+            return target, None
+        parent_fd = None
+        target_fd = None
+        try:
+            directory_flags = os.O_RDONLY | os.O_DIRECTORY
+            if hasattr(os, "O_NOFOLLOW"):
+                directory_flags |= os.O_NOFOLLOW
+            parent_fd = os.open(current, directory_flags)
+            os.mkdir("tmp", 0o1777, dir_fd=parent_fd)
+            target_fd = os.open("tmp", directory_flags, dir_fd=parent_fd)
+            os.fchmod(target_fd, 0o1777)
+            if os.environ.get("PROJECT_TEST_MODE") != "1":
+                os.fchown(target_fd, 0, 0)
+            target_metadata = os.fstat(target_fd)
+        except OSError as error:
+            raise WorkspaceFailure(
+                "target_directory", "missing_directory",
+                "The missing target initramfs workspace could not be created.",
+            ) from error
+        finally:
+            if target_fd is not None:
+                os.close(target_fd)
+            if parent_fd is not None:
+                os.close(parent_fd)
+    except OSError as error:
+        raise WorkspaceFailure(
+            "target_directory", "invalid_type",
+            "The target initramfs workspace could not be inspected.",
+        ) from error
+    if stat.S_ISLNK(target_metadata.st_mode) or not stat.S_ISDIR(target_metadata.st_mode):
+        raise WorkspaceFailure(
+            "target_directory", "invalid_type",
+            "The target initramfs workspace is not a directory.",
         )
+    mode = stat.S_IMODE(target_metadata.st_mode)
+    if mode != 0o1777 or (
+            os.environ.get("PROJECT_TEST_MODE") != "1"
+            and (target_metadata.st_uid != 0 or target_metadata.st_gid != 0)):
+        raise WorkspaceFailure(
+            "target_directory", "permissions",
+            "The target initramfs workspace has unsafe ownership or permissions.",
+            expectedMode="1777", actualMode=f"{mode:04o}",
+        )
+    current = target
     try:
         current.resolve(strict=True).relative_to(root.resolve(strict=True))
     except (OSError, RuntimeError, ValueError) as error:
@@ -101,10 +151,10 @@ def confined_target(root):
             "target_directory", "invalid_type",
             "The initramfs workspace escapes the target root.",
         ) from error
-    return current
+    return current, target_metadata
 
 
-def available_capacity(path):
+def available_capacity(path, *, target=False):
     try:
         filesystem = os.statvfs(path)
     except OSError as error:
@@ -115,11 +165,12 @@ def available_capacity(path):
     available_bytes = filesystem.f_bavail * filesystem.f_frsize
     available_inodes = filesystem.f_favail
     if os.environ.get("PROJECT_TEST_MODE") == "1":
+        prefix = "PROJECT_TEST_TARGET_WORKSPACE" if target else "PROJECT_TEST_WORKSPACE"
         available_bytes = int(
-            os.environ.get("PROJECT_TEST_WORKSPACE_AVAILABLE_BYTES", available_bytes)
+            os.environ.get(f"{prefix}_AVAILABLE_BYTES", available_bytes)
         )
         available_inodes = int(
-            os.environ.get("PROJECT_TEST_WORKSPACE_AVAILABLE_INODES", available_inodes)
+            os.environ.get(f"{prefix}_AVAILABLE_INODES", available_inodes)
         )
     if not 0 <= available_bytes <= MAX_BYTES or not 0 <= available_inodes <= MAX_INODES:
         raise WorkspaceFailure(
@@ -137,7 +188,49 @@ def main():
         "requiredInodes": args.required_inodes,
     }
     try:
-        target = confined_target(args.root)
+        target, target_metadata = confined_target(
+            args.root, create_missing=args.create_missing_target
+        )
+        if args.target_only:
+            capacity_path = target if target_metadata is not None else target.parent
+            available_bytes, available_inodes = available_capacity(
+                capacity_path, target=True
+            )
+            base.update({
+                "availableBytes": available_bytes,
+                "availableInodes": available_inodes,
+            })
+            if available_bytes < args.required_bytes:
+                raise WorkspaceFailure(
+                    "target_capacity", "insufficient_bytes",
+                    "The target initramfs workspace lacks sufficient bytes.",
+                    availableBytes=available_bytes,
+                )
+            if available_inodes < args.required_inodes:
+                raise WorkspaceFailure(
+                    "target_capacity", "insufficient_inodes",
+                    "The target initramfs workspace lacks sufficient inodes.",
+                    availableInodes=available_inodes,
+                )
+            if target_metadata is None:
+                publish(args.output, {
+                    **base,
+                    "status": "preparation-required",
+                    "reason": "initramfs_workspace_target_missing",
+                    "phase": "target_directory",
+                    "condition": "missing_directory",
+                    "mode": None,
+                })
+            else:
+                publish(args.output, {
+                    **base,
+                    "status": "verified",
+                    "reason": "initramfs_workspace_target_available",
+                    "phase": "target_directory",
+                    "condition": "available",
+                    "mode": "1777",
+                })
+            return 0
         parent_metadata = directory_metadata(args.backing.parent, "backing_directory")
         if stat.S_IMODE(parent_metadata.st_mode) != 0o700:
             raise WorkspaceFailure(

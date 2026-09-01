@@ -708,6 +708,7 @@ def run_installer(paths, binaries, result, success, preserve_lock=False, **envir
     test_temp_root = binaries.parent / "appliance-tmp"
     before_mutation_work = set(test_temp_root.glob("offline-root-mutation.*"))
     before_input_snapshots = set(test_temp_root.glob("offline-root-inputs.*"))
+    before_workspace_results = set(test_temp_root.glob("offline-root-workspace.*"))
     scratch_parent = binaries.parent / "appliance-var-tmp"
     before_scratch = set(scratch_parent.glob("offline-root-initramfs.*"))
     env = installer_environment(binaries, mount_state, **environment)
@@ -719,6 +720,7 @@ def run_installer(paths, binaries, result, success, preserve_lock=False, **envir
     assert mount_state.with_suffix(".compression").read_text().strip() == initial_compression
     assert set(test_temp_root.glob("offline-root-mutation.*")) == before_mutation_work
     assert set(test_temp_root.glob("offline-root-inputs.*")) == before_input_snapshots
+    assert set(test_temp_root.glob("offline-root-workspace.*")) == before_workspace_results
     assert set(scratch_parent.glob("offline-root-initramfs.*")) == before_scratch
     return json.loads(result.read_text(encoding="utf-8"))
 
@@ -737,6 +739,7 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
     before_validation_files = set(test_temp_root.glob("offline-root-validation.*"))
     before_mutation_work = set(test_temp_root.glob("offline-root-mutation.*"))
     before_input_snapshots = set(test_temp_root.glob("offline-root-inputs.*"))
+    before_workspace_results = set(test_temp_root.glob("offline-root-workspace.*"))
     scratch_parent = binaries.parent / "appliance-var-tmp"
     before_scratch = set(scratch_parent.glob("offline-root-initramfs.*"))
     process = subprocess.Popen(
@@ -776,6 +779,7 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
     assert set(test_temp_root.glob("offline-root-validation.*")) == before_validation_files
     assert set(test_temp_root.glob("offline-root-mutation.*")) == before_mutation_work
     assert set(test_temp_root.glob("offline-root-inputs.*")) == before_input_snapshots
+    assert set(test_temp_root.glob("offline-root-workspace.*")) == before_workspace_results
     assert set(scratch_parent.glob("offline-root-initramfs.*")) == before_scratch
     records = parse_progress_records(stderr)
     if expected_phase == "initramfs":
@@ -1033,10 +1037,61 @@ def main():
         assert "pacman database metadata is invalid" in invalid_database_result.stderr
         assert not (temporary / "invalid-database-result.json").exists()
 
+        missing_root = temporary / "workspace-missing"
+        missing_root.mkdir()
+        missing_paths = make_fixture(missing_root)
+        (missing_paths["target"] / "var/tmp").rmdir()
+        missing_validation_result = temporary / "workspace-missing-validation.json"
+        missing_mount_state = missing_validation_result.with_suffix(".mounts")
+        missing_mount_state.write_text("", encoding="utf-8")
+        missing_mount_state.with_suffix(".compression").write_text(
+            "compress=zstd:3", encoding="utf-8"
+        )
+        missing_validation = subprocess.run(
+            [*installer_command(missing_paths, missing_validation_result), "--validate-only"],
+            env=installer_environment(binaries, missing_mount_state),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        assert missing_validation.returncode == 0, missing_validation.stderr
+        missing_document = json.loads(
+            missing_validation_result.read_text(encoding="utf-8")
+        )
+        assert missing_document["status"] == "validated"
+        assert missing_document["initramfsWorkspace"]["status"] == (
+            "preparation-required"
+        )
+        assert missing_document["initramfsWorkspace"]["condition"] == (
+            "missing_directory"
+        )
+        assert not (missing_paths["target"] / "var/tmp").exists()
+        missing_installed = run_installer(
+            missing_paths,
+            binaries,
+            temporary / "workspace-missing-install.json",
+            True,
+        )
+        assert missing_installed["initramfsWorkspace"]["status"] == "verified"
+        assert stat.S_IMODE((missing_paths["target"] / "var/tmp").stat().st_mode) == 0o1777
+        missing_repeated = run_installer(
+            missing_paths,
+            binaries,
+            temporary / "workspace-missing-install-again.json",
+            True,
+        )
+        assert missing_repeated["initramfsWorkspace"]["status"] == "verified"
+
         workspace_cases = (
-            ("missing", "missing_directory", None),
             ("symlink", "invalid_type", None),
             ("permissions", "permissions", None),
+            ("target-bytes", "insufficient_bytes", {
+                "PROJECT_TEST_TARGET_WORKSPACE_AVAILABLE_BYTES": "1",
+            }),
+            ("target-inodes", "insufficient_inodes", {
+                "PROJECT_TEST_TARGET_WORKSPACE_AVAILABLE_BYTES": str(2**40),
+                "PROJECT_TEST_TARGET_WORKSPACE_AVAILABLE_INODES": "0",
+            }),
             ("bytes", "insufficient_bytes", {
                 "PROJECT_TEST_WORKSPACE_AVAILABLE_BYTES": "1",
             }),
@@ -1049,9 +1104,7 @@ def main():
             case_root = temporary / f"workspace-{label}"
             case_root.mkdir()
             case_paths = make_fixture(case_root)
-            if label == "missing":
-                (case_paths["target"] / "var/tmp").rmdir()
-            elif label == "symlink":
+            if label == "symlink":
                 (case_paths["target"] / "var/tmp").rmdir()
                 (case_paths["target"] / "var/tmp").symlink_to(
                     case_paths["target"] / "etc", target_is_directory=True
@@ -1068,8 +1121,13 @@ def main():
             assert workspace_result["reason"] == "initramfs_workspace_unavailable"
             assert workspace_result["initramfsWorkspace"]["condition"] == condition
             assert workspace_result["cleanup"]["mountsReleased"] is True
-            assert workspace_result["cleanup"]["runtimeMountsExpected"] == 4
-            assert workspace_result["cleanup"]["runtimeMountsReleased"] == 3
+            preflight_failure = label in {
+                "symlink", "permissions", "target-bytes", "target-inodes",
+            }
+            expected_mounts = 0 if preflight_failure else 4
+            assert workspace_result["cleanup"]["runtimeMountsExpected"] == expected_mounts
+            expected_released = 0 if preflight_failure else 3
+            assert workspace_result["cleanup"]["runtimeMountsReleased"] == expected_released
             pacman_log = (temporary / f"workspace-{label}.mounts").with_suffix(
                 ".pacman"
             )

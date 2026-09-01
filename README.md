@@ -516,7 +516,10 @@ Before pacman, mutation recursively bind-mounts `/dev`, `/proc`, and
 `/sys` into the confined target, makes each tree recursively slave, verifies
 the source/target mount identities, and bind-mounts a private appliance-backed
 scratch directory at target `/var/tmp`. The target directory must be confined,
-nonsymlinked, and mode 1777; the backing filesystem must have at least the
+nonsymlinked, root-owned, and mode 1777. Validation reports a missing directory
+as `preparation-required` without mutating the image; mutation creates only that
+missing directory with mode 1777 before establishing runtime mounts. Existing
+unsafe objects or permissions remain fail-closed. The backing filesystem must have at least the
 validated initramfs reserve and 4096 available inodes. All four mounts remain
 through pacman hooks and the explicit `mkinitcpio` run. The final result records
 their expected/released counts plus bounded workspace condition and capacity

@@ -258,6 +258,7 @@ cancel_validation()
 cleanup_prevalidation_files()
 {
     rm -f "$VALIDATION_JSON"
+    [[ -z "${INITRAMFS_WORKSPACE_JSON:-}" ]] || rm -f "$INITRAMFS_WORKSPACE_JSON"
     rm -rf "$INPUT_SNAPSHOT_ROOT"
 }
 
@@ -424,6 +425,7 @@ NVIDIA_VERSION="$(json_value target nvidiaVersion)"
 TRUST="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["trust"])' "$VALIDATION_JSON")"
 MODULE_PAYLOAD_NOOP="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("compression", {}).get("modulePayloadNoop", False))' "$VALIDATION_JSON")"
 VALIDATION_SHA256="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$VALIDATION_JSON")"
+INITRAMFS_WORKSPACE_JSON="$(mktemp "$INSTALLER_TEMP_ROOT/offline-root-workspace.XXXXXX")"
 
 write_install_result()
 {
@@ -474,16 +476,21 @@ require_prevalidation_mount_identities ||
     fail_pre_mutation target_mount_identity \
         "The target rootfs or EFI mount identity changed during validation."
 
+set +e
+python3 "$SUPPORT_ROOT/lib/check_initramfs_workspace.py" \
+    --root "$ROOT" --target-only --required-bytes 4096 --required-inodes 1 \
+    --output "$INITRAMFS_WORKSPACE_JSON"
+TARGET_WORKSPACE_RC=$?
+set -e
+if (( TARGET_WORKSPACE_RC != 0 )); then
+    write_install_result failed initramfs_workspace_unavailable \
+        "The mounted target /var/tmp is unsafe or unavailable." validation true
+    exit 1
+fi
+
 if (( VALIDATE_ONLY )); then
-    python3 "${SUPPORT_ROOT}/lib/write_install_result.py" \
-        --output "$RESULT_JSON" --status validated --reason validation_complete \
-        --message "All offline-root inputs passed validation without mutation." \
-        --phase validated --root /target-root --kernel "$KERNEL" \
-        --steamos "$STEAMOS_VERSION" --nvidia "$NVIDIA_VERSION" --trust "$TRUST" \
-        --archive "$(basename "$ARCHIVE")" --provenance "$(basename "$PROVENANCE")" \
-        --nvidia-utils "$(basename "$NVIDIA_UTILS")" \
-        --lib32-nvidia-utils "$(basename "$LIB32_NVIDIA_UTILS")" \
-        --validation "$VALIDATION_JSON"
+    write_install_result validated validation_complete \
+        "All offline-root inputs passed validation without mutation." validated true
     ok "Offline-root NVIDIA inputs validated without mutation."
     exit 0
 fi
@@ -537,7 +544,6 @@ done
 MUTATION_WORK="$(mktemp -d "$INSTALLER_TEMP_ROOT/offline-root-mutation.XXXXXX")"
 MODULE_VERIFICATION_JSON="$MUTATION_WORK/module-verification.json"
 USERSPACE_VERIFICATION_JSON="$MUTATION_WORK/userspace-verification.json"
-INITRAMFS_WORKSPACE_JSON="$MUTATION_WORK/initramfs-workspace.json"
 PACMAN_TRANSACTION_RESULT="$MUTATION_WORK/pacman-transaction.json"
 MOUNTS=()
 RUNTIME_MOUNTS_EXPECTED=4
@@ -795,6 +801,7 @@ cleanup_mutation()
         fi
     fi
     rm -rf "$MUTATION_WORK" "$INPUT_SNAPSHOT_ROOT" "$VALIDATION_JSON" \
+        "$INITRAMFS_WORKSPACE_JSON" \
         >/dev/null 2>&1 || true
     exit "$rc"
 }
@@ -813,6 +820,15 @@ trap cleanup_mutation EXIT
 trap cancel_mutation INT TERM
 
 guard_target_mount_identities
+
+PHASE=initramfs_workspace_unavailable
+run_mutation_command python3 "$SUPPORT_ROOT/lib/check_initramfs_workspace.py" \
+    --root "$ROOT" --target-only --create-missing-target \
+    --required-bytes 4096 --required-inodes 1 \
+    --output "$INITRAMFS_WORKSPACE_JSON" ||
+    die "The mounted target /var/tmp could not be prepared safely."
+guard_target_mount_identities
+PHASE=mutation_preflight
 
 if [[ -n "$COMPRESSION_PROFILE" ]]; then
     PHASE=compression_policy_activation
@@ -1089,5 +1105,6 @@ write_install_result success install_complete \
     complete true
 COMPLETED=1
 trap - EXIT INT TERM
-rm -rf "$MUTATION_WORK" "$INPUT_SNAPSHOT_ROOT" "$VALIDATION_JSON"
+rm -rf "$MUTATION_WORK" "$INPUT_SNAPSHOT_ROOT" "$VALIDATION_JSON" \
+    "$INITRAMFS_WORKSPACE_JSON"
 ok "Offline-root NVIDIA installation completed with all mounts released."

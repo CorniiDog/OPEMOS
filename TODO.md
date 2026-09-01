@@ -1244,6 +1244,10 @@ signing policy.
   plus bounded byte/inode capacity, report typed workspace failures, record all
   four runtime mounts in progress/results, and detect post-transaction hook
   failure independently from pacman's exit status.
+* [x] Inspect the mounted `var-A` `/var/tmp` during validate-only, report a
+  missing mountpoint as preparation-required without mutation, safely create
+  only that missing root-owned mode-1777 directory before pacman hooks, and
+  reject links, wrong types/modes, or target byte/inode exhaustion.
 * [x] Emit schema-1 mutation progress for pacman policy, runtime mounts, exact
   package/module installation and verification counts, GRUB, depmod,
   indeterminate initramfs generation, installation state, and cleanup; retain

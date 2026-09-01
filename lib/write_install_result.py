@@ -238,10 +238,12 @@ def load_initramfs_workspace(path):
             or document.get("schemaVersion") != 1
             or document.get("reason") not in {
                 "initramfs_workspace_available", "initramfs_workspace_unavailable",
+                "initramfs_workspace_target_available",
+                "initramfs_workspace_target_missing",
             }
             or document.get("phase") not in {
                 "target_directory", "backing_directory", "backing_capacity",
-                "mounted_workspace",
+                "mounted_workspace", "target_capacity",
             }
             or document.get("condition") not in {
                 "available", "missing_directory", "invalid_type", "permissions",
@@ -260,12 +262,25 @@ def load_initramfs_workspace(path):
                 not isinstance(value, str) or re.fullmatch(r"[0-7]{4}", value) is None):
             raise SystemExit("Initramfs workspace permission metadata is malformed.")
     if document["status"] == "verified":
-        if (document["reason"] != "initramfs_workspace_available"
+        verified_shape = (
+            document["reason"] == "initramfs_workspace_available"
+            and document["phase"] in {"backing_capacity", "mounted_workspace"}
+        ) or (
+            document["reason"] == "initramfs_workspace_target_available"
+            and document["phase"] == "target_directory"
+        )
+        if (not verified_shape
                 or document["condition"] != "available"
-                or document["phase"] not in {"backing_capacity", "mounted_workspace"}
                 or document.get("mode") != "1777"
                 or "message" in document):
             raise SystemExit("Verified initramfs workspace metadata is inconsistent.")
+    elif document["status"] == "preparation-required":
+        if (document["reason"] != "initramfs_workspace_target_missing"
+                or document["phase"] != "target_directory"
+                or document["condition"] != "missing_directory"
+                or document.get("mode") is not None
+                or "message" in document):
+            raise SystemExit("Target workspace preparation metadata is inconsistent.")
     elif document["status"] == "failed":
         if (document["reason"] != "initramfs_workspace_unavailable"
                 or document["condition"] == "available"
@@ -863,6 +878,11 @@ def main():
                 and (args.status != "failed"
                      or args.reason != "initramfs_workspace_unavailable")):
             raise SystemExit("Failed workspace metadata does not match result status.")
+        if (workspace["status"] == "preparation-required"
+                and args.status != "validated"):
+            raise SystemExit(
+                "Workspace preparation metadata is valid only for validation results."
+            )
         document["initramfsWorkspace"] = workspace
     elif args.status == "success":
         raise SystemExit("A successful installation requires workspace verification metadata.")
