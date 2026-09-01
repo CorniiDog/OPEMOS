@@ -263,7 +263,9 @@ write_install_result()
         --archive "$(basename "$ARCHIVE")" --provenance "$(basename "$PROVENANCE")" \
         --nvidia-utils "$(basename "$NVIDIA_UTILS")" \
         --lib32-nvidia-utils "$(basename "$LIB32_NVIDIA_UTILS")" \
-        --mounts-released "${5:-true}" --validation "$VALIDATION_JSON"
+        --mounts-released "${5:-true}" \
+        --compression-policy-restored "${6:-true}" \
+        --validation "$VALIDATION_JSON"
 }
 
 fail_pre_mutation()
@@ -347,6 +349,10 @@ compression_option()
     IFS=,
     for option in $options; do
         case "$option" in
+            nodatacow|nodatasum)
+                IFS="$old_ifs"
+                return 1
+                ;;
             compress=*|compress-force=*)
                 [[ -z "$found" ]] || { IFS="$old_ifs"; return 1; }
                 found="$option"
@@ -355,6 +361,18 @@ compression_option()
     done
     IFS="$old_ifs"
     printf '%s\n' "$found"
+}
+
+require_exclusive_root_mount()
+{
+    local root_device mounted_devices mounted_device count=0
+    root_device="$(findmnt -rn -T "$ROOT" -o MAJ:MIN)" || return 1
+    [[ "$root_device" =~ ^[0-9]+:[0-9]+$ ]] || return 1
+    mounted_devices="$(findmnt -rn -o MAJ:MIN)" || return 1
+    while read -r mounted_device; do
+        [[ "$mounted_device" != "$root_device" ]] || count=$((count + 1))
+    done <<< "$mounted_devices"
+    (( count == 1 ))
 }
 
 require_active_compression_policy()
@@ -366,6 +384,7 @@ require_active_compression_policy()
 activate_compression_policy()
 {
     [[ "$COMPRESSION_PROFILE" == btrfs-zstd3 ]] || return 0
+    require_exclusive_root_mount || return 1
     ORIGINAL_COMPRESSION_OPTION="$(compression_option)" || return 1
     COMPRESSION_POLICY_ACTIVE=1
     mount -o remount,compress-force=zstd:3 "$ROOT" || return 1
@@ -432,7 +451,7 @@ cleanup_mutation()
         else
             write_install_result failed mutation_cleanup_failed \
                 "Offline-root mutation failed and mount or compression policy cleanup was incomplete." \
-                cleanup false || true
+                cleanup "$mounts_released" "$compression_restored" || true
         fi
     fi
     rm -rf "$MUTATION_WORK" "$VALIDATION_JSON" >/dev/null 2>&1 || true
@@ -469,18 +488,15 @@ run_mutation_command env SYSTEMD_OFFLINE=1 pacman \
     --root "$ROOT" --dbpath "$TARGET_PACMAN_DATABASE" \
     --noconfirm --needed -U "${PACMAN_PACKAGES[@]}"
 [[ -z "$COMPRESSION_PROFILE" ]] || require_active_compression_policy
-
-installed_package_version()
-{
-    local package="$1" version
-    version="$(pacman --root "$ROOT" --dbpath "$TARGET_PACMAN_DATABASE" -Q "$package" | awk '{print $2}')"
-    printf '%s\n' "${version%-*}"
-}
-
-[[ "$(installed_package_version nvidia-utils)" == "$NVIDIA_VERSION" ]] ||
-    die "Installed nvidia-utils version does not match the artifact."
-[[ "$(installed_package_version lib32-nvidia-utils)" == "$NVIDIA_VERSION" ]] ||
-    die "Installed lib32-nvidia-utils version does not match the artifact."
+POST_INSTALL_VERIFY_ARGS=(
+    --root "$ROOT"
+    --validation "$VALIDATION_JSON"
+)
+for package in "${PACMAN_PACKAGES[@]}"; do
+    POST_INSTALL_VERIFY_ARGS+=(--package "$package")
+done
+run_mutation_command python3 "$SUPPORT_ROOT/lib/verify_installed_userspace.py" \
+    "${POST_INSTALL_VERIFY_ARGS[@]}"
 find "$ROOT/usr/lib/firmware/nvidia/$NVIDIA_VERSION" \
     -type f -name 'gsp*.bin' -print -quit 2>/dev/null | grep -q . ||
     die "Matching GSP firmware was not installed into the target root."
@@ -501,6 +517,8 @@ if [[ "$MODULE_PAYLOAD_NOOP" != True ]]; then
         esac
     done
 fi
+run_mutation_command python3 "$SUPPORT_ROOT/lib/verify_installed_modules.py" \
+    --root "$ROOT" --kernel "$KERNEL" --validation "$VALIDATION_JSON"
 
 install -d -m 0755 "$ROOT/etc/modprobe.d" "$ROOT/etc/mkinitcpio.conf.d"
 printf '%s\n' \

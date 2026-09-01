@@ -6,6 +6,7 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -277,6 +278,10 @@ def write_userspace_lock(paths):
 def make_mocks(root):
     binaries = root / "bin"
     binaries.mkdir()
+    real_install = shutil.which("install")
+    real_zstd = shutil.which("zstd")
+    assert real_install
+    assert real_zstd
     (binaries / "modinfo").write_text(
         "#!/bin/sh\ncase $2 in version) echo \"$MOCK_NVIDIA\";; vermagic) echo \"$MOCK_KERNEL SMP preempt mod_unload\";; esac\n",
         encoding="utf-8",
@@ -303,17 +308,56 @@ done
 case " $* " in
   *" -Qkk "*) [ "${MOCK_FAIL_QKK:-0}" = 0 ];;
   *" -U "*)
-    mkdir -p "$root/usr/lib/firmware/nvidia/$MOCK_NVIDIA"
-    printf firmware > "$root/usr/lib/firmware/nvidia/$MOCK_NVIDIA/gsp_ga10x.bin"
+    for package in "$@"; do
+      case "$package" in *.pkg.tar.gz) bsdtar -xf "$package" -C "$root";; esac
+    done
+    if [ "${MOCK_CORRUPT_INSTALLED_PAYLOAD:-0}" != 0 ]; then
+      printf corrupt > "$root/usr/lib/nvidia-utils/fixture"
+    fi
     ;;
-  *" -Q nvidia-utils "*) echo "nvidia-utils $MOCK_NVIDIA-1" ;;
+  *" -Q nvidia-utils "*)
+    if [ "${MOCK_WRONG_INSTALLED_VERSION:-0}" = 0 ]; then
+      echo "nvidia-utils $MOCK_NVIDIA-2"
+    else
+      echo "nvidia-utils 0-0"
+    fi
+    ;;
   *" -Q lib32-nvidia-utils "*) echo "lib32-nvidia-utils $MOCK_NVIDIA-1" ;;
+  *" -Q egl-wayland "*) echo 'egl-wayland 4.0.0-1' ;;
 esac
 """,
         encoding="utf-8",
     )
     (binaries / "depmod").write_text(
         "#!/bin/sh\nroot=$2; kernel=$4; mkdir -p \"$root/usr/lib/modules/$kernel\"; echo fixture > \"$root/usr/lib/modules/$kernel/modules.dep\"\n",
+        encoding="utf-8",
+    )
+    (binaries / "install").write_text(
+        fr"""#!/bin/sh
+{real_install} "$@" || exit $?
+eval target=\${{$#}}
+case "$target" in
+  */open-gpu-kernel-modules-steamos/nvidia.ko.zst)
+    [ "${{MOCK_CORRUPT_INSTALLED_MODULE:-0}}" = 0 ] || printf corrupt >> "$target"
+    ;;
+esac
+""",
+        encoding="utf-8",
+    )
+    (binaries / "zstd").write_text(
+        f"""#!/bin/sh
+{real_zstd} "$@" || exit $?
+[ "${{MOCK_CORRUPT_INSTALLED_MODULE:-0}}" = 0 ] && exit 0
+previous=
+for argument in "$@"; do
+  if [ "$previous" = -o ]; then
+    case "$argument" in
+      */open-gpu-kernel-modules-steamos/nvidia.ko.zst) printf corrupt >> "$argument";;
+    esac
+  fi
+  previous=$argument
+done
+""",
         encoding="utf-8",
     )
     (binaries / "mount").write_text(
@@ -334,13 +378,26 @@ esac
     (binaries / "findmnt").write_text(
         r"""#!/bin/sh
 case " $* " in
+  *' -T '*' -o MAJ:MIN'*) echo '7:1'; exit 0;;
+  *' -o MAJ:MIN'*)
+    echo '7:1'
+    [ "${MOCK_SHARED_ROOT_MOUNT:-0}" = 0 ] || echo '7:1'
+    exit 0
+    ;;
   *' -T '*)
     if [ -z "${MOCK_COMPRESSION_STATE:-}" ]; then
       option='compress=zstd:3'
     else
       option=$(cat "$MOCK_COMPRESSION_STATE" 2>/dev/null || true)
     fi
-    if [ -n "$option" ]; then echo "btrfs rw,$option"; else echo 'btrfs rw'; fi
+    extra=${MOCK_MOUNT_EXTRA_OPTION:-}
+    if [ -n "$option" ]; then
+      output="btrfs rw,$option"
+    else
+      output='btrfs rw'
+    fi
+    [ -z "$extra" ] || output="$output,$extra"
+    echo "$output"
     exit 0
     ;;
 esac
@@ -555,6 +612,14 @@ def main():
         paths = make_fixture(temporary)
         run(paths, binaries, temporary / "valid.json", True)
         valid = json.loads((temporary / "valid.json").read_text())
+        symlink_root = temporary / "target-root-symlink"
+        symlink_root.symlink_to(paths["target"], target_is_directory=True)
+        symlink_paths = dict(paths)
+        symlink_paths["target"] = symlink_root
+        unsafe_root = run(
+            symlink_paths, binaries, temporary / "unsafe-root-symlink.json", False
+        )
+        assert unsafe_root["reason"] == "unsafe_target_root"
         progress_lines = [
             line.removeprefix("STEAMOS_NVIDIA_PROGRESS ")
             for line in (temporary / "valid.json.stderr").read_text(encoding="utf-8").splitlines()
@@ -825,6 +890,48 @@ def main():
         assert completed.returncode != 0
         assert not inconsistent_result.exists()
 
+        for label, mutate in (
+            (
+                "ratio",
+                lambda document: document["compression"].__setitem__(
+                    "compressionRatio", "9.999999"
+                ),
+            ),
+            (
+                "margin-type",
+                lambda document: document["storage"].__setitem__(
+                    "rootFinalMarginBytes", True
+                ),
+            ),
+            (
+                "extra-measurement-field",
+                lambda document: document["compression"]["measurement"].__setitem__(
+                    "unexpected", 1
+                ),
+            ),
+        ):
+            tampered = json.loads(json.dumps(measured))
+            mutate(tampered)
+            tampered_validation = temporary / f"tampered-{label}.json"
+            tampered_result = temporary / f"tampered-{label}-result.json"
+            tampered_validation.write_text(json.dumps(tampered), encoding="utf-8")
+            rejected = subprocess.run(
+                [
+                    sys.executable, str(RESULT_WRITER),
+                    "--output", str(tampered_result), "--status", "validated",
+                    "--reason", "validation_complete", "--message", "fixture",
+                    "--phase", "validated", "--root", "/target-root",
+                    "--steamos", "3.8.16", "--kernel", KERNEL,
+                    "--nvidia", NVIDIA, "--trust", "locally-built-verified",
+                    "--validation", str(tampered_validation),
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            assert rejected.returncode != 0
+            assert not tampered_result.exists()
+
         measured_insufficient = run(
             paths,
             binaries,
@@ -864,6 +971,45 @@ def main():
         )
         assert ineligible_destination["reason"] == "compression_target_ineligible"
 
+        shared_mount = run(
+            paths,
+            binaries,
+            temporary / "compression-shared-mount.json",
+            False,
+            PROJECT_TEST_BTRFS_SHARED_MOUNT="1",
+        )
+        assert shared_mount["reason"] == "compression_mount_not_exclusive"
+
+        incompatible_mount = run(
+            paths,
+            binaries,
+            temporary / "compression-incompatible-mount.json",
+            False,
+            MOCK_MOUNT_EXTRA_OPTION="nodatacow",
+        )
+        assert incompatible_mount["reason"] == "compression_profile_unsupported"
+
+        dependency_install_fixture = temporary / "dependency-install-fixture"
+        dependency_install_fixture.mkdir()
+        dependency_install_paths = make_fixture(dependency_install_fixture)
+        make_package(
+            dependency_install_paths["nvidia"],
+            "nvidia-utils",
+            pkgrel="2",
+            gsp=True,
+            dependencies=("glibc>=1-1", "egl-wayland>=4.0.0-1"),
+        )
+        dependency_install_paths["stage_dependency"] = True
+        dependency_install = run_installer(
+            dependency_install_paths,
+            binaries,
+            temporary / "dependency-install.json",
+            True,
+        )
+        assert [
+            package["name"] for package in dependency_install["validation"]["packages"]
+        ] == ["nvidia-utils", "lib32-nvidia-utils", "egl-wayland"]
+
         profile_fixture_root = temporary / "compression-profile-install-fixture"
         profile_fixture_root.mkdir()
         profile_paths = make_fixture(profile_fixture_root)
@@ -879,6 +1025,18 @@ def main():
         )
         assert activation_failed["reason"] == "compression_policy_activation"
         assert activation_failed["cleanup"]["mountsReleased"] is True
+        assert activation_failed["cleanup"]["compressionPolicyRestored"] is True
+        shared_activation = run_installer(
+            profile_paths,
+            binaries,
+            temporary / "compression-profile-shared-activation.json",
+            False,
+            PROJECT_TEST_ROOT_AVAILABLE_BYTES=str(256 * 1024 * 1024),
+            PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
+            MOCK_SHARED_ROOT_MOUNT="1",
+        )
+        assert shared_activation["reason"] == "compression_policy_activation"
+        assert shared_activation["cleanup"]["compressionPolicyRestored"] is True
         profile_mutation = run_installer(
             profile_paths,
             binaries,
@@ -892,6 +1050,7 @@ def main():
             "mutationProfileImplemented"
         ] is True
         assert profile_mutation["cleanup"]["mountsReleased"] is True
+        assert profile_mutation["cleanup"]["compressionPolicyRestored"] is True
         profile_database = profile_paths["target"] / "usr/lib/holo/pacmandb/local"
         for package_name, version, installed_size in (
             ("nvidia-utils", f"{NVIDIA}-2", 8192),
@@ -928,6 +1087,30 @@ def main():
         assert repeated_profile["validation"]["storage"]["moduleNoopCreditBytes"] == (
             8 * 1024 * 1024
         )
+        wrong_installed_version = run_installer(
+            profile_paths,
+            binaries,
+            temporary / "compression-profile-wrong-installed-version.json",
+            False,
+            PROJECT_TEST_ROOT_AVAILABLE_BYTES=str(256 * 1024 * 1024),
+            PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
+            MOCK_WRONG_INSTALLED_VERSION="1",
+        )
+        assert wrong_installed_version["reason"] == "userspace_install"
+        assert wrong_installed_version["cleanup"]["compressionPolicyRestored"] is True
+        corrupt_installed_payload = run_installer(
+            profile_paths,
+            binaries,
+            temporary / "compression-profile-corrupt-installed-payload.json",
+            False,
+            PROJECT_TEST_ROOT_AVAILABLE_BYTES=str(256 * 1024 * 1024),
+            PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
+            MOCK_CORRUPT_INSTALLED_PAYLOAD="1",
+        )
+        assert corrupt_installed_payload["reason"] == "userspace_install"
+        assert corrupt_installed_payload["cleanup"][
+            "compressionPolicyRestored"
+        ] is True
         drifted_profile = run_installer(
             profile_paths,
             binaries,
@@ -940,6 +1123,7 @@ def main():
         )
         assert drifted_profile["reason"] == "initramfs"
         assert drifted_profile["cleanup"]["mountsReleased"] is True
+        assert drifted_profile["cleanup"]["compressionPolicyRestored"] is True
         cancel_installer(
             profile_paths,
             binaries,
@@ -950,6 +1134,21 @@ def main():
             MOCK_CHROOT_DELAY="30",
             MOCK_INITIAL_COMPRESSION="",
         )
+        corrupt_module_fixture = temporary / "corrupt-module-fixture"
+        corrupt_module_fixture.mkdir()
+        corrupt_module_paths = make_fixture(corrupt_module_fixture)
+        corrupt_module_paths["compression_profile"] = "btrfs-zstd3"
+        corrupt_module = run_installer(
+            corrupt_module_paths,
+            binaries,
+            temporary / "compression-profile-corrupt-module.json",
+            False,
+            PROJECT_TEST_ROOT_AVAILABLE_BYTES=str(256 * 1024 * 1024),
+            PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
+            MOCK_CORRUPT_INSTALLED_MODULE="1",
+        )
+        assert corrupt_module["reason"] == "module_install"
+        assert corrupt_module["cleanup"]["compressionPolicyRestored"] is True
         del paths["compression_profile"]
 
         local_database = paths["target"] / "usr/lib/holo/pacmandb/local"

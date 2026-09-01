@@ -330,6 +330,7 @@ def require_safe_destination(root, relative):
 
 def require_root_filesystem_destination(root, relative):
     """Require the deepest existing ancestor to remain on the root filesystem."""
+    require_safe_destination(root, relative)
     root_device = root.stat().st_dev
     candidate = root / PurePosixPath(relative)
     while not candidate.exists():
@@ -631,8 +632,16 @@ def existing_module_set_is_exact(root, kernel, expected_payload_hashes):
     )
 
 
-def require_installed_package_integrity(root, package_name):
+def require_installed_package_integrity(root, package_name, deadline):
     database = root / "usr/lib/holo/pacmandb"
+    environment = os.environ.copy()
+    environment.update({"LANG": "C", "LC_ALL": "C", "SYSTEMD_OFFLINE": "1"})
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        fail(
+            "existing_package_integrity_unverified",
+            "installed package integrity checks exceeded their time limit",
+        )
     try:
         completed = subprocess.run(
             [
@@ -643,7 +652,8 @@ def require_installed_package_integrity(root, package_name):
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            timeout=120,
+            timeout=min(120, remaining),
+            env=environment,
         )
     except (OSError, subprocess.TimeoutExpired):
         fail(
@@ -673,14 +683,72 @@ def compression_context(root):
         fields = []
     filesystem = fields[0] if fields else "unknown"
     options = fields[1].split(",") if len(fields) == 2 else []
-    compression_options = [option for option in options if option.startswith("compress")]
+    compression_options = [
+        option for option in options
+        if re.fullmatch(
+            r"compress(?:-force)?(?:=(?:no|zlib|lzo|zstd)(?::[0-9]+)?)?",
+            option,
+        )
+    ]
+    invalid_compression_options = sorted(
+        option for option in options
+        if option.startswith("compress") and option not in compression_options
+    )
+    incompatible_options = sorted(
+        option for option in options if option in ("nodatacow", "nodatasum")
+    )
     return {
         "filesystem": filesystem,
-        "enabled": bool(compression_options) if filesystem == "btrfs" else False,
+        "enabled": (
+            any(option != "compress=no" for option in compression_options)
+            if filesystem == "btrfs" else False
+        ),
         "options": compression_options,
+        "invalidOptions": invalid_compression_options,
+        "writeIncompatibleOptions": incompatible_options,
         "admissionBasis": "logical-uncompressed-conservative",
         "compressionSavingsCreditedBytes": 0,
     }
+
+
+def require_exclusive_btrfs_mount(root):
+    if os.environ.get("PROJECT_TEST_MODE") == "1":
+        if os.environ.get("PROJECT_TEST_BTRFS_SHARED_MOUNT") == "1":
+            fail(
+                "compression_mount_not_exclusive",
+                "the target Btrfs filesystem is mounted more than once",
+            )
+        return
+    try:
+        target_device = subprocess.run(
+            ["findmnt", "-rn", "-T", str(root), "-o", "MAJ:MIN"],
+            check=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=10,
+        ).stdout.strip()
+        mounted_devices = subprocess.run(
+            ["findmnt", "-rn", "-o", "MAJ:MIN"],
+            check=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=10,
+        ).stdout.splitlines()
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        fail(
+            "compression_mount_identity_unavailable",
+            "the target Btrfs mount identity cannot be verified",
+        )
+    if (re.fullmatch(r"[0-9]+:[0-9]+", target_device) is None
+            or sum(device.strip() == target_device for device in mounted_devices) != 1):
+        fail(
+            "compression_mount_not_exclusive",
+            "the target Btrfs filesystem must have exactly one appliance mount",
+        )
 
 
 def measured_btrfs_payload(args, package_paths, declared_payload_bytes):
@@ -1026,7 +1094,12 @@ def validate(args, progress):
         )
     if not re.fullmatch(r"[A-Za-z0-9._+~-]+", args.kernel):
         fail("invalid_target", "target kernel contains unsupported characters")
-    root = args.root.resolve(strict=True)
+    try:
+        if not args.root.is_absolute() or args.root.is_symlink():
+            raise OSError
+        root = args.root.resolve(strict=True)
+    except (OSError, RuntimeError):
+        fail("unsafe_target_root", "target root must be an absolute non-symlink path")
     if root == Path("/"):
         fail("unsafe_target_root", "refusing the appliance root")
     for relative in (
@@ -1558,6 +1631,17 @@ def validate(args, progress):
                 packageDependencyClosure=closure,
                 compression=compression,
             )
+        if (compression["writeIncompatibleOptions"]
+                or compression["invalidOptions"]
+                or len(compression["options"]) > 1):
+            fail(
+                "compression_profile_unsupported",
+                "the target Btrfs mount disables checksummed copy-on-write data",
+                storage=storage,
+                packageDependencyClosure=closure,
+                compression=compression,
+            )
+        require_exclusive_btrfs_mount(root)
         for parsed in parsed_packages:
             for member in parsed["members"]:
                 require_root_filesystem_destination(root, member)
@@ -1588,9 +1672,10 @@ def validate(args, progress):
             if installed_packages.get(parsed["lockRecord"]["name"], {}).get("version")
             == parsed["lockRecord"]["version"]
         ]
+        package_integrity_deadline = time.monotonic() + 600
         for parsed in exact_noop_packages:
             require_installed_package_integrity(
-                root, parsed["lockRecord"]["name"]
+                root, parsed["lockRecord"]["name"], package_integrity_deadline
             )
         exact_noop_package_credit = sum(
             package_measurement_by_name[parsed["lockRecord"]["filename"]]
@@ -1670,6 +1755,7 @@ def validate(args, progress):
                 f"{ratio_millionths % 1_000_000:06d}"
             ),
             "allPayloadDestinationsOnRootFilesystem": True,
+            "filesystemMountExclusive": True,
             "replacementCreditPolicy": "exact-payload-noop-only",
             "modulePayloadNoop": exact_existing_modules,
             "mutationProfileImplemented": True,
@@ -1727,6 +1813,10 @@ def validate(args, progress):
             "sha256": sha256(args.package_keyring, progress),
         },
         "packages": package_records,
+        "modules": [
+            {"name": name, "payloadSha256": module_payload_hashes[name]}
+            for name in sorted(module_payload_hashes)
+        ],
     }
 
 

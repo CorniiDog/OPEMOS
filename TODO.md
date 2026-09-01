@@ -1367,6 +1367,11 @@ signing policy.
   savings, so compression context cannot silently override a space failure.
 * [x] Add synthetic success, repeated-execution, corrupt-input, injected
   initramfs failure, and mounts-released result coverage.
+* [x] Require exclusive target-Btrfs mounting for filesystem-wide compression,
+  reject NOCOW/NOCOMPRESS destinations, report compression-policy restoration
+  independently, and verify every locked userspace package's exact installed
+  version and authenticated payload after the offline transaction; independently
+  revalidate the exact installed five-module set before depmod/initramfs.
 * [x] Make malformed and duplicate installer arguments return a bounded schema-1
   `invalid_arguments` result whenever `--result-json` is discoverable.
 * [x] Bound signed userspace package files/listings/member counts and reject

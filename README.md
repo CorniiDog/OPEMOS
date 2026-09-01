@@ -242,7 +242,16 @@ Repeated `--dependency-package FILE --dependency-signature FILE` arguments must
 match that lock exactly: missing and extra packages both fail closed. Every
 dependency is locally staged, signature-verified, path-confined, size-accounted,
 and installed in one offline `pacman -U` transaction. Production installation
-never accesses a package repository or expands signer trust.
+never accesses a package repository or expands signer trust. After the
+transaction, every locked package—not only the two NVIDIA seeds—is queried for
+its exact full version and checked with pacman's installed-file integrity audit.
+The verifier also re-hashes each staged package against validated metadata and
+compares installed regular-file bytes, modes, ownership, symlinks, and hardlinks
+directly with the authenticated package payload. Any mismatch invalidates the
+disposable overlay before module installation. The five installed modules are
+then independently decompressed as needed and compared with the validated
+logical module hashes, exact filenames, ownership, and modes before depmod or
+initramfs generation.
 
 A lock mismatch reports the complete bounded package-set difference before
 mutation: sorted missing, unexpected, and duplicate identities plus one sorted
@@ -325,7 +334,9 @@ Mutation with this profile is fail-closed. Every package, module, configuration,
 and `/boot` destination must resolve to the target Btrfs filesystem. Existing
 destination ancestors carrying Btrfs NOCOW or NOCOMPRESS attributes are
 rejected because the remount cannot make those writes equivalent to the scratch
-measurement. Immediately
+measurement. Because Btrfs compression mount options are filesystem-wide, the
+root filesystem must have exactly one mount in the appliance namespace;
+additional mounts of the same filesystem fail before mutation. Immediately
 before writing, the installer records the original compression option, remounts
 the disposable target with `compress-force=zstd:3`, verifies that policy at each
 mutation boundary, then restores and verifies the original option on success,
@@ -335,7 +346,9 @@ rewrite, may receive its measured no-op allocation as replacement credit.
 Ordinary upgrades receive no physical credit because old and new extents may
 coexist during the transaction. Archive-size savings remain informational and
 never authorize installation. Independent recovery-overlay validation remains
-required before this path is considered release-ready.
+required before this path is considered release-ready. Terminal result cleanup
+records distinguish `mountsReleased` from `compressionPolicyRestored` so the
+image builder does not mistake a restored mount tree for restored Btrfs policy.
 
 The first real Fedora measurement of the reviewed SteamOS 3.8.14/NVIDIA
 575.64.05 six-package set plus the five target-format modules produced

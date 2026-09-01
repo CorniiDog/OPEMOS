@@ -25,6 +25,10 @@ PACKAGE_KEYS = {
     "pkgver", "pkgrel", "architecture", "signer", "sha256",
     "signatureSha256", "installedSize", "dependencies", "provides",
 }
+EXPECTED_MODULES = {
+    "nvidia.ko", "nvidia-drm.ko", "nvidia-modeset.ko",
+    "nvidia-peermem.ko", "nvidia-uvm.ko",
+}
 
 
 def parse_args():
@@ -44,6 +48,11 @@ def parse_args():
     parser.add_argument("--nvidia-utils", default="")
     parser.add_argument("--lib32-nvidia-utils", default="")
     parser.add_argument("--mounts-released", choices=("true", "false"), default="true")
+    parser.add_argument(
+        "--compression-policy-restored",
+        choices=("true", "false"),
+        default="true",
+    )
     parser.add_argument("--validation", type=Path)
     return parser.parse_args()
 
@@ -84,7 +93,7 @@ def load_validation(path):
 def validate_verified_metadata(validation):
     required = {
         "archiveSha256", "provenanceSha256", "userspaceLock",
-        "pacmanDatabase", "boot", "keyring", "packages", "storage",
+        "pacmanDatabase", "boot", "keyring", "packages", "modules", "storage",
         "packageDependencyClosure", "compression",
     }
     if not required <= validation.keys():
@@ -137,6 +146,17 @@ def validate_verified_metadata(validation):
                     or any(not isinstance(value, str) or not 0 < len(value) <= 256
                            for value in relations)):
                 raise SystemExit("Verified installation package relations are invalid.")
+    modules = validation["modules"]
+    if (not isinstance(modules, list) or len(modules) != len(EXPECTED_MODULES)
+            or any(not isinstance(module, dict)
+                   or set(module) != {"name", "payloadSha256"}
+                   or not isinstance(module.get("name"), str)
+                   or not isinstance(module.get("payloadSha256"), str)
+                   or HEX_SHA256.fullmatch(module["payloadSha256"]) is None
+                   for module in modules)):
+        raise SystemExit("Verified installation module metadata is invalid.")
+    if {module["name"] for module in modules} != EXPECTED_MODULES:
+        raise SystemExit("Verified installation module metadata is invalid.")
     storage = validation["storage"]
     compression = validation["compression"]
     base_storage = {
@@ -150,6 +170,18 @@ def validate_verified_metadata(validation):
                    or storage[field] < 0 for field in base_storage)
             or not isinstance(compression, dict)):
         raise SystemExit("Verified installation storage metadata is invalid.")
+    for option_field in ("options", "invalidOptions", "writeIncompatibleOptions"):
+        options = compression.get(option_field)
+        if (not isinstance(options, list) or len(options) > 8
+                or any(not isinstance(option, str)
+                       or re.fullmatch(r"[a-z0-9=:+_-]{1,64}", option) is None
+                       for option in options)):
+            raise SystemExit("Verified filesystem compression context is invalid.")
+    if (not isinstance(compression.get("filesystem"), str)
+            or re.fullmatch(r"[a-z0-9._+-]{1,32}", compression["filesystem"])
+            is None
+            or not isinstance(compression.get("enabled"), bool)):
+        raise SystemExit("Verified filesystem compression context is invalid.")
     if "requestedProfile" in compression:
         measured_storage = {
             "rootConservativeRequiredBytes", "rootMeasuredRequiredBytes",
@@ -166,11 +198,20 @@ def validate_verified_metadata(validation):
             "payloadAllocatedBytes", "dataAllocatedBytes", "metadataAllocatedBytes",
             "systemAllocatedBytes", "filesystemOverheadBytes",
         }
+        measurement_keys = {
+            *measurement_numbers,
+            "status", "profile", "writePolicy", "measurementMethod",
+            "packageMeasurements", "moduleAllocatedBytes",
+        }
         package_measurements = measurement.get("packageMeasurements", []) \
             if isinstance(measurement, dict) else []
         expected_package_filenames = [
             package["filename"] for package in validation["packages"]
         ]
+        ratio_millionths = (
+            measurement.get("payloadAllocatedBytes", 0) * 1_000_000
+            // max(1, measurement.get("declaredPayloadBytes", 0))
+        ) if isinstance(measurement, dict) else -1
         if (compression.get("requestedProfile") != "btrfs-zstd3"
                 or compression.get("writePolicy") != "compress-force=zstd:3"
                 or compression.get("admissionBasis")
@@ -195,6 +236,11 @@ def validate_verified_metadata(validation):
                 )
                 or compression.get("mutationProfileImplemented") is not True
                 or compression.get("allPayloadDestinationsOnRootFilesystem") is not True
+                or compression.get("filesystemMountExclusive") is not True
+                or compression.get("writeIncompatibleOptions") != []
+                or compression.get("invalidOptions") != []
+                or not isinstance(compression.get("options"), list)
+                or len(compression["options"]) > 1
                 or compression.get("replacementCreditPolicy")
                 != "exact-payload-noop-only"
                 or not isinstance(compression.get("modulePayloadNoop"), bool)
@@ -212,6 +258,7 @@ def validate_verified_metadata(validation):
                 or measurement.get("writePolicy") != "compress-force=zstd:3"
                 or measurement.get("measurementMethod")
                 != "scratch-btrfs-filesystem-usage-used-delta"
+                or set(measurement) != measurement_keys
                 or not isinstance(package_measurements, list)
                 or len(package_measurements) != len(expected_package_filenames)
                 or any(
@@ -235,6 +282,38 @@ def validate_verified_metadata(validation):
                 or any(not isinstance(measurement[field], int)
                        or isinstance(measurement[field], bool) or measurement[field] < 0
                        for field in measurement_numbers)
+                or measurement["dataAllocatedBytes"] <= 0
+                or measurement["dataAllocatedBytes"]
+                > measurement["payloadAllocatedBytes"]
+                or measurement["filesystemOverheadBytes"] != (
+                    measurement["payloadAllocatedBytes"]
+                    - measurement["dataAllocatedBytes"]
+                )
+                or measurement["declaredPayloadBytes"] != (
+                    storage["packageInstalledBytes"]
+                    + storage["moduleInstalledBytes"]
+                )
+                or storage["rootLogicalRequiredBytes"] != (
+                    measurement["declaredPayloadBytes"]
+                    + storage["compressionReserveBytes"]
+                )
+                or storage["rootConservativeRequiredBytes"] != (
+                    max(
+                        0,
+                        storage["packageInstalledBytes"]
+                        - storage["packageReplacedBytes"],
+                    )
+                    + max(
+                        0,
+                        storage["moduleInstalledBytes"]
+                        - storage["moduleReplacedBytes"],
+                    )
+                    + storage["compressionReserveBytes"]
+                )
+                or storage["replacementCandidateLogicalBytes"] != (
+                    storage["packageReplacedBytes"]
+                    + storage["moduleReplacedBytes"]
+                )
                 or storage["rootRequiredBytes"] != storage["rootMeasuredRequiredBytes"]
                 or storage["measuredPayloadAllocatedBytes"]
                 != measurement.get("payloadAllocatedBytes")
@@ -245,6 +324,9 @@ def validate_verified_metadata(validation):
                 or storage["replacementCreditBytes"] != (
                     storage["packageNoopCreditBytes"]
                     + storage["moduleNoopCreditBytes"]
+                )
+                or storage["packageNoopCreditBytes"] > sum(
+                    item["allocatedBytes"] for item in package_measurements
                 )
                 or storage["moduleNoopCreditBytes"] != (
                     measurement.get("moduleAllocatedBytes", 0)
@@ -262,8 +344,14 @@ def validate_verified_metadata(validation):
                 or storage.get("rootFinalMarginBytes") != (
                     storage["rootAvailableBytes"] - storage["rootRequiredBytes"]
                 )
+                or not isinstance(storage.get("rootFinalMarginBytes"), int)
+                or isinstance(storage.get("rootFinalMarginBytes"), bool)
                 or storage["rootShortfallBytes"] != max(
                     0, -storage["rootFinalMarginBytes"]
+                )
+                or compression["compressionRatio"] != (
+                    f"{ratio_millionths // 1_000_000}."
+                    f"{ratio_millionths % 1_000_000:06d}"
                 )
                 or compression["admissionAuthorized"]
                 != all(storage[f"{name}RequiredBytes"] <= storage[f"{name}AvailableBytes"]
@@ -301,8 +389,11 @@ def main():
         args.nvidia = args.nvidia if VERSION.fullmatch(args.nvidia) else "unknown"
     if args.trust not in TRUST_VALUES:
         raise SystemExit("Installation result trust classification is invalid.")
-    if args.status == "success" and args.mounts_released != "true":
-        raise SystemExit("A successful installation result requires all mounts released.")
+    if args.status == "success" and (
+        args.mounts_released != "true"
+        or args.compression_policy_restored != "true"
+    ):
+        raise SystemExit("A successful installation result requires complete cleanup.")
     expected_terminal = {
         "success": ("install_complete", "complete"),
         "validated": ("validation_complete", "validated"),
@@ -333,7 +424,12 @@ def main():
             "nvidiaUtils": args.nvidia_utils or None,
             "lib32NvidiaUtils": args.lib32_nvidia_utils or None,
         },
-        "cleanup": {"mountsReleased": args.mounts_released == "true"},
+        "cleanup": {
+            "mountsReleased": args.mounts_released == "true",
+            "compressionPolicyRestored": (
+                args.compression_policy_restored == "true"
+            ),
+        },
     }
     if args.validation:
         validation = load_validation(args.validation)
@@ -347,6 +443,7 @@ def main():
                 "boot": validation["boot"],
                 "keyring": validation["keyring"],
                 "packages": validation["packages"],
+                "modules": validation["modules"],
                 "storage": validation["storage"],
                 "packageDependencyClosure": validation["packageDependencyClosure"],
                 "compression": validation["compression"],

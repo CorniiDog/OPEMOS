@@ -42,6 +42,10 @@ python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/write_install_result.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/verify_installed_userspace.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/verify_installed_modules.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     bootstrap/prepare_nvidia_package_keyring.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/validate_publish_inputs.py
@@ -507,6 +511,8 @@ rm -f "$RESULT_FIXTURE" "${RESULT_FIXTURE}.invalid"
 
 printf 'Checking offline-root installer contract...\n'
 ./bootstrap/install_to_root.sh --help >/dev/null
+python3 lib/verify_installed_userspace.py --help >/dev/null
+python3 lib/verify_installed_modules.py --help >/dev/null
 python3 bootstrap/audit_userspace_closure.py --help >/dev/null
 python3 bootstrap/finalize_userspace_lock.py --help >/dev/null
 python3 - "$PROJECT_ROOT/trust/arch-full-keyring-provenance.json" <<'PY' || \
