@@ -106,10 +106,12 @@ podman run \
 
         DISCOVERED="$(
             curl -fsSL "$MIRROR/" \
-                | grep -oE "href=\"jupiter-[^\"/]*/\"" \
+                | LC_ALL=C grep -oE "href=\"jupiter-[A-Za-z0-9._-]+/\"" \
                 | sed -e "s|^href=\"||" -e "s|/\"$||" \
                 | grep -vxE "jupiter-(main|ci-test)" \
-                | sort -rV \
+                | awk "length(\$0) <= 128" \
+                | sort -u -rV \
+                | awk "NR <= 128" \
                 | tr "\n" " " \
                 || true
         )"

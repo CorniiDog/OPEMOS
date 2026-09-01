@@ -38,7 +38,10 @@ def add_text(archive, name, text="fixture\n"):
     archive.addfile(member, io.BytesIO(content))
 
 
-def make_package(path, *, name=NAME, version=VERSION, architecture="x86_64", unsafe=None):
+def make_package(
+    path, *, name=NAME, version=VERSION, architecture="x86_64", unsafe=None,
+    links=(), duplicate=False, special=False,
+):
     with tarfile.open(path, "w:gz") as archive:
         add_text(
             archive,
@@ -48,6 +51,17 @@ def make_package(path, *, name=NAME, version=VERSION, architecture="x86_64", uns
         add_text(archive, "usr/share/header-fixture")
         if unsafe:
             add_text(archive, unsafe)
+        if duplicate:
+            add_text(archive, "usr/share/header-fixture", "duplicate\n")
+        for member_name, target, link_type in links:
+            member = tarfile.TarInfo(member_name)
+            member.type = link_type
+            member.linkname = target
+            archive.addfile(member)
+        if special:
+            member = tarfile.TarInfo("usr/share/header-pipe")
+            member.type = tarfile.FIFOTYPE
+            archive.addfile(member)
 
 
 def package_arguments(package):
@@ -96,6 +110,38 @@ def main():
             package = temporary / f"unsafe-{index}.tar.gz"
             make_package(package, unsafe=unsafe)
             run_validator(*package_arguments(package), success=False)
+
+        safe_links = temporary / "safe-links.tar.gz"
+        make_package(
+            safe_links,
+            links=(
+                ("usr/share/header-link", "header-fixture", tarfile.SYMTYPE),
+                ("usr/share/header-hardlink", "usr/share/header-fixture", tarfile.LNKTYPE),
+            ),
+        )
+        run_validator(*package_arguments(safe_links), success=True)
+
+        for label, links in (
+            ("escaping-symlink", (("usr/header-link", "../../escape", tarfile.SYMTYPE),)),
+            ("absolute-symlink", (("usr/header-link", "/escape", tarfile.SYMTYPE),)),
+            ("escaping-hardlink", (("usr/header-link", "../escape", tarfile.LNKTYPE),)),
+            ("absent-hardlink", (("usr/header-link", "usr/absent", tarfile.LNKTYPE),)),
+        ):
+            package = temporary / f"{label}.tar.gz"
+            make_package(package, links=links)
+            run_validator(*package_arguments(package), success=False)
+
+        duplicate = temporary / "duplicate.tar.gz"
+        make_package(duplicate, duplicate=True)
+        run_validator(*package_arguments(duplicate), success=False)
+
+        special = temporary / "special.tar.gz"
+        make_package(special, special=True)
+        run_validator(*package_arguments(special), success=False)
+
+        excessive_name = temporary / "excessive-name.tar.gz"
+        make_package(excessive_name, unsafe="usr/share/" + "x" * 5000)
+        run_validator(*package_arguments(excessive_name), success=False)
 
         valid_root = temporary / "valid-root"
         expected_tree = make_tree(valid_root).resolve()

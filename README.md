@@ -146,11 +146,13 @@ The command intentionally requires an x86_64 Fedora appliance even when QEMU is
 running on an Apple Silicon macOS host.
 
 Before compilation, it validates the package's exact Arch metadata and rejects
-absolute or traversal archive paths. After extraction, the exact-kernel build
-tree and every required prepared-tree file must resolve inside the disposable
-extraction root; symlink escapes are rejected. Extraction also retains
-libarchive's default intermediate-symlink protections, uses atomic safe writes,
-and does not restore package ownership or permissions.
+absolute or traversal paths, duplicate members, special device/stream entries,
+escaping symlink/hardlink targets, absent hardlink targets, and archives beyond
+bounded compressed, expanded, member, or metadata limits. After extraction,
+the exact-kernel build tree and every required prepared-tree file must resolve
+inside the disposable extraction root; symlink escapes are rejected. Extraction
+also retains libarchive's default intermediate-symlink protections, uses atomic
+safe writes, and does not restore package ownership or permissions.
 
 The build records the compiler used by Valve's kernel and the compiler used for
 the external modules. If their major versions differ, it prefers an installed
@@ -265,8 +267,9 @@ Candidate locks are not installable: maintainers must review every missing
 mapping and prepare a minimal keyring, then run
 `bootstrap/finalize_userspace_lock.py`. The create-only finalizer recomputes
 review status from the production policy, verifies that the minimal keyring
-contains every required signer, and atomically emits the reviewed lock; manual
-status edits are unsupported.
+contains every required signer and no unrelated primary keys, and atomically
+emits the reviewed lock. Malformed, oversized, duplicate-identity, or unreadable
+inputs fail without an output file; manual status edits are unsupported.
 
 The first reviewed bundle is
 `locks/userspace/steamos-3.8.14-nvidia-575.64.05.json`, paired with

@@ -323,9 +323,8 @@ if [[ -z "$HEADERS_PACKAGE" ]]; then
     if [[ -z "$HEADERS_URL" ]]; then
         MIRROR="https://steamdeck-packages.steamos.cloud/archlinux-mirror"
         log "Discovering exact Valve headers package ${HEADERS_FILENAME}..."
-        DISCOVERED="$(curl -fsSL "$MIRROR/" | grep -oE 'href="jupiter-[^"/]*/"' |
-            sed -e 's|^href="||' -e 's|/"$||' | grep -vxE 'jupiter-(main|ci-test)' |
-            sort -rV | tr '\n' ' ' || true)"
+        DISCOVERED="$(curl -fsSL "$MIRROR/" |
+            valve_repository_names_from_html | tr '\n' ' ' || true)"
         for repository in jupiter-main $DISCOVERED; do
             candidate="$MIRROR/$repository/os/x86_64/$HEADERS_FILENAME"
             if curl -fsIL -o /dev/null "$candidate"; then
@@ -437,7 +436,10 @@ make -C "$SOURCE_DIR" clean >/dev/null 2>&1 || true
 run_cancellable make -C "$SOURCE_DIR" modules -j"$(nproc)" CC="$BUILD_CC" \
     SYSSRC="$KERNEL_TREE" SYSOUT="$KERNEL_TREE"
 
-mapfile -t MODULES < <(find "$SOURCE_DIR/kernel-open" -maxdepth 1 -type f -name '*.ko' | sort)
+MODULES=()
+while IFS= read -r module; do
+    MODULES+=("$module")
+done < <(find "$SOURCE_DIR/kernel-open" -maxdepth 1 -type f -name '*.ko' | sort)
 MODULE_VALIDATION_JSON="$WORK_DIR/module-validation.json"
 set +e
 python3 "$SUPPORT_ROOT/lib/validate_built_modules.py" \
@@ -453,6 +455,7 @@ if [[ "$MODULE_VALIDATION_RC" != "0" ]]; then
     die "Built NVIDIA modules failed structural validation."
 fi
 
+BUILD_PHASE=packaging_failed
 PACKAGE_DIR="$WORK_DIR/package"
 mkdir -p "$PACKAGE_DIR/modules"
 for module in "${MODULES[@]}"; do
@@ -488,7 +491,6 @@ BUILD_INFO="$STAGED_OUTPUT/$BUILD_INFO_NAME"
 PROVENANCE="$STAGED_OUTPUT/$PROVENANCE_NAME"
 ARCHIVE="$STAGED_OUTPUT/$ASSET_NAME"
 CHECKSUM="$STAGED_OUTPUT/$ASSET_NAME.sha256"
-BUILD_PHASE=packaging_failed
 {
     printf 'open-gpu-kernel-modules-steamos build information\n\n'
     printf 'schema_version=1\n'

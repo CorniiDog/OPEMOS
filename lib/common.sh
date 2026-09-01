@@ -213,6 +213,16 @@ get_neptune_headers_package()
     printf "linux-neptune-%s-headers\n" "$(get_neptune_series "${1:-$(get_kernel_version)}")"
 }
 
+valve_repository_names_from_html()
+{
+    LC_ALL=C grep -oE 'href="jupiter-[A-Za-z0-9._-]+/"' |
+        sed -e 's/^href="//' -e 's|/"$||' |
+        grep -vxE 'jupiter-(main|ci-test)' |
+        awk 'length($0) <= 128' |
+        sort -u -rV |
+        awk 'NR <= 128'
+}
+
 project_cache_root()
 {
     printf '%s\n' "${HOME}/.cache/${PROJECT_NAME}"

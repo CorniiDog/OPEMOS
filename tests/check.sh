@@ -53,6 +53,9 @@ python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __
 printf 'Checking exact target-header validation...\n'
 python3 tests/header_validation.py
 
+printf 'Checking offline-target build failure cleanup...\n'
+python3 tests/build_for_target_failures.py
+
 printf 'Checking built-module metadata validation...\n'
 python3 tests/module_validation.py
 
@@ -132,6 +135,28 @@ done
 ./commit_myself.sh --help >/dev/null
 ./tests/non_sudo.sh --help >/dev/null
 ./tests/transaction.sh --help >/dev/null
+
+printf 'Checking entry points outside the repository working directory...\n'
+INVOCATION_DIR="$(mktemp -d /tmp/open-gpu-entrypoints.XXXXXX)"
+cleanup_invocation_dir()
+{
+    rm -rf "$INVOCATION_DIR"
+}
+trap cleanup_invocation_dir EXIT INT TERM
+for script_file in bootstrap/*.sh; do
+    (
+        cd "$INVOCATION_DIR"
+        "$PROJECT_ROOT/$script_file" --help >/dev/null
+    )
+done
+(
+    cd "$INVOCATION_DIR"
+    "$PROJECT_ROOT/commit_myself.sh" --help >/dev/null
+    "$PROJECT_ROOT/tests/non_sudo.sh" --help >/dev/null
+    "$PROJECT_ROOT/tests/transaction.sh" --help >/dev/null
+)
+cleanup_invocation_dir
+trap - EXIT INT TERM
 
 printf 'Checking mutually exclusive resolver modes...\n'
 if ./bootstrap/setup_nvidia.sh \
@@ -222,6 +247,22 @@ source_branch_matches_expected nvidia/580.119.02 nvidia/580.119.02 ||
 if source_branch_matches_expected nvidia/580.119.02 ""; then
     fail "detached HEAD was accepted for a named project branch"
 fi
+
+printf 'Checking Valve repository discovery confinement...\n'
+VALVE_REPOSITORIES="$(cat <<'EOF' | valve_repository_names_from_html
+<a href="jupiter-main/">main</a>
+<a href="jupiter-rel-20260830.1/">release</a>
+<a href="jupiter-rel-20260830.1/">duplicate</a>
+<a href="jupiter-beta_1/">beta</a>
+<a href="jupiter-ci-test/">ci</a>
+<a href="jupiter-../../escape/">escape</a>
+<a href="jupiter-bad%2fescape/">encoded escape</a>
+<a href="jupiter-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/">oversized</a>
+<a href="other-repository/">other</a>
+EOF
+)"
+[[ "$VALVE_REPOSITORIES" == $'jupiter-rel-20260830.1\njupiter-beta_1' ]] ||
+    fail "Valve repository discovery accepted an unsafe or duplicate name"
 
 printf 'Checking Valve kernel compiler metadata parsing...\n'
 VALVE_COMPILER_DEFINITION=$'#define LINUX_COMPILER\t\t"gcc (GCC) 15.1.1 20250425, GNU ld (GNU Binutils) 2.45"'

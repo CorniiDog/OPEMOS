@@ -142,7 +142,12 @@ def fixture(base):
     binaries.mkdir()
     (binaries / "gpg").write_text(
         "#!/bin/sh\ncase \" $* \" in *' --show-keys '*) "
-        + "".join(f"echo 'fpr:::::::::{fingerprint}:';" for fingerprint in SIGNERS.values())
+        + "".join(
+            f"echo 'pub::::::::::'; echo 'fpr:::::::::{fingerprint}:';"
+            for fingerprint in SIGNERS.values()
+        )
+        + "[ -z \"${MOCK_EXTRA_PRIMARY_KEY:-}\" ] || "
+          "{ echo 'pub::::::::::'; echo 'fpr:::::::::BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB:'; };"
         + " exit 0;; esac\nout=; prev=; for arg in \"$@\"; do [ \"$prev\" != --output ] || out=$arg; prev=$arg; done; eval input=\\${$#}; cp \"$input\" \"$out\"\n"
     )
     cases = "".join(
@@ -200,6 +205,54 @@ def main():
             finalizer, env=finalizer_env,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         ).returncode != 0
+        unrelated_output = Path(temporary) / "unrelated-key.json"
+        unrelated_command = [
+            *finalizer[:-1], str(unrelated_output)
+        ]
+        unrelated_env = dict(finalizer_env, MOCK_EXTRA_PRIMARY_KEY="1")
+        unrelated = subprocess.run(
+            unrelated_command, env=unrelated_env,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        assert unrelated.returncode != 0
+        assert "unrelated primary key" in unrelated.stderr
+        assert not unrelated_output.exists()
+        for label, payload, expected in (
+            ("malformed", b"{", "not valid bounded JSON"),
+            ("non-object", b"[]", "must be a JSON object"),
+            (
+                "duplicate-package",
+                json.dumps({**candidate, "packages": [
+                    candidate["packages"][0], candidate["packages"][0]
+                ]}).encode(),
+                "duplicate package identities",
+            ),
+        ):
+            invalid_candidate = Path(temporary) / f"{label}.json"
+            invalid_candidate.write_bytes(payload)
+            invalid_output = Path(temporary) / f"{label}-reviewed.json"
+            command = list(finalizer)
+            command[command.index(str(candidate_path))] = str(invalid_candidate)
+            command[-1] = str(invalid_output)
+            completed = subprocess.run(
+                command, env=finalizer_env,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            )
+            assert completed.returncode != 0
+            assert expected in completed.stderr
+            assert "Traceback" not in completed.stderr
+            assert not invalid_output.exists()
+        gpg_failure_output = Path(temporary) / "gpg-failure.json"
+        gpg_failure_command = [*finalizer[:-1], str(gpg_failure_output)]
+        gpg_failure_env = dict(finalizer_env, PATH="/usr/bin:/bin")
+        gpg_failure = subprocess.run(
+            gpg_failure_command, env=gpg_failure_env,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        assert gpg_failure.returncode != 0
+        assert "minimal keyring" in gpg_failure.stderr
+        assert "Traceback" not in gpg_failure.stderr
+        assert not gpg_failure_output.exists()
         assert "cryptographic signature verification failed" in run(
             data, False, MOCK_INVALID_SIGNATURE="egl-gbm"
         )

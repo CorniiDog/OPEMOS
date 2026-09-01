@@ -293,7 +293,7 @@ the recovery image remain integration-validation items for the image builder.
 * [x] Refuse installation if effective space is insufficient.
 * [x] Account for replacement of the existing project module directory.
 * [x] Successfully install 580 with the new preflight logic.
-* [ ] Add a test for deliberately insufficient root space.
+* [x] Add a test for deliberately insufficient root space.
 * [x] Make preflight output especially clear when replacement space is what makes installation possible.
 
 ---
@@ -370,7 +370,8 @@ the recovery image remain integration-validation items for the image builder.
 * [x] Fix grep warning:
 
   * `grep: warning: stray \ before "`
-* [ ] Audit Valve repository discovery regex.
+* [x] Audit Valve repository discovery in both build paths and accept only
+  bounded safe `jupiter-*` directory components from the untrusted mirror index.
 * [ ] Cache build environment so repeated builds do not repeatedly install hundreds of packages unnecessarily.
 
 ---
@@ -563,7 +564,8 @@ the recovery image remain integration-validation items for the image builder.
 * [x] Give these scripts direct cache-root temp creation.
 * [x] Keep temp storage on `/home`.
 * [x] Add a small comment in each explaining why it does not use `project_mktemp_dir`.
-* [ ] Test each script from a shell where the repo is not already sourced.
+* [x] Test each entry-point help path from a working directory outside the
+  repository, without pre-sourcing project helpers.
 * [ ] Test scripts via their intended remote/raw invocation, not only from the local checkout.
 
 ---
@@ -1104,6 +1106,9 @@ signing policy.
   unrelated `/usr/lib/modules/*/build` directory.
 * [x] Validate Arch `.PKGINFO` package name, version, and architecture.
 * [x] Reject unsafe header-archive paths.
+* [x] Reject duplicate header members, special device/stream entries, escaping
+  symlink/hardlink targets, absent hardlink targets, and excessive archive or
+  metadata sizes before extraction.
 * [x] Require a prepared kernel tree with `autoconf.h` and `Module.symvers`.
 * [x] Build against explicit `SYSSRC`/`SYSOUT`, never the Fedora guest kernel.
 * [x] Require exactly the five expected NVIDIA modules.
@@ -1248,8 +1253,12 @@ signing policy.
   prepared-tree files, unsafe archive paths, and extraction-root escape.
 * [x] Add file-backed fixtures for duplicate/missing modules, metadata-command
   failures, wrong NVIDIA version, wrong ELF architecture, and wrong vermagic.
-* [ ] Test network failure, truncated downloads, cancellation during download,
-  cancellation during compilation, and output-directory exhaustion.
+* [x] Test header network failure and successful-but-truncated downloads with
+  typed failure results and no final artifacts.
+* [x] Test cancellation during both header download and compilation, including
+  descendant termination, temporary-tree cleanup, and a cancelled result.
+* [x] Test output publication with an injected `ENOSPC` failure and verify the
+  typed packaging failure, removal of partial final names, and work-tree cleanup.
 * [ ] Test both automatically downloaded and pinned-local header inputs.
 * [ ] Verify artifact installation, idempotency, uninstall, and rollback against
   a fake mounted target before modifying a real recovery-image working copy.
