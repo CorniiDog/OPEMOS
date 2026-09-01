@@ -312,9 +312,11 @@ initramfs generation.
 Successful userspace verification emits a bounded schema-1 record containing
 the exact locked package identities, versions and hashes, affirmative pacman
 query/integrity/payload checks, per-package file/link/library counts, and the
-exact-version GSP firmware inventory. Installer success is impossible without
-this record matching the validated package set and NVIDIA version; the result
-does not expose host paths or an unbounded package-file inventory.
+exact-version GSP firmware inventory. It also identifies the confined Holo
+pacman database and binds its verified locked-package count to the reviewed lock.
+Installer success is impossible without this record matching the validated
+database, package set, and NVIDIA version; the result does not expose host
+paths or an unbounded package-file inventory.
 
 A lock mismatch reports the complete bounded package-set difference before
 mutation: sorted missing, unexpected, and duplicate identities plus one sorted

@@ -287,7 +287,8 @@ def load_userspace_verification(path):
         raise SystemExit("Userspace verification metadata is unreadable or excessive.")
     if (not isinstance(document, dict)
             or set(document) != {
-                "schemaVersion", "status", "reason", "packages", "gspFirmware",
+                "schemaVersion", "status", "reason", "pacmanDatabase",
+                "packages", "gspFirmware",
             }
             or document.get("schemaVersion") != 1
             or document.get("status") != "verified"
@@ -332,6 +333,15 @@ def load_userspace_verification(path):
             raise SystemExit("Userspace verification package records are invalid.")
     if len(names) != len(set(names)):
         raise SystemExit("Userspace verification package identities are duplicated.")
+    database = document.get("pacmanDatabase")
+    if (not isinstance(database, dict)
+            or set(database) != {"path", "status", "verifiedPackageCount"}
+            or database.get("path") != "/usr/lib/holo/pacmandb"
+            or database.get("status") != "verified"
+            or not isinstance(database.get("verifiedPackageCount"), int)
+            or isinstance(database["verifiedPackageCount"], bool)
+            or database["verifiedPackageCount"] != len(packages)):
+        raise SystemExit("Userspace pacman database verification is malformed.")
     firmware = document.get("gspFirmware")
     if (not isinstance(firmware, dict)
             or set(firmware) != {"version", "status", "targetRelativeFiles"}
@@ -416,6 +426,14 @@ def validate_verified_metadata(validation):
         identities = [package[field] for package in packages]
         if len(identities) != len(set(identities)):
             raise SystemExit("Verified installation package identities are duplicated.")
+    database = validation["pacmanDatabase"]
+    if (not isinstance(database, dict)
+            or set(database) != {"path", "packageCount"}
+            or database.get("path") != "/usr/lib/holo/pacmandb"
+            or not isinstance(database.get("packageCount"), int)
+            or isinstance(database["packageCount"], bool)
+            or not 1 <= database["packageCount"] <= 250_000):
+        raise SystemExit("Verified installation pacman database metadata is invalid.")
     modules = validation["modules"]
     if (not isinstance(modules, list) or len(modules) != len(EXPECTED_MODULES)
             or any(not isinstance(module, dict)
@@ -818,6 +836,8 @@ def main():
             for package in userspace_verification["packages"]
         }
         if (actual_packages != expected_packages
+                or userspace_verification["pacmanDatabase"]["path"]
+                != document.get("validation", {}).get("pacmanDatabase", {}).get("path")
                 or userspace_verification["gspFirmware"]["version"]
                 != args.nvidia):
             raise SystemExit(

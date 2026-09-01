@@ -362,6 +362,11 @@ def main():
         "schemaVersion": 1,
         "status": "verified",
         "reason": "installed_userspace_verified",
+        "pacmanDatabase": {
+            "path": "/usr/lib/holo/pacmandb",
+            "status": "verified",
+            "verifiedPackageCount": len(records),
+        },
         "packages": records,
         "gspFirmware": {
             "version": nvidia_version,

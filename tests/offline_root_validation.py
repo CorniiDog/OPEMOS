@@ -896,6 +896,11 @@ def main():
                 "schemaVersion": 1,
                 "status": "verified",
                 "reason": "installed_userspace_verified",
+                "pacmanDatabase": {
+                    "path": "/usr/lib/holo/pacmandb",
+                    "status": "verified",
+                    "verifiedPackageCount": 2,
+                },
                 "packages": [
                     {
                         "packageName": name,
@@ -999,6 +1004,28 @@ def main():
             duplicate_validation_result.stderr
         )
         assert not (temporary / "duplicate-validation-result.json").exists()
+        invalid_database_validation = json.loads(json.dumps(valid))
+        invalid_database_validation["pacmanDatabase"]["packageCount"] = True
+        invalid_database_path = temporary / "invalid-validation-database.json"
+        invalid_database_path.write_text(
+            json.dumps(invalid_database_validation), encoding="utf-8"
+        )
+        invalid_database_result = subprocess.run(
+            [
+                sys.executable, str(RESULT_WRITER),
+                "--output", str(temporary / "invalid-database-result.json"),
+                "--status", "failed", "--reason", "fixture_failure",
+                "--message", "fixture", "--phase", "fixture_failure",
+                "--root", "/target-root", "--kernel", KERNEL,
+                "--validation", str(invalid_database_path),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        assert invalid_database_result.returncode != 0
+        assert "pacman database metadata is invalid" in invalid_database_result.stderr
+        assert not (temporary / "invalid-database-result.json").exists()
 
         workspace_cases = (
             ("missing", "missing_directory", None),
@@ -2124,6 +2151,11 @@ def main():
         assert successful["cleanup"]["runtimeMountsExpected"] == 4
         assert successful["cleanup"]["runtimeMountsReleased"] == 4
         assert successful["userspaceVerification"]["status"] == "verified"
+        assert successful["userspaceVerification"]["pacmanDatabase"] == {
+            "path": "/usr/lib/holo/pacmandb",
+            "status": "verified",
+            "verifiedPackageCount": len(successful["validation"]["packages"]),
+        }
         assert {
             package["packageName"]
             for package in successful["userspaceVerification"]["packages"]
