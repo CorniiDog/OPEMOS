@@ -137,6 +137,76 @@ def validate_verified_metadata(validation):
                     or any(not isinstance(value, str) or not 0 < len(value) <= 256
                            for value in relations)):
                 raise SystemExit("Verified installation package relations are invalid.")
+    storage = validation["storage"]
+    compression = validation["compression"]
+    base_storage = {
+        "rootAvailableBytes", "rootRequiredBytes", "varAvailableBytes",
+        "varRequiredBytes", "efiAvailableBytes", "efiRequiredBytes",
+        "packageInstalledBytes", "packageCompressedBytes", "packageReplacedBytes",
+        "moduleInstalledBytes", "moduleReplacedBytes", "initramfsReserveBytes",
+    }
+    if (not isinstance(storage, dict) or not base_storage <= storage.keys()
+            or any(not isinstance(storage[field], int) or isinstance(storage[field], bool)
+                   or storage[field] < 0 for field in base_storage)
+            or not isinstance(compression, dict)):
+        raise SystemExit("Verified installation storage metadata is invalid.")
+    if "requestedProfile" in compression:
+        measured_storage = {
+            "rootConservativeRequiredBytes", "rootMeasuredRequiredBytes",
+            "compressionPayloadAllocatedBytes", "compressionFilesystemOverheadBytes",
+            "compressionSafetyReserveBytes",
+        }
+        measurement = compression.get("measurement")
+        measurement_numbers = {
+            "schemaVersion", "declaredPayloadBytes", "scratchFilesystemBytes",
+            "payloadAllocatedBytes", "dataAllocatedBytes", "metadataAllocatedBytes",
+            "systemAllocatedBytes", "filesystemOverheadBytes",
+        }
+        if (compression.get("requestedProfile") != "btrfs-zstd3"
+                or compression.get("writePolicy") != "compress-force=zstd:3"
+                or compression.get("admissionBasis")
+                != "scratch-btrfs-allocated-physical-bytes-plus-reserves"
+                or not isinstance(measurement, dict)
+                or not isinstance(compression.get("admissionAuthorized"), bool)
+                or not isinstance(compression.get("measuredPayloadSavingsBytes"), int)
+                or isinstance(compression.get("measuredPayloadSavingsBytes"), bool)
+                or compression["measuredPayloadSavingsBytes"] < 0
+                or compression["measuredPayloadSavingsBytes"] != max(
+                    0,
+                    measurement.get("declaredPayloadBytes", 0)
+                    - measurement.get("payloadAllocatedBytes", 0),
+                )
+                or compression.get("declaredSizesLikelyConservative")
+                is not (measurement.get("payloadAllocatedBytes", 0)
+                        < measurement.get("declaredPayloadBytes", 0))
+                or compression.get("compressionSavingsCreditedBytes") != max(
+                    0,
+                    storage["rootConservativeRequiredBytes"]
+                    - storage["rootMeasuredRequiredBytes"],
+                )
+                or compression.get("mutationProfileImplemented") is not False
+                or not measured_storage <= storage.keys()
+                or any(not isinstance(storage[field], int)
+                       or isinstance(storage[field], bool) or storage[field] < 0
+                       for field in measured_storage)
+                or measurement.get("status") != "measured"
+                or measurement.get("schemaVersion") != 1
+                or measurement.get("profile") != "btrfs-zstd3"
+                or measurement.get("writePolicy") != "compress-force=zstd:3"
+                or measurement.get("measurementMethod")
+                != "scratch-btrfs-filesystem-usage-used-delta"
+                or not measurement_numbers <= measurement.keys()
+                or any(not isinstance(measurement[field], int)
+                       or isinstance(measurement[field], bool) or measurement[field] < 0
+                       for field in measurement_numbers)
+                or storage["rootRequiredBytes"] != storage["rootMeasuredRequiredBytes"]
+                or compression["admissionAuthorized"]
+                != all(storage[f"{name}RequiredBytes"] <= storage[f"{name}AvailableBytes"]
+                       for name in ("root", "var", "efi"))):
+            raise SystemExit("Verified Btrfs measurement metadata is inconsistent.")
+    elif (compression.get("admissionBasis") != "logical-uncompressed-conservative"
+          or compression.get("compressionSavingsCreditedBytes") != 0):
+        raise SystemExit("Verified conservative compression metadata is inconsistent.")
 
 
 def main():

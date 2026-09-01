@@ -57,6 +57,8 @@ MAX_USERSPACE_LOCK_BYTES = 1024 * 1024
 MAX_PACKAGE_RELATIONS = 64
 MAX_INSTALLED_PACKAGE_RELATIONS = 1024
 MAX_REVIEWED_SIGNERS = 256
+COMPRESSION_PROFILE = "btrfs-zstd3"
+COMPRESSION_WRITE_POLICY = "compress-force=zstd:3"
 MAX_DIAGNOSTIC_VALUE_CHARS = 256
 LOCK_PACKAGE_FIELDS = (
     "filename",
@@ -139,6 +141,7 @@ def arguments():
     parser.add_argument("--dependency-signature", action="append", default=[], type=Path)
     parser.add_argument("--package-keyring", required=True, type=Path)
     parser.add_argument("--userspace-lock", required=True, type=Path)
+    parser.add_argument("--compression-profile", choices=(COMPRESSION_PROFILE,))
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--progress-attempt", type=bounded_progress_attempt, default=0)
     return parser.parse_args()
@@ -552,6 +555,104 @@ def compression_context(root):
         "admissionBasis": "logical-uncompressed-conservative",
         "compressionSavingsCreditedBytes": 0,
     }
+
+
+def measured_btrfs_payload(args, package_paths, declared_payload_bytes):
+    if os.environ.get("PROJECT_TEST_MODE") == "1":
+        if os.environ.get("PROJECT_TEST_BTRFS_MEASUREMENT_FAIL") == "1":
+            fail(
+                "compression_measurement_failed",
+                "scratch-Btrfs payload measurement failed before mutation",
+            )
+        try:
+            payload = int(os.environ["PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES"])
+            data = int(os.environ.get("PROJECT_TEST_BTRFS_DATA_ALLOCATED_BYTES", payload))
+            metadata = int(os.environ.get("PROJECT_TEST_BTRFS_METADATA_ALLOCATED_BYTES", "0"))
+            system = int(os.environ.get("PROJECT_TEST_BTRFS_SYSTEM_ALLOCATED_BYTES", "0"))
+        except (KeyError, ValueError):
+            fail(
+                "compression_measurement_failed",
+                "scratch-Btrfs test measurement is incomplete",
+            )
+        if (payload <= 0 or data <= 0 or data > payload
+                or metadata < 0 or system < 0):
+            fail(
+                "compression_measurement_invalid",
+                "scratch-Btrfs test measurement is invalid",
+            )
+        return {
+            "schemaVersion": 1,
+            "status": "measured",
+            "profile": COMPRESSION_PROFILE,
+            "writePolicy": COMPRESSION_WRITE_POLICY,
+            "measurementMethod": "scratch-btrfs-filesystem-usage-used-delta",
+            "declaredPayloadBytes": declared_payload_bytes,
+            "scratchFilesystemBytes": max(2 * 1024**3, declared_payload_bytes + 1024**3),
+            "payloadAllocatedBytes": payload,
+            "dataAllocatedBytes": data,
+            "metadataAllocatedBytes": metadata,
+            "systemAllocatedBytes": system,
+            "filesystemOverheadBytes": max(0, payload - data),
+        }
+    if os.geteuid() != 0:
+        fail(
+            "compression_measurement_privilege_required",
+            "scratch-Btrfs payload measurement requires the managed root appliance",
+        )
+    with tempfile.TemporaryDirectory(prefix="offline-root-btrfs-result-") as temporary:
+        output = Path(temporary) / "measurement.json"
+        command = [
+            str(Path(__file__).resolve().with_name("measure_btrfs_payload.py")),
+            "--module-archive", str(args.archive),
+            "--declared-payload-bytes", str(declared_payload_bytes),
+            "--output", str(output),
+        ]
+        for package in package_paths:
+            command.extend(("--package", str(package)))
+        try:
+            subprocess.run(
+                command,
+                check=True,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+            )
+            if output.is_symlink() or output.stat().st_size > MAX_METADATA_MEMBER_BYTES:
+                raise OSError
+            measurement = json.loads(output.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError, subprocess.CalledProcessError):
+            fail(
+                "compression_measurement_failed",
+                "scratch-Btrfs payload measurement failed before mutation",
+            )
+    expected = {
+        "schemaVersion", "status", "profile", "writePolicy", "measurementMethod",
+        "declaredPayloadBytes", "scratchFilesystemBytes", "payloadAllocatedBytes",
+        "dataAllocatedBytes", "metadataAllocatedBytes", "systemAllocatedBytes",
+        "filesystemOverheadBytes",
+    }
+    numeric = expected - {
+        "status", "profile", "writePolicy", "measurementMethod",
+    }
+    if (not isinstance(measurement, dict) or set(measurement) != expected
+            or measurement.get("schemaVersion") != 1
+            or measurement.get("status") != "measured"
+            or measurement.get("profile") != COMPRESSION_PROFILE
+            or measurement.get("writePolicy") != COMPRESSION_WRITE_POLICY
+            or measurement.get("measurementMethod")
+            != "scratch-btrfs-filesystem-usage-used-delta"
+            or any(not isinstance(measurement.get(field), int)
+                   or isinstance(measurement.get(field), bool)
+                   or measurement[field] < 0 for field in numeric)
+            or measurement["declaredPayloadBytes"] != declared_payload_bytes
+            or measurement["payloadAllocatedBytes"] <= 0
+            or measurement["dataAllocatedBytes"] <= 0
+            or measurement["dataAllocatedBytes"] > measurement["payloadAllocatedBytes"]):
+        fail(
+            "compression_measurement_invalid",
+            "scratch-Btrfs payload measurement returned invalid metadata",
+        )
+    return measurement
 
 
 def bounded_command_text(arguments, maximum, reason, message):
@@ -1255,7 +1356,7 @@ def validate(args, progress):
         + sum(path.stat().st_size for path in initramfs_images)
         + module_installed_bytes * max(1, len(initramfs_images))
     )
-    root_required_bytes = (
+    conservative_root_required_bytes = (
         max(0, package_installed_bytes - replaced_package_bytes)
         + max(0, module_installed_bytes - existing_module_bytes)
         + initramfs_reserve_bytes
@@ -1264,7 +1365,7 @@ def validate(args, progress):
     progress.emit("storage_calculation", indeterminate=True, force=True)
     storage = {
         "rootAvailableBytes": available_bytes(root, "ROOT"),
-        "rootRequiredBytes": root_required_bytes,
+        "rootRequiredBytes": conservative_root_required_bytes,
         "varAvailableBytes": available_bytes(root / "var", "VAR"),
         "varRequiredBytes": VAR_RESERVE_BYTES,
         "efiAvailableBytes": available_bytes(root / "efi", "EFI"),
@@ -1289,6 +1390,57 @@ def validate(args, progress):
         ),
         "assessment": "informational-package-archive-proxy-not-admission-credit",
     })
+    if args.compression_profile:
+        if compression["filesystem"] != "btrfs":
+            fail(
+                "compression_profile_unsupported",
+                "the requested compression profile requires a Btrfs target root",
+                storage=storage,
+                packageDependencyClosure=closure,
+                compression=compression,
+            )
+        measurement = measured_btrfs_payload(
+            args,
+            [package for package, _, _, _ in package_inputs],
+            package_installed_bytes + module_installed_bytes,
+        )
+        measured_required_bytes = (
+            measurement["payloadAllocatedBytes"]
+            + initramfs_reserve_bytes
+            + ROOT_METADATA_RESERVE_BYTES
+        )
+        storage.update({
+            "rootConservativeRequiredBytes": conservative_root_required_bytes,
+            "rootMeasuredRequiredBytes": measured_required_bytes,
+            "compressionPayloadAllocatedBytes": measurement["payloadAllocatedBytes"],
+            "compressionFilesystemOverheadBytes": measurement["filesystemOverheadBytes"],
+            "compressionSafetyReserveBytes": ROOT_METADATA_RESERVE_BYTES,
+            "rootRequiredBytes": measured_required_bytes,
+        })
+        compression.update({
+            "requestedProfile": COMPRESSION_PROFILE,
+            "writePolicy": COMPRESSION_WRITE_POLICY,
+            "measurement": measurement,
+            "admissionBasis": "scratch-btrfs-allocated-physical-bytes-plus-reserves",
+            "compressionSavingsCreditedBytes": max(
+                0, conservative_root_required_bytes - measured_required_bytes
+            ),
+            "measuredPayloadSavingsBytes": max(
+                0,
+                package_installed_bytes + module_installed_bytes
+                - measurement["payloadAllocatedBytes"],
+            ),
+            "declaredSizesLikelyConservative": (
+                measurement["payloadAllocatedBytes"]
+                < package_installed_bytes + module_installed_bytes
+            ),
+            "admissionAuthorized": all(
+                storage[f"{name}RequiredBytes"] <= storage[f"{name}AvailableBytes"]
+                for name in ("root", "var", "efi")
+            ),
+            "mutationProfileImplemented": False,
+            "assessment": "measured-profile-validation-only",
+        })
     insufficient = [
         name
         for name, available, required in (

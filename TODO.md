@@ -2,6 +2,55 @@ Below is the consolidated project checklist based on our work so far. I’m trea
 
 # SteamOS NVIDIA Open Kernel Module Support — Master Checklist
 
+## Not yet resolved
+
+This is the active index. New unchecked work belongs here first so maintainers
+and agents do not need to scan the completed historical checklist. When an item
+is completed, mark its detailed checklist entry below and remove it from this
+index in the same commit.
+
+### Immediate image-builder blockers
+
+* [ ] Run `btrfs-zstd3` through the complete validator against a freshly mounted
+  recovery overlay and confirm its structured storage result reproduces the
+  standalone real-payload measurement within the documented safety policy.
+* [ ] Apply the authorized compression policy during mutation, restore the
+  original target mount policy on success/failure/cancellation, and independently
+  verify package records, files, modules, initramfs, and final Btrfs state.
+* [ ] Add real and synthetic compression-profile *mutation* success,
+  insufficient-space, cancellation, cleanup, rollback, and repeat-run tests.
+  Never delete AMD/Mesa content, resize partitions, or credit archive estimates.
+* [ ] After repinning this support commit, make the image builder deserialize
+  and independently compare `provenanceSha256`, `userspaceLock`, compression
+  authorization, and every extended package record field.
+* [ ] Rerun the real Fedora/recovery-overlay mutation suite and verify ownership,
+  repeat execution, rollback, initramfs output, Btrfs policy restoration, and
+  mount cleanup before accepting an exported image.
+* [ ] Independently validate recovery-image propagation through Valve's
+  `repair_device.sh`, A/B slot behavior, hardware boot, and rollback before
+  promoting `nvidia-mutation-valid` to `install-ready`.
+
+### Release and hardware gates
+
+* [ ] Complete a clean-stock SteamOS one-command certified installation.
+* [ ] Re-test the 575 production release and its second-run idempotent path.
+* [ ] Test uninstall/reinstall plus SteamOS kernel update and A/B rollback.
+* [ ] Define Secure Boot/module-signing behavior before claiming support.
+* [ ] Reproduce the 580 Gamescope issue, compare pristine and patched modules,
+  and develop the smallest source-level compatibility patch if one is required.
+
+### Remaining engineering cleanup
+
+* [ ] Finish online-installer failure, signal, readonly-restoration, userspace
+  rollback, and raw-`.ko`/`.ko.zst` idempotency coverage.
+* [ ] Resolve build caching, compiler/certification policy, reproducibility,
+  backup retention, and safe Podman/bootstrap ownership decisions.
+* [ ] Audit fresh-machine prerequisites, duplicated environment setup, stale
+  terminology, unused variables, and intended remote/raw invocation paths.
+
+The detailed unchecked items and their historical context remain below. Search
+for `* [ ]` to enumerate them mechanically.
+
 
 ## Current project phase
 
@@ -1329,6 +1378,15 @@ signing policy.
 * [x] Bound cancellation with TERM-to-KILL escalation, cover the process-group
   creation race, reap children, and repeatedly exercise validation/mutation
   cancellation without stale mounts.
+* [x] Add a maintainer-only `btrfs-zstd3` scratch measurement path using exact
+  authenticated payloads and Btrfs allocated-byte deltas, with bounded inputs,
+  structured physical/storage fields, and success/failure/cancellation cleanup
+  tests; keep mutation blocked pending policy restoration and independent
+  final-root validation.
+* [x] Run the exact reviewed six-package/module payload through real x86_64
+  Fedora scratch Btrfs: 528,154,624 allocated payload bytes and 757,461,736
+  bytes including current initramfs/safety reserves, fitting the observed root
+  with a 151,039,256-byte margin; verify real cancellation leaves no mount.
 * [ ] Rerun the real Fedora/recovery-overlay mutation suite with the Holo pacman
   database contract and verify ownership, repeat execution, failure rollback,
   initramfs output, and mount cleanup before accepting an exported image.

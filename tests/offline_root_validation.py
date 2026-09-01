@@ -15,6 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 VALIDATOR = ROOT / "lib/validate_install_inputs.py"
 INSTALLER = ROOT / "bootstrap/install_to_root.sh"
+RESULT_WRITER = ROOT / "lib/write_install_result.py"
 KERNEL = "6.16.12-valve24.5-1-neptune-616-gfixture"
 NVIDIA = "575.64.05"
 NVIDIA_SIGNER = "05C7775A9E8B977407FE08E69D4C5AA15426DA0A"
@@ -364,6 +365,8 @@ def run(paths, binaries, output, success, preserve_lock=False, **environment):
         ])
     if "progress_attempt" in paths:
         command.extend(["--progress-attempt", str(paths["progress_attempt"])])
+    if "compression_profile" in paths:
+        command.extend(["--compression-profile", paths["compression_profile"]])
     env = os.environ.copy()
     env.update(
         PATH=f"{binaries}:{env['PATH']}",
@@ -411,6 +414,8 @@ def installer_command(paths, result, preserve_lock=False):
         ])
     if "progress_attempt" in paths:
         command.extend(["--progress-attempt", str(paths["progress_attempt"])])
+    if "compression_profile" in paths:
+        command.extend(["--compression-profile", paths["compression_profile"]])
     return command
 
 
@@ -490,6 +495,7 @@ def main():
             ("unknown", ["--token=supersecret"]),
             ("missing-value", ["--root"]),
             ("duplicate", ["--progress-attempt", "1", "--progress-attempt", "2"]),
+            ("compression-profile", ["--compression-profile", "unsafe-profile"]),
         ):
             cli_result = temporary / f"cli-{label}.json"
             completed = subprocess.run(
@@ -706,6 +712,109 @@ def main():
         )
         assert insufficient_result["reason"] == "target_space_insufficient"
         assert insufficient_result["validation"]["storage"]["rootAvailableBytes"] == 1
+
+        paths["compression_profile"] = "btrfs-zstd3"
+        measured = run(
+            paths,
+            binaries,
+            temporary / "measured-compression.json",
+            True,
+            PROJECT_TEST_ROOT_AVAILABLE_BYTES=str(256 * 1024 * 1024),
+            PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
+            PROJECT_TEST_BTRFS_DATA_ALLOCATED_BYTES=str(7 * 1024 * 1024),
+            PROJECT_TEST_BTRFS_METADATA_ALLOCATED_BYTES=str(1024 * 1024),
+        )
+        assert measured["storage"]["rootConservativeRequiredBytes"] > 0
+        assert measured["storage"]["rootMeasuredRequiredBytes"] == (
+            8 * 1024 * 1024
+            + measured["storage"]["initramfsReserveBytes"]
+            + 64 * 1024 * 1024
+        )
+        assert measured["storage"]["rootRequiredBytes"] == measured["storage"][
+            "rootMeasuredRequiredBytes"
+        ]
+        assert measured["compression"]["requestedProfile"] == "btrfs-zstd3"
+        assert measured["compression"]["writePolicy"] == "compress-force=zstd:3"
+        assert measured["compression"]["admissionAuthorized"] is True
+        assert measured["compression"]["mutationProfileImplemented"] is False
+        expected_payload_savings = max(
+            0,
+            measured["compression"]["measurement"]["declaredPayloadBytes"]
+            - measured["compression"]["measurement"]["payloadAllocatedBytes"],
+        )
+        assert measured["compression"]["measuredPayloadSavingsBytes"] == (
+            expected_payload_savings
+        )
+        assert measured["compression"]["declaredSizesLikelyConservative"] is (
+            expected_payload_savings > 0
+        )
+
+        inconsistent_measurement = json.loads(json.dumps(measured))
+        inconsistent_measurement["compression"]["admissionAuthorized"] = False
+        inconsistent_validation = temporary / "inconsistent-measurement-validation.json"
+        inconsistent_validation.write_text(
+            json.dumps(inconsistent_measurement), encoding="utf-8"
+        )
+        inconsistent_result = temporary / "inconsistent-measurement-result.json"
+        completed = subprocess.run(
+            [
+                sys.executable, str(RESULT_WRITER),
+                "--output", str(inconsistent_result), "--status", "validated",
+                "--reason", "validation_complete", "--message", "fixture",
+                "--phase", "validated", "--root", "/target-root",
+                "--steamos", "3.8.16", "--kernel", KERNEL,
+                "--nvidia", NVIDIA, "--trust", "locally-built-verified",
+                "--validation", str(inconsistent_validation),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        assert completed.returncode != 0
+        assert not inconsistent_result.exists()
+
+        measured_insufficient = run(
+            paths,
+            binaries,
+            temporary / "measured-compression-insufficient.json",
+            False,
+            PROJECT_TEST_ROOT_AVAILABLE_BYTES="1",
+            PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
+        )
+        assert measured_insufficient["reason"] == "target_space_insufficient"
+        assert measured_insufficient["compression"]["admissionAuthorized"] is False
+
+        measurement_failed = run(
+            paths,
+            binaries,
+            temporary / "compression-measurement-failed.json",
+            False,
+            PROJECT_TEST_BTRFS_MEASUREMENT_FAIL="1",
+        )
+        assert measurement_failed["reason"] == "compression_measurement_failed"
+
+        measurement_invalid = run(
+            paths,
+            binaries,
+            temporary / "compression-measurement-invalid.json",
+            False,
+            PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES="1024",
+            PROJECT_TEST_BTRFS_DATA_ALLOCATED_BYTES="2048",
+        )
+        assert measurement_invalid["reason"] == "compression_measurement_invalid"
+
+        profile_mutation = run_installer(
+            paths,
+            binaries,
+            temporary / "compression-profile-mutation-blocked.json",
+            False,
+            PROJECT_TEST_ROOT_AVAILABLE_BYTES=str(256 * 1024 * 1024),
+            PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
+        )
+        assert profile_mutation["reason"] == "compression_profile_mutation_not_implemented"
+        assert profile_mutation["phase"] == "mutation_preflight"
+        assert profile_mutation["cleanup"]["mountsReleased"] is True
+        del paths["compression_profile"]
 
         local_database = paths["target"] / "usr/lib/holo/pacmandb/local"
         for name, version, installed_size in (

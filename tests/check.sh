@@ -577,6 +577,7 @@ assert lock["keyring"]["provenance"]["policySha256"] == digest(policy_path)
 assert lock["snapshot"]["identity"] == "2025/08/01"
 assert lock["snapshot"]["url"] == "https://archive.archlinux.org/repos/2025/08/01/"
 PY
+python3 tests/btrfs_measurement.py
 python3 tests/offline_root_validation.py
 python3 tests/userspace_audit.py
 INSTALL_RESULT_FIXTURE="$(mktemp /tmp/offline-install-result.XXXXXX)"

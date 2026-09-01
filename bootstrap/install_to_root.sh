@@ -20,6 +20,7 @@ DEPENDENCY_PACKAGES=()
 DEPENDENCY_SIGNATURES=()
 RESULT_JSON=""
 PROGRESS_ATTEMPT=""
+COMPRESSION_PROFILE=""
 VALIDATE_ONLY=0
 ORIGINAL_ARGS=("$@")
 
@@ -83,6 +84,7 @@ Options:
   --dependency-package FILE       Repeat with its paired signature.
   --dependency-signature FILE     Repeat in the same order as packages.
   --progress-attempt NUMBER       Correlates progress records (0-1000000).
+  --compression-profile PROFILE  Currently: btrfs-zstd3 (validation only).
   --validate-only
   -h, --help
 
@@ -96,7 +98,7 @@ while (( $# > 0 )); do
     case "$1" in
         --root|--archive|--checksum|--provenance|--kernel|--nvidia-utils|\
         --nvidia-utils-signature|--lib32-nvidia-utils|--lib32-nvidia-utils-signature|\
-        --package-keyring|--userspace-lock|--result-json|--progress-attempt)
+        --package-keyring|--userspace-lock|--result-json|--progress-attempt|--compression-profile)
             require_option_value "$@"
             mark_single_option "$1"
             case "$1" in
@@ -113,6 +115,7 @@ while (( $# > 0 )); do
                 --userspace-lock) USERSPACE_LOCK="$2" ;;
                 --result-json) RESULT_JSON="$2" ;;
                 --progress-attempt) PROGRESS_ATTEMPT="$2" ;;
+                --compression-profile) COMPRESSION_PROFILE="$2" ;;
             esac
             shift 2
             ;;
@@ -140,6 +143,9 @@ if [[ -n "$PROGRESS_ATTEMPT" ]]; then
     [[ "$PROGRESS_ATTEMPT" =~ ^[0-9]+$ ]] || fail_argument "Progress attempt must be an integer."
     (( ${#PROGRESS_ATTEMPT} <= 7 )) || fail_argument "Progress attempt exceeds 1000000."
     (( 10#$PROGRESS_ATTEMPT <= 1000000 )) || fail_argument "Progress attempt exceeds 1000000."
+fi
+if [[ -n "$COMPRESSION_PROFILE" && "$COMPRESSION_PROFILE" != btrfs-zstd3 ]]; then
+    fail_argument "Compression profile is not supported."
 fi
 
 for value in ROOT ARCHIVE CHECKSUM PROVENANCE KERNEL NVIDIA_UTILS \
@@ -212,6 +218,7 @@ VALIDATOR_ARGS=(
     --output "$VALIDATION_JSON"
 )
 [[ -z "$PROGRESS_ATTEMPT" ]] || VALIDATOR_ARGS+=(--progress-attempt "$PROGRESS_ATTEMPT")
+[[ -z "$COMPRESSION_PROFILE" ]] || VALIDATOR_ARGS+=(--compression-profile "$COMPRESSION_PROFILE")
 for (( dependency_index=0; dependency_index<${#DEPENDENCY_PACKAGES[@]}; dependency_index++ )); do
     VALIDATOR_ARGS+=(
         --dependency-package "${DEPENDENCY_PACKAGES[$dependency_index]}"
@@ -277,6 +284,11 @@ if (( VALIDATE_ONLY )); then
         --validation "$VALIDATION_JSON"
     ok "Offline-root NVIDIA inputs validated without mutation."
     exit 0
+fi
+
+if [[ -n "$COMPRESSION_PROFILE" ]]; then
+    fail_pre_mutation compression_profile_mutation_not_implemented \
+        "The measured compression profile is validation-only until target policy restoration and post-install verification are implemented."
 fi
 
 (( EUID == 0 || ${PROJECT_TEST_MODE:-0} == 1 )) ||
