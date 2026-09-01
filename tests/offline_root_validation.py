@@ -320,6 +320,7 @@ def make_mocks(root):
     binaries.mkdir()
     (root / "appliance-var-tmp").mkdir(mode=0o1777)
     (root / "appliance-var-tmp").chmod(0o1777)
+    (root / "appliance-tmp").mkdir(mode=0o700)
     (root / "pacman.conf").write_text(
         "[options]\nArchitecture = auto\nCheckSpace\n"
         "SigLevel = Required DatabaseOptional\nLocalFileSigLevel = Required\n\n"
@@ -615,6 +616,7 @@ def installer_environment(binaries, mount_state, **environment):
         PROJECT_TEST_APPLIANCE_ARCH="x86_64",
         PROJECT_TEST_PACMAN_CONFIG=str(binaries.parent / "pacman.conf"),
         PROJECT_INITRAMFS_SCRATCH_PARENT=str(binaries.parent / "appliance-var-tmp"),
+        PROJECT_TEST_TEMP_ROOT=str(binaries.parent / "appliance-tmp"),
         MOCK_MOUNT_STATE=str(mount_state),
         MOCK_COMPRESSION_STATE=str(mount_state.with_suffix(".compression")),
         MOCK_PACMAN_LOG=str(mount_state.with_suffix(".pacman")),
@@ -698,7 +700,8 @@ def run_installer(paths, binaries, result, success, preserve_lock=False, **envir
     mount_state.with_suffix(".compression").write_text(
         initial_compression, encoding="utf-8"
     )
-    before_mutation_work = set(Path("/tmp").glob("offline-root-mutation.*"))
+    test_temp_root = binaries.parent / "appliance-tmp"
+    before_mutation_work = set(test_temp_root.glob("offline-root-mutation.*"))
     scratch_parent = binaries.parent / "appliance-var-tmp"
     before_scratch = set(scratch_parent.glob("offline-root-initramfs.*"))
     env = installer_environment(binaries, mount_state, **environment)
@@ -708,7 +711,7 @@ def run_installer(paths, binaries, result, success, preserve_lock=False, **envir
         raise AssertionError(f"installer result did not match expectation: {completed.stderr}")
     assert not mount_state.read_text(encoding="utf-8").strip()
     assert mount_state.with_suffix(".compression").read_text().strip() == initial_compression
-    assert set(Path("/tmp").glob("offline-root-mutation.*")) == before_mutation_work
+    assert set(test_temp_root.glob("offline-root-mutation.*")) == before_mutation_work
     assert set(scratch_parent.glob("offline-root-initramfs.*")) == before_scratch
     return json.loads(result.read_text(encoding="utf-8"))
 
@@ -723,8 +726,9 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
         initial_compression, encoding="utf-8"
     )
     env = installer_environment(binaries, mount_state, **environment)
-    before_validation_files = set(Path("/tmp").glob("offline-root-validation.*"))
-    before_mutation_work = set(Path("/tmp").glob("offline-root-mutation.*"))
+    test_temp_root = binaries.parent / "appliance-tmp"
+    before_validation_files = set(test_temp_root.glob("offline-root-validation.*"))
+    before_mutation_work = set(test_temp_root.glob("offline-root-mutation.*"))
     scratch_parent = binaries.parent / "appliance-var-tmp"
     before_scratch = set(scratch_parent.glob("offline-root-initramfs.*"))
     process = subprocess.Popen(
@@ -761,8 +765,8 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
     assert document["cleanup"]["mountsReleased"] is True
     assert not mount_state.read_text(encoding="utf-8").strip()
     assert mount_state.with_suffix(".compression").read_text().strip() == initial_compression
-    assert set(Path("/tmp").glob("offline-root-validation.*")) == before_validation_files
-    assert set(Path("/tmp").glob("offline-root-mutation.*")) == before_mutation_work
+    assert set(test_temp_root.glob("offline-root-validation.*")) == before_validation_files
+    assert set(test_temp_root.glob("offline-root-mutation.*")) == before_mutation_work
     assert set(scratch_parent.glob("offline-root-initramfs.*")) == before_scratch
     records = parse_progress_records(stderr)
     if expected_phase == "initramfs":
@@ -1460,7 +1464,8 @@ def main():
         )
         assert shared_activation["reason"] == "compression_policy_activation"
         assert shared_activation["cleanup"]["compressionPolicyRestored"] is True
-        mutation_work_before = set(Path("/tmp").glob("offline-root-mutation.*"))
+        test_temp_root = binaries.parent / "appliance-tmp"
+        mutation_work_before = set(test_temp_root.glob("offline-root-mutation.*"))
         profile_mutation_path = temporary / "compression-profile-mutation.json"
         profile_mutation = run_installer(
             profile_paths,
@@ -1484,7 +1489,7 @@ def main():
             if " -U " in f" {line} "
         )
         assert "--config" in profile_transaction
-        assert set(Path("/tmp").glob("offline-root-mutation.*")) == mutation_work_before
+        assert set(test_temp_root.glob("offline-root-mutation.*")) == mutation_work_before
 
         invalid_pacman_config = temporary / "invalid-pacman.conf"
         invalid_pacman_config.write_text(

@@ -189,7 +189,14 @@ emit_progress_items()
         "$PROGRESS_ATTEMPT_VALUE" "$completed" "$phase" "$total" >&2
 }
 
-VALIDATION_JSON="$(mktemp /tmp/offline-root-validation.XXXXXX)"
+INSTALLER_TEMP_ROOT=/tmp
+if [[ "${PROJECT_TEST_MODE:-0}" == 1 && -n "${PROJECT_TEST_TEMP_ROOT:-}" ]]; then
+    [[ "$PROJECT_TEST_TEMP_ROOT" == /* && -d "$PROJECT_TEST_TEMP_ROOT" &&
+       ! -L "$PROJECT_TEST_TEMP_ROOT" ]] ||
+        fail_argument "The test-only installer temporary root is invalid."
+    INSTALLER_TEMP_ROOT="$PROJECT_TEST_TEMP_ROOT"
+fi
+VALIDATION_JSON="$(mktemp "$INSTALLER_TEMP_ROOT/offline-root-validation.XXXXXX")"
 VALIDATOR_PID=""
 
 terminate_process_group()
@@ -230,8 +237,8 @@ acquire_target_lifecycle_lock()
     # lock and does not create state inside the image being validated. Keep the
     # descriptor open for the installer lifetime so validation and mutation
     # are one exclusive operation.
-    exec 8<"$ROOT" || return 1
-    flock -n 8
+    exec 8<"$ROOT" || return 2
+    flock -n 8 || return 3
 }
 
 cancel_validation()
@@ -254,11 +261,23 @@ if ! command -v flock >/dev/null 2>&1; then
         "The managed appliance lacks the target lifecycle locking command."
     exit 1
 fi
-if ! acquire_target_lifecycle_lock; then
-    write_prevalidation_result failed target_lifecycle_locked \
-        "Another offline-root installer operation already owns this target."
-    exit 1
-fi
+set +e
+acquire_target_lifecycle_lock
+TARGET_LOCK_RC=$?
+set -e
+case "$TARGET_LOCK_RC" in
+    0) ;;
+    2)
+        write_prevalidation_result failed target_lifecycle_lock_unavailable \
+            "The target lifecycle lock could not be established."
+        exit 1
+        ;;
+    *)
+        write_prevalidation_result failed target_lifecycle_locked \
+            "Another offline-root installer operation already owns this target."
+        exit 1
+        ;;
+esac
 
 VALIDATOR_ARGS=(
     --root "$ROOT"
@@ -396,7 +415,7 @@ for command_name in bsdtar chroot depmod findmnt install mount mountpoint pacman
             "The managed appliance lacks a required installer command: $command_name"
 done
 
-MUTATION_WORK="$(mktemp -d /tmp/offline-root-mutation.XXXXXX)"
+MUTATION_WORK="$(mktemp -d "$INSTALLER_TEMP_ROOT/offline-root-mutation.XXXXXX")"
 MODULE_VERIFICATION_JSON="$MUTATION_WORK/module-verification.json"
 INITRAMFS_WORKSPACE_JSON="$MUTATION_WORK/initramfs-workspace.json"
 PACMAN_TRANSACTION_RESULT="$MUTATION_WORK/pacman-transaction.json"
