@@ -1411,6 +1411,10 @@ signing policy.
   verified target policy activation/restoration, and
   success/failure/cancellation/cleanup/repeat tests; keep release readiness
   blocked pending independent final-root validation.
+* [x] Preserve bounded typed scratch-measurement failures through validation and
+  the final installer result, including phase, safe command identity, exit
+  status, and sanitized stderr for dependency, mkfs, mount, extraction, Zstd,
+  Btrfs usage, ENOSPC, and cleanup failures.
 * [x] Run the exact reviewed six-package/module payload through real x86_64
   Fedora scratch Btrfs: 528,154,624 allocated payload bytes and 757,461,736
   bytes including current initramfs/safety reserves, fitting the observed root

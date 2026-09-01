@@ -950,7 +950,40 @@ def main():
             False,
             PROJECT_TEST_BTRFS_MEASUREMENT_FAIL="1",
         )
-        assert measurement_failed["reason"] == "compression_measurement_failed"
+        assert measurement_failed["reason"] == "compression_measurement_mkfs_failed"
+        assert measurement_failed["measurementFailure"] == {
+            "phase": "filesystem_create",
+            "command": "mkfs.btrfs",
+            "exitStatus": 1,
+            "stderr": "synthetic measurement failure",
+        }
+        propagated_measurement = temporary / "compression-measurement-result.json"
+        propagated = subprocess.run([
+            sys.executable, str(RESULT_WRITER), "--output", str(propagated_measurement),
+            "--status", "failed", "--reason", measurement_failed["reason"],
+            "--message", measurement_failed["message"], "--phase", "validation",
+            "--root", "/target-root", "--kernel", KERNEL,
+            "--validation", str(temporary / "compression-measurement-failed.json"),
+        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        assert propagated.returncode == 0, propagated.stderr
+        propagated_document = json.loads(propagated_measurement.read_text(encoding="utf-8"))
+        assert (propagated_document["validation"]["measurementFailure"]
+                == measurement_failed["measurementFailure"])
+        oversized_measurement = dict(measurement_failed)
+        oversized_measurement["measurementFailure"] = dict(
+            measurement_failed["measurementFailure"], stderr="x" * 513
+        )
+        oversized_validation = temporary / "oversized-measurement-failure.json"
+        oversized_validation.write_text(json.dumps(oversized_measurement), encoding="utf-8")
+        rejected_measurement_result = temporary / "rejected-measurement-result.json"
+        rejected = subprocess.run([
+            sys.executable, str(RESULT_WRITER), "--output", str(rejected_measurement_result),
+            "--status", "failed", "--reason", measurement_failed["reason"],
+            "--message", measurement_failed["message"], "--phase", "validation",
+            "--root", "/target-root", "--kernel", KERNEL,
+            "--validation", str(oversized_validation),
+        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        assert rejected.returncode != 0 and not rejected_measurement_result.exists()
 
         measurement_invalid = run(
             paths,

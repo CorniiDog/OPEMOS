@@ -29,6 +29,17 @@ EXPECTED_MODULES = {
     "nvidia.ko", "nvidia-drm.ko", "nvidia-modeset.ko",
     "nvidia-peermem.ko", "nvidia-uvm.ko",
 }
+MEASUREMENT_PHASES = {
+    "dependency_check", "image_create", "filesystem_create", "mount",
+    "baseline_usage", "package_extraction", "package_usage",
+    "module_extraction", "module_compression", "final_usage", "cleanup",
+    "launcher",
+}
+MEASUREMENT_COMMANDS = {
+    None, "btrfs", "findmnt", "mkfs.btrfs", "mount", "umount", "zstd",
+    "image-create", "btrfs-filesystem-usage", "package-archive",
+    "module-archive", "zstd-compress", "zstd-decompress", "measurement-helper",
+}
 
 
 def parse_args():
@@ -382,6 +393,23 @@ def validate_verified_metadata(validation):
         raise SystemExit("Verified conservative compression metadata is inconsistent.")
 
 
+def validate_measurement_failure(detail):
+    if (not isinstance(detail, dict)
+            or set(detail) != {"phase", "command", "exitStatus", "stderr"}
+            or detail.get("phase") not in MEASUREMENT_PHASES
+            or detail.get("command") not in MEASUREMENT_COMMANDS
+            or (detail.get("exitStatus") is not None
+                and (not isinstance(detail["exitStatus"], int)
+                     or isinstance(detail["exitStatus"], bool)
+                     or not -255 <= detail["exitStatus"] <= 255))
+            or (detail.get("stderr") is not None
+                and (not isinstance(detail["stderr"], str)
+                     or len(detail["stderr"]) > 512
+                     or any(not 32 <= ord(character) < 127
+                            for character in detail["stderr"])))):
+        raise SystemExit("Measurement failure diagnostics are malformed or excessive.")
+
+
 def main():
     args = parse_args()
     artifact_names = (
@@ -470,6 +498,8 @@ def main():
                 "gamingPayload": validation["gamingPayload"],
             }
         elif args.status == "failed" and validation.get("status") == "failed":
+            if "measurementFailure" in validation:
+                validate_measurement_failure(validation["measurementFailure"])
             failure_validation = {
                 key: validation[key]
                 for key in (
@@ -479,6 +509,7 @@ def main():
                     "missingPackages", "unexpectedPackages",
                     "duplicatePackages", "packageMismatches",
                     "packageRecord", "invalidFields",
+                    "measurementFailure",
                 )
                 if key in validation
             }

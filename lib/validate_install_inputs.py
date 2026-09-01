@@ -61,6 +61,18 @@ MAX_REVIEWED_SIGNERS = 256
 COMPRESSION_PROFILE = "btrfs-zstd3"
 COMPRESSION_WRITE_POLICY = "compress-force=zstd:3"
 MAX_DIAGNOSTIC_VALUE_CHARS = 256
+MAX_MEASUREMENT_STDERR_CHARS = 512
+MEASUREMENT_PHASES = {
+    "dependency_check", "image_create", "filesystem_create", "mount",
+    "baseline_usage", "package_extraction", "package_usage",
+    "module_extraction", "module_compression", "final_usage", "cleanup",
+    "launcher",
+}
+MEASUREMENT_COMMANDS = {
+    None, "btrfs", "findmnt", "mkfs.btrfs", "mount", "umount", "zstd",
+    "image-create", "btrfs-filesystem-usage", "package-archive",
+    "module-archive", "zstd-compress", "zstd-decompress", "measurement-helper",
+}
 LOCK_PACKAGE_FIELDS = (
     "filename",
     "signatureFilename",
@@ -151,6 +163,20 @@ def arguments():
 
 def fail(reason, message, **details):
     raise ValidationFailure(reason, message, **details)
+
+
+def sanitized_measurement_stderr(value):
+    if not value:
+        return None
+    value = re.sub(r"https?://\S+", "<url>", value)
+    value = re.sub(r"(?<![A-Za-z0-9_.-])/(?:[^\s/:]+/)*[^\s:]*", "<path>", value)
+    value = re.sub(
+        r"(?i)\b(token|password|secret|authorization|credential)\s*[:=]\s*\S+",
+        r"\1=<redacted>", value,
+    )
+    value = " ".join(value.replace("\x00", " ").split())
+    value = "".join(character if 32 <= ord(character) < 127 else "?" for character in value)
+    return value[:MAX_MEASUREMENT_STDERR_CHARS] or None
 
 
 def safe_lock_string(value, pattern=r"[A-Za-z0-9@._+<>=:-]+"):
@@ -757,8 +783,12 @@ def measured_btrfs_payload(args, package_paths, declared_payload_bytes):
     if os.environ.get("PROJECT_TEST_MODE") == "1":
         if os.environ.get("PROJECT_TEST_BTRFS_MEASUREMENT_FAIL") == "1":
             fail(
-                "compression_measurement_failed",
-                "scratch-Btrfs payload measurement failed before mutation",
+                "compression_measurement_mkfs_failed",
+                "Scratch Btrfs filesystem creation failed.",
+                measurementFailure={
+                    "phase": "filesystem_create", "command": "mkfs.btrfs",
+                    "exitStatus": 1, "stderr": "synthetic measurement failure",
+                },
             )
         try:
             payload = int(os.environ["PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES"])
@@ -810,10 +840,11 @@ def measured_btrfs_payload(args, package_paths, declared_payload_bytes):
         ]
         for package in package_paths:
             command.extend(("--package", str(package)))
+        completed = None
         try:
-            subprocess.run(
+            completed = subprocess.run(
                 command,
-                check=True,
+                check=False,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
@@ -821,11 +852,47 @@ def measured_btrfs_payload(args, package_paths, declared_payload_bytes):
             if output.is_symlink() or output.stat().st_size > MAX_METADATA_MEMBER_BYTES:
                 raise OSError
             measurement = json.loads(output.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError, json.JSONDecodeError, subprocess.CalledProcessError):
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            stderr = None
+            status = None
+            if completed is not None:
+                status = completed.returncode
+                stderr = completed.stderr.decode("utf-8", errors="replace")
+                stderr = sanitized_measurement_stderr(stderr)
             fail(
-                "compression_measurement_failed",
-                "scratch-Btrfs payload measurement failed before mutation",
+                "compression_measurement_launcher_failed",
+                "Scratch-Btrfs measurement did not return structured metadata.",
+                measurementFailure={
+                    "phase": "launcher", "command": "measurement-helper",
+                    "exitStatus": status, "stderr": stderr,
+                },
             )
+    if isinstance(measurement, dict) and measurement.get("status") == "failed":
+        detail = measurement.get("measurementFailure")
+        if (set(measurement) != {"schemaVersion", "status", "reason", "message",
+                                "measurementFailure"}
+                or measurement.get("schemaVersion") != 1
+                or not safe_lock_string(measurement.get("reason"), r"[a-z][a-z0-9_]{0,63}")
+                or not isinstance(measurement.get("message"), str)
+                or not 0 < len(measurement["message"]) <= 512
+                or not isinstance(detail, dict)
+                or set(detail) != {"phase", "command", "exitStatus", "stderr"}
+                or detail.get("phase") not in MEASUREMENT_PHASES
+                or detail.get("command") not in MEASUREMENT_COMMANDS
+                or (detail.get("exitStatus") is not None
+                    and (not isinstance(detail["exitStatus"], int)
+                         or isinstance(detail["exitStatus"], bool)
+                         or not -255 <= detail["exitStatus"] <= 255))
+                or (detail.get("stderr") is not None
+                    and (not isinstance(detail["stderr"], str)
+                         or len(detail["stderr"]) > MAX_MEASUREMENT_STDERR_CHARS
+                         or any(not 32 <= ord(character) < 127
+                                for character in detail["stderr"])))):
+            fail(
+                "compression_measurement_invalid",
+                "scratch-Btrfs failure metadata is malformed",
+            )
+        fail(measurement["reason"], measurement["message"], measurementFailure=detail)
     expected = {
         "schemaVersion", "status", "profile", "writePolicy", "measurementMethod",
         "declaredPayloadBytes", "scratchFilesystemBytes", "payloadAllocatedBytes",

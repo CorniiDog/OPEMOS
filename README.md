@@ -358,6 +358,15 @@ replaced. The result reports `rootAvailableBytes`, `rootRequiredBytes`,
 closure and filesystem-compression context. An insufficient target fails before
 mutation with `target_space_insufficient` while retaining those fields.
 
+Scratch-measurement failures are schema-1 results rather than undifferentiated
+command errors. A bounded `measurementFailure` object records a stable phase,
+safe command identity, exit status, and at most 512 sanitized stderr characters.
+Missing tools, filesystem creation, loop mounting, package/module extraction,
+Zstd, Btrfs usage collection/parsing, ENOSPC, and cleanup have distinct stable
+reasons. Host paths, URLs, credentials, control characters, and unbounded tool
+output are not propagated. The validator and outer installer result validate
+and preserve this object unchanged; malformed diagnostics fail closed.
+
 Root admission uses declared logical package sizes, the estimated final zstd
 module sizes, replacement credits, existing initramfs sizes, module growth per
 initramfs, and explicit metadata reserves. Btrfs compression is detected and
