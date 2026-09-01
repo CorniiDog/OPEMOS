@@ -123,6 +123,15 @@ python3 tests/provenance.py
 
 printf 'Checking canonical artifact publisher...\n'
 python3 tests/publisher.py
+python3 - <<'PY' || fail "compile cache bypasses canonical artifact validation"
+from pathlib import Path
+script = Path("bootstrap/compile.sh").read_text(encoding="utf-8")
+gate = script.index('CACHED_TRUST" == "locally-built-verified"')
+validator = script.index('lib/validate_publish_inputs.py', gate)
+acceptance = script.index('CACHE_CONTRACT_VALID" == "1"', validator)
+cache_hit = script.index('CACHE_HIT=1', acceptance)
+assert gate < validator < acceptance < cache_hit
+PY
 
 printf 'Checking reviewed gaming payload profile contract...\n'
 python3 tests/gaming_payload_profiles.py

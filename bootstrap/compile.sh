@@ -231,14 +231,27 @@ if [[ "$FORCE_REBUILD" == "0" &&
             CACHED_NVIDIA="$(metadata_value "$CACHED_INFO" nvidia_version)"
             CACHED_CONTAINER="$(metadata_value "$CACHED_INFO" container_image)"
             CACHED_SUPPORT="$(metadata_value "$CACHED_INFO" support_commit)"
+            CACHED_TRUST="$(metadata_value "$CACHED_INFO" trust_classification)"
             EXPECTED_SHA="$(awk '{print $1}' "$CACHED_CHECKSUM" | head -n1)"
             ACTUAL_SHA="$(sha256_file "$CACHED_ARCHIVE")"
+            CACHE_CONTRACT_VALID=0
+            # A checksum alone authenticates neither provenance nor archive
+            # contents. Reuse only the same canonical contract accepted by the
+            # publication boundary, and never cache development-unverified work.
+            if [[ "$CACHED_TRUST" == "locally-built-verified" ]] &&
+               python3 "$SUPPORT_ROOT/lib/validate_publish_inputs.py" \
+                   --archive "$CACHED_ARCHIVE" --checksum "$CACHED_CHECKSUM" \
+                   --build-info "$CACHED_INFO" --provenance "$CACHED_PROVENANCE" \
+                   --repository "$SUPPORT_REPO" >/dev/null 2>&1; then
+                CACHE_CONTRACT_VALID=1
+            fi
 
             if [[ "$CACHED_SOURCE" == "$SOURCE_COMMIT" &&
                   "$CACHED_KERNEL" == "$KERNEL_VERSION" &&
                   "$CACHED_NVIDIA" == "$NVIDIA_VERSION" &&
                   "$CACHED_CONTAINER" == "$CONTAINER_IMAGE_REF" &&
                   "$CACHED_SUPPORT" == "$SUPPORT_COMMIT" &&
+                  "$CACHE_CONTRACT_VALID" == "1" &&
                   "$EXPECTED_SHA" =~ ^[0-9a-fA-F]{64}$ &&
                   "$(printf '%s' "$EXPECTED_SHA" | tr '[:upper:]' '[:lower:]')" == \
                   "$(printf '%s' "$ACTUAL_SHA" | tr '[:upper:]' '[:lower:]')" ]]; then

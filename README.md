@@ -670,6 +670,12 @@ build, recognized `target-build.*` directories older than 24 hours are removed
 only when that lock can be acquired; active, recent, symlinked, and unknown
 cache entries are preserved.
 
+Existing release bundles are reused only for clean source/support checkouts and
+`locally-built-verified` metadata. Before a cache hit, the archive, checksum,
+BUILD-INFO, provenance, canonical filenames, exact identities, five-module
+inventory, and archive contents must pass the same validator used at the
+publication boundary. Unverified or malformed bundles are rebuilt.
+
 Only the final compressed module set is copied into:
 
 ```text
