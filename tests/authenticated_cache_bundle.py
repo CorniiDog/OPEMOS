@@ -2,6 +2,7 @@
 """Offline authenticated-cache export/import regression tests."""
 
 import hashlib
+import importlib.util
 import json
 import os
 import subprocess
@@ -14,6 +15,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 TOOL = ROOT / "lib/authenticated_cache_bundle.py"
 SIGNER = "889B5EBDDD505A683621900DAF1D2199EF0A3CCF"
+TOOL_SPEC = importlib.util.spec_from_file_location("authenticated_cache_bundle", TOOL)
+TOOL_MODULE = importlib.util.module_from_spec(TOOL_SPEC)
+TOOL_SPEC.loader.exec_module(TOOL_MODULE)
 
 
 def run(arguments, env, success=True):
@@ -128,6 +132,53 @@ def main():
         spec = root / "set-spec.json"
         spec.write_text(json.dumps({"schemaVersion": 1, "artifacts": packages}) + "\n")
         set_bundle, set_store = root / "set-bundle", root / "set-store"
+
+        # The manifest admits exactly 64 files and exactly 8 GiB, then rejects
+        # one additional byte or file without allocating those payloads.
+        def boundary_document(count, total):
+            sizes = [total // count] * count
+            sizes[-1] += total - sum(sizes)
+            records = [{"name": f"package-{index}.pkg", "path": f"payload/package-{index}.pkg",
+                        "sha256": "a" * 64, "size": size,
+                        "signature": f"payload/package-{index}.pkg.sig",
+                        "signatureSha256": "b" * 64, "signatureSize": 0}
+                       for index, size in enumerate(sizes)]
+            return {"schemaVersion": 1, "kind": "authenticated-artifact-set",
+                    "policy": {"path": "metadata/policy.json", "sha256": "c" * 64, "size": 1},
+                    "provenance": {"path": "metadata/provenance.json", "sha256": "d" * 64, "size": 1},
+                    "artifacts": records,
+                    "trust": {"method": "detached-signatures+reviewed-policy+provenance",
+                              "signerFingerprints": [SIGNER] * count,
+                              "keyringSha256": "e" * 64, "reviewedSignersSha256": "f" * 64,
+                              "policySha256": "c" * 64, "provenanceSha256": "d" * 64}}
+        TOOL_MODULE.validate_set_document(boundary_document(64, TOOL_MODULE.MAX_SET_BYTES))
+        for invalid in (boundary_document(65, TOOL_MODULE.MAX_SET_BYTES),
+                        boundary_document(64, TOOL_MODULE.MAX_SET_BYTES + 1)):
+            try:
+                TOOL_MODULE.validate_set_document(invalid)
+                raise AssertionError("invalid boundary manifest was accepted")
+            except SystemExit:
+                pass
+
+        # A concurrent exporter cannot overwrite the first export or publish a
+        # partial generation; the reservation is removed on interruption.
+        racing_output = root / "racing-set"
+        racing_env = env.copy()
+        racing_env["CACHE_GPGV_DELAY"] = "30"
+        racing = subprocess.Popen(
+            [sys.executable, str(TOOL), "export-set", *map(str, common),
+             "--spec", str(spec), "--policy", str(policy),
+             "--provenance", str(provenance), "--output", str(racing_output)],
+            env=racing_env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        deadline = time.time() + 5
+        while not (root / "racing-set.lock").exists() and time.time() < deadline:
+            time.sleep(0.02)
+        run(["export-set", *common, "--spec", spec, "--policy", policy,
+             "--provenance", provenance, "--output", racing_output], env, success=False)
+        racing.terminate()
+        racing.wait(timeout=5)
+        assert not racing_output.exists() and not (root / "racing-set.lock").exists()
+
         run(["export-set", *common, "--spec", spec, "--policy", policy,
              "--provenance", provenance, "--output", set_bundle], env)
 

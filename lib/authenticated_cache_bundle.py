@@ -12,6 +12,7 @@ import signal
 import stat
 import subprocess
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
 MAX_ARTIFACT_BYTES = 2 * 1024 * 1024 * 1024
@@ -130,6 +131,25 @@ def seal_generation(root):
         for name in directories:
             os.chmod(Path(current) / name, 0o555, follow_symlinks=False)
     os.chmod(root, 0o555, follow_symlinks=False)
+
+
+@contextmanager
+def reserve_output(output):
+    output.parent.mkdir(parents=True, exist_ok=True)
+    reservation = output.with_name(output.name + ".lock")
+    try:
+        reservation.mkdir(mode=0o700)
+    except FileExistsError:
+        fail("output is already reserved by another export")
+    try:
+        if output.exists() or output.is_symlink():
+            fail("output already exists")
+        yield
+    finally:
+        try:
+            reservation.rmdir()
+        except OSError:
+            pass
 
 
 def validate_document(document):
@@ -275,27 +295,25 @@ def export(args):
     regular(args.keyring, "trusted keyring", MAX_KEYRING_BYTES)
     fingerprint = signer_from_gpgv(args.artifact, args.signature, args.keyring)
     reviewed_signer(args.reviewed_signers, fingerprint)
-    if args.output.exists() or args.output.is_symlink():
-        fail("output already exists")
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    temporary = Path(tempfile.mkdtemp(prefix=".cache-export-", dir=args.output.parent))
-    try:
-        (temporary / "payload").mkdir()
-        copy_regular(args.artifact, temporary / "payload/artifact", MAX_ARTIFACT_BYTES)
-        copy_regular(args.signature, temporary / "payload/artifact.sig", MAX_SIGNATURE_BYTES)
-        document = {
-            "schemaVersion": 1, "kind": "detached-signature-artifact",
-            "originalFilename": args.artifact.name,
-            "artifact": {"path": "payload/artifact", "size": regular(temporary / "payload/artifact", "artifact", MAX_ARTIFACT_BYTES), "sha256": digest(temporary / "payload/artifact")},
-            "signature": {"path": "payload/artifact.sig", "size": regular(temporary / "payload/artifact.sig", "signature", MAX_SIGNATURE_BYTES), "sha256": digest(temporary / "payload/artifact.sig")},
-            "trust": {"method": "detached-signature+reviewed-signer", "signerFingerprint": fingerprint,
-                      "keyringSha256": digest(args.keyring), "reviewedSignersSha256": digest(args.reviewed_signers)},
-        }
-        (temporary / "manifest.json").write_text(json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
-        verify_payload(temporary, document, args.keyring, args.reviewed_signers)
-        os.replace(temporary, args.output)
-    finally:
-        shutil.rmtree(temporary, ignore_errors=True)
+    with reserve_output(args.output):
+        temporary = Path(tempfile.mkdtemp(prefix=".cache-export-", dir=args.output.parent))
+        try:
+            (temporary / "payload").mkdir()
+            copy_regular(args.artifact, temporary / "payload/artifact", MAX_ARTIFACT_BYTES)
+            copy_regular(args.signature, temporary / "payload/artifact.sig", MAX_SIGNATURE_BYTES)
+            document = {
+                "schemaVersion": 1, "kind": "detached-signature-artifact",
+                "originalFilename": args.artifact.name,
+                "artifact": {"path": "payload/artifact", "size": regular(temporary / "payload/artifact", "artifact", MAX_ARTIFACT_BYTES), "sha256": digest(temporary / "payload/artifact")},
+                "signature": {"path": "payload/artifact.sig", "size": regular(temporary / "payload/artifact.sig", "signature", MAX_SIGNATURE_BYTES), "sha256": digest(temporary / "payload/artifact.sig")},
+                "trust": {"method": "detached-signature+reviewed-signer", "signerFingerprint": fingerprint,
+                          "keyringSha256": digest(args.keyring), "reviewedSignersSha256": digest(args.reviewed_signers)},
+            }
+            (temporary / "manifest.json").write_text(json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+            verify_payload(temporary, document, args.keyring, args.reviewed_signers)
+            os.replace(temporary, args.output)
+        finally:
+            shutil.rmtree(temporary, ignore_errors=True)
 
 
 def import_bundle(args):
@@ -363,43 +381,43 @@ def export_set(args):
     strict_json(args.policy)
     strict_json(args.provenance)
     items = load_set_spec(args.spec)
-    if args.output.exists() or args.output.is_symlink():
-        fail("output already exists")
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    temporary = Path(tempfile.mkdtemp(prefix=".cache-set-export-", dir=args.output.parent))
-    try:
-        (temporary / "payload").mkdir()
-        (temporary / "metadata").mkdir()
-        copy_regular(args.policy, temporary / "metadata/policy.json", MAX_MANIFEST_BYTES)
-        copy_regular(args.provenance, temporary / "metadata/provenance.json", MAX_MANIFEST_BYTES)
-        records, fingerprints = [], []
-        for artifact, signature in items:
-            target, target_signature = temporary / "payload" / artifact.name, temporary / "payload" / signature.name
-            copy_regular(artifact, target, MAX_ARTIFACT_BYTES)
-            copy_regular(signature, target_signature, MAX_SIGNATURE_BYTES)
-            fingerprint = signer_from_gpgv(target, target_signature, args.keyring)
-            reviewed_signer(args.reviewed_signers, fingerprint)
-            records.append({"name": artifact.name, "path": f"payload/{artifact.name}",
-                            "sha256": digest(target), "size": regular(target, artifact.name, MAX_ARTIFACT_BYTES),
-                            "signature": f"payload/{signature.name}", "signatureSha256": digest(target_signature),
-                            "signatureSize": regular(target_signature, signature.name, MAX_SIGNATURE_BYTES)})
-            fingerprints.append(fingerprint)
-        policy_hash, provenance_hash = digest(temporary / "metadata/policy.json"), digest(temporary / "metadata/provenance.json")
-        document = {"schemaVersion": 1, "kind": "authenticated-artifact-set",
-                    "policy": {"path": "metadata/policy.json", "sha256": policy_hash,
-                               "size": regular(temporary / "metadata/policy.json", "policy", MAX_MANIFEST_BYTES)},
-                    "provenance": {"path": "metadata/provenance.json", "sha256": provenance_hash,
-                                   "size": regular(temporary / "metadata/provenance.json", "provenance", MAX_MANIFEST_BYTES)},
-                    "artifacts": records,
-                    "trust": {"method": "detached-signatures+reviewed-policy+provenance",
-                              "signerFingerprints": fingerprints, "keyringSha256": digest(args.keyring),
-                              "reviewedSignersSha256": digest(args.reviewed_signers),
-                              "policySha256": policy_hash, "provenanceSha256": provenance_hash}}
-        (temporary / "manifest.json").write_text(json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n")
-        verify_set(temporary, document, args.keyring, args.reviewed_signers)
-        os.replace(temporary, args.output)
-    finally:
-        shutil.rmtree(temporary, ignore_errors=True)
+    with reserve_output(args.output):
+        temporary = Path(tempfile.mkdtemp(prefix=".cache-set-export-", dir=args.output.parent))
+        try:
+            (temporary / "payload").mkdir()
+            (temporary / "metadata").mkdir()
+            copy_regular(args.policy, temporary / "metadata/policy.json", MAX_MANIFEST_BYTES)
+            copy_regular(args.provenance, temporary / "metadata/provenance.json", MAX_MANIFEST_BYTES)
+            records, fingerprints = [], []
+            for artifact, signature in items:
+                target = temporary / "payload" / artifact.name
+                target_signature = temporary / "payload" / signature.name
+                copy_regular(artifact, target, MAX_ARTIFACT_BYTES)
+                copy_regular(signature, target_signature, MAX_SIGNATURE_BYTES)
+                fingerprint = signer_from_gpgv(target, target_signature, args.keyring)
+                reviewed_signer(args.reviewed_signers, fingerprint)
+                records.append({"name": artifact.name, "path": f"payload/{artifact.name}",
+                                "sha256": digest(target), "size": regular(target, artifact.name, MAX_ARTIFACT_BYTES),
+                                "signature": f"payload/{signature.name}", "signatureSha256": digest(target_signature),
+                                "signatureSize": regular(target_signature, signature.name, MAX_SIGNATURE_BYTES)})
+                fingerprints.append(fingerprint)
+            policy_hash = digest(temporary / "metadata/policy.json")
+            provenance_hash = digest(temporary / "metadata/provenance.json")
+            document = {"schemaVersion": 1, "kind": "authenticated-artifact-set",
+                        "policy": {"path": "metadata/policy.json", "sha256": policy_hash,
+                                   "size": regular(temporary / "metadata/policy.json", "policy", MAX_MANIFEST_BYTES)},
+                        "provenance": {"path": "metadata/provenance.json", "sha256": provenance_hash,
+                                       "size": regular(temporary / "metadata/provenance.json", "provenance", MAX_MANIFEST_BYTES)},
+                        "artifacts": records,
+                        "trust": {"method": "detached-signatures+reviewed-policy+provenance",
+                                  "signerFingerprints": fingerprints, "keyringSha256": digest(args.keyring),
+                                  "reviewedSignersSha256": digest(args.reviewed_signers),
+                                  "policySha256": policy_hash, "provenanceSha256": provenance_hash}}
+            (temporary / "manifest.json").write_text(json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n")
+            verify_set(temporary, document, args.keyring, args.reviewed_signers)
+            os.replace(temporary, args.output)
+        finally:
+            shutil.rmtree(temporary, ignore_errors=True)
 
 
 def import_set(args):
