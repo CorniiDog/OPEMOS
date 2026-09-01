@@ -7,14 +7,15 @@ mkinitcpio_status=not-run
 cancellation_status=not-run
 idempotency_status=not-run
 initramfs_contract_status=not-run
+offline_cache_status=not-run
 
 report()
 {
     local rc=$?
-    printf '{"schemaVersion":1,"status":"%s","pacman":"%s","mkinitcpio":"%s","cancellation":"%s","idempotency":"%s","initramfsContract":"%s"}\n' \
+    printf '{"schemaVersion":1,"status":"%s","pacman":"%s","mkinitcpio":"%s","cancellation":"%s","idempotency":"%s","initramfsContract":"%s","offlineAuthenticatedCache":"%s"}\n' \
         "$([[ "$rc" == 0 && "$status" == passed ]] && printf passed || printf failed)" \
         "$pacman_status" "$mkinitcpio_status" "$cancellation_status" "$idempotency_status" \
-        "$initramfs_contract_status"
+        "$initramfs_contract_status" "$offline_cache_status"
     return "$rc"
 }
 trap report EXIT
@@ -89,4 +90,6 @@ cmp "$before" "$after"
 idempotency_status=passed
 rm -f /run/initramfs-contract.listing /run/initramfs-execution.json \
     /run/initramfs-verification.json
+python3 /opt/open-gpu/tests/authenticated_cache_bundle.py
+offline_cache_status=passed
 status=passed

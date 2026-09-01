@@ -62,6 +62,7 @@ def main():
     assert "2700" in runner and "20G" in runner
     assert "expected_result=" in runner and "OPEN_GPU_VM_COMPLETE" in runner
     assert "stop_qemu" in runner and 'rm -f "$BASE_IMAGE.partial"' in runner
+    assert 'RUNTIME_DIR="$SCRIPT_DIR/.runtime/fedora"' in runner
     assert "tests/transaction.sh" in guest
     assert "unshare --mount" in guest and "mkfs.btrfs" in guest
     assert '"schemaVersion":1' in guest
@@ -79,14 +80,17 @@ def main():
     assert "tests/target_execution_trust.py" in guest
     assert "tests/initramfs_verification.py" in guest
     assert "steamos-recovery-fixture.sh" in guest
+    assert "tests/authenticated_cache_bundle.py" in guest
     assert "5d8be8d28cfd290f051b0f67df0a6874596ad23de3f3f18b90c91aeb758eb878" in arch_runner
     assert "656E4C5AC1CC3B86E539D97E343635A6859A9174" in arch_runner
     assert "gpgv --keyring" in arch_runner and "sha256sum -c" in arch_runner
     assert '--homedir "$RUNTIME_DIR/inspect-gnupg" --dearmor' in arch_runner
     assert "expected_result=" in arch_runner and "OPEN_GPU_ARCH_VM_COMPLETE" in arch_runner
     assert "stop_qemu" in arch_runner and "cleanup_partial_downloads" in arch_runner
+    assert 'RUNTIME_DIR="$SCRIPT_DIR/.runtime/arch"' in arch_runner
     assert "pacman -S" in arch_guest and "mkinitcpio -P" in arch_guest
     assert "kill -TERM" in arch_guest and "lsinitcpio" in arch_guest
+    assert "tests/authenticated_cache_bundle.py" in arch_guest
     assert "validate_steamos_recovery_input.py" in steamos_runner
     assert "decompress_bzip2_image.py" in steamos_runner
     assert "readonly=on" in steamos_runner and "-display none" in steamos_runner

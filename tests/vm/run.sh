@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 CACHE_DIR="$SCRIPT_DIR/.cache"
-RUNTIME_DIR="$SCRIPT_DIR/.runtime"
+RUNTIME_DIR="$SCRIPT_DIR/.runtime/fedora"
 IMAGE_NAME=Fedora-Cloud-Base-Generic-42-1.1.x86_64.qcow2
 IMAGE_URL="https://archives.fedoraproject.org/pub/archive/fedora/linux/releases/42/Cloud/x86_64/images/$IMAGE_NAME"
 IMAGE_SHA256=e401a4db2e5e04d1967b6729774faa96da629bcf3ba90b67d8d9cce9906bec0f
@@ -145,7 +145,7 @@ qemu_pid=""
 trap - EXIT INT TERM
 
 result="$(grep -E '^\{"schemaVersion":1,' "$SERIAL_LOG" | tail -n1 | tr -d '\r' || true)"
-expected_result='{"schemaVersion":1,"status":"passed","transaction":"passed","flock":"passed","mountNamespace":"passed","btrfs":"passed","recoveryAB":"passed","chrootHooks":"passed","mountLifecycle":"passed","consumerContract":"passed","targetExecutionTrust":"passed","initramfsContract":"passed","steamosRecoveryHarness":"passed"}'
+expected_result='{"schemaVersion":1,"status":"passed","transaction":"passed","flock":"passed","mountNamespace":"passed","btrfs":"passed","recoveryAB":"passed","chrootHooks":"passed","mountLifecycle":"passed","consumerContract":"passed","targetExecutionTrust":"passed","initramfsContract":"passed","steamosRecoveryHarness":"passed","offlineAuthenticatedCache":"passed"}'
 [[ "$qemu_status" == 0 ]] || {
     printf 'VM exited with status %s; serial log: %s\n' "$qemu_status" "$SERIAL_LOG" >&2
     exit "$qemu_status"

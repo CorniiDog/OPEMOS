@@ -647,6 +647,32 @@ status. Key rotation adds a newly reviewed active entry, while revocation keeps
 the historical entry and changes its status to `revoked`, causing builds to
 fail closed before downloading or compiling.
 
+Previously authenticated headers can be moved through an offline archive
+without turning a locally calculated hash into trust evidence:
+
+```bash
+python3 lib/authenticated_cache_bundle.py export \
+    --artifact linux-neptune-headers.pkg.tar.zst \
+    --signature linux-neptune-headers.pkg.tar.zst.sig \
+    --keyring /appliance/trust/valve-package-signers.gpg \
+    --reviewed-signers trust/valve-package-signers.json \
+    --output /media/headers-cache.bundle
+python3 lib/authenticated_cache_bundle.py import \
+    --bundle /media/headers-cache.bundle \
+    --keyring /appliance/trust/valve-package-signers.gpg \
+    --reviewed-signers trust/valve-package-signers.json \
+    --store /appliance/cache/imported
+```
+
+Both operations re-run `gpgv`, require the same reviewed active signer and
+keyring digest, and bound every input. Imports are immutable generations named
+by the canonical manifest hash and print a schema-1 machine result containing
+the verified artifact path. Corrupt, partial, symlinked, policy-drifted, or
+oversized bundles fail before a generation is published; importing an exact
+generation again is idempotent. The output is suitable for passing back to
+`build_for_target.sh --headers-package` with its bundled signature. It is not a
+substitute for archiving reviewed keyrings and signer policy independently.
+
 Validate or install a local archive through the same online orchestration path:
 
 ```bash

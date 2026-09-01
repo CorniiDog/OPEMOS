@@ -49,6 +49,8 @@ python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __
     lib/prune_backup_generations.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/prune_build_sessions.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/authenticated_cache_bundle.py
 
 printf 'Checking immutable installer input snapshots...\n'
 SNAPSHOT_FIXTURE="$(mktemp -d /tmp/installer-input-snapshot.XXXXXX)"
@@ -84,6 +86,8 @@ printf 'Checking bounded backup retention...\n'
 python3 tests/backup_retention.py
 printf 'Checking abandoned build-session cleanup...\n'
 python3 tests/build_session_retention.py
+printf 'Checking authenticated offline cache transfer...\n'
+python3 tests/authenticated_cache_bundle.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/verify_installed_userspace.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \

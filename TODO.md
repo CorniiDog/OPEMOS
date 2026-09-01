@@ -1351,6 +1351,9 @@ signing policy.
 * [ ] Define archival/recovery policy for historical Valve headers, reviewed
   userspace packages/signatures, minimal keyrings, provenance, and certified
   release assets; hash manifests alone are not backups.
+  Detached-signature Valve header packages now have an atomic, bounded offline
+  export/import format that revalidates the reviewed signer and exact keyring;
+  userspace packages and certified release assets still need equivalent policy.
 * [ ] Test GitHub, Valve, and Arch Linux Archive outages. Reuse only exact
   previously authenticated cache entries and otherwise return an actionable
   typed failure.
