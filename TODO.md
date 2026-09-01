@@ -72,35 +72,19 @@ are completed.
 ### Milestone ladder
 
 * [x] Development infrastructure is usable for active dogfooding.
-* [ ] **Alpha:** complete a clean-stock SteamOS one-command certified install.
-* [ ] **Beta:** verify install, idempotency, uninstall/reinstall, SteamOS update,
-  and rollback behavior.
-* [ ] **Release candidate:** verify a patched NVIDIA release across repeated
-  clean installs and additional NVIDIA hardware.
-* [ ] **Stable:** establish reliable SteamOS upgrade/recovery behavior with no
-  manual shell repair required during supported workflows.
+* **Alpha** requires a clean-stock SteamOS one-command certified install.
+* **Beta** requires install, idempotency, uninstall/reinstall, SteamOS update,
+  and rollback verification.
+* **Release candidate** requires repeated clean installs and additional NVIDIA
+  hardware coverage.
+* **Stable** requires reliable SteamOS upgrade/recovery behavior without manual
+  shell repair during supported workflows.
 
-### Current priority queue
+### Current priority
 
-The image-builder integration now has a versioned offline-target JSON resolver
-in `lib/resolve_target.py`. The Fedora appliance can supply identity discovered
-from a mounted recovery image without confusing the guest kernel or OS for the
-installation target.
-
-An x86_64 Fedora appliance can also build a missing exact-kernel artifact with
-`bootstrap/build_for_target.sh`. Real Valve-header discovery and compilation for
-the recovery image remain integration-validation items for the image builder.
-
-1. [ ] Re-test the published NVIDIA 575.64.05 certified release through the
-   current public online installer.
-2. [ ] Run the certified installer a second time and verify the idempotent fast
-   path performs no module replacement, initramfs rebuild, or reboot prompt.
-3. [ ] Test uninstall followed by a clean certified reinstall.
-4. [ ] Reboot and verify the 575 runtime with `nvidia-smi`, `modinfo`,
-   `/proc/driver/nvidia/version`, Xwayland, Steam, and Gaming Mode.
-5. [ ] Perform a completely clean-stock SteamOS installation using only the
-   intended public one-line workflow.
-6. [ ] Test behavior across a SteamOS/kernel update and rollback.
+The `Not yet resolved` index above is the single authoritative priority queue.
+The detailed sections below retain implementation history and acceptance
+criteria without duplicating that queue.
 
 ---
 
@@ -157,9 +141,9 @@ the recovery image remain integration-validation items for the image builder.
 
   * `steamos-3.8.16-nvidia-575.64.05-k6.16.12-valve24.5-1-neptune-616-gb2f7cfe85e45`
 * [x] Preserve backward compatibility with that release format.
-* [ ] Re-test the 575 production release after all installer changes.
+The active production-release gate includes re-testing after installer changes
+and verifying the old 575 release's idempotent path.
 * [x] Verify the installer accepts and normalizes the old raw-`.ko` 575 release format.
-* [ ] Verify idempotency against the old 575 release.
 
 ---
 
@@ -212,7 +196,6 @@ the recovery image remain integration-validation items for the image builder.
 * [x] Establish 580.119.02 pristine upstream as the control case.
 * [x] Accept that graphics bugs may still exist in this control case.
 * [x] Preserve a source-identifiable 580 pristine build artifact for regression testing.
-* [ ] Add automated comparison between pristine-upstream and project-patched 580 builds.
 
 ---
 
@@ -259,7 +242,6 @@ the recovery image remain integration-validation items for the image builder.
 * [x] Explicitly print that it is intended for project/patched-module development.
 * [x] Warn when `--development` changes NVIDIA userspace while the currently resolved kernel module is a different NVIDIA version.
 * [x] Explicitly warn that kernel modules are not replaced by development userspace setup.
-* [ ] Decide whether live userspace replacement remains the permanent development model or whether an isolated development userspace is ever worth implementing.
 
 ## Upstream development
 
@@ -308,8 +290,8 @@ the recovery image remain integration-validation items for the image builder.
 * [x] Preserve old backups rather than deleting them.
 * [x] Recreate empty state backup directory under `/var`.
 * [x] Change new transactional backups to `$HOME/.cache/...`.
-* [ ] Decide long-term cleanup/retention policy for old backups.
-* [ ] Possibly cap number/age of retained backup generations.
+* [ ] Define and implement a bounded age/count retention policy for old backup
+  generations.
 * [x] Make backup generation names collision-safe for sequential operations in the same second.
 
 ---
@@ -325,7 +307,8 @@ the recovery image remain integration-validation items for the image builder.
 * [x] Verify `modinfo` resolves compressed project modules.
 * [x] Audit every script for assumptions that installed modules end in `.ko`.
 * [x] Test compressed release archives if future release packaging moves to `.ko.zst`.
-* [ ] Decide whether release archives themselves remain raw `.ko` or become compressed.
+The active canonical-repack gate will determine whether future release archives
+standardize on raw `.ko` or `.ko.zst`; the installer accepts both safely.
 
 ---
 
@@ -413,16 +396,14 @@ the recovery image remain integration-validation items for the image builder.
 * [x] Download/extract headers inside build container.
 * [x] Build NVIDIA modules against exact Neptune kernel headers.
 * [x] Pin/record immutable container digest during successful build.
-* [ ] Revisit `pacman -Sy --needed --noconfirm podman` partial-upgrade risk.
-* [ ] Potentially avoid host package mutation entirely if a safer SteamOS-compatible approach exists.
-* [ ] Cache header package efficiently inside container/build storage.
-* [ ] Reduce giant Fedora dependency-install verbosity if desired.
+* [ ] Replace or tightly constrain the host-mutating
+  `pacman -Sy --needed --noconfirm podman` bootstrap path.
+* [ ] Cache authenticated headers and the build environment by exact identity.
 * [x] Fix grep warning:
 
   * `grep: warning: stray \ before "`
 * [x] Audit Valve repository discovery in both build paths and accept only
   bounded safe `jupiter-*` directory components from the untrusted mirror index.
-* [ ] Cache build environment so repeated builds do not repeatedly install hundreds of packages unnecessarily.
 
 ---
 
@@ -440,9 +421,8 @@ the recovery image remain integration-validation items for the image builder.
   * pristine upstream records/accepts `source_branch=HEAD`,
   * an empty `git branch --show-current` result is treated as detached HEAD,
   * it must not fail with `Source branch is ; expected HEAD`.
-* [ ] Audit duplicate/environment setup logic between callers and `build.sh`.
-* [ ] Decide whether `build.sh` itself or callers own environment preparation.
-* [ ] Ensure headers are reused between builds where safe.
+* [ ] Define one owner for build-environment preparation and remove duplicated
+  setup between callers and `build.sh`.
 * [ ] Verify no host-root temp writes remain for large data.
 
 ---
@@ -542,7 +522,6 @@ the recovery image remain integration-validation items for the image builder.
 * [x] Verify rollback re-runs mocked `depmod` and `mkinitcpio` after failure.
 * [x] Verify no orphaned stage directories remain after injected failures.
 * [x] Add checksum verification after final target copy.
-* [ ] Consider fsync/durability if you want stronger transactional guarantees.
 
 ---
 
@@ -645,12 +624,7 @@ the recovery image remain integration-validation items for the image builder.
 * [x] Keep userspace and kernel module exact-version matching.
 * [x] Configure NVIDIA DRM modeset/fbdev environment.
 * [ ] Audit fresh-machine prerequisites.
-* [ ] Audit all `/opt` development behavior and clarify its ownership.
-* [ ] Explicitly document what `--development` places under `/opt`, if applicable.
-* [ ] Verify `--development` never silently installs pristine upstream modules.
-* [ ] Verify normal mode never silently falls back to upstream.
-* [ ] Verify userspace downgrade/upgrade behavior.
-* [ ] Verify partially installed NVIDIA userspace recovery.
+* [x] Keep normal certified mode from silently falling back to upstream source.
 
 ## Mode-boundary regression tests
 
@@ -671,21 +645,14 @@ the recovery image remain integration-validation items for the image builder.
 # 15A. NVIDIA userspace transaction safety
 
 Kernel-module installation now has substantially stronger rollback behavior than
-NVIDIA userspace setup. This is the main remaining infrastructure asymmetry.
+online NVIDIA userspace setup. Three gates capture the remaining asymmetry:
 
-* [ ] Record the currently installed `nvidia-utils` and `lib32-nvidia-utils`
-  package versions before changing them.
-* [ ] Preserve project-managed modprobe configuration before replacement.
-* [ ] Preserve relevant GRUB configuration before modification.
-* [ ] Define rollback behavior if `pacman -U` succeeds but a later configuration
-  step fails.
-* [ ] Define rollback behavior if only one NVIDIA userspace package changes.
-* [ ] Restore previous configuration when userspace setup aborts after modifying
-  system files.
-* [ ] Add mocked or fake-root failure coverage for userspace setup where practical.
-* [ ] Verify every userspace failure path restores SteamOS read-only state.
-* [ ] Test userspace downgrade and upgrade behavior explicitly.
-* [ ] Test broken or partially installed NVIDIA userspace recovery.
+* [ ] Snapshot replaced NVIDIA package versions plus project-owned modprobe and
+  GRUB state before an online userspace transaction.
+* [ ] Define atomic rollback for partial pacman success or later configuration
+  failure, including reliable SteamOS read-only restoration.
+* [ ] Add fake-root downgrade, upgrade, partial-package, broken-install, and
+  post-configuration failure coverage.
 
 ---
 
@@ -696,12 +663,9 @@ NVIDIA userspace setup. This is the main remaining infrastructure asymmetry.
   * `sudo -v`
   * to upstream install workflow.
 * [x] Explain that no password prompt can occur if sudo credential timestamp is already cached.
-* [ ] Decide whether top-level `setup_nvidia.sh` should request privileges immediately.
-* [ ] Decide whether long builds need sudo timestamp keepalive.
-* [ ] Avoid nested scripts prompting repeatedly.
-* [ ] Keep privilege boundaries clear.
-* [ ] Test from a cold sudo timestamp.
-* [ ] Test after sudo timestamp expires during a long build.
+* [ ] Define one top-level privilege owner and prevent nested password prompts.
+* [ ] Test cold and expired sudo timestamps during short and long builds, then
+  decide whether a bounded keepalive is necessary.
 
 ---
 
@@ -731,7 +695,6 @@ Desired design:
 * [x] Rebuild initramfs.
 * [x] Restore read-only filesystem.
 * [ ] Re-test uninstall with `.ko.zst` project installation.
-* [ ] Verify fallback resolves correctly after 580 project modules.
 * [x] Verify fake-root uninstall rollback after a post-removal `depmod` failure.
 * [x] Verify fake-root uninstall does not remove unrelated NVIDIA files outside the project target.
 * [x] Verify fake-root reinstall after successful uninstall.
@@ -775,11 +738,10 @@ Desired design:
   * `source_provider=upstream`
   * `project_patches=0`
 * [x] Persist installed BUILD-INFO.
-* [ ] Ensure `support_commit` is populated rather than `unknown` during normal builds.
+* [x] Ensure `support_commit` is populated rather than `unknown` during normal builds.
 * [ ] Add build container digest to all relevant BUILD-INFO variants if not already consistent.
 * [x] Add `schema_version=1` to newly generated BUILD-INFO files.
-* [ ] Consider module SHA entries in BUILD-INFO.
-* [ ] Consider explicit patch-series identifier.
+* [x] Record module SHA entries in BUILD-INFO and structured provenance.
 
 ---
 
@@ -799,7 +761,6 @@ Desired design:
 * [x] Record make version for new builds.
 * [x] Record build target, paths, and parallelism for new builds.
 * [x] Runtime-test the expanded metadata with a fresh build-only artifact.
-* [ ] Make pristine 580 build bit-for-bit reproducible where feasible.
 * [x] Distinguish deterministic source identity from potentially nondeterministic binary output.
 * [x] Prevent build-cache hits for dirty source/support trees and require matching support commit for clean cache hits.
 * [x] Detect and record target/build compiler versions and major-version match.
@@ -829,59 +790,43 @@ Desired design:
 * [x] Remove nearest-distance fuzzy ranking in favor of one bounded certified policy.
 * [x] Ensure certified fallback never moves forward to a newer SteamOS patch.
 * [x] Ensure `setup_nvidia.sh` and `online_install.sh` use the same release selector.
-* [ ] Expand the release-policy fixture with additional explicit SteamOS patch cases such as:
+* [x] Cover explicit 3.8.15–3.8.18 release-policy cases:
 
   * 3.8.15
   * 3.8.16
   * 3.8.17
   * 3.8.18
-* [ ] Ensure no old-kernel artifact can be installed after SteamOS kernel update.
-* [ ] Improve resolver diagnostics when no compatible release exists.
+* [x] Ensure no old-kernel artifact can be selected after a kernel update.
+* [x] Return a typed resolver result when no compatible release exists.
 
 ---
 
 # 23. SteamOS updates / persistence
 
-This is still a major future area.
+This remains a major future area, represented by three distinct gates:
 
-* [ ] Determine what happens to project modules after an A/B SteamOS update.
-* [ ] Detect new active SteamOS slot/kernel.
-* [ ] Detect that existing module release targets old kernel.
-* [ ] Select/build/install exact matching module for new kernel.
-* [ ] Never copy old-kernel module into new kernel tree.
-* [ ] Determine proper SteamOS update hook mechanism.
-* [ ] Avoid polling if a reliable lifecycle hook exists.
-* [ ] Preserve NVIDIA userspace compatibility across updates.
-* [ ] Preserve project configuration across A/B slot switches.
-* [ ] Test upgrade from one 3.8.x kernel to another.
-* [ ] Test rollback to previous SteamOS slot.
-* [ ] Test missing release for new kernel.
-* [ ] Provide safe fallback behavior if no compatible project build exists.
+* [ ] Determine the reliable SteamOS A/B update lifecycle hook and detect the
+  newly active slot and exact kernel without polling when an event is available.
+* [ ] Resolve/build only an exact-kernel artifact for the new slot, preserve its
+  matching userspace/configuration, and fail closed when no artifact exists.
+* [ ] Test a 3.8.x kernel upgrade, missing-release behavior, and rollback to the
+  previous slot without ever copying old-kernel modules into a new tree.
 
 ---
 
 # 24. Fresh-stock installation
 
-This still needs an end-to-end test.
+The active clean-stock/hardware gate in the top index uses these acceptance
+criteria:
 
-* [ ] Start from stock SteamOS with no project files.
-* [ ] Start from stock SteamOS NVIDIA-incompatible/unsupported state.
-* [ ] Run intended one-line online installer.
-* [ ] Resolve correct certified release.
-* [ ] Install correct NVIDIA userspace.
-* [ ] Install exact matching project modules.
-* [ ] Rebuild initramfs.
-* [ ] Reboot once.
-* [ ] Boot directly into Gaming Mode.
-* [ ] Verify `nvidia-smi`.
-* [ ] Verify `modinfo`.
-* [ ] Verify `/proc/driver/nvidia/version`.
-* [ ] Verify Gaming Mode uses the GPU.
-* [ ] Verify desktop mode.
-* [ ] Verify Steam Gaming Mode.
-* [ ] Verify no manual recovery steps required.
-* [ ] Verify installer can be run a second time and returns idempotent success.
-* [ ] Verify uninstall restores a usable fallback.
+* Start from stock SteamOS with no project files or supported NVIDIA state.
+* Run the intended one-line online installer and resolve the exact certified
+  release, userspace, modules, and initramfs.
+* Reboot once into Gaming Mode and verify `nvidia-smi`, `modinfo`,
+  `/proc/driver/nvidia/version`, GPU use, Desktop Mode, and Gaming Mode.
+* Require no manual recovery steps.
+* Require an idempotent second install and an uninstall that restores a usable
+  fallback.
 
 ---
 
@@ -891,25 +836,9 @@ This still needs an end-to-end test.
 * [x] Upstream 580 module install required userspace 580.119.02.
 * [x] Production 575 release resolves userspace 575.64.05.
 * [x] Test mismatch detection intentionally with a 575 module archive and installed 580 userspace.
-* [ ] Test installed userspace newer than project module.
-* [ ] Test installed userspace older than project module.
-* [ ] Test broken/incomplete `nvidia-utils`.
-* [ ] Make error messages explain required remediation.
-
----
-
-# 28. Source branch strategy for 580
-
-* [ ] Create/confirm project source branch:
-
-  * likely `nvidia/580.119.02`
-* [ ] Base it exactly on NVIDIA upstream 580.119.02 tag/commit.
-* [ ] Preserve pristine base commit.
-* [ ] Add project fixes as individual commits.
-* [ ] Avoid squashing away useful bug-history while developing.
-* [ ] Keep release patch set easy to rebase to future NVIDIA versions.
-* [ ] Add source metadata connecting support release → source commit.
-* [ ] Eventually test next 580.x release against the same fixes.
+Newer, older, broken, and incomplete userspace cases are covered by the active
+online userspace transaction-safety gates above and the exact reviewed-lock
+offline installer contract.
 
 ---
 
@@ -918,18 +847,18 @@ This still needs an end-to-end test.
 * [x] Run `bash -n` on all shell scripts locally and in CI.
 * [x] Run `git diff --check` locally and in CI.
 * [x] Run error-level ShellCheck in CI.
-* [ ] Test resolver parsing.
-* [ ] Test release-tag parsing.
-* [ ] Test archive traversal rejection.
-* [ ] Test checksum rejection.
-* [ ] Test BUILD-INFO parsing.
+* [x] Test resolver parsing.
+* [x] Test release-tag parsing and canonical publisher identity.
+* [x] Test archive traversal rejection across installer and publisher inputs.
+* [x] Test checksum rejection.
+* [x] Test BUILD-INFO parsing and embedded/sidecar agreement.
 * [ ] Test raw `.ko` idempotency.
 * [ ] Test `.ko.zst` idempotency.
-* [ ] Test empty modules directory rejection.
-* [ ] Test wrong kernel rejection.
-* [ ] Test wrong NVIDIA version rejection.
-* [ ] Test wrong SteamOS version rejection.
-* [ ] Test fuzzy selection.
+* [x] Test empty/incomplete module-set rejection.
+* [x] Test wrong-kernel rejection.
+* [x] Test wrong NVIDIA version rejection.
+* [x] Test wrong SteamOS series and patch-selection behavior.
+* [x] Test bounded certified fallback selection.
 * [x] Test the release-selection policy matrix from section 22, including exact-kernel rejection.
 * [x] Test detached-HEAD upstream semantics, including the empty-branch-name case.
 * [x] Test current cache/stage ownership and non-root `zstd` operation.
@@ -942,7 +871,6 @@ This still needs an end-to-end test.
 * [x] Test `--help` exits 0.
 * [x] Test mutually exclusive arguments.
 * [ ] Test build-only mode.
-* [ ] Potentially mock `modinfo`, `nvidia-smi`, GitHub APIs, etc. for non-destructive tests.
 
 ---
 
@@ -952,14 +880,16 @@ This still needs an end-to-end test.
 * [x] Rename `--driver` to `--development`.
 * [x] Add proper `usage()` to `install_upstream.sh`.
 * [x] Make `--help` work everywhere.
-* [ ] Standardize formatting among scripts.
-* [ ] Every mode should explain:
+* [ ] Run one final CLI consistency audit so every mode uses standard formatting
+  and explains:
 
   * purpose,
   * userspace behavior,
   * module behavior,
   * source provider,
-  * whether project fixes are applied.
+  * whether project fixes are applied,
+  * consistent `certified`, `development`, `upstream-development`, and
+    `project-patched` terminology.
 * [x] Add examples in README for:
 
   * certified install
@@ -969,66 +899,24 @@ This still needs an end-to-end test.
   * local artifact install
   * in-code build/install.
 * [x] Make destructive operations visibly distinct from resolution/build-only operations.
-* [ ] Use consistent terminology:
-
-  * certified
-  * development
-  * upstream-development
-  * project-patched.
 
 ---
 
 # 31. Code cleanup
 
 * [x] Centralize project temp helpers where usable.
-* [ ] Consider common helper for bootstrap cache-root creation.
-* [ ] Avoid duplicating hardcoded project cache path in four online scripts, while still respecting pre-bootstrap limitations.
-* [ ] Audit redundant `mkdir -p "${HOME}/.cache/${PROJECT_NAME}"` calls now helpers do it.
+* [ ] Centralize bootstrap cache-root creation without violating pre-bootstrap
+  ordering, then remove redundant hardcoded cache-path creation.
 * [x] Audit duplicate `setup_build_env.sh` invocation.
-* [ ] Audit unused variables.
 * [x] Audit stale `DRIVER_*` names after `--development` rename.
-* [ ] Audit comments referring to old mode names.
 * [x] Audit README for `--driver`.
-* [ ] Audit release/action scripts for old naming.
+* [ ] Audit unused variables plus stale mode terminology in comments,
+  release scripts, and action entry points.
 * [x] Audit all direct `/tmp` usages and classify:
 
   * host `/tmp` → generally avoid for large work.
   * container `/tmp` → allowed/intended.
 * [x] Add comments where this distinction matters.
-
----
-
-# 32. Git / commits
-
-Completed meaningful commit groups include work around:
-
-* [x] Automatic SteamOS kernel build environment.
-* [x] Installer storage hardening.
-* [x] `/home` cache staging.
-* [x] Module compression.
-* [x] Root-space preflight.
-* [x] Upstream-development workflow.
-* [x] Development-mode rename.
-* [x] Temp helper infrastructure.
-
-Still to commit as a clean logical batch after testing:
-
-* [ ] `.ko.zst`-aware online idempotency.
-* [ ] Bootstrap temp-order fixes.
-* [ ] `install_upstream.sh --build-only`.
-* [ ] Duplicate build-env call removal.
-* [ ] Container `/tmp` correction.
-* [ ] Any resulting self-documentation/comments.
-
-Before that commit:
-
-```bash
-for f in bootstrap/*.sh lib/*.sh; do
-    bash -n "$f" || exit 1
-done
-
-git diff --check
-```
 
 ---
 
@@ -1102,11 +990,10 @@ signing policy.
 * [x] Confirm NVIDIA 575.64.05 compiles without target-header reconstruction.
 * [x] Confirm all five output modules report the exact target vermagic and
   NVIDIA version.
-* [ ] Confirm the existing installer accepts the generated archive unchanged.
+* [x] Confirm the offline-root validator and installer accept the generated
+  archive unchanged.
 * [x] Preserve the complete build log and generated build metadata from this
   first integration run.
-* [ ] Correct the support contract before image injection if any of these gates
-  fail; do not approximate headers, source, kernel, or NVIDIA versions.
 
 ## Authentication and trust
 
@@ -1128,7 +1015,7 @@ signing policy.
   pinned source, complete provenance, and all structural checks.
 * [ ] Reserve `certified-published` for maintainer-published artifacts that have
   also passed the required hardware test matrix.
-* [ ] Never silently promote a local successful compilation to certified.
+* [x] Never silently promote a local successful compilation to certified.
 
 ## Machine-readable results and typed failures
 
@@ -1164,7 +1051,8 @@ signing policy.
   argument/target validation.
 * [x] Keep missing headers/source and incompatibility as safe, actionable
   outcomes rather than selecting a nearby build.
-* [ ] Separate concise user-facing messages from detailed maintainer diagnostics.
+* [x] Separate concise bounded user-facing messages from structured maintainer
+  diagnostics in build, validation, and installation results.
 
 ## Complete provenance
 
@@ -1246,8 +1134,8 @@ signing policy.
 * [x] Test output publication with an injected `ENOSPC` failure and verify the
   typed packaging failure, removal of partial final names, and work-tree cleanup.
 * [ ] Test both automatically downloaded and pinned-local header inputs.
-* [ ] Verify artifact installation, idempotency, uninstall, and rollback against
-  a fake mounted target before modifying a real recovery-image working copy.
+* [x] Verify artifact installation, idempotency, failure rollback, and cleanup
+  against fake mounted targets before modifying a real recovery-image overlay.
 * [x] Define the x86_64-only explicit-root installer CLI with authenticated
   `nvidia-utils`/`lib32-nvidia-utils` inputs, `--validate-only`, and a structured
   result that cannot report success while mounts remain active.
@@ -1364,12 +1252,12 @@ signing policy.
   trees exist; support-side compilation must receive one explicit target.
 * [x] Image builder can launch an x86_64 TCG build appliance on Apple Silicon;
   the first complete build succeeded in 30m15s.
-* [ ] Treat QEMU x86_64 software-emulation slowness as progress/UX concern, not
+* QEMU x86_64 software-emulation slowness is a progress/UX concern, never
   permission to weaken compatibility checks.
-* [ ] Image builder must install exactly matching NVIDIA userspace and GSP
-  firmware; successful `.ko` compilation alone is insufficient.
-* [ ] Image builder must handle offline `depmod`, the correct target initramfs,
-  Valve A/B slots, installer-copy behavior, and first-boot ordering.
+* [x] Require and stage the exact reviewed NVIDIA userspace closure and matching
+  GSP firmware; successful `.ko` compilation alone is insufficient.
+* [ ] Validate offline `depmod` and target initramfs output through Valve A/B
+  slots, installer-copy behavior, and first-boot ordering.
 * [ ] Define Secure Boot/module-signing behavior before claiming supported
   Secure Boot installations.
 * [ ] Verify SteamOS updates and slot changes do not silently leave stale modules.
@@ -1378,32 +1266,7 @@ signing policy.
 
 ---
 
-# 34. Immediate next actions
-
-The project has moved from infrastructure bring-up into active dogfooding and
-compatibility development.
-
-1. [ ] Exercise the real published 575 certified path with the current online installer.
-2. [ ] Verify the second run reaches the real idempotent fast path.
-3. [ ] Test live uninstall and certified reinstall.
-4. [ ] Verify the rebooted 575 Gaming Mode runtime.
-5. [ ] Complete a clean-stock one-command SteamOS installation to reach **Alpha**.
-6. [ ] Test SteamOS/kernel update and rollback behavior to progress toward **Beta**.
-7. [ ] Expand testing to additional NVIDIA hardware before treating the project as stable.
-
-## Non-blocking cleanup
-
-These items are worthwhile but should not delay dogfooding:
-
-* [ ] Decide backup retention policy.
-* [ ] Decide whether release archives should remain raw `.ko` or become `.ko.zst`.
-* [ ] Improve Fedora dependency/header caching.
-* [ ] Reduce Fedora build dependency-install verbosity.
-* [ ] Revisit safe Podman installation when Podman is absent.
-* [ ] Continue CLI/style cleanup where useful.
-* [ ] Pursue stronger bit-for-bit reproducibility only if it becomes operationally useful.
-
-## Overall state
+# Overall state
 
 The project has crossed the bring-up threshold. SteamOS 3.8.16 has successfully
 booted into Gaming Mode on the RTX 2060 with the known-good project NVIDIA
