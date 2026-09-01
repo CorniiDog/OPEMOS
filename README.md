@@ -781,6 +781,24 @@ hook failure, process-group cancellation, rollback, and repeat execution are
 covered. These fixture commands model transaction boundaries; they are not the
 real Arch pacman or Valve mkinitcpio packages.
 
+For an optional real Arch Linux boundary test, run:
+
+```bash
+./tests/vm/run-arch.sh
+```
+
+This separate headless guest pins the immutable Arch cloud image
+`20260815.573966`, verifies its official signed SHA-256 document with the CI key
+published by the Arch `arch-boxes` project at source commit
+`7f733af26fe9a0c93fdabba13e7803cbe803374a`, and refuses missing, linked,
+corrupt, or mismatched inputs. Inside the disposable guest it uses actual signature-
+enforcing `pacman`, installs/verifies actual `mkinitcpio`, regenerates and
+inspects the guest initramfs, rejects a missing package without a stale database
+lock, cancels a process-group generation loop, and compares image contents after
+a clean repeat. `--no-download` requires all three already verified cache inputs.
+This proves upstream Arch tooling behavior, not Valve's package set, hooks,
+presets, recovery propagation, or SteamOS boot behavior.
+
 After reinstalling and cloning the same support commit, run:
 
 ```bash
