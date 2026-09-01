@@ -283,7 +283,7 @@ if [[ "$INSTALL_DEPENDENCIES" == "1" ]]; then
         gcc gcc-c++ git gnupg2 kmod make openssl-devel pahole perl python3 zstd
 fi
 
-for command in bash curl find gcc git ld make modinfo nproc python3 readelf sha256sum tar zstd; do
+for command in bash curl find flock gcc git ld make modinfo nproc python3 readelf sha256sum tar zstd; do
     need_cmd "$command"
 done
 command -v bsdtar >/dev/null 2>&1 || need_cmd bsdtar
@@ -293,7 +293,14 @@ command -v bsdtar >/dev/null 2>&1 || need_cmd bsdtar
 BUILD_PHASE=output_preparation_failed
 mkdir -p "$OUTPUT_DIR"
 OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd)"
+CACHE_ROOT="$(project_cache_root)"
+mkdir -p "$CACHE_ROOT"
+python3 "$SUPPORT_ROOT/lib/prune_build_sessions.py" \
+    --root "$CACHE_ROOT" --minimum-age-seconds 86400 ||
+    warn "Abandoned build-session cleanup could not complete."
 WORK_DIR="$(project_mktemp_dir target-build)"
+exec 8>"$WORK_DIR/.active.lock"
+flock -n 8 || die "The new build session could not be locked."
 FINAL_BUILD_INFO="$OUTPUT_DIR/${ASSET_NAME%.tar.gz}.build-info.txt"
 FINAL_PROVENANCE="$OUTPUT_DIR/${ASSET_NAME%.tar.gz}.provenance.json"
 FINAL_ARCHIVE="$OUTPUT_DIR/$ASSET_NAME"

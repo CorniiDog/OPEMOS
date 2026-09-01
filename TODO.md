@@ -1129,7 +1129,7 @@ signing policy.
 * [ ] Cache only authenticated headers/artifacts for normal reuse.
 * [ ] Key caches by exact header identity/hash, source commit, support commit,
   NVIDIA version, target kernel, architecture, and toolchain/appliance identity.
-* [ ] Detect and remove abandoned inactive build sessions on the next run.
+* [x] Detect and remove abandoned inactive build sessions on the next run.
 
 ## Fedora/Linux validation
 

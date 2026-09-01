@@ -64,6 +64,7 @@ def make_mocks(path):
         "uname": "#!/bin/sh\n[ \"${1:-}\" = -m ] && echo x86_64 || echo Linux\n",
         "date": "#!/bin/sh\ncase \"${1:-}\" in --iso-8601=seconds) echo 2026-08-31T12:00:00+00:00;; *) /bin/date \"$@\";; esac\n",
         "gcc": "#!/bin/sh\ncase \" $* \" in *' -dumpfullversion -dumpversion '*) echo 15.1.1;; *) exit 0;; esac\n",
+        "flock": "#!/bin/sh\nexit 0\n",
         "git": "#!/bin/sh\nexit 1\n",
         "ld": "#!/bin/sh\necho 'GNU ld 2.45'\n",
         "modinfo": f"""#!/bin/sh

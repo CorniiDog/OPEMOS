@@ -665,6 +665,11 @@ belong under the user cache on `/home`:
 ~/.cache/open-gpu-kernel-modules-steamos-support/
 ```
 
+Offline-target build sessions hold a per-session advisory lock. At the next
+build, recognized `target-build.*` directories older than 24 hours are removed
+only when that lock can be acquired; active, recent, symlinked, and unknown
+cache entries are preserved.
+
 Only the final compressed module set is copied into:
 
 ```text
