@@ -54,6 +54,10 @@ python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/repack_module_artifact.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/bsdtar_safety.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/atomic_output.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/write_compile_provenance.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/update_grub_nvidia_args.py
@@ -75,6 +79,12 @@ python3 tests/publisher.py
 
 printf 'Checking reviewed gaming payload profile contract...\n'
 python3 tests/gaming_payload_profiles.py
+
+printf 'Checking bounded archive confinement...\n'
+python3 tests/archive_safety.py
+
+printf 'Checking atomic output confinement...\n'
+python3 tests/atomic_output.py
 
 printf 'Checking deterministic module repack contract...\n'
 python3 tests/repack_artifacts.py

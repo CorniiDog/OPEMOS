@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 import urllib.parse
 import urllib.request
+import urllib.error
 from pathlib import Path
 
 import sys
@@ -22,8 +23,19 @@ from validate_install_inputs import (  # noqa: E402
     dependency_name, package_metadata, pacman_desc_fields, record_satisfies,
     require_safe_destination,
 )
+from bsdtar_safety import ArchiveSafetyError, extract_confined, extract_single_member
+from atomic_output import atomic_create_bytes
 
 MAX_DOWNLOAD = 2 * 1024 * 1024 * 1024
+MAX_REPOSITORY_MEMBERS = 200_000
+MAX_REPOSITORY_EXPANDED = 2 * 1024 * 1024 * 1024
+MAX_REPOSITORY_RECORDS = 100_000
+MAX_REPOSITORY_RECORD_BYTES = 1024 * 1024
+MAX_REPOSITORY_RELATIONS = 256
+MAX_KEYRING_BYTES = 64 * 1024 * 1024
+MAX_PACKAGE_INSTALLED_BYTES = 16 * 1024 * 1024 * 1024
+MAX_SIGNATURE_BYTES = 1024 * 1024
+MAX_MANIFEST_BYTES = 1024 * 1024
 REPOS = ("core", "extra", "multilib")
 
 
@@ -55,20 +67,48 @@ def sha256(path):
     return digest.hexdigest()
 
 
+def require_regular(path, description, maximum):
+    try:
+        if (path.is_symlink() or not path.is_file()
+                or not 0 < path.stat().st_size <= maximum):
+            raise OSError
+    except OSError as error:
+        raise SystemExit(f"{description} is unsafe, absent, or excessive") from error
+
+
 def download(url, destination):
     request = urllib.request.Request(url, headers={"User-Agent": "steamos-nvidia-closure-audit/1"})
-    staged = destination.with_name(f".{destination.name}.part-{os.getpid()}")
+    if destination.exists() or destination.is_symlink():
+        raise ValueError("audit download destination already exists")
     total = 0
-    with urllib.request.urlopen(request, timeout=60) as response, staged.open("wb") as output:
-        while True:
-            chunk = response.read(1024 * 1024)
-            if not chunk:
-                break
-            total += len(chunk)
-            if total > MAX_DOWNLOAD:
-                raise ValueError("download exceeds audit size limit")
-            output.write(chunk)
-    staged.replace(destination)
+    descriptor = None
+    staged = None
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            if response.geturl() != url:
+                raise ValueError("audit download redirected unexpectedly")
+            descriptor, staged_name = tempfile.mkstemp(
+                prefix=f".{destination.name}.part-", dir=destination.parent
+            )
+            staged = Path(staged_name)
+            with os.fdopen(descriptor, "wb") as output:
+                descriptor = None
+                while True:
+                    chunk = response.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    if total > MAX_DOWNLOAD:
+                        raise ValueError("download exceeds audit size limit")
+                    output.write(chunk)
+                output.flush()
+                os.fsync(output.fileno())
+        os.link(staged, destination)
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        if staged is not None:
+            staged.unlink(missing_ok=True)
 
 
 def repository_file_url(base, filename):
@@ -98,13 +138,16 @@ def percent_fields(text):
     while index < len(lines):
         marker = lines[index]
         if re.fullmatch(r"%[A-Z0-9_]+%", marker):
+            field_name = marker.strip("%")
+            if field_name in fields:
+                raise ValueError(f"duplicate repository metadata field: {field_name}")
             values = []
             index += 1
             while index < len(lines) and not re.fullmatch(r"%[A-Z0-9_]+%", lines[index]):
                 if lines[index]:
                     values.append(lines[index])
                 index += 1
-            fields[marker.strip("%")] = values
+            fields[field_name] = values
         else:
             index += 1
     return fields
@@ -112,21 +155,47 @@ def percent_fields(text):
 
 def repository_records(database, repository):
     with tempfile.TemporaryDirectory(prefix="arch-repo-db-") as temporary:
-        subprocess.run(["bsdtar", "-xf", str(database), "-C", temporary], check=True)
+        extract_confined(
+            database, Path(temporary), max_members=MAX_REPOSITORY_MEMBERS,
+            max_expanded_bytes=MAX_REPOSITORY_EXPANDED, allow_empty=True,
+        )
         records = []
-        for desc in Path(temporary).glob("*/desc"):
+        identities = set()
+        descriptions = sorted(Path(temporary).glob("*/desc"))
+        if len(descriptions) > MAX_REPOSITORY_RECORDS:
+            raise ValueError(f"authenticated {repository} repository has too many records")
+        for desc in descriptions:
+            if (desc.is_symlink() or not desc.is_file()
+                    or desc.stat().st_size > MAX_REPOSITORY_RECORD_BYTES):
+                raise ValueError(f"unsafe authenticated {repository} repository record")
             fields = percent_fields(desc.read_text(encoding="utf-8"))
             required = {key: fields.get(key, []) for key in ("NAME", "VERSION", "FILENAME", "SHA256SUM")}
             if any(len(values) != 1 for values in required.values()):
                 raise ValueError(f"malformed authenticated {repository} repository record")
             filename = required["FILENAME"][0]
-            if (Path(filename).name != filename or filename in (".", "..")
+            name = required["NAME"][0]
+            version = required["VERSION"][0]
+            package_hash = required["SHA256SUM"][0].lower()
+            dependencies = fields.get("DEPENDS", [])
+            provides = fields.get("PROVIDES", [])
+            if (not re.fullmatch(r"[A-Za-z0-9@._+:-]{1,256}", name)
+                    or not re.fullmatch(r"[A-Za-z0-9@._+:-]{1,256}", version)
+                    or not re.fullmatch(r"[0-9a-f]{64}", package_hash)
+                    or len(dependencies) > MAX_REPOSITORY_RELATIONS
+                    or len(provides) > MAX_REPOSITORY_RELATIONS
+                    or any(not re.fullmatch(r"[A-Za-z0-9@._+<>=:-]{1,256}", value)
+                           for value in [*dependencies, *provides])
+                    or Path(filename).name != filename or filename in (".", "..")
                     or not re.fullmatch(r"[A-Za-z0-9@._+:-]+", filename)):
-                raise ValueError(f"unsafe authenticated {repository} repository filename")
+                raise ValueError(f"unsafe authenticated {repository} repository record")
+            identity = (name, version, filename)
+            if identity in identities:
+                raise ValueError(f"duplicate authenticated {repository} repository record")
+            identities.add(identity)
             records.append({
-                "name": required["NAME"][0], "version": required["VERSION"][0],
-                "filename": required["FILENAME"][0], "sha256": required["SHA256SUM"][0].lower(),
-                "depends": fields.get("DEPENDS", []), "provides": fields.get("PROVIDES", []),
+                "name": name, "version": version,
+                "filename": filename, "sha256": package_hash,
+                "depends": dependencies, "provides": provides,
                 "repository": repository,
             })
         return records
@@ -176,20 +245,42 @@ def package_record(package, signature, keyring, expected_sha=None):
     signer = verify(package, signature, keyring)
     metadata = package_metadata(package)  # Only after full-keyring verification.
     size = metadata.get("size", "")
-    if not size.isdigit():
-        raise ValueError(f"package lacks installed size: {package.name}")
+    name = metadata.get("pkgname", "")
+    version = metadata.get("pkgver", "")
+    architecture = metadata.get("arch", "")
+    dependencies = metadata.get("depends", [])
+    provides = metadata.get("provides", [])
+    if (not size.isdigit() or int(size) > MAX_PACKAGE_INSTALLED_BYTES
+            or not re.fullmatch(r"[A-Za-z0-9@._+:-]{1,256}", name)
+            or not re.fullmatch(r"[A-Za-z0-9@._+:-]{1,256}", version)
+            or not re.fullmatch(r"[A-Za-z0-9@._+:-]{1,256}", architecture)
+            or len(dependencies) > MAX_REPOSITORY_RELATIONS
+            or len(provides) > MAX_REPOSITORY_RELATIONS
+            or any(not re.fullmatch(r"[A-Za-z0-9@._+<>=:-]{1,256}", value)
+                   for value in [*dependencies, *provides])):
+        raise ValueError(f"package has unsafe or incomplete metadata: {package.name}")
     return {
-        "name": metadata["pkgname"], "filename": package.name,
-        "signatureFilename": signature.name, "version": metadata["pkgver"],
-        "architecture": metadata["arch"], "packageSha256": sha256(package),
+        "name": name, "filename": package.name,
+        "signatureFilename": signature.name, "version": version,
+        "architecture": architecture, "packageSha256": sha256(package),
         "signatureSha256": sha256(signature), "signerFingerprint": signer,
-        "installedSize": int(size), "dependencies": metadata["depends"],
-        "provides": metadata["provides"],
+        "installedSize": int(size), "dependencies": dependencies,
+        "provides": provides,
     }
 
 
 def main():
     options = args()
+    for path, description, maximum in (
+        (options.full_keyring, "full keyring", MAX_KEYRING_BYTES),
+        (options.keyring_source, "keyring source package", MAX_DOWNLOAD),
+        (options.keyring_source_signature, "keyring source signature", MAX_SIGNATURE_BYTES),
+        (options.nvidia_utils, "nvidia-utils package", MAX_DOWNLOAD),
+        (options.nvidia_utils_signature, "nvidia-utils signature", MAX_SIGNATURE_BYTES),
+        (options.lib32_nvidia_utils, "lib32-nvidia-utils package", MAX_DOWNLOAD),
+        (options.lib32_nvidia_utils_signature, "lib32-nvidia-utils signature", MAX_SIGNATURE_BYTES),
+    ):
+        require_regular(path, description, maximum)
     if not re.fullmatch(r"[0-9]{4}/[0-9]{2}/[0-9]{2}", options.snapshot):
         raise SystemExit("snapshot must be YYYY/MM/DD")
     expected_url = f"https://archive.archlinux.org/repos/{options.snapshot}/"
@@ -202,6 +293,7 @@ def main():
     snapshot_manifest_path = SNAPSHOT_MANIFEST
     if os.environ.get("PROJECT_TEST_MODE") == "1" and os.environ.get("PROJECT_TEST_SNAPSHOT_MANIFEST"):
         snapshot_manifest_path = Path(os.environ["PROJECT_TEST_SNAPSHOT_MANIFEST"])
+    require_regular(snapshot_manifest_path, "snapshot provenance manifest", MAX_MANIFEST_BYTES)
     snapshot_manifest = json.loads(snapshot_manifest_path.read_text(encoding="utf-8"))
     if (snapshot_manifest.get("schemaVersion") != 1
             or snapshot_manifest.get("identity") != options.snapshot
@@ -211,6 +303,7 @@ def main():
     provenance_path = KEYRING_PROVENANCE
     if os.environ.get("PROJECT_TEST_MODE") == "1" and os.environ.get("PROJECT_TEST_KEYRING_PROVENANCE"):
         provenance_path = Path(os.environ["PROJECT_TEST_KEYRING_PROVENANCE"])
+    require_regular(provenance_path, "keyring provenance manifest", MAX_MANIFEST_BYTES)
     provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
     if (provenance.get("schemaVersion") != 1
             or provenance.get("snapshot") != options.snapshot
@@ -220,12 +313,20 @@ def main():
             or sha256(options.keyring_source_signature) != provenance["source"]["signatureSha256"]
             or sha256(options.full_keyring) != provenance["keyring"]["sha256"]):
         raise SystemExit("full keyring does not match support-owned provenance")
-    with tempfile.TemporaryDirectory(prefix="arch-keyring-provenance-") as keyring_check:
-        subprocess.run(["bsdtar", "-xf", str(options.keyring_source), "-C", keyring_check], check=True)
-        extracted = Path(keyring_check) / provenance["keyring"]["path"]
-        if sha256(extracted) != provenance["keyring"]["sha256"]:
-            raise SystemExit("source package does not produce the pinned full keyring")
+    try:
+        keyring_payload = extract_single_member(
+            options.keyring_source, provenance["keyring"]["path"],
+            maximum=MAX_KEYRING_BYTES,
+        )
+    except ArchiveSafetyError as error:
+        raise SystemExit(f"authenticated keyring source archive is unsafe: {error}")
+    if hashlib.sha256(keyring_payload).hexdigest() != provenance["keyring"]["sha256"]:
+        raise SystemExit("source package does not produce the pinned full keyring")
+    if options.stage.is_symlink():
+        raise SystemExit("stage directory must not be a symlink")
     options.stage.mkdir(parents=True, exist_ok=True)
+    if not options.stage.is_dir() or options.stage.is_symlink():
+        raise SystemExit("stage directory is unsafe")
     if any(options.stage.iterdir()):
         raise SystemExit("stage directory must be empty")
     verification_keyring = options.stage / "authenticated-full-arch-keyring.gpg"
@@ -314,8 +415,17 @@ def main():
         "packages": sorted(packages, key=lambda item: item["name"]),
         "missingReview": sorted(missing_review, key=lambda item: item["packageName"]),
     }
-    options.output.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n")
+    payload = (json.dumps(document, indent=2, sort_keys=True) + "\n").encode()
+    try:
+        atomic_create_bytes(options.output, payload)
+    except FileExistsError:
+        raise SystemExit("candidate lock output already exists")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except (ArchiveSafetyError, KeyError, OSError, TypeError, UnicodeError,
+            ValueError, json.JSONDecodeError, subprocess.SubprocessError,
+            urllib.error.URLError) as error:
+        raise SystemExit(f"userspace closure audit failed: {error}") from None

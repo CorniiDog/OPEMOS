@@ -210,6 +210,12 @@ compressed representation hash and records the source release and sidecar
 hashes. Output uses a new `-modules-zstd-rN` tag; publication always delegates
 to `publish_artifacts.sh --create-only`, so the source release cannot be
 overwritten.
+The repacker streams raw modules, compressed representations, and the final tar
+and gzip layers through bounded temporary files rather than retaining a
+multi-gigabyte artifact in memory. Production use also requires
+`--support-commit` to equal the clean checkout actually executing the command;
+duplicate options, unsafe output directories, partial output sets, and stale
+create-only destinations fail closed.
 
 ```bash
 ./bootstrap/repack_artifacts.sh \
@@ -329,6 +335,12 @@ review status from the production policy, verifies that the minimal keyring
 contains every required signer and no unrelated primary keys, and atomically
 emits the reviewed lock. Malformed, oversized, duplicate-identity, or unreadable
 inputs fail without an output file; manual status edits are unsupported.
+Repository databases are path-validated with bounded member, record, relation,
+and expansion limits before confined extraction. Keyring packages expose only
+the exact pinned regular member; redirects, archive traversal, links, partial
+downloads, changed-during-inspection archives, and non-atomic candidate outputs
+are rejected. Archive consumers validate and extract from a private snapshot,
+and reject a source that changes while that snapshot is created.
 
 The first reviewed bundle is
 `locks/userspace/steamos-3.8.14-nvidia-575.64.05.json`, paired with

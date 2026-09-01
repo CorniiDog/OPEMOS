@@ -1289,6 +1289,9 @@ signing policy.
 * [x] Add a deterministic authenticated raw-module repacker with separate
   payload/representation hashes, pinned encoding, non-mutating JSON dry-run,
   revisioned release identity, and create-only canonical publication.
+* [x] Stream repack payloads and publication validation through bounded files,
+  require the claimed clean support checkout, reject duplicate options, and
+  clean partial create-only output sets.
 
 ## Optional reviewed gaming payload
 
@@ -1380,6 +1383,9 @@ signing policy.
 * [x] Authenticate the audit keyring and dated repository databases with
   support-owned hash manifests; add create-only lock finalization and executable
   recursive/negative audit tests.
+* [x] Confine authenticated archive extraction, bound repository records and
+  relations, reject redirects and partial downloads, and use symlink-safe
+  atomic/create-only writers for audit, lock, validation, and result contracts.
 * [x] Produce the reviewed SteamOS 3.8.14/NVIDIA 575.64.05 six-package lock and
   its four-signer minimal binary keyring from the real exported Holo database.
 * [x] Emit conservative root/var/EFI available and required bytes, declared

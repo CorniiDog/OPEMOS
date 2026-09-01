@@ -4,12 +4,14 @@
 import argparse
 import hashlib
 import json
-import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "lib"))
+from atomic_output import atomic_create_bytes  # noqa: E402
 DEFAULT_POLICY = ROOT / "trust/nvidia-userspace-package-signers.json"
 MAX_JSON_BYTES = 16 * 1024 * 1024
 MAX_KEYRING_BYTES = 64 * 1024 * 1024
@@ -138,15 +140,10 @@ def main():
         },
     }
     payload = (json.dumps(reviewed, indent=2, sort_keys=True) + "\n").encode()
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    temporary = args.output.with_name(f".{args.output.name}.tmp-{os.getpid()}")
     try:
-        temporary.write_bytes(payload)
-        os.link(temporary, args.output)
+        atomic_create_bytes(args.output, payload)
     except FileExistsError:
         raise SystemExit("reviewed lock output already exists")
-    finally:
-        temporary.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

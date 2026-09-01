@@ -17,6 +17,7 @@ from pathlib import Path, PurePosixPath
 sys.dont_write_bytecode = True
 from update_grub_nvidia_args import REQUIRED as REQUIRED_KERNEL_ARGUMENTS
 from gaming_payload_profiles import ProfileError, validate_profile
+from atomic_output import atomic_write_bytes
 
 EXPECTED_MODULES = {
     "nvidia.ko",
@@ -1926,21 +1927,19 @@ def main():
             "message": message,
             **details,
         }
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        staged = args.output.with_name(f".{args.output.name}.tmp-{os.getpid()}")
-        staged.write_text(
-            json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n"
+        atomic_write_bytes(
+            args.output,
+            (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode(),
         )
-        staged.replace(args.output)
         print(
             f"validate_install_inputs.py: {reason}: {message}",
             file=__import__("sys").stderr,
         )
         return 1
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    staged = args.output.with_name(f".{args.output.name}.tmp-{os.getpid()}")
-    staged.write_text(json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n")
-    staged.replace(args.output)
+    atomic_write_bytes(
+        args.output,
+        (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode(),
+    )
     return 0
 
 

@@ -12,6 +12,7 @@ import subprocess
 import tarfile
 import tempfile
 from pathlib import Path
+from atomic_output import atomic_write_bytes
 
 
 PROFILE = "btrfs-zstd3"
@@ -26,6 +27,7 @@ PACMAN_METADATA = {".BUILDINFO", ".CHANGELOG", ".INSTALL", ".MTREE", ".PKGINFO"}
 
 
 MAX_FAILURE_STDERR = 512
+MAX_COMMAND_STDOUT = 1024 * 1024
 
 
 class MeasurementFailure(RuntimeError):
@@ -114,35 +116,54 @@ def failure_for_command(phase, identity, status, stderr):
 
 def run(command, *, phase, identity, stdout=subprocess.PIPE):
     global ACTIVE_PROCESS
-    try:
-        ACTIVE_PROCESS = subprocess.Popen(
-            command,
-            stdin=subprocess.DEVNULL,
-            stdout=stdout,
-            stderr=subprocess.PIPE,
-            text=stdout == subprocess.PIPE,
-        )
-        output, error = ACTIVE_PROCESS.communicate()
-        if ACTIVE_PROCESS.returncode != 0:
-            raise failure_for_command(
-                phase, identity, ACTIVE_PROCESS.returncode, error
+    with tempfile.TemporaryFile() as captured_stdout, tempfile.TemporaryFile() as captured_stderr:
+        try:
+            ACTIVE_PROCESS = subprocess.Popen(
+                command, stdin=subprocess.DEVNULL,
+                stdout=captured_stdout if stdout == subprocess.PIPE else stdout,
+                stderr=captured_stderr,
             )
-        return output or ""
-    except OSError as error:
-        if error.errno == errno.ENOSPC:
-            raise MeasurementFailure(
-                "compression_measurement_enospc",
-                "Scratch-Btrfs measurement exhausted storage.",
-                phase, identity, None, str(error),
-            ) from error
-        raise failure_for_command(phase, identity, None, str(error)) from error
-    finally:
-        ACTIVE_PROCESS = None
+            ACTIVE_PROCESS.wait()
+            captured_stderr.seek(0)
+            error = captured_stderr.read(MAX_FAILURE_STDERR + 1)
+            if ACTIVE_PROCESS.returncode != 0:
+                raise failure_for_command(
+                    phase, identity, ACTIVE_PROCESS.returncode, error
+                )
+            if stdout != subprocess.PIPE:
+                return ""
+            captured_stdout.seek(0)
+            output = captured_stdout.read(MAX_COMMAND_STDOUT + 1)
+            if len(output) > MAX_COMMAND_STDOUT:
+                raise MeasurementFailure(
+                    "compression_measurement_usage_invalid",
+                    "Scratch-Btrfs command output exceeds its size limit.",
+                    phase, identity, ACTIVE_PROCESS.returncode, None,
+                )
+            try:
+                return output.decode("utf-8", errors="strict")
+            except UnicodeError as error:
+                raise MeasurementFailure(
+                    "compression_measurement_usage_invalid",
+                    "Scratch-Btrfs command output is not UTF-8.",
+                    phase, identity, ACTIVE_PROCESS.returncode, None,
+                ) from error
+        except OSError as error:
+            if error.errno == errno.ENOSPC:
+                raise MeasurementFailure(
+                    "compression_measurement_enospc",
+                    "Scratch-Btrfs measurement exhausted storage.",
+                    phase, identity, None, str(error),
+                ) from error
+            raise failure_for_command(phase, identity, None, str(error)) from error
+        finally:
+            ACTIVE_PROCESS = None
 
 
 def cancel(_signum, _frame):
     if ACTIVE_PROCESS is not None:
         ACTIVE_PROCESS.kill()
+        ACTIVE_PROCESS.wait()
     raise KeyboardInterrupt
 
 
@@ -330,13 +351,10 @@ def install_package_payload(package, destination):
 
 
 def write_result(path, document):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    staged = path.with_name(f".{path.name}.tmp-{os.getpid()}")
-    staged.write_text(
-        json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n",
-        encoding="utf-8",
+    atomic_write_bytes(
+        path,
+        (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode(),
     )
-    staged.replace(path)
 
 
 def main():

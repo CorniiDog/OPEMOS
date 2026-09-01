@@ -34,7 +34,7 @@ def add_bytes(archive, name, content):
 
 def fixture(
     root, *, duplicate_metadata=False, unsafe_member=False,
-    wrong_module_hash=False, extra_member=False,
+    wrong_module_hash=False, extra_member=False, duplicate_build_key=False,
 ):
     root.mkdir(parents=True, exist_ok=True)
     archive = root / ARCHIVE_NAME
@@ -76,7 +76,7 @@ def fixture(
         "modules": modules,
     }
     provenance_bytes = (json.dumps(provenance, sort_keys=True, separators=(",", ":")) + "\n").encode()
-    info = "\n".join((
+    info_lines = [
         "schema_version=1",
         f"steamos_version={STEAMOS}",
         f"kernel_version={KERNEL}",
@@ -89,8 +89,11 @@ def fixture(
         f"support_commit={SUPPORT_COMMIT}",
         "source_repository=CorniiDog/open-gpu-kernel-modules-steamos",
         f"source_commit={SOURCE_COMMIT}",
-        "",
-    )).encode()
+    ]
+    if duplicate_build_key:
+        info_lines.append(f"support_commit={SUPPORT_COMMIT}")
+    info_lines.append("")
+    info = "\n".join(info_lines).encode()
     provenance_path.write_bytes(provenance_bytes)
     build_info.write_bytes(info)
     with tarfile.open(archive, "w:gz") as bundle:
@@ -145,9 +148,24 @@ def main():
             ("unsafe", {"unsafe_member": True}),
             ("module-hash", {"wrong_module_hash": True}),
             ("extra", {"extra_member": True}),
+            ("duplicate-build-key", {"duplicate_build_key": True}),
         ):
             invalid_paths = fixture(root / name, **options)
             assert command(invalid_paths, "--dry-run").returncode != 0
+
+        malformed_paths = fixture(root / "malformed-provenance")
+        malformed_paths[3].write_text("[]\n", encoding="utf-8")
+        malformed = command(malformed_paths, "--dry-run")
+        assert malformed.returncode != 0
+        assert "Traceback" not in malformed.stderr
+
+        nested_paths = fixture(root / "malformed-provenance-section")
+        nested = json.loads(nested_paths[3].read_text(encoding="utf-8"))
+        nested["target"] = []
+        nested_paths[3].write_text(json.dumps(nested) + "\n", encoding="utf-8")
+        nested_result = command(nested_paths, "--dry-run")
+        assert nested_result.returncode != 0
+        assert "Traceback" not in nested_result.stderr
 
         mock_bin = root / "bin"
         mock_bin.mkdir()

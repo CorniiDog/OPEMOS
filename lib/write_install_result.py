@@ -3,9 +3,9 @@
 
 import argparse
 import json
-import os
 import re
 from pathlib import Path
+from atomic_output import atomic_write_bytes
 
 
 MAX_VALIDATION_BYTES = 16 * 1024 * 1024
@@ -517,13 +517,10 @@ def main():
                 document["validation"] = failure_validation
         else:
             raise SystemExit("Result validation metadata does not match result status.")
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    staged = args.output.with_name(f".{args.output.name}.tmp-{os.getpid()}")
-    staged.write_text(
-        json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n",
-        encoding="utf-8",
+    atomic_write_bytes(
+        args.output,
+        (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode(),
     )
-    staged.replace(args.output)
 
 
 if __name__ == "__main__":

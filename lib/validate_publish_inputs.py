@@ -5,8 +5,10 @@ import argparse
 import hashlib
 import json
 import re
+import os
 import tarfile
 import subprocess
+import tempfile
 from pathlib import Path, PurePosixPath
 
 
@@ -41,6 +43,53 @@ def stream_sha256(stream):
     return digest.hexdigest()
 
 
+def compressed_module_hashes(stream):
+    representation = hashlib.sha256()
+    temporary_name = None
+    try:
+        with tempfile.NamedTemporaryFile(
+                prefix="nvidia-publish-module-", delete=False) as temporary:
+            temporary_name = temporary.name
+            total = 0
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                total += len(chunk)
+                if total > MAX_MODULE_BYTES:
+                    fail("Compressed module representation exceeds its size limit.")
+                representation.update(chunk)
+                temporary.write(chunk)
+        process = subprocess.Popen(
+            ["zstd", "-q", "-d", "-c", temporary_name],
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        payload = hashlib.sha256()
+        expanded = 0
+        try:
+            for chunk in iter(lambda: process.stdout.read(1024 * 1024), b""):
+                expanded += len(chunk)
+                if expanded > MAX_MODULE_BYTES:
+                    process.kill()
+                    process.wait()
+                    fail("Decoded module payload exceeds its size limit.")
+                payload.update(chunk)
+            process.stdout.close()
+            if process.wait() != 0 or expanded == 0:
+                fail("Compressed module representation is unreadable.")
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+        return representation.hexdigest(), payload.hexdigest()
+    except OSError:
+        fail("Compressed module representation could not be verified.")
+    finally:
+        if temporary_name is not None:
+            try:
+                os.unlink(temporary_name)
+            except FileNotFoundError:
+                pass
+
+
 def normalized_member(name):
     while name.startswith("./"):
         name = name[2:]
@@ -52,9 +101,15 @@ def normalized_member(name):
 
 def metadata(path):
     values = {}
-    for line in path.read_text(encoding="utf-8").splitlines():
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError):
+        fail("Build information is unreadable.")
+    for line in lines:
         if "=" in line and not line.startswith((" ", "\t")):
             key, value = line.split("=", 1)
+            if key in values:
+                fail(f"Build information contains a duplicate field: {key}.")
             values[key] = value
     return values
 
@@ -77,23 +132,30 @@ def parse_args():
 def main():
     args = parse_args()
     paths = (args.archive, args.checksum, args.build_info, args.provenance)
-    if any(not path.is_file() or path.is_symlink() for path in paths):
-        fail("All four publication inputs must be regular files.")
-    if args.archive.stat().st_size > MAX_ARCHIVE_BYTES:
-        fail("Archive exceeds the compressed-size limit.")
-    if args.build_info.stat().st_size > MAX_METADATA_BYTES or args.provenance.stat().st_size > MAX_METADATA_BYTES:
-        fail("External publication metadata exceeds the size limit.")
+    try:
+        if any(not path.is_file() or path.is_symlink() for path in paths):
+            fail("All four publication inputs must be regular files.")
+        sizes = [path.stat().st_size for path in paths]
+    except OSError:
+        fail("Publication inputs became unreadable.")
+    if not 0 < sizes[0] <= MAX_ARCHIVE_BYTES:
+        fail("Archive is empty or exceeds the compressed-size limit.")
+    if any(not 0 < size <= MAX_METADATA_BYTES for size in sizes[1:]):
+        fail("External publication metadata is empty or exceeds the size limit.")
 
     try:
         provenance = json.loads(args.provenance.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError):
         fail("Provenance is not valid JSON.")
-    if provenance.get("schemaVersion") != 1:
+    if not isinstance(provenance, dict) or provenance.get("schemaVersion") != 1:
         fail("Only schema-1 provenance can be published.")
     target = provenance.get("target", {})
     artifact = provenance.get("artifact", {})
     support = provenance.get("support", {})
     source = provenance.get("source", {})
+    if any(not isinstance(section, dict)
+           for section in (target, artifact, support, source)):
+        fail("Provenance identity sections are malformed.")
     steamos = target.get("steamosVersion", "")
     kernel = target.get("kernelVersion", "")
     nvidia = target.get("nvidiaVersion", "")
@@ -155,7 +217,10 @@ def main():
     if artifact.get("releaseTag") != tag or artifact.get("archive") != archive_name:
         fail("Provenance release identity is not canonical.")
 
-    checksum_fields = args.checksum.read_text(encoding="utf-8").split()
+    try:
+        checksum_fields = args.checksum.read_text(encoding="utf-8").split()
+    except (OSError, UnicodeError):
+        fail("Checksum sidecar is unreadable.")
     if len(checksum_fields) != 2 or checksum_fields[1].lstrip("*") != archive_name:
         fail("Checksum sidecar does not name the canonical archive.")
     actual_sha256 = sha256(args.archive)
@@ -231,7 +296,7 @@ def main():
                 if not member.isfile():
                     continue
                 limit = MAX_METADATA_BYTES if name in ("BUILD-INFO.txt", "PROVENANCE.json") else MAX_MODULE_BYTES
-                if member.size > limit:
+                if not 0 < member.size <= limit:
                     fail(f"Archive member exceeds the size limit: {name}.")
             archived_modules = {
                 name.removeprefix("modules/").removesuffix(".zst")
@@ -253,19 +318,14 @@ def main():
                 module_stream = archive_file.extractfile(members[member_name])
                 if module_stream is None:
                     fail(f"Archived module is unreadable: {name}.")
-                representation_bytes = module_stream.read()
-                if hashlib.sha256(representation_bytes).hexdigest() != record["sha256"].lower():
-                    fail(f"Archived module does not match provenance: {name}.")
                 if representation == "ko.zst":
-                    try:
-                        decoded = subprocess.run(
-                            ["zstd", "-q", "-d", "-c"], input=representation_bytes,
-                            check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                        ).stdout
-                    except (OSError, subprocess.CalledProcessError):
-                        fail(f"Archived module representation is unreadable: {name}.")
-                    if hashlib.sha256(decoded).hexdigest() != record["payloadSha256"]:
+                    representation_hash, payload_hash = compressed_module_hashes(module_stream)
+                    if representation_hash != record["sha256"].lower():
+                        fail(f"Archived module does not match provenance: {name}.")
+                    if payload_hash != record["payloadSha256"]:
                         fail(f"Archived module payload identity changed: {name}.")
+                elif stream_sha256(module_stream) != record["sha256"].lower():
+                    fail(f"Archived module does not match provenance: {name}.")
     except (tarfile.TarError, KeyError, OSError):
         fail("Archive publication metadata is unreadable.")
 

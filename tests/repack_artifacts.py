@@ -40,6 +40,7 @@ def main():
             (tools / tool).chmod(0o755)
         env = os.environ.copy()
         env["PATH"] = f"{tools}:{env['PATH']}"
+        env["PROJECT_TEST_MODE"] = "1"
         output = root / "output"
 
         dry = run(paths, output, env, "--dry-run")
@@ -60,6 +61,10 @@ def main():
         second_plan = json.loads(second.stdout)
         assert (second_output / second_plan["output"]["archive"]).read_bytes() == first_bytes
         assert run(paths, output, env).returncode != 0
+        duplicate = run(paths, root / "duplicate", env,
+                        "--archive", str(paths[0]), "--dry-run")
+        assert duplicate.returncode != 0
+        assert "exactly once" in duplicate.stderr
         publish = subprocess.run([
             str(PUBLISH), "--dry-run", "--archive", str(first_archive),
             "--checksum", str(output / (first_archive.name + ".sha256")),
