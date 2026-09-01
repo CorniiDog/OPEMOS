@@ -223,13 +223,17 @@ def main():
             (missing_bin / name).symlink_to(binary / name)
         output.unlink(missing_ok=True)
         missing_env = environment(missing_bin, temporary)
-        missing_env["PATH"] = f"{missing_bin}:/usr/bin:/bin"
+        # Keep this test hermetic: some Linux runners preinstall btrfs-progs.
+        # The measurer is launched through an absolute Python path and must stop
+        # at dependency discovery before invoking any of the mock shell tools.
+        missing_env["PATH"] = str(missing_bin)
         missing = subprocess.run(command(packages, modules, output), env=missing_env,
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                  text=True)
         missing_record = json.loads(output.read_text(encoding="utf-8"))
         assert missing.returncode != 0
         assert missing_record["reason"] == "compression_measurement_tool_missing"
+        assert missing_record["measurementFailure"]["phase"] == "dependency_check"
         assert missing_record["measurementFailure"]["command"] == "btrfs"
 
         (temporary / "usage-count").unlink()
