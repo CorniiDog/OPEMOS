@@ -98,6 +98,8 @@ def validate_generation(path):
 
 def active_leases(store):
     leases = store / ".leases"
+    if leases.is_symlink():
+        fail("cache lease directory has an unsafe type")
     if not leases.exists():
         return set()
     if leases.is_symlink() or not leases.is_dir():
@@ -108,12 +110,16 @@ def active_leases(store):
         identity = entry.name.split(".", 1)[0]
         if not IDENTITY.fullmatch(identity) or not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
             fail("cache lease entry has an unsafe type or identity")
+        if entry.read_text(encoding="ascii") != identity + "\n":
+            fail("cache lease entry does not match its protected identity")
         protected.add(identity)
     return protected
 
 
 def current_generation(store):
     current = store / ".current"
+    if current.is_symlink():
+        fail("current cache-generation marker has an unsafe type")
     if not current.exists():
         return set()
     info = current.lstat()
@@ -144,7 +150,15 @@ def main():
         raise InterruptedError
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGTERM, stop)
-    with (args.store / ".import.lock").open("a+b") as lock:
+    lock_path = args.store / ".import.lock"
+    try:
+        descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    except OSError:
+        fail("cache lock has an unsafe type or cannot be opened")
+    with os.fdopen(descriptor, "a+b") as lock:
+        lock_info = os.fstat(lock.fileno())
+        if not stat.S_ISREG(lock_info.st_mode) or lock_info.st_nlink != 1:
+            fail("cache lock must be a single-link regular file")
         fcntl.flock(lock, fcntl.LOCK_EX)
         entries = list(args.store.iterdir())
         if len(entries) > MAX_SCAN_ENTRIES:
@@ -202,6 +216,8 @@ def main():
                           "protected": item[0].name in protected} for item in kept]
             decisions.extend({"cacheId": original.name, "decision": "remove", "bytes": None,
                               "protected": False} for _, original in moved)
+            signal.signal(signal.SIGINT, signal.SIG_IGN)
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
             shutil.rmtree(trash)
             moved.clear()
         except BaseException:

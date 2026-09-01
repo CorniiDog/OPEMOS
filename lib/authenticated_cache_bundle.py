@@ -152,6 +152,24 @@ def reserve_output(output):
             pass
 
 
+@contextmanager
+def exclusive_store_lock(store):
+    lock_path = store / ".import.lock"
+    try:
+        descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    except OSError:
+        fail("cache lock has an unsafe type or cannot be opened")
+    lock = os.fdopen(descriptor, "a+b")
+    try:
+        info = os.fstat(lock.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            fail("cache lock must be a single-link regular file")
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+    finally:
+        lock.close()
+
+
 def validate_document(document):
     required = {"schemaVersion", "kind", "originalFilename", "artifact", "signature", "trust"}
     if not isinstance(document, dict) or set(document) != required:
@@ -327,9 +345,7 @@ def import_bundle(args):
     verify_payload(args.bundle, document, args.keyring, args.reviewed_signers)
     identity = digest(args.bundle / "manifest.json")
     args.store.mkdir(parents=True, exist_ok=True)
-    lock_path = args.store / ".import.lock"
-    with lock_path.open("a+b") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with exclusive_store_lock(args.store):
         destination = args.store / identity
         if destination.exists():
             if destination.is_symlink() or not destination.is_dir():
@@ -429,8 +445,7 @@ def import_set(args):
     identity = digest(args.bundle / "manifest.json")
     args.store.mkdir(parents=True, exist_ok=True)
     lease_path = None
-    with (args.store / ".import.lock").open("a+b") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with exclusive_store_lock(args.store):
         destination = args.store / identity
         if destination.exists():
             if destination.is_symlink() or not destination.is_dir():

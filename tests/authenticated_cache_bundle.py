@@ -71,6 +71,16 @@ def main():
         generations = [entry for entry in store.iterdir() if entry.name != ".import.lock"]
         assert len(generations) == 1
 
+        unsafe_store = root / "unsafe-lock-store"
+        unsafe_store.mkdir()
+        lock_target = root / "lock-target"
+        lock_target.write_text("unchanged\n")
+        os.symlink(lock_target, unsafe_store / ".import.lock")
+        run(["import", *common, "--bundle", bundle, "--store", unsafe_store],
+            env, success=False)
+        assert lock_target.read_text() == "unchanged\n"
+        assert not [entry for entry in unsafe_store.iterdir() if entry.name != ".import.lock"]
+
         # Corrupt, partial, symlinked, policy-drifted, and duplicate-key bundles
         # all fail before an imported generation is published.
         cases = []

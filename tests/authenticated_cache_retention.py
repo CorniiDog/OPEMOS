@@ -90,6 +90,30 @@ def main():
             assert process.returncode != 0
         assert values[0].exists() and values[2].exists()
 
+    # Control-state symlinks and mismatched leases must fail closed without
+    # pruning a valid generation or following an attacker-controlled lock.
+    for control in (".leases", ".current", ".import.lock"):
+        with tempfile.TemporaryDirectory(prefix="authenticated-retention-unsafe-") as temporary:
+            root = Path(temporary)
+            store = root / "store"
+            store.mkdir()
+            path, _ = generation(store, "safe", 10, 1)
+            target = root / "target"
+            target.write_text("unchanged\n")
+            os.symlink(target, store / control)
+            run(store, 1, 4096, success=False)
+            assert path.exists()
+            assert target.read_text() == "unchanged\n"
+
+    with tempfile.TemporaryDirectory(prefix="authenticated-retention-lease-") as temporary:
+        store = Path(temporary) / "store"
+        store.mkdir()
+        path, identity = generation(store, "safe", 10, 1)
+        leases = store / ".leases"
+        leases.mkdir()
+        (leases / f"{identity}.installer-test").write_text("0" * 64 + "\n")
+        run(store, 1, 4096, success=False)
+        assert path.exists()
 
 if __name__ == "__main__":
     main()
