@@ -150,6 +150,12 @@ def make_fixture(root):
     target = root / "target"
     (target / "etc").mkdir(parents=True)
     (target / "usr/lib/modules" / KERNEL).mkdir(parents=True)
+    (target / "usr/bin").mkdir(parents=True)
+    (target / "usr/bin/mkinitcpio").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    (target / "usr/bin/mkinitcpio").chmod(0o755)
+    (target / "usr/lib/initcpio").mkdir(parents=True)
+    (target / "usr/share/libalpm/hooks").mkdir(parents=True)
+    (target / "etc/mkinitcpio.conf").write_text("HOOKS=(base)\n", encoding="utf-8")
     package_dependencies = {
         "filesystem": (),
         "glibc": ("filesystem",),
@@ -400,7 +406,8 @@ esac
         encoding="utf-8",
     )
     (binaries / "depmod").write_text(
-        "#!/bin/sh\nroot=$2; kernel=$4; mkdir -p \"$root/usr/lib/modules/$kernel\"; echo fixture > \"$root/usr/lib/modules/$kernel/modules.dep\"\n",
+        "#!/bin/sh\nroot=$2; kernel=$4; mkdir -p \"$root/usr/lib/modules/$kernel\"; echo fixture > \"$root/usr/lib/modules/$kernel/modules.dep\"\n"
+        "[ \"${MOCK_DRIFT_TARGET_EXECUTION:-0}\" = 0 ] || printf 'HOOKS=(hostile)\\n' > \"$root/etc/mkinitcpio.conf\"\n",
         encoding="utf-8",
     )
     (binaries / "install").write_text(
@@ -2369,6 +2376,19 @@ def main():
         assert bad_grub["reason"] == "target_grub_invalid"
         assert bad_grub["phase"] == "validation"
         grub_path.write_bytes(valid_grub)
+
+        drifted_execution = run_installer(
+            paths,
+            binaries,
+            temporary / "install-target-execution-drift.json",
+            False,
+            MOCK_DRIFT_TARGET_EXECUTION="1",
+        )
+        assert drifted_execution["reason"] == "target_execution_trust"
+        assert drifted_execution["cleanup"]["mountsReleased"] is True
+        (paths["target"] / "etc/mkinitcpio.conf").write_text(
+            "HOOKS=(base)\n", encoding="utf-8"
+        )
 
         failed = run_installer(
             paths,

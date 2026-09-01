@@ -545,6 +545,8 @@ MUTATION_WORK="$(mktemp -d "$INSTALLER_TEMP_ROOT/offline-root-mutation.XXXXXX")"
 MODULE_VERIFICATION_JSON="$MUTATION_WORK/module-verification.json"
 USERSPACE_VERIFICATION_JSON="$MUTATION_WORK/userspace-verification.json"
 PACMAN_TRANSACTION_RESULT="$MUTATION_WORK/pacman-transaction.json"
+TARGET_EXECUTION_MANIFEST="$MUTATION_WORK/target-execution.json"
+POST_TRANSACTION_EXECUTION_MANIFEST="$MUTATION_WORK/post-transaction-execution.json"
 MOUNTS=()
 RUNTIME_MOUNTS_EXPECTED=4
 RUNTIME_MOUNTS_RELEASED=0
@@ -827,6 +829,11 @@ trap cancel_mutation INT TERM
 
 guard_target_mount_identities
 
+PHASE=target_execution_trust
+run_mutation_command python3 "$SUPPORT_ROOT/lib/snapshot_target_execution.py" \
+    --root "$ROOT" --output "$TARGET_EXECUTION_MANIFEST" ||
+    die "Target-owned pacman hooks or initramfs inputs are unsafe."
+
 PHASE=initramfs_workspace_unavailable
 run_mutation_command python3 "$SUPPORT_ROOT/lib/check_initramfs_workspace.py" \
     --root "$ROOT" --target-only --create-missing-target \
@@ -944,6 +951,11 @@ PACMAN_ARGS=(
     PACMAN_ARGS=(--config "$PACMAN_TRANSACTION_CONFIG" "${PACMAN_ARGS[@]}")
 require_validation_document_unchanged ||
     die "The validated compression admission document changed before the pacman transaction."
+run_mutation_command python3 "$SUPPORT_ROOT/lib/snapshot_target_execution.py" \
+    --root "$ROOT" --verify "$TARGET_EXECUTION_MANIFEST" || {
+    PHASE=target_execution_trust
+    die "Target-owned pacman hooks or initramfs inputs changed before execution."
+}
 set +e
 run_mutation_command python3 "$SUPPORT_ROOT/lib/run_pacman_transaction.py" \
     --output "$PACMAN_TRANSACTION_RESULT" -- \
@@ -1037,6 +1049,11 @@ printf '%s\n' \
     "# Managed by ${PROJECT_NAME}" \
     'MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm)' \
     > "$ROOT/etc/mkinitcpio.conf.d/90-open-gpu-kernel-modules-steamos.conf"
+run_mutation_command python3 "$SUPPORT_ROOT/lib/snapshot_target_execution.py" \
+    --root "$ROOT" --output "$POST_TRANSACTION_EXECUTION_MANIFEST" || {
+    PHASE=target_execution_trust
+    die "The authenticated transaction left unsafe hook or initramfs inputs."
+}
 [[ -z "$COMPRESSION_PROFILE" ]] || require_active_compression_policy
 
 PHASE=bootloader_config
@@ -1060,6 +1077,11 @@ emit_progress_indeterminate initramfs
 [[ -z "$COMPRESSION_PROFILE" ]] || require_active_compression_policy
 require_runtime_bind_mounts ||
     die "Target runtime mounts disappeared before initramfs generation."
+run_mutation_command python3 "$SUPPORT_ROOT/lib/snapshot_target_execution.py" \
+    --root "$ROOT" --verify "$POST_TRANSACTION_EXECUTION_MANIFEST" || {
+    PHASE=target_execution_trust
+    die "Target-owned initramfs inputs changed before execution."
+}
 run_mutation_command env SYSTEMD_OFFLINE=1 chroot "$ROOT" /usr/bin/mkinitcpio -P
 [[ -z "$COMPRESSION_PROFILE" ]] || require_active_compression_policy
 emit_progress_items initramfs 1 1

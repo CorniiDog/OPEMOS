@@ -124,6 +124,9 @@ python3 tests/bind_mount.py
 printf 'Checking installer consumer compatibility...\n'
 python3 tests/install_contract.py
 
+printf 'Checking target-owned execution trust...\n'
+python3 tests/target_execution_trust.py
+
 printf 'Checking built-module metadata validation...\n'
 python3 tests/module_validation.py
 
