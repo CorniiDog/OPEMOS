@@ -10,6 +10,7 @@ from atomic_output import atomic_write_bytes
 
 MAX_VALIDATION_BYTES = 16 * 1024 * 1024
 MAX_MODULE_VERIFICATION_BYTES = 1024 * 1024
+MAX_USERSPACE_VERIFICATION_BYTES = 256 * 1024
 MAX_WORKSPACE_VERIFICATION_BYTES = 16 * 1024
 TOKEN = re.compile(r"[a-z][a-z0-9_]{0,63}")
 KERNEL = re.compile(r"(?:unknown|[A-Za-z0-9._+~-]{1,255})")
@@ -76,6 +77,7 @@ def parse_args():
     )
     parser.add_argument("--validation", type=Path)
     parser.add_argument("--module-verification", type=Path)
+    parser.add_argument("--userspace-verification", type=Path)
     parser.add_argument("--initramfs-workspace", type=Path)
     parser.add_argument("--runtime-mounts-expected", type=int, default=0)
     parser.add_argument("--runtime-mounts-released", type=int, default=0)
@@ -272,6 +274,83 @@ def load_initramfs_workspace(path):
             raise SystemExit("Failed initramfs workspace metadata is inconsistent.")
     else:
         raise SystemExit("Initramfs workspace status is unsupported.")
+    return document
+
+
+def load_userspace_verification(path):
+    try:
+        if (path.is_symlink() or not path.is_file()
+                or not 0 < path.stat().st_size <= MAX_USERSPACE_VERIFICATION_BYTES):
+            raise OSError
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        raise SystemExit("Userspace verification metadata is unreadable or excessive.")
+    if (not isinstance(document, dict)
+            or set(document) != {
+                "schemaVersion", "status", "reason", "packages", "gspFirmware",
+            }
+            or document.get("schemaVersion") != 1
+            or document.get("status") != "verified"
+            or document.get("reason") != "installed_userspace_verified"):
+        raise SystemExit("Userspace verification metadata is malformed.")
+    packages = document.get("packages")
+    package_keys = {
+        "packageName", "version", "packageSha256", "packageQueryVerified",
+        "pacmanIntegrityVerified", "payloadVerified", "directories",
+        "regularFiles", "symlinks", "hardlinks", "sharedLibraries",
+    }
+    if (not isinstance(packages, list) or not 2 <= len(packages) <= 64
+            or any(not isinstance(record, dict) or set(record) != package_keys
+                   for record in packages)):
+        raise SystemExit("Userspace verification package records are malformed.")
+    names = []
+    for record in packages:
+        names.append(record.get("packageName"))
+        if (not isinstance(record.get("packageName"), str)
+                or re.fullmatch(r"[A-Za-z0-9@._+:-]{1,256}", record["packageName"])
+                is None
+                or not isinstance(record.get("version"), str)
+                or re.fullmatch(r"[A-Za-z0-9@._+:-]{1,256}", record["version"])
+                is None
+                or not isinstance(record.get("packageSha256"), str)
+                or HEX_SHA256.fullmatch(record["packageSha256"]) is None
+                or any(record.get(field) is not True for field in (
+                    "packageQueryVerified", "pacmanIntegrityVerified",
+                    "payloadVerified",
+                ))
+                or any(not isinstance(record.get(field), int)
+                       or isinstance(record[field], bool)
+                       or not 0 <= record[field] <= 250_000
+                       for field in (
+                           "directories", "regularFiles", "symlinks", "hardlinks",
+                           "sharedLibraries",
+                       ))
+                or record["sharedLibraries"] > (
+                    record["regularFiles"] + record["symlinks"]
+                    + record["hardlinks"]
+                )):
+            raise SystemExit("Userspace verification package records are invalid.")
+    if len(names) != len(set(names)):
+        raise SystemExit("Userspace verification package identities are duplicated.")
+    firmware = document.get("gspFirmware")
+    if (not isinstance(firmware, dict)
+            or set(firmware) != {"version", "status", "targetRelativeFiles"}
+            or firmware.get("status") != "verified"
+            or not isinstance(firmware.get("version"), str)
+            or VERSION.fullmatch(firmware["version"]) is None
+            or not isinstance(firmware.get("targetRelativeFiles"), list)
+            or not 1 <= len(firmware["targetRelativeFiles"]) <= 16
+            or firmware["targetRelativeFiles"]
+            != sorted(set(firmware["targetRelativeFiles"]))):
+        raise SystemExit("Userspace GSP firmware verification is malformed.")
+    prefix = f"usr/lib/firmware/nvidia/{firmware['version']}/"
+    for relative in firmware["targetRelativeFiles"]:
+        if (not isinstance(relative, str) or not relative.startswith(prefix)
+                or Path(relative).is_absolute() or ".." in Path(relative).parts
+                or re.fullmatch(r"[A-Za-z0-9._+~/-]{1,512}", relative) is None
+                or not Path(relative).name.startswith("gsp")
+                or not Path(relative).name.endswith(".bin")):
+            raise SystemExit("Userspace GSP firmware verification is malformed.")
     return document
 
 
@@ -717,6 +796,31 @@ def main():
     elif args.status == "success":
         raise SystemExit(
             "A successful installation requires exact five-module verification metadata."
+        )
+    if args.userspace_verification:
+        userspace_verification = load_userspace_verification(
+            args.userspace_verification
+        )
+        expected_packages = {
+            package["name"]: (package["fullVersion"], package["sha256"])
+            for package in document.get("validation", {}).get("packages", [])
+        }
+        actual_packages = {
+            package["packageName"]: (
+                package["version"], package["packageSha256"]
+            )
+            for package in userspace_verification["packages"]
+        }
+        if (actual_packages != expected_packages
+                or userspace_verification["gspFirmware"]["version"]
+                != args.nvidia):
+            raise SystemExit(
+                "Userspace verification does not match validated installation metadata."
+            )
+        document["userspaceVerification"] = userspace_verification
+    elif args.status == "success":
+        raise SystemExit(
+            "A successful installation requires exact userspace verification metadata."
         )
     if args.initramfs_workspace:
         workspace = load_initramfs_workspace(args.initramfs_workspace)

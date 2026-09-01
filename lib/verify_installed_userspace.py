@@ -13,6 +13,8 @@ import tarfile
 import time
 from pathlib import Path, PurePosixPath
 
+from atomic_output import atomic_write_bytes
+
 
 MAX_VALIDATION_BYTES = 16 * 1024 * 1024
 MAX_PACKAGES = 64
@@ -23,6 +25,7 @@ PACMAN_METADATA = {".BUILDINFO", ".CHANGELOG", ".INSTALL", ".MTREE", ".PKGINFO"}
 SAFE_NAME = re.compile(r"[A-Za-z0-9@._+:-]{1,256}")
 SAFE_VERSION = re.compile(r"[A-Za-z0-9@._+:-]{1,256}")
 MAX_PROGRESS_ATTEMPT = 1_000_000
+MAX_RESULT_BYTES = 256 * 1024
 
 
 def progress_attempt(value):
@@ -60,6 +63,7 @@ def arguments():
     parser.add_argument("--validation", required=True, type=Path)
     parser.add_argument("--package", action="append", default=[], type=Path)
     parser.add_argument("--progress-attempt", type=progress_attempt)
+    parser.add_argument("--output", required=True, type=Path)
     return parser.parse_args()
 
 
@@ -91,6 +95,11 @@ def load_packages(path, incoming_paths):
     except (OSError, UnicodeError, json.JSONDecodeError):
         fail("Verified userspace metadata is unavailable.")
     packages = document.get("packages") if isinstance(document, dict) else None
+    target = document.get("target") if isinstance(document, dict) else None
+    nvidia_version = target.get("nvidiaVersion") if isinstance(target, dict) else None
+    if (not isinstance(nvidia_version, str)
+            or re.fullmatch(r"[0-9]+\.[0-9]+(?:\.[0-9]+)?", nvidia_version) is None):
+        fail("Verified NVIDIA userspace identity is malformed.")
     if (not isinstance(packages, list) or not 2 <= len(packages) <= MAX_PACKAGES):
         fail("Verified userspace metadata is malformed.")
     result = []
@@ -125,8 +134,8 @@ def load_packages(path, incoming_paths):
         incoming[path.name] = path
     if set(incoming) != {record[2] for record in result}:
         fail("Incoming userspace package set differs from verified metadata.")
-    return [(name, version, incoming[filename], digest)
-            for name, version, filename, digest in result]
+    return ([(name, version, incoming[filename], digest)
+             for name, version, filename, digest in result], nvidia_version)
 
 
 def confined_target(root, relative, *, allow_leaf_symlink=False):
@@ -158,11 +167,19 @@ def compare_streams(source, target, deadline):
             return True
 
 
-def verify_package_payload(root, package, deadline):
+def verify_package_payload(root, package, deadline, nvidia_version):
     process = None
     archive = None
     package_stream = None
     hardlinks = []
+    counts = {
+        "directories": 0,
+        "regularFiles": 0,
+        "symlinks": 0,
+        "hardlinks": 0,
+        "sharedLibraries": 0,
+    }
+    gsp_firmware = []
     try:
         if package.name.endswith(".zst"):
             process = subprocess.Popen(
@@ -188,14 +205,21 @@ def verify_package_payload(root, package, deadline):
                 target = confined_target(root, normalized)
                 if not target.is_dir() or target.is_symlink():
                     fail("An installed userspace directory is invalid.")
+                counts["directories"] += 1
                 continue
             if member.issym():
                 target = confined_target(root, normalized, allow_leaf_symlink=True)
                 if not target.is_symlink() or os.readlink(target) != member.linkname:
                     fail("An installed userspace symlink differs from its package.")
+                counts["symlinks"] += 1
+                if ".so" in PurePosixPath(normalized).name:
+                    counts["sharedLibraries"] += 1
                 continue
             if member.islnk():
                 hardlinks.append((normalized, member.linkname.removeprefix("./")))
+                counts["hardlinks"] += 1
+                if ".so" in PurePosixPath(normalized).name:
+                    counts["sharedLibraries"] += 1
                 continue
             if not member.isfile():
                 fail("An installed userspace payload contains a special member.")
@@ -214,6 +238,16 @@ def verify_package_payload(root, package, deadline):
             with source, target.open("rb") as installed:
                 if not compare_streams(source, installed, deadline):
                     fail("An installed userspace file differs from its package.")
+            counts["regularFiles"] += 1
+            if ".so" in PurePosixPath(normalized).name:
+                counts["sharedLibraries"] += 1
+            firmware_prefix = f"usr/lib/firmware/nvidia/{nvidia_version}/"
+            if (normalized.startswith(firmware_prefix)
+                    and PurePosixPath(normalized).name.startswith("gsp")
+                    and PurePosixPath(normalized).name.endswith(".bin")):
+                if len(gsp_firmware) >= 16:
+                    fail("Matching GSP firmware inventory exceeds its limit.")
+                gsp_firmware.append(normalized)
         for name, linkname in hardlinks:
             target = confined_target(root, name)
             linked = confined_target(root, linkname)
@@ -234,6 +268,14 @@ def verify_package_payload(root, package, deadline):
         if process is not None and process.poll() is None:
             process.kill()
             process.wait()
+    return counts, sorted(gsp_firmware)
+
+
+def publish(path, document):
+    payload = (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode()
+    if len(payload) > MAX_RESULT_BYTES:
+        fail("Installed userspace verification result exceeds its size limit.")
+    atomic_write_bytes(path, payload)
 
 
 def run_pacman(command, deadline, *, capture=False):
@@ -273,8 +315,10 @@ def main():
     except (OSError, RuntimeError, ValueError):
         fail("Target userspace database is unsafe.")
 
-    packages = load_packages(args.validation, args.package)
+    packages, nvidia_version = load_packages(args.validation, args.package)
     deadline = time.monotonic() + MAX_TOTAL_SECONDS
+    records = []
+    all_gsp_firmware = []
     for completed, (name, expected_version, package, expected_digest) in enumerate(
         packages, start=1
     ):
@@ -293,10 +337,36 @@ def main():
         ], deadline)
         if integrity.returncode != 0:
             fail("An installed userspace package failed its integrity check.")
-        verify_package_payload(args.root, package, deadline)
+        counts, gsp_firmware = verify_package_payload(
+            args.root, package, deadline, nvidia_version
+        )
+        all_gsp_firmware.extend(gsp_firmware)
         if sha256(package, deadline) != expected_digest:
             fail("An incoming userspace package changed during verification.")
         emit_progress(args.progress_attempt, completed, len(packages))
+        records.append({
+            "packageName": name,
+            "version": expected_version,
+            "packageSha256": expected_digest,
+            "packageQueryVerified": True,
+            "pacmanIntegrityVerified": True,
+            "payloadVerified": True,
+            **counts,
+        })
+    all_gsp_firmware = sorted(set(all_gsp_firmware))
+    if not all_gsp_firmware:
+        fail("Matching GSP firmware was not installed into the target root.")
+    publish(args.output, {
+        "schemaVersion": 1,
+        "status": "verified",
+        "reason": "installed_userspace_verified",
+        "packages": records,
+        "gspFirmware": {
+            "version": nvidia_version,
+            "status": "verified",
+            "targetRelativeFiles": all_gsp_firmware,
+        },
+    })
     return 0
 
 

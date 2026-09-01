@@ -1303,7 +1303,7 @@ signing policy.
 * [x] Make `moduleVerification` mandatory for success and require all five
   modules to pass exact payload-hash, ownership, mode, architecture, NVIDIA
   version, and vermagic verification.
-* [ ] Add mandatory structured `userspaceVerification` covering every locked
+* [x] Add mandatory structured `userspaceVerification` covering every locked
   package, owned file/link/library, and matching GSP firmware result.
 * [ ] Add mandatory structured `initramfsVerification`; inspect the exact
   generated initramfs and require the intended NVIDIA modules and configuration

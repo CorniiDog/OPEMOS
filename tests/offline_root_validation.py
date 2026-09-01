@@ -835,6 +835,57 @@ def main():
         assert missing_modules.returncode != 0
         assert "five-module verification" in missing_modules.stderr
         assert not (result_temporary / "false-success.json").exists()
+        module_result = result_temporary / "modules.json"
+        module_result.write_text(
+            json.dumps({
+                "schemaVersion": 1,
+                "status": "verified",
+                "reason": "installed_modules_verified",
+                "modules": [
+                    {
+                        "moduleName": name,
+                        "targetRelativePath": (
+                            f"usr/lib/modules/{KERNEL}/updates/"
+                            f"open-gpu-kernel-modules-steamos/{name}.zst"
+                        ),
+                        "representation": ".ko.zst",
+                        "expectedPayloadSha256": "0" * 64,
+                        "actualPayloadSha256": "0" * 64,
+                        "expectedMode": "0644",
+                        "actualMode": "0644",
+                        "expectedUid": 0,
+                        "actualUid": 0,
+                        "expectedGid": 0,
+                        "actualGid": 0,
+                        "compressedSizeBytes": 1,
+                        "decompressionStatus": "verified",
+                        "invalidFields": [],
+                    }
+                    for name in MODULES
+                ],
+            }),
+            encoding="utf-8",
+        )
+        missing_userspace = subprocess.run(
+            [
+                sys.executable, str(RESULT_WRITER),
+                "--output", str(result_temporary / "false-userspace-success.json"),
+                "--status", "success", "--reason", "install_complete",
+                "--message", "fixture", "--phase", "complete",
+                "--root", "/target-root", "--steamos", "3.8.16",
+                "--kernel", KERNEL, "--nvidia", NVIDIA,
+                "--runtime-mounts-expected", "4",
+                "--runtime-mounts-released", "4",
+                "--initramfs-workspace", str(workspace_result),
+                "--module-verification", str(module_result),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        assert missing_userspace.returncode != 0
+        assert "userspace verification" in missing_userspace.stderr
+        assert not (result_temporary / "false-userspace-success.json").exists()
     excessive_attempt = subprocess.run(
         [str(INSTALLER), "--progress-attempt", "1000001"],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
@@ -1158,6 +1209,10 @@ def main():
             ),
         )
         assert ordinary["moduleVerification"]["status"] == "verified"
+        assert ordinary["userspaceVerification"]["status"] == "verified"
+        assert ordinary["userspaceVerification"]["reason"] == (
+            "installed_userspace_verified"
+        )
         ordinary_destination = (
             ordinary_paths["target"] / "usr/lib/modules" / KERNEL
             / "updates/open-gpu-kernel-modules-steamos"
@@ -1563,7 +1618,7 @@ def main():
             PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
             MOCK_WRONG_INSTALLED_VERSION="1",
         )
-        assert wrong_installed_version["reason"] == "userspace_install"
+        assert wrong_installed_version["reason"] == "userspace_verification"
         assert wrong_installed_version["cleanup"]["compressionPolicyRestored"] is True
         corrupt_installed_payload = run_installer(
             profile_paths,
@@ -1574,7 +1629,7 @@ def main():
             PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
             MOCK_CORRUPT_INSTALLED_PAYLOAD="1",
         )
-        assert corrupt_installed_payload["reason"] == "userspace_install"
+        assert corrupt_installed_payload["reason"] == "userspace_verification"
         assert corrupt_installed_payload["cleanup"][
             "compressionPolicyRestored"
         ] is True
@@ -1976,6 +2031,17 @@ def main():
         assert successful["cleanup"]["mountsReleased"] is True
         assert successful["cleanup"]["runtimeMountsExpected"] == 4
         assert successful["cleanup"]["runtimeMountsReleased"] == 4
+        assert successful["userspaceVerification"]["status"] == "verified"
+        assert {
+            package["packageName"]
+            for package in successful["userspaceVerification"]["packages"]
+        } == {
+            package["name"] for package in successful["validation"]["packages"]
+        }
+        assert successful["userspaceVerification"]["gspFirmware"]["version"] == NVIDIA
+        assert successful["userspaceVerification"]["gspFirmware"][
+            "targetRelativeFiles"
+        ] == [f"usr/lib/firmware/nvidia/{NVIDIA}/gsp_ga10x.bin"]
         assert successful["initramfsWorkspace"]["status"] == "verified"
         assert successful["initramfsWorkspace"]["phase"] == "mounted_workspace"
         assert successful["initramfsWorkspace"]["mode"] == "1777"

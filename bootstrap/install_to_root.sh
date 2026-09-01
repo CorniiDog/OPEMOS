@@ -348,6 +348,8 @@ write_install_result()
         --validation "$VALIDATION_JSON"
     [[ -z "${MODULE_VERIFICATION_JSON:-}" || ! -s "$MODULE_VERIFICATION_JSON" ]] ||
         set -- "$@" --module-verification "$MODULE_VERIFICATION_JSON"
+    [[ -z "${USERSPACE_VERIFICATION_JSON:-}" || ! -s "$USERSPACE_VERIFICATION_JSON" ]] ||
+        set -- "$@" --userspace-verification "$USERSPACE_VERIFICATION_JSON"
     [[ -z "${INITRAMFS_WORKSPACE_JSON:-}" || ! -s "$INITRAMFS_WORKSPACE_JSON" ]] ||
         set -- "$@" --initramfs-workspace "$INITRAMFS_WORKSPACE_JSON"
     "$@"
@@ -417,6 +419,7 @@ done
 
 MUTATION_WORK="$(mktemp -d "$INSTALLER_TEMP_ROOT/offline-root-mutation.XXXXXX")"
 MODULE_VERIFICATION_JSON="$MUTATION_WORK/module-verification.json"
+USERSPACE_VERIFICATION_JSON="$MUTATION_WORK/userspace-verification.json"
 INITRAMFS_WORKSPACE_JSON="$MUTATION_WORK/initramfs-workspace.json"
 PACMAN_TRANSACTION_RESULT="$MUTATION_WORK/pacman-transaction.json"
 MOUNTS=()
@@ -780,16 +783,15 @@ require_validation_document_unchanged ||
 POST_INSTALL_VERIFY_ARGS=(
     --root "$ROOT"
     --validation "$VALIDATION_JSON"
+    --output "$USERSPACE_VERIFICATION_JSON"
 )
 for package in "${PACMAN_PACKAGES[@]}"; do
     POST_INSTALL_VERIFY_ARGS+=(--package "$package")
 done
 emit_progress_items userspace_verification 0 "$package_count"
+PHASE=userspace_verification
 run_mutation_command python3 "$SUPPORT_ROOT/lib/verify_installed_userspace.py" \
     "${POST_INSTALL_VERIFY_ARGS[@]}" --progress-attempt "$PROGRESS_ATTEMPT_VALUE"
-find "$ROOT/usr/lib/firmware/nvidia/$NVIDIA_VERSION" \
-    -type f -name 'gsp*.bin' -print -quit 2>/dev/null | grep -q . ||
-    die "Matching GSP firmware was not installed into the target root."
 
 PHASE=module_install
 module_count=0
