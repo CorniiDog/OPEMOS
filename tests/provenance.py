@@ -10,6 +10,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 WRITER = ROOT / "lib" / "write_build_provenance.py"
+MODULES = (
+    "nvidia.ko", "nvidia-drm.ko", "nvidia-modeset.ko",
+    "nvidia-peermem.ko", "nvidia-uvm.ko",
+)
 
 
 BUILD_INFO = """schema_version=1
@@ -66,12 +70,13 @@ def main():
                     "status": "verified",
                     "modules": [
                         {
-                            "name": "nvidia.ko",
+                            "name": name,
                             "sha256": "module-sha256",
                             "version": "575.64.05",
                             "architecture": "x86_64",
                             "vermagic": "kernel-exact SMP",
                         }
+                        for name in MODULES
                     ],
                 }
             ),
@@ -99,6 +104,36 @@ def main():
         assert result["source"]["commit"] == "source-commit"
         assert result["support"]["commit"] == "support-commit"
         assert result["modules"][0]["sha256"] == "module-sha256"
+
+        duplicate_info = temporary / "duplicate-BUILD-INFO.txt"
+        duplicate_info.write_text(
+            BUILD_INFO + "kernel_version=other-kernel\n", encoding="utf-8"
+        )
+        rejected = subprocess.run(
+            [
+                sys.executable, str(WRITER), "--build-info", str(duplicate_info),
+                "--modules", str(modules), "--output", str(temporary / "rejected.json"),
+            ],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        assert rejected.returncode != 0
+        assert "duplicates field" in rejected.stderr
+        assert "Traceback" not in rejected.stderr
+        assert not (temporary / "rejected.json").exists()
+
+        modules_link = temporary / "modules-link.json"
+        modules_link.symlink_to(modules)
+        rejected_link = subprocess.run(
+            [
+                sys.executable, str(WRITER), "--build-info", str(build_info),
+                "--modules", str(modules_link),
+                "--output", str(temporary / "rejected-link.json"),
+            ],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        assert rejected_link.returncode != 0
+        assert "unreadable or excessive" in rejected_link.stderr
+        assert "Traceback" not in rejected_link.stderr
 
 
 if __name__ == "__main__":
