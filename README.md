@@ -501,6 +501,12 @@ mode 0600 and is rejected if the source is a symlink, changes identity or
 metadata while being copied, is replaced at its pathname, or exceeds its
 validator-aligned size limit. Validation and mutation use only these snapshots,
 which are removed on validation, failure, cancellation, and success paths.
+The installer also records the exact rootfs and EFI mount IDs, sources,
+filesystem types, device numbers, and stable mount options before mutation.
+Those identities are rechecked before userspace/module changes, bootloader
+configuration, depmod, initramfs generation, state writing, and cleanup. An
+identity mismatch fails closed; cleanup will not recursively unmount paths
+through a replaced target mount.
 Before pacman, mutation recursively bind-mounts `/dev`, `/proc`, and
 `/sys` into the confined target, makes each tree recursively slave, verifies
 the source/target mount identities, and bind-mounts a private appliance-backed

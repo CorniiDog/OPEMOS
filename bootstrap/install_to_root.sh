@@ -474,6 +474,17 @@ if [[ "${PROJECT_TEST_MODE:-0}" != 1 ]]; then
         *) fail_pre_mutation target_efi_invalid \
             "Target /efi must be a FAT filesystem." ;;
     esac
+    ROOT_MOUNT_IDENTITY="$(findmnt -rn -M "$ROOT" \
+        -o ID,SOURCE,FSTYPE,MAJ:MIN,VFS-OPTIONS)" ||
+        fail_pre_mutation target_mount_invalid \
+            "Target root mount identity could not be recorded."
+    EFI_MOUNT_IDENTITY="$(findmnt -rn -M "$ROOT/efi" \
+        -o ID,SOURCE,FSTYPE,MAJ:MIN,VFS-OPTIONS,FS-OPTIONS)" ||
+        fail_pre_mutation target_efi_invalid \
+            "Target EFI mount identity could not be recorded."
+else
+    ROOT_MOUNT_IDENTITY=project-test-root
+    EFI_MOUNT_IDENTITY=project-test-efi
 fi
 
 for command_name in bsdtar chroot depmod findmnt install mount mountpoint pacman umount vercmp zstd; do
@@ -501,6 +512,31 @@ INITRAMFS_SCRATCH_ROOT=""
 INITRAMFS_SCRATCH=""
 INITRAMFS_WORKSPACE_REQUIRED_BYTES="$(json_value storage initramfsReserveBytes)"
 INITRAMFS_WORKSPACE_REQUIRED_INODES=4096
+
+require_target_mount_identities()
+{
+    if [[ "${PROJECT_TEST_MODE:-0}" == 1 ]]; then
+        [[ "${MOCK_MOUNT_IDENTITY_DRIFT:-0}" == 0 ]]
+        return
+    fi
+    local current_root current_efi
+    mountpoint -q "$ROOT" && ! mountpoint -q "$ROOT/boot" &&
+        mountpoint -q "$ROOT/efi" || return 1
+    current_root="$(findmnt -rn -M "$ROOT" \
+        -o ID,SOURCE,FSTYPE,MAJ:MIN,VFS-OPTIONS)" || return 1
+    current_efi="$(findmnt -rn -M "$ROOT/efi" \
+        -o ID,SOURCE,FSTYPE,MAJ:MIN,VFS-OPTIONS,FS-OPTIONS)" || return 1
+    [[ "$current_root" == "$ROOT_MOUNT_IDENTITY" &&
+       "$current_efi" == "$EFI_MOUNT_IDENTITY" ]]
+}
+
+guard_target_mount_identities()
+{
+    require_target_mount_identities || {
+        PHASE=target_mount_identity
+        die "The target rootfs or EFI mount identity changed during installation."
+    }
+}
 
 require_validation_document_unchanged()
 {
@@ -667,20 +703,29 @@ unmount_tree()
 cleanup_mutation()
 {
     local rc=$? index mounts_released=true compression_restored=true
-    local workspace_released=true
+    local workspace_released=true target_identity_safe=true
     local released_mounts=0 total_mounts=${#MOUNTS[@]}
     trap - EXIT INT TERM
     emit_progress_items mount_cleanup 0 "$total_mounts"
-    for (( index=${#MOUNTS[@]}-1; index>=0; index-- )); do
-        if unmount_tree "${MOUNTS[$index]}"; then
-            released_mounts=$((released_mounts + 1))
-            emit_progress_items mount_cleanup "$released_mounts" "$total_mounts"
-        else
-            mounts_released=false
-        fi
-    done
+    if (( total_mounts == 0 )) || require_target_mount_identities; then
+        for (( index=${#MOUNTS[@]}-1; index>=0; index-- )); do
+            if unmount_tree "${MOUNTS[$index]}"; then
+                released_mounts=$((released_mounts + 1))
+                emit_progress_items mount_cleanup "$released_mounts" "$total_mounts"
+            else
+                mounts_released=false
+            fi
+        done
+    else
+        mounts_released=false
+        target_identity_safe=false
+    fi
     RUNTIME_MOUNTS_RELEASED=$released_mounts
-    restore_compression_policy || compression_restored=false
+    if [[ "$target_identity_safe" == true ]]; then
+        restore_compression_policy || compression_restored=false
+    else
+        compression_restored=false
+    fi
     if [[ -n "$INITRAMFS_SCRATCH_ROOT" ]]; then
         rm -rf "$INITRAMFS_SCRATCH_ROOT" || workspace_released=false
         [[ ! -e "$INITRAMFS_SCRATCH_ROOT" ]] || workspace_released=false
@@ -720,6 +765,8 @@ cancel_mutation()
 
 trap cleanup_mutation EXIT
 trap cancel_mutation INT TERM
+
+guard_target_mount_identities
 
 if [[ -n "$COMPRESSION_PROFILE" ]]; then
     PHASE=compression_policy_activation
@@ -808,6 +855,7 @@ require_runtime_bind_mounts ||
     die "The complete target runtime mount set is unavailable."
 
 PHASE=userspace_install
+guard_target_mount_identities
 require_runtime_bind_mounts ||
     die "Target runtime mounts disappeared before the pacman transaction."
 [[ -z "$COMPRESSION_PROFILE" ]] || require_active_compression_policy
@@ -860,6 +908,7 @@ run_mutation_command python3 "$SUPPORT_ROOT/lib/verify_installed_userspace.py" \
     "${POST_INSTALL_VERIFY_ARGS[@]}" --progress-attempt "$PROGRESS_ATTEMPT_VALUE"
 
 PHASE=module_install
+guard_target_mount_identities
 module_count=0
 emit_progress_items module_install 0 5
 [[ -z "$COMPRESSION_PROFILE" ]] || require_active_compression_policy
@@ -921,12 +970,14 @@ printf '%s\n' \
 [[ -z "$COMPRESSION_PROFILE" ]] || require_active_compression_policy
 
 PHASE=bootloader_config
+guard_target_mount_identities
 emit_progress_indeterminate grub_update
 run_mutation_command python3 "$SUPPORT_ROOT/lib/update_grub_nvidia_args.py" \
     --grub-config "$ROOT/efi/EFI/steamos/grub.cfg"
 emit_progress_items grub_update 1 1
 
 PHASE=depmod
+guard_target_mount_identities
 emit_progress_indeterminate depmod
 [[ -z "$COMPRESSION_PROFILE" ]] || require_active_compression_policy
 run_mutation_command depmod -b "$ROOT" -a "$KERNEL"
@@ -934,6 +985,7 @@ run_mutation_command depmod -b "$ROOT" -a "$KERNEL"
 emit_progress_items depmod 1 1
 
 PHASE=initramfs
+guard_target_mount_identities
 emit_progress_indeterminate initramfs
 [[ -z "$COMPRESSION_PROFILE" ]] || require_active_compression_policy
 require_runtime_bind_mounts ||
@@ -943,6 +995,7 @@ run_mutation_command env SYSTEMD_OFFLINE=1 chroot "$ROOT" /usr/bin/mkinitcpio -P
 emit_progress_items initramfs 1 1
 
 PHASE=state_write
+guard_target_mount_identities
 emit_progress_indeterminate installation_state
 [[ -z "$COMPRESSION_PROFILE" ]] || require_active_compression_policy
 STATE_ROOT="$ROOT/var/lib/$PROJECT_NAME/offline-install"
@@ -954,6 +1007,7 @@ printf '%s\n' "$NVIDIA_VERSION" > "$STATE_ROOT/nvidia-version"
 emit_progress_items installation_state 1 1
 
 PHASE=cleanup
+guard_target_mount_identities
 released_mounts=0
 total_mounts=${#MOUNTS[@]}
 emit_progress_items mount_cleanup 0 "$total_mounts"
@@ -964,6 +1018,7 @@ for (( index=${#MOUNTS[@]}-1; index>=0; index-- )); do
 done
 MOUNTS=()
 RUNTIME_MOUNTS_RELEASED=$released_mounts
+guard_target_mount_identities
 if findmnt -rn -R "$ROOT/dev" >/dev/null 2>&1 ||
    findmnt -rn -R "$ROOT/proc" >/dev/null 2>&1 ||
    findmnt -rn -R "$ROOT/sys" >/dev/null 2>&1 ||

@@ -2069,6 +2069,17 @@ def main():
         run(paths, binaries, temporary / "wrong-gsp-version.json", False)
 
         make_package(paths["nvidia"], "nvidia-utils", pkgrel="2", gsp=True)
+        drifted_mount_identity = run_installer(
+            paths,
+            binaries,
+            temporary / "target-mount-identity-drift.json",
+            False,
+            MOCK_MOUNT_IDENTITY_DRIFT="1",
+        )
+        assert drifted_mount_identity["reason"] == "target_mount_identity"
+        assert drifted_mount_identity["phase"] == "target_mount_identity"
+        assert not (temporary / "target-mount-identity-drift.pacman").exists()
+
         locked = run_installer(
             paths,
             binaries,

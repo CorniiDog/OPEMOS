@@ -1294,7 +1294,7 @@ signing policy.
   snapshot creation.
 * [x] Add an exclusive per-target lifecycle lock to `install_to_root.sh` so
   concurrent validation or mutation of one mounted root fails before mutation.
-* [ ] Record and repeatedly verify rootfs and EFI mount identities between
+* [x] Record and repeatedly verify rootfs and EFI mount identities between
   validation, every destructive phase, and cleanup. Abort on replacement,
   unexpected remount, or filesystem-identity drift.
 
