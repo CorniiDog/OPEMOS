@@ -16,6 +16,7 @@ from pathlib import Path, PurePosixPath
 
 sys.dont_write_bytecode = True
 from update_grub_nvidia_args import REQUIRED as REQUIRED_KERNEL_ARGUMENTS
+from gaming_payload_profiles import ProfileError, validate_profile
 
 EXPECTED_MODULES = {
     "nvidia.ko",
@@ -141,6 +142,7 @@ def arguments():
     parser.add_argument("--dependency-signature", action="append", default=[], type=Path)
     parser.add_argument("--package-keyring", required=True, type=Path)
     parser.add_argument("--userspace-lock", required=True, type=Path)
+    parser.add_argument("--gaming-payload-profile", type=Path)
     parser.add_argument("--compression-profile", choices=(COMPRESSION_PROFILE,))
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--progress-attempt", type=bounded_progress_attempt, default=0)
@@ -1247,6 +1249,8 @@ def validate(args, progress):
     )
     require_regular_input(args.package_keyring, "package keyring", MAX_KEYRING_BYTES)
     require_regular_input(args.userspace_lock, "userspace lock", MAX_USERSPACE_LOCK_BYTES)
+    if args.gaming_payload_profile:
+        require_regular_input(args.gaming_payload_profile, "gaming payload profile", MAX_USERSPACE_LOCK_BYTES)
     for package in args.dependency_package:
         require_regular_input(package, "dependency package", MAX_USERSPACE_PACKAGE_BYTES)
     for signature in args.dependency_signature:
@@ -1494,6 +1498,15 @@ def validate(args, progress):
                 "architecture": "x86_64",
             }):
         fail("userspace_lock_invalid", "userspace lock is not reviewed for the exact target")
+    gaming_payload = None
+    if args.gaming_payload_profile:
+        try:
+            gaming_payload = validate_profile(args.gaming_payload_profile, args.userspace_lock, {
+                "steamosVersion": identity["VERSION_ID"], "kernelVersion": args.kernel,
+                "nvidiaVersion": nvidia, "architecture": "x86_64",
+            })
+        except ProfileError as error:
+            fail("gaming_payload_profile_invalid", str(error))
     lock_keyring = userspace_lock.get("keyring", {})
     if not isinstance(lock_keyring, dict):
         fail("userspace_lock_invalid", "reviewed userspace lock keyring is malformed")
@@ -1794,6 +1807,10 @@ def validate(args, progress):
         "userspaceLock": {
             "name": args.userspace_lock.name,
             "sha256": sha256(args.userspace_lock, progress),
+        },
+        "gamingPayload": gaming_payload or {
+            "schemaVersion": 1, "status": "not-requested",
+            "profileId": "gaming-no-cuda-v1",
         },
         "storage": storage,
         "packageDependencyClosure": closure,

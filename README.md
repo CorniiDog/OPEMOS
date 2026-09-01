@@ -198,6 +198,56 @@ repository requires the conspicuous `--development-repository OWNER/REPO`
 override. The publisher never discovers, deletes, or modifies unrelated
 releases.
 
+### Revisioned compressed-module repacks
+
+`bootstrap/repack_artifacts.sh` is the canonical maintainer path for converting
+an authenticated existing raw-module release to `.ko.zst`. It verifies the
+archive checksum, byte-identical embedded/external metadata, exact five-module
+set, provenance hashes, NVIDIA version, x86_64 ELF identity, and exact vermagic
+before encoding with the pinned deterministic `zstd 1.5.7` command. The new
+schema-1 provenance retains each raw `payloadSha256` separately from the
+compressed representation hash and records the source release and sidecar
+hashes. Output uses a new `-modules-zstd-rN` tag; publication always delegates
+to `publish_artifacts.sh --create-only`, so the source release cannot be
+overwritten.
+
+```bash
+./bootstrap/repack_artifacts.sh \
+  --archive /shared/nvidia-open-....tar.gz \
+  --checksum /shared/nvidia-open-....tar.gz.sha256 \
+  --build-info /shared/nvidia-open-....build-info.txt \
+  --provenance /shared/nvidia-open-....provenance.json \
+  --output-dir /shared/repacked \
+  --support-commit "$(git rev-parse HEAD)" \
+  --revision 1 \
+  --dry-run
+```
+
+Remove `--dry-run` to create the four local assets. Add `--publish` to that
+non-dry invocation to publish the revision create-only. The dry-run writes no
+assets and returns a bounded schema-1 JSON plan suitable for a conditional
+maintainer action in the image builder.
+
+### Optional gaming payload profile
+
+`profiles/gaming/reviewed-policy-v1.json` is the support-owned contract for
+optional CUDA-compute omission. A conforming profile must preserve graphics,
+Vulkan, GLVND/EGL, NVENC/NVDEC, exact-version GSP firmware, required 32-bit
+gaming libraries, recovery rendering, exact package ownership, and provenance.
+Delivery is by reviewed support-repacked packages and an exact reviewed
+userspace lock—the image builder must never delete guessed paths.
+
+The resolver always returns
+`capabilities.optionalCudaOmission`. It reports `supported: true` only for an
+exact SteamOS/kernel/NVIDIA/architecture record whose canonical profile and
+lock assets occur exactly once in the selected release. Same-series fallback
+never enables the capability. The installer accepts
+`--gaming-payload-profile`; it authenticates the profile and userspace lock
+against the support-owned policy before mutation and includes the decision in
+its validation/result metadata. No reduced package set has been reviewed and
+registered yet, so the current policy intentionally reports `supported: false`
+for every target and the image-builder checkbox must remain disabled.
+
 ### Offline mounted-root installation
 
 `bootstrap/install_to_root.sh` defines the image-builder installation boundary

@@ -94,7 +94,7 @@ def validate_verified_metadata(validation):
     required = {
         "archiveSha256", "provenanceSha256", "userspaceLock",
         "pacmanDatabase", "boot", "keyring", "packages", "modules", "storage",
-        "packageDependencyClosure", "compression",
+        "packageDependencyClosure", "compression", "gamingPayload",
     }
     if not required <= validation.keys():
         raise SystemExit("Verified installation metadata is incomplete.")
@@ -157,6 +157,26 @@ def validate_verified_metadata(validation):
         raise SystemExit("Verified installation module metadata is invalid.")
     if {module["name"] for module in modules} != EXPECTED_MODULES:
         raise SystemExit("Verified installation module metadata is invalid.")
+    gaming = validation["gamingPayload"]
+    if (not isinstance(gaming, dict) or gaming.get("schemaVersion") != 1
+            or gaming.get("profileId") != "gaming-no-cuda-v1"
+            or gaming.get("status") not in ("not-requested", "reviewed")):
+        raise SystemExit("Verified gaming payload metadata is invalid.")
+    if gaming["status"] == "not-requested":
+        if set(gaming) != {"schemaVersion", "status", "profileId"}:
+            raise SystemExit("Verified gaming payload metadata is invalid.")
+    elif (set(gaming) != {"schemaVersion", "status", "profileId", "sha256",
+                         "policySha256", "omittedCapabilities",
+                         "preservedCapabilities", "packageOwnership"}
+          or not HEX_SHA256.fullmatch(gaming.get("sha256", ""))
+          or not HEX_SHA256.fullmatch(gaming.get("policySha256", ""))
+          or gaming.get("omittedCapabilities") != ["cuda-compute"]
+          or set(gaming.get("preservedCapabilities", [])) != {
+              "graphics", "vulkan", "glvnd-egl", "nvenc", "nvdec",
+              "gsp-firmware", "gaming-32bit", "recovery-rendering",
+          }
+          or gaming.get("packageOwnership") != "archive-and-pacman-database-exact"):
+        raise SystemExit("Verified gaming payload metadata is invalid.")
     storage = validation["storage"]
     compression = validation["compression"]
     base_storage = {
@@ -447,6 +467,7 @@ def main():
                 "storage": validation["storage"],
                 "packageDependencyClosure": validation["packageDependencyClosure"],
                 "compression": validation["compression"],
+                "gamingPayload": validation["gamingPayload"],
             }
         elif args.status == "failed" and validation.get("status") == "failed":
             failure_validation = {

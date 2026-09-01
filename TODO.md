@@ -11,6 +11,15 @@ index in the same commit.
 
 ### Immediate image-builder blockers
 
+* [ ] Build, audit, and publish the first exact-target `gaming-no-cuda-v1`
+  support-repacked package set and reviewed userspace lock. The versioned policy,
+  resolver capability, and installer authentication contract are implemented,
+  but capability remains fail-closed/disabled until real package ownership,
+  preserved graphics/video/recovery behavior, and provenance are verified.
+* [ ] Exercise the deterministic `.ko` to `.ko.zst` repacker against a real
+  authenticated published release, inspect the dry-run plan, then publish a
+  create-only `-modules-zstd-r1` revision without changing the source release.
+
 * [ ] Run `btrfs-zstd3` through the complete validator against a freshly mounted
   recovery overlay and confirm its structured storage result reproduces the
   standalone real-payload measurement within the documented safety policy.
@@ -1277,6 +1286,19 @@ signing policy.
 * [x] Make `compile.sh --auto-upload` delegate to the canonical publisher.
 * [x] Cover malformed input, canonical notes/title, asset ordering, and
   existing-release refusal without touching a live release.
+* [x] Add a deterministic authenticated raw-module repacker with separate
+  payload/representation hashes, pinned encoding, non-mutating JSON dry-run,
+  revisioned release identity, and create-only canonical publication.
+
+## Optional reviewed gaming payload
+
+* [x] Define the schema-1 `gaming-no-cuda-v1` preservation and ownership policy.
+* [x] Expose a stable exact-target resolver capability and authenticate optional
+  installer profile metadata against support-owned policy and lock hashes.
+* [x] Keep capability disabled when no reviewed exact-target package set exists;
+  never ask the image builder to remove userspace paths heuristically.
+* [ ] Produce and hardware-test the first reviewed derived package set, then add
+  its exact target/profile/lock hashes to the policy's `supportedTargets` list.
 
 ## Cancellation, cleanup, and caching
 

@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 import tarfile
+import subprocess
 from pathlib import Path, PurePosixPath
 
 
@@ -119,7 +120,28 @@ def main():
         fail("Provenance support repository does not match the publication repository.")
 
     safe_kernel = kernel.translate(str.maketrans({"/": "-", " ": "-", ":": "-", "+": "-"}))
-    tag = f"steamos-{steamos}-nvidia-{nvidia}-k{safe_kernel}"
+    base_tag = f"steamos-{steamos}-nvidia-{nvidia}-k{safe_kernel}"
+    representation = artifact.get("representation", "ko")
+    revision = artifact.get("revision")
+    if representation == "ko":
+        if revision is not None or "repack" in provenance:
+            fail("Raw-module provenance contains unexpected repack metadata.")
+        tag = base_tag
+    elif representation == "ko.zst":
+        if not isinstance(revision, int) or isinstance(revision, bool) or not 1 <= revision <= 999:
+            fail("Repacked provenance has an invalid revision.")
+        repack = provenance.get("repack")
+        if (not isinstance(repack, dict) or repack.get("schemaVersion") != 1
+                or repack.get("sourceReleaseTag") != base_tag
+                or repack.get("payloadIdentity") != "byte-identical"
+                or repack.get("encoding") != "zstd-19-t1"
+                or repack.get("encoder") != {"name": "zstd", "version": "1.5.7"}
+                or not re.fullmatch(r"[0-9a-f]{64}", repack.get("sourceArchiveSha256", ""))
+                or not re.fullmatch(r"[0-9a-f]{64}", repack.get("sourceProvenanceSha256", ""))):
+            fail("Repacked provenance is incomplete.")
+        tag = f"{base_tag}-modules-zstd-r{revision}"
+    else:
+        fail("Artifact module representation is unsupported.")
     archive_name = f"nvidia-open-{tag}-x86_64.tar.gz"
     stem = archive_name[:-7]
     expected_names = (
@@ -172,6 +194,11 @@ def main():
                 or module.get("architecture") != architecture
                 or module.get("vermagic", "").split(maxsplit=1)[0] != kernel):
             fail("Provenance contains invalid NVIDIA module metadata.")
+        if representation == "ko.zst" and (
+                module.get("representation") != "ko.zst"
+                or module.get("representationFilename") != name + ".zst"
+                or not re.fullmatch(r"[0-9a-f]{64}", module.get("payloadSha256", ""))):
+            fail("Repacked provenance contains invalid representation metadata.")
         modules[name] = module
     if set(modules) != EXPECTED_MODULES:
         fail("Provenance NVIDIA module set is incomplete.")
@@ -187,8 +214,9 @@ def main():
                 if name in members:
                     fail("Archive contains duplicate member paths.")
                 members[name] = member
+            suffix = ".zst" if representation == "ko.zst" else ""
             required_files = {"BUILD-INFO.txt", "PROVENANCE.json"} | {
-                f"modules/{name}" for name in EXPECTED_MODULES
+                f"modules/{name}{suffix}" for name in EXPECTED_MODULES
             }
             allowed_members = required_files | {"modules"}
             if set(members) != allowed_members:
@@ -206,7 +234,7 @@ def main():
                 if member.size > limit:
                     fail(f"Archive member exceeds the size limit: {name}.")
             archived_modules = {
-                name.removeprefix("modules/")
+                name.removeprefix("modules/").removesuffix(".zst")
                 for name, member in members.items()
                 if name.startswith("modules/") and member.isfile()
             }
@@ -221,13 +249,29 @@ def main():
             if embedded_info.read() != args.build_info.read_bytes():
                 fail("Embedded and external build information differ.")
             for name, record in modules.items():
-                module_stream = archive_file.extractfile(members[f"modules/{name}"])
-                if module_stream is None or stream_sha256(module_stream) != record["sha256"].lower():
+                member_name = f"modules/{name}{suffix}"
+                module_stream = archive_file.extractfile(members[member_name])
+                if module_stream is None:
+                    fail(f"Archived module is unreadable: {name}.")
+                representation_bytes = module_stream.read()
+                if hashlib.sha256(representation_bytes).hexdigest() != record["sha256"].lower():
                     fail(f"Archived module does not match provenance: {name}.")
+                if representation == "ko.zst":
+                    try:
+                        decoded = subprocess.run(
+                            ["zstd", "-q", "-d", "-c"], input=representation_bytes,
+                            check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                        ).stdout
+                    except (OSError, subprocess.CalledProcessError):
+                        fail(f"Archived module representation is unreadable: {name}.")
+                    if hashlib.sha256(decoded).hexdigest() != record["payloadSha256"]:
+                        fail(f"Archived module payload identity changed: {name}.")
     except (tarfile.TarError, KeyError, OSError):
         fail("Archive publication metadata is unreadable.")
 
     title = f"NVIDIA {nvidia} for SteamOS {steamos} ({kernel})"
+    if representation == "ko.zst":
+        title += f" — compressed modules revision {revision}"
     notes = "\n".join((
         f"Open NVIDIA kernel modules for SteamOS {steamos}.",
         "",

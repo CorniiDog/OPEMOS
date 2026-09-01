@@ -50,6 +50,10 @@ python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/validate_publish_inputs.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/gaming_payload_profiles.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/repack_module_artifact.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/write_compile_provenance.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/update_grub_nvidia_args.py
@@ -68,6 +72,12 @@ python3 tests/provenance.py
 
 printf 'Checking canonical artifact publisher...\n'
 python3 tests/publisher.py
+
+printf 'Checking reviewed gaming payload profile contract...\n'
+python3 tests/gaming_payload_profiles.py
+
+printf 'Checking deterministic module repack contract...\n'
+python3 tests/repack_artifacts.py
 
 python3 - "$PROJECT_ROOT/lib" <<'PY' || fail "NVIDIA archive limits are inconsistent"
 import sys

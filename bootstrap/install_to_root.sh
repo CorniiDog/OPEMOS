@@ -16,6 +16,7 @@ LIB32_NVIDIA_UTILS=""
 LIB32_NVIDIA_UTILS_SIGNATURE=""
 PACKAGE_KEYRING=""
 USERSPACE_LOCK=""
+GAMING_PAYLOAD_PROFILE=""
 DEPENDENCY_PACKAGES=()
 DEPENDENCY_SIGNATURES=()
 RESULT_JSON=""
@@ -85,6 +86,7 @@ Options:
   --dependency-signature FILE     Repeat in the same order as packages.
   --progress-attempt NUMBER       Correlates progress records (0-1000000).
   --compression-profile PROFILE  Currently: btrfs-zstd3.
+  --gaming-payload-profile FILE  Reviewed exact-target CUDA-omission profile.
   --validate-only
   -h, --help
 
@@ -98,7 +100,7 @@ while (( $# > 0 )); do
     case "$1" in
         --root|--archive|--checksum|--provenance|--kernel|--nvidia-utils|\
         --nvidia-utils-signature|--lib32-nvidia-utils|--lib32-nvidia-utils-signature|\
-        --package-keyring|--userspace-lock|--result-json|--progress-attempt|--compression-profile)
+        --package-keyring|--userspace-lock|--gaming-payload-profile|--result-json|--progress-attempt|--compression-profile)
             require_option_value "$@"
             mark_single_option "$1"
             case "$1" in
@@ -113,6 +115,7 @@ while (( $# > 0 )); do
                 --lib32-nvidia-utils-signature) LIB32_NVIDIA_UTILS_SIGNATURE="$2" ;;
                 --package-keyring) PACKAGE_KEYRING="$2" ;;
                 --userspace-lock) USERSPACE_LOCK="$2" ;;
+                --gaming-payload-profile) GAMING_PAYLOAD_PROFILE="$2" ;;
                 --result-json) RESULT_JSON="$2" ;;
                 --progress-attempt) PROGRESS_ATTEMPT="$2" ;;
                 --compression-profile) COMPRESSION_PROFILE="$2" ;;
@@ -219,6 +222,7 @@ VALIDATOR_ARGS=(
 )
 [[ -z "$PROGRESS_ATTEMPT" ]] || VALIDATOR_ARGS+=(--progress-attempt "$PROGRESS_ATTEMPT")
 [[ -z "$COMPRESSION_PROFILE" ]] || VALIDATOR_ARGS+=(--compression-profile "$COMPRESSION_PROFILE")
+[[ -z "$GAMING_PAYLOAD_PROFILE" ]] || VALIDATOR_ARGS+=(--gaming-payload-profile "$GAMING_PAYLOAD_PROFILE")
 for (( dependency_index=0; dependency_index<${#DEPENDENCY_PACKAGES[@]}; dependency_index++ )); do
     VALIDATOR_ARGS+=(
         --dependency-package "${DEPENDENCY_PACKAGES[$dependency_index]}"

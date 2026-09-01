@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from select_release import select_release
+from gaming_payload_profiles import ProfileError, target_record
 
 
 SCHEMA_VERSION = 2
@@ -138,6 +139,40 @@ def resolve_target(steamos, kernel, architecture, releases, repository):
         )
 
     base_url = f"https://github.com/{repository}/releases/download/{tag}"
+    gaming = {
+        "schemaVersion": 1,
+        "profileId": "gaming-no-cuda-v1",
+        "supported": False,
+        "reason": "no_reviewed_exact_target_profile",
+    }
+    try:
+        gaming_record = target_record(
+            steamos, kernel, nvidia, architecture
+        ) if published_steamos == steamos else None
+    except ProfileError:
+        return result(
+            "resolver_error", target, reason="gaming_profile_policy_invalid",
+            message="The support-owned gaming payload policy is invalid.",
+        )
+    if gaming_record is not None:
+        required_gaming_assets = (
+            gaming_record["profileAsset"], gaming_record["userspaceLockAsset"]
+        )
+        gaming_missing = [name for name in required_gaming_assets if asset_names.count(name) != 1]
+        if not gaming_missing:
+            gaming = {
+                "schemaVersion": 1, "profileId": "gaming-no-cuda-v1",
+                "supported": True, "compatibility": "exact",
+                "requiredVerification": "support-policy-hash-and-exact-package-lock",
+                "profile": {"name": gaming_record["profileAsset"],
+                            "sha256": gaming_record["profileSha256"],
+                            "url": f"{base_url}/{gaming_record['profileAsset']}"},
+                "userspaceLock": {"name": gaming_record["userspaceLockAsset"],
+                                  "sha256": gaming_record["userspaceLockSha256"],
+                                  "url": f"{base_url}/{gaming_record['userspaceLockAsset']}"},
+            }
+        else:
+            gaming["reason"] = "reviewed_profile_assets_missing"
     return result(
         "compatible", target,
         compatibility=("exact" if published_steamos == steamos else "same_series_fallback"),
@@ -160,6 +195,7 @@ def resolve_target(steamos, kernel, architecture, releases, repository):
                 "requiredVerification": "external-and-embedded-provenance-byte-match",
             },
         },
+        capabilities={"optionalCudaOmission": gaming},
     )
 
 
