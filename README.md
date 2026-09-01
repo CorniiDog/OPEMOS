@@ -416,8 +416,24 @@ failure, or cancellation. An exact installed package version skipped by
 rewrite, may receive its measured no-op allocation as replacement credit.
 Ordinary upgrades receive no physical credit because old and new extents may
 coexist during the transaction. Archive-size savings remain informational and
-never authorize installation. Independent recovery-overlay validation remains
-required before this path is considered release-ready. Terminal result cleanup
+never authorize installation.
+
+Pacman's logical `CheckSpace` calculation cannot represent this authenticated
+physical-allocation admission. The installer therefore suppresses `CheckSpace`
+only for an explicitly requested `btrfs-zstd3` mutation whose exact unchanged
+validation document says both `admissionAuthorized: true` and
+`mutationProfileImplemented: true`, and only after independently verifying the
+live target is still mounted with `compress-force=zstd:3`. A mode-0600 temporary
+configuration retains the appliance's complete `[options]` policy—including
+local signature policy—while dropping repository sections and exactly one
+canonical `CheckSpace` directive. Ambiguous directives, option-level includes,
+missing authorization, validation drift, or mount-policy drift fail before
+pacman. Every other path uses pacman's normal configuration and `CheckSpace`.
+The temporary configuration is confined to mutation work and removed on
+success, failure, or cancellation.
+
+Independent recovery-overlay validation remains required before this path is
+considered release-ready. Terminal result cleanup
 records distinguish `mountsReleased` from `compressionPolicyRestored` so the
 image builder does not mistake a restored mount tree for restored Btrfs policy.
 
@@ -427,8 +443,9 @@ The first real Fedora measurement of the reviewed SteamOS 3.8.14/NVIDIA
 With the conservative 162,198,248-byte initramfs reserve and 67,108,864-byte
 metadata/safety reserve, the measured requirement is 757,461,736 bytes. The
 observed recovery root's 908,500,992 available bytes would leave 151,039,256
-bytes. This is measurement evidence, not permission to bypass the still-blocked
-mutation and final-image validation gates.
+bytes. That exact admission can now pass pacman's otherwise contradictory
+logical-space gate through the scoped policy above; mutation and final-image
+validation gates remain fail-closed.
 
 Prepare the minimal binary keyring from an existing trusted Arch key source:
 

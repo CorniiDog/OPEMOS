@@ -278,6 +278,12 @@ def write_userspace_lock(paths):
 def make_mocks(root):
     binaries = root / "bin"
     binaries.mkdir()
+    (root / "pacman.conf").write_text(
+        "[options]\nArchitecture = auto\nCheckSpace\n"
+        "SigLevel = Required DatabaseOptional\nLocalFileSigLevel = Required\n\n"
+        "[core]\nInclude = /etc/pacman.d/mirrorlist\n",
+        encoding="utf-8",
+    )
     real_install = shutil.which("install")
     real_zstd = shutil.which("zstd")
     assert real_install
@@ -298,16 +304,27 @@ def make_mocks(root):
         r"""#!/bin/sh
 root=
 dbpath=
+config=
 previous=
 for argument in "$@"; do
     [ "$previous" != --root ] || root=$argument
     [ "$previous" != --dbpath ] || dbpath=$argument
+    [ "$previous" != --config ] || config=$argument
     previous=$argument
 done
 [ "$dbpath" = "$root/usr/lib/holo/pacmandb" ] || exit 91
+printf '%s\n' "$*" >> "$MOCK_PACMAN_LOG"
 case " $* " in
   *" -Qkk "*) [ "${MOCK_FAIL_QKK:-0}" = 0 ];;
   *" -U "*)
+    if [ "${MOCK_REQUIRE_CHECKSPACE_BYPASS:-0}" != 0 ]; then
+      [ -n "$config" ] && [ -f "$config" ] || exit 92
+      ! grep -E '^[[:space:]]*CheckSpace([[:space:]]*(#.*)?)?$' "$config" || exit 93
+      grep -F -q 'LocalFileSigLevel = Required' "$config" || exit 94
+    fi
+    if [ "${MOCK_REQUIRE_NORMAL_CHECKSPACE:-0}" != 0 ]; then
+      [ -z "$config" ] || exit 95
+    fi
     for package in "$@"; do
       case "$package" in *.pkg.tar.gz) bsdtar -xf "$package" -C "$root";; esac
     done
@@ -509,10 +526,12 @@ def installer_environment(binaries, mount_state, **environment):
         MOCK_KERNEL=KERNEL,
         PROJECT_TEST_MODE="1",
         PROJECT_TEST_APPLIANCE_ARCH="x86_64",
+        PROJECT_TEST_PACMAN_CONFIG=str(binaries.parent / "pacman.conf"),
         MOCK_MOUNT_STATE=str(mount_state),
         MOCK_COMPRESSION_STATE=str(mount_state.with_suffix(".compression")),
-        **environment,
+        MOCK_PACMAN_LOG=str(mount_state.with_suffix(".pacman")),
     )
+    env.update(environment)
     return env
 
 
@@ -526,6 +545,7 @@ def run_installer(paths, binaries, result, success, preserve_lock=False, **envir
     mount_state.with_suffix(".compression").write_text(
         initial_compression, encoding="utf-8"
     )
+    before_mutation_work = set(Path("/tmp").glob("offline-root-mutation.*"))
     env = installer_environment(binaries, mount_state, **environment)
     completed = subprocess.run(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     result.with_suffix(result.suffix + ".stderr").write_text(completed.stderr, encoding="utf-8")
@@ -533,6 +553,7 @@ def run_installer(paths, binaries, result, success, preserve_lock=False, **envir
         raise AssertionError(f"installer result did not match expectation: {completed.stderr}")
     assert not mount_state.read_text(encoding="utf-8").strip()
     assert mount_state.with_suffix(".compression").read_text().strip() == initial_compression
+    assert set(Path("/tmp").glob("offline-root-mutation.*")) == before_mutation_work
     return json.loads(result.read_text(encoding="utf-8"))
 
 
@@ -547,6 +568,7 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
     )
     env = installer_environment(binaries, mount_state, **environment)
     before_validation_files = set(Path("/tmp").glob("offline-root-validation.*"))
+    before_mutation_work = set(Path("/tmp").glob("offline-root-mutation.*"))
     process = subprocess.Popen(
         installer_command(paths, result),
         env=env,
@@ -577,6 +599,7 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
     assert not mount_state.read_text(encoding="utf-8").strip()
     assert mount_state.with_suffix(".compression").read_text().strip() == initial_compression
     assert set(Path("/tmp").glob("offline-root-validation.*")) == before_validation_files
+    assert set(Path("/tmp").glob("offline-root-mutation.*")) == before_mutation_work
 
 
 def main():
@@ -817,6 +840,32 @@ def main():
         )
         assert insufficient_result["reason"] == "target_space_insufficient"
         assert insufficient_result["validation"]["storage"]["rootAvailableBytes"] == 1
+        insufficient_log = (temporary / "install-insufficient-space.mounts").with_suffix(
+            ".pacman"
+        )
+        assert not insufficient_log.exists() or " -U " not in (
+            " " + insufficient_log.read_text(encoding="utf-8") + " "
+        )
+
+        ordinary_fixture_root = temporary / "ordinary-checkspace-fixture"
+        ordinary_fixture_root.mkdir()
+        ordinary_paths = make_fixture(ordinary_fixture_root)
+        ordinary_result_path = temporary / "ordinary-checkspace.json"
+        ordinary = run_installer(
+            ordinary_paths,
+            binaries,
+            ordinary_result_path,
+            True,
+            MOCK_REQUIRE_NORMAL_CHECKSPACE="1",
+        )
+        assert ordinary["reason"] == "install_complete"
+        ordinary_log = ordinary_result_path.with_suffix(".pacman").read_text(
+            encoding="utf-8"
+        )
+        ordinary_transaction = next(
+            line for line in ordinary_log.splitlines() if " -U " in f" {line} "
+        )
+        assert "--config" not in ordinary_transaction
 
         paths["compression_profile"] = "btrfs-zstd3"
         measured = run(
@@ -842,6 +891,10 @@ def main():
         assert measured["compression"]["writePolicy"] == "compress-force=zstd:3"
         assert measured["compression"]["admissionAuthorized"] is True
         assert measured["compression"]["mutationProfileImplemented"] is True
+        assert measured["compression"]["pacmanCheckSpaceBypassAuthorized"] is True
+        assert measured["compression"]["pacmanCheckSpacePolicy"] == (
+            "temporary-config-disable-after-live-revalidation"
+        )
         assert measured["compression"]["allPayloadDestinationsOnRootFilesystem"] is True
         assert re.fullmatch(
             r"[0-9]+\.[0-9]{6}", measured["compression"]["compressionRatio"]
@@ -942,6 +995,10 @@ def main():
         )
         assert measured_insufficient["reason"] == "target_space_insufficient"
         assert measured_insufficient["compression"]["admissionAuthorized"] is False
+        assert measured_insufficient["compression"][
+            "pacmanCheckSpaceBypassAuthorized"
+        ] is False
+        assert measured_insufficient["compression"]["pacmanCheckSpacePolicy"] == "preserve"
 
         measurement_failed = run(
             paths,
@@ -1059,6 +1116,10 @@ def main():
         assert activation_failed["reason"] == "compression_policy_activation"
         assert activation_failed["cleanup"]["mountsReleased"] is True
         assert activation_failed["cleanup"]["compressionPolicyRestored"] is True
+        activation_log = (temporary / "compression-profile-activation-failed.pacman")
+        assert not activation_log.exists() or " -U " not in (
+            " " + activation_log.read_text(encoding="utf-8") + " "
+        )
         shared_activation = run_installer(
             profile_paths,
             binaries,
@@ -1070,13 +1131,16 @@ def main():
         )
         assert shared_activation["reason"] == "compression_policy_activation"
         assert shared_activation["cleanup"]["compressionPolicyRestored"] is True
+        mutation_work_before = set(Path("/tmp").glob("offline-root-mutation.*"))
+        profile_mutation_path = temporary / "compression-profile-mutation.json"
         profile_mutation = run_installer(
             profile_paths,
             binaries,
-            temporary / "compression-profile-mutation.json",
+            profile_mutation_path,
             True,
             PROJECT_TEST_ROOT_AVAILABLE_BYTES=str(256 * 1024 * 1024),
             PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
+            MOCK_REQUIRE_CHECKSPACE_BYPASS="1",
         )
         assert profile_mutation["reason"] == "install_complete"
         assert profile_mutation["validation"]["compression"][
@@ -1084,6 +1148,42 @@ def main():
         ] is True
         assert profile_mutation["cleanup"]["mountsReleased"] is True
         assert profile_mutation["cleanup"]["compressionPolicyRestored"] is True
+        profile_transaction = next(
+            line for line in profile_mutation_path.with_suffix(".pacman").read_text(
+                encoding="utf-8"
+            ).splitlines()
+            if " -U " in f" {line} "
+        )
+        assert "--config" in profile_transaction
+        assert set(Path("/tmp").glob("offline-root-mutation.*")) == mutation_work_before
+
+        invalid_pacman_config = temporary / "invalid-pacman.conf"
+        invalid_pacman_config.write_text(
+            "[options]\nSigLevel = Required DatabaseOptional\n",
+            encoding="utf-8",
+        )
+        policy_fixture_root = temporary / "pacman-policy-failure-fixture"
+        policy_fixture_root.mkdir()
+        policy_paths = make_fixture(policy_fixture_root)
+        policy_paths["compression_profile"] = "btrfs-zstd3"
+        policy_result_path = temporary / "pacman-policy-failure.json"
+        policy_failed = run_installer(
+            policy_paths,
+            binaries,
+            policy_result_path,
+            False,
+            PROJECT_TEST_ROOT_AVAILABLE_BYTES=str(256 * 1024 * 1024),
+            PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
+            PROJECT_TEST_PACMAN_CONFIG=str(invalid_pacman_config),
+        )
+        assert policy_failed["reason"] == "pacman_checkspace_policy"
+        assert policy_failed["phase"] == "pacman_checkspace_policy"
+        assert policy_failed["cleanup"]["mountsReleased"] is True
+        assert policy_failed["cleanup"]["compressionPolicyRestored"] is True
+        policy_log = policy_result_path.with_suffix(".pacman")
+        assert not policy_log.exists() or " -U " not in (
+            " " + policy_log.read_text(encoding="utf-8") + " "
+        )
         profile_database = profile_paths["target"] / "usr/lib/holo/pacmandb/local"
         for package_name, version, installed_size in (
             ("nvidia-utils", f"{NVIDIA}-2", 8192),

@@ -257,6 +257,7 @@ STEAMOS_VERSION="$(json_value target steamosVersion)"
 NVIDIA_VERSION="$(json_value target nvidiaVersion)"
 TRUST="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["trust"])' "$VALIDATION_JSON")"
 MODULE_PAYLOAD_NOOP="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("compression", {}).get("modulePayloadNoop", False))' "$VALIDATION_JSON")"
+VALIDATION_SHA256="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$VALIDATION_JSON")"
 
 write_install_result()
 {
@@ -342,6 +343,51 @@ ACTIVE_CHILD=""
 CANCELLED=0
 COMPRESSION_POLICY_ACTIVE=0
 ORIGINAL_COMPRESSION_OPTION=""
+PACMAN_TRANSACTION_CONFIG=""
+
+require_validation_document_unchanged()
+{
+    local current
+    current="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$VALIDATION_JSON")" || return 1
+    [[ "$current" == "$VALIDATION_SHA256" ]]
+}
+
+require_measured_pacman_admission()
+{
+    [[ "$COMPRESSION_PROFILE" == btrfs-zstd3 ]] || return 1
+    python3 - "$VALIDATION_JSON" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    document = json.load(stream)
+compression = document.get("compression", {})
+storage = document.get("storage", {})
+authorized = (
+    document.get("schemaVersion") == 1
+    and document.get("status") == "verified"
+    and compression.get("requestedProfile") == "btrfs-zstd3"
+    and compression.get("writePolicy") == "compress-force=zstd:3"
+    and compression.get("admissionAuthorized") is True
+    and compression.get("mutationProfileImplemented") is True
+    and compression.get("pacmanCheckSpaceBypassAuthorized") is True
+    and compression.get("pacmanCheckSpacePolicy")
+        == "temporary-config-disable-after-live-revalidation"
+    and compression.get("assessment") == "measured-profile-admission-ready"
+    and all(
+        isinstance(storage.get(f"{name}AvailableBytes"), int)
+        and not isinstance(storage.get(f"{name}AvailableBytes"), bool)
+        and isinstance(storage.get(f"{name}RequiredBytes"), int)
+        and not isinstance(storage.get(f"{name}RequiredBytes"), bool)
+        and storage[f"{name}AvailableBytes"] >= 0
+        and storage[f"{name}RequiredBytes"] >= 0
+        and storage[f"{name}RequiredBytes"] <= storage[f"{name}AvailableBytes"]
+        for name in ("root", "var", "efi")
+    )
+)
+raise SystemExit(0 if authorized else 1)
+PY
+}
 
 compression_option()
 {
@@ -481,6 +527,31 @@ if [[ -n "$COMPRESSION_PROFILE" ]]; then
         die "The measured Btrfs compression policy could not be activated and verified."
 fi
 
+if [[ "$COMPRESSION_PROFILE" == btrfs-zstd3 ]]; then
+    PHASE=pacman_checkspace_policy
+    require_validation_document_unchanged ||
+        die "The validated compression admission document changed before mutation."
+    require_measured_pacman_admission ||
+        die "Pacman CheckSpace cannot be bypassed without exact measured Btrfs admission."
+    require_active_compression_policy ||
+        die "Pacman CheckSpace cannot be bypassed because the measured Btrfs policy is inactive."
+    if [[ "${PROJECT_TEST_MODE:-0}" == 1 ]]; then
+        PACMAN_CONFIG_SOURCE="${PROJECT_TEST_PACMAN_CONFIG:-}"
+        [[ -n "$PACMAN_CONFIG_SOURCE" ]] ||
+            die "The test appliance pacman configuration was not provided."
+    else
+        PACMAN_CONFIG_SOURCE=/etc/pacman.conf
+    fi
+    PACMAN_TRANSACTION_CONFIG="$MUTATION_WORK/pacman-measured-admission.conf"
+    run_mutation_command python3 "$SUPPORT_ROOT/lib/prepare_pacman_config.py" \
+        --source "$PACMAN_CONFIG_SOURCE" --output "$PACMAN_TRANSACTION_CONFIG" ||
+        die "A confined pacman configuration could not be prepared for measured admission."
+    require_validation_document_unchanged ||
+        die "The validated compression admission document changed during transaction preparation."
+    require_active_compression_policy ||
+        die "The measured Btrfs policy changed during pacman transaction preparation."
+fi
+
 PHASE=userspace_install
 [[ -z "$COMPRESSION_PROFILE" ]] || require_active_compression_policy
 TARGET_PACMAN_DATABASE="$ROOT/usr/lib/holo/pacmandb"
@@ -488,9 +559,17 @@ PACMAN_PACKAGES=("$NVIDIA_UTILS" "$LIB32_NVIDIA_UTILS")
 for (( dependency_index=0; dependency_index<${#DEPENDENCY_PACKAGES[@]}; dependency_index++ )); do
     PACMAN_PACKAGES+=("${DEPENDENCY_PACKAGES[$dependency_index]}")
 done
-run_mutation_command env SYSTEMD_OFFLINE=1 pacman \
-    --root "$ROOT" --dbpath "$TARGET_PACMAN_DATABASE" \
+PACMAN_ARGS=(
+    --root "$ROOT" --dbpath "$TARGET_PACMAN_DATABASE"
     --noconfirm --needed -U "${PACMAN_PACKAGES[@]}"
+)
+[[ -z "$PACMAN_TRANSACTION_CONFIG" ]] ||
+    PACMAN_ARGS=(--config "$PACMAN_TRANSACTION_CONFIG" "${PACMAN_ARGS[@]}")
+require_validation_document_unchanged ||
+    die "The validated compression admission document changed before the pacman transaction."
+run_mutation_command env SYSTEMD_OFFLINE=1 pacman "${PACMAN_ARGS[@]}"
+require_validation_document_unchanged ||
+    die "The validated compression admission document changed during the pacman transaction."
 [[ -z "$COMPRESSION_PROFILE" ]] || require_active_compression_policy
 POST_INSTALL_VERIFY_ARGS=(
     --root "$ROOT"

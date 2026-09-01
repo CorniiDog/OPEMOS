@@ -58,6 +58,8 @@ python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/atomic_output.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/prepare_pacman_config.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/write_compile_provenance.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/update_grub_nvidia_args.py
@@ -85,6 +87,9 @@ python3 tests/archive_safety.py
 
 printf 'Checking atomic output confinement...\n'
 python3 tests/atomic_output.py
+
+printf 'Checking measured-admission pacman configuration...\n'
+python3 tests/pacman_config.py
 
 printf 'Checking deterministic module repack contract...\n'
 python3 tests/repack_artifacts.py

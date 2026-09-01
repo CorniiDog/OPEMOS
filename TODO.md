@@ -1417,6 +1417,10 @@ signing policy.
   verified target policy activation/restoration, and
   success/failure/cancellation/cleanup/repeat tests; keep release readiness
   blocked pending independent final-root validation.
+* [x] Reconcile pacman's logical `CheckSpace` gate with authenticated physical
+  Btrfs admission using an exact-validation, live-policy-verified, temporary
+  confined config; preserve normal CheckSpace and signature/offline policy for
+  every other transaction, with cleanup and negative regression coverage.
 * [x] Preserve bounded typed scratch-measurement failures through validation and
   the final installer result, including phase, safe command identity, exit
   status, and sanitized stderr for dependency, mkfs, mount, extraction, Zstd,

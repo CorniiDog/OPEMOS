@@ -276,6 +276,12 @@ def validate_verified_metadata(validation):
                 != "exact-payload-noop-only"
                 or not isinstance(compression.get("modulePayloadNoop"), bool)
                 or compression.get("assessment") != "measured-profile-admission-ready"
+                or compression.get("pacmanCheckSpaceBypassAuthorized")
+                is not compression.get("admissionAuthorized")
+                or compression.get("pacmanCheckSpacePolicy") != (
+                    "temporary-config-disable-after-live-revalidation"
+                    if compression.get("admissionAuthorized") else "preserve"
+                )
                 or not isinstance(compression.get("compressionRatio"), str)
                 or re.fullmatch(r"[0-9]+\.[0-9]{6}", compression["compressionRatio"])
                 is None
@@ -389,7 +395,9 @@ def validate_verified_metadata(validation):
                        for name in ("root", "var", "efi"))):
             raise SystemExit("Verified Btrfs measurement metadata is inconsistent.")
     elif (compression.get("admissionBasis") != "logical-uncompressed-conservative"
-          or compression.get("compressionSavingsCreditedBytes") != 0):
+          or compression.get("compressionSavingsCreditedBytes") != 0
+          or compression.get("pacmanCheckSpaceBypassAuthorized") is not False
+          or compression.get("pacmanCheckSpacePolicy") != "preserve"):
         raise SystemExit("Verified conservative compression metadata is inconsistent.")
 
 

@@ -737,6 +737,8 @@ def compression_context(root):
         "writeIncompatibleOptions": incompatible_options,
         "admissionBasis": "logical-uncompressed-conservative",
         "compressionSavingsCreditedBytes": 0,
+        "pacmanCheckSpaceBypassAuthorized": False,
+        "pacmanCheckSpacePolicy": "preserve",
     }
 
 
@@ -1813,6 +1815,10 @@ def validate(args, progress):
             "rootShortfallBytes": max(0, -final_margin_bytes),
             "rootRequiredBytes": measured_required_bytes,
         })
+        admission_authorized = all(
+            storage[f"{name}RequiredBytes"] <= storage[f"{name}AvailableBytes"]
+            for name in ("root", "var", "efi")
+        )
         compression.update({
             "requestedProfile": COMPRESSION_PROFILE,
             "writePolicy": COMPRESSION_WRITE_POLICY,
@@ -1830,9 +1836,11 @@ def validate(args, progress):
                 measurement["payloadAllocatedBytes"]
                 < package_installed_bytes + module_installed_bytes
             ),
-            "admissionAuthorized": all(
-                storage[f"{name}RequiredBytes"] <= storage[f"{name}AvailableBytes"]
-                for name in ("root", "var", "efi")
+            "admissionAuthorized": admission_authorized,
+            "pacmanCheckSpaceBypassAuthorized": admission_authorized,
+            "pacmanCheckSpacePolicy": (
+                "temporary-config-disable-after-live-revalidation"
+                if admission_authorized else "preserve"
             ),
             "compressionRatio": (
                 f"{ratio_millionths // 1_000_000}."
