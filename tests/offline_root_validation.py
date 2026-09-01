@@ -886,6 +886,57 @@ def main():
         assert missing_userspace.returncode != 0
         assert "userspace verification" in missing_userspace.stderr
         assert not (result_temporary / "false-userspace-success.json").exists()
+        malformed_userspace = result_temporary / "malformed-userspace.json"
+        malformed_userspace.write_text(
+            json.dumps({
+                "schemaVersion": 1,
+                "status": "verified",
+                "reason": "installed_userspace_verified",
+                "packages": [
+                    {
+                        "packageName": name,
+                        "version": "1-1",
+                        "packageSha256": str(index) * 64,
+                        "packageQueryVerified": True,
+                        "pacmanIntegrityVerified": True,
+                        "payloadVerified": True,
+                        "directories": 0,
+                        "regularFiles": 1,
+                        "symlinks": 0,
+                        "hardlinks": 0,
+                        "sharedLibraries": 0,
+                    }
+                    for index, name in enumerate(
+                        ("nvidia-utils", "lib32-nvidia-utils"), start=1
+                    )
+                ],
+                "gspFirmware": {
+                    "version": NVIDIA,
+                    "status": "verified",
+                    "targetRelativeFiles": [{}],
+                },
+            }),
+            encoding="utf-8",
+        )
+        malformed_result = subprocess.run(
+            [
+                sys.executable, str(RESULT_WRITER),
+                "--output", str(result_temporary / "malformed-result.json"),
+                "--status", "failed", "--reason", "fixture_failure",
+                "--message", "fixture", "--phase", "fixture_failure",
+                "--root", "/target-root", "--kernel", KERNEL,
+                "--userspace-verification", str(malformed_userspace),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        assert malformed_result.returncode != 0
+        assert "Userspace GSP firmware verification is malformed." in (
+            malformed_result.stderr
+        )
+        assert "Traceback" not in malformed_result.stderr
+        assert not (result_temporary / "malformed-result.json").exists()
     excessive_attempt = subprocess.run(
         [str(INSTALLER), "--progress-attempt", "1000001"],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
@@ -918,6 +969,32 @@ def main():
         paths = make_fixture(temporary)
         run(paths, binaries, temporary / "valid.json", True)
         valid = json.loads((temporary / "valid.json").read_text())
+        duplicate_validation = json.loads(json.dumps(valid))
+        duplicate_validation["packages"].append(
+            dict(duplicate_validation["packages"][0])
+        )
+        duplicate_validation_path = temporary / "duplicate-validation-package.json"
+        duplicate_validation_path.write_text(
+            json.dumps(duplicate_validation), encoding="utf-8"
+        )
+        duplicate_validation_result = subprocess.run(
+            [
+                sys.executable, str(RESULT_WRITER),
+                "--output", str(temporary / "duplicate-validation-result.json"),
+                "--status", "failed", "--reason", "fixture_failure",
+                "--message", "fixture", "--phase", "fixture_failure",
+                "--root", "/target-root", "--kernel", KERNEL,
+                "--validation", str(duplicate_validation_path),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        assert duplicate_validation_result.returncode != 0
+        assert "package identities are duplicated" in (
+            duplicate_validation_result.stderr
+        )
+        assert not (temporary / "duplicate-validation-result.json").exists()
 
         workspace_cases = (
             ("missing", "missing_directory", None),

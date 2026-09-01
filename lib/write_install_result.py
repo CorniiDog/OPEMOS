@@ -340,6 +340,8 @@ def load_userspace_verification(path):
             or VERSION.fullmatch(firmware["version"]) is None
             or not isinstance(firmware.get("targetRelativeFiles"), list)
             or not 1 <= len(firmware["targetRelativeFiles"]) <= 16
+            or any(not isinstance(relative, str)
+                   for relative in firmware["targetRelativeFiles"])
             or firmware["targetRelativeFiles"]
             != sorted(set(firmware["targetRelativeFiles"]))):
         raise SystemExit("Userspace GSP firmware verification is malformed.")
@@ -410,6 +412,10 @@ def validate_verified_metadata(validation):
                     or any(not isinstance(value, str) or not 0 < len(value) <= 256
                            for value in relations)):
                 raise SystemExit("Verified installation package relations are invalid.")
+    for field in ("name", "filename", "signatureFilename"):
+        identities = [package[field] for package in packages]
+        if len(identities) != len(set(identities)):
+            raise SystemExit("Verified installation package identities are duplicated.")
     modules = validation["modules"]
     if (not isinstance(modules, list) or len(modules) != len(EXPECTED_MODULES)
             or any(not isinstance(module, dict)

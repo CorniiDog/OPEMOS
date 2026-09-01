@@ -356,6 +356,8 @@ def main():
     all_gsp_firmware = sorted(set(all_gsp_firmware))
     if not all_gsp_firmware:
         fail("Matching GSP firmware was not installed into the target root.")
+    if len(all_gsp_firmware) > 16:
+        fail("Matching GSP firmware inventory exceeds its limit.")
     publish(args.output, {
         "schemaVersion": 1,
         "status": "verified",
