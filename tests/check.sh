@@ -115,6 +115,9 @@ python3 tests/header_validation.py
 printf 'Checking offline-target build failure cleanup...\n'
 python3 tests/build_for_target_failures.py
 
+printf 'Checking headless VM harness contract...\n'
+python3 tests/vm_harness.py
+
 printf 'Checking built-module metadata validation...\n'
 python3 tests/module_validation.py
 

@@ -1,0 +1,10 @@
+# Every VM artifact is disposable and must remain below this directory.
+.cache/
+.runtime/
+*.qcow2
+*.img
+*.iso
+*.log
+*.sock
+*.pid
+*.json.tmp

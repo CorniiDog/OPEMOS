@@ -752,6 +752,24 @@ state-write failure, and post-removal uninstall failure, plus a successful
 install/uninstall cycle. It snapshots the real project module directory before
 and after to prove that the live installation was untouched.
 
+On a macOS host, run the same Bash 4+ transaction coverage in a disposable,
+headless Fedora guest with:
+
+```bash
+./tests/vm/run.sh
+```
+
+The runner pins and verifies the Fedora 42 cloud image, creates a fresh sparse
+overlay and NoCloud seed on every invocation, uses QEMU user-mode networking
+(never bridged networking or SSH), and returns a schema-1 JSON result over the
+serial console. It also probes advisory locking, private mount namespaces, and
+a synthetic loop-backed Btrfs filesystem. Guest disks, seed media, logs,
+sockets, and runtime files stay under ignored `tests/vm/.cache` and
+`tests/vm/.runtime` directories. The base image is the only persistent cache;
+delete it to force a verified refetch. This harness does not prove real
+SteamOS pacman/mkinitcpio behavior, recovery/A-B propagation, or NVIDIA hardware
+boot behavior.
+
 After reinstalling and cloning the same support commit, run:
 
 ```bash
