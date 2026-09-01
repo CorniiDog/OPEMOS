@@ -328,6 +328,55 @@ def require_safe_destination(root, relative):
             fail("target_path_unsafe", "a target destination escapes the root")
 
 
+def require_root_filesystem_destination(root, relative):
+    """Require the deepest existing ancestor to remain on the root filesystem."""
+    root_device = root.stat().st_dev
+    candidate = root / PurePosixPath(relative)
+    while not candidate.exists():
+        if candidate == root:
+            break
+        candidate = candidate.parent
+    try:
+        if candidate.stat().st_dev != root_device:
+            fail(
+                "compression_target_mount_mismatch",
+                "a userspace payload destination is outside the compressed root filesystem",
+            )
+    except OSError:
+        fail(
+            "compression_target_mount_mismatch",
+            "a userspace payload destination mount identity cannot be verified",
+        )
+    if os.environ.get("PROJECT_TEST_MODE") == "1":
+        if os.environ.get("PROJECT_TEST_COMPRESSION_DESTINATION_INELIGIBLE") == "1":
+            fail(
+                "compression_target_ineligible",
+                "a payload destination disables Btrfs compression",
+            )
+        return
+    try:
+        completed = subprocess.run(
+            ["lsattr", "-d", "--", str(candidate)],
+            check=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=10,
+        )
+        attributes = completed.stdout.split(maxsplit=1)[0]
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired, IndexError):
+        fail(
+            "compression_target_ineligible",
+            "a payload destination's Btrfs attributes cannot be verified",
+        )
+    if "C" in attributes or "m" in attributes:
+        fail(
+            "compression_target_ineligible",
+            "a payload destination disables Btrfs compression",
+        )
+
+
 def pacman_desc_fields(path):
     record_name = path.parent.name
     if not safe_lock_string(record_name):
@@ -533,6 +582,83 @@ def compressed_module_bytes(path):
         fail("module_size_unavailable", "cannot estimate compressed module size")
 
 
+def module_payload_sha256(path):
+    digest = hashlib.sha256()
+    process = None
+    try:
+        if path.name.endswith(".zst"):
+            process = subprocess.Popen(
+                ["zstd", "-q", "-d", "-c", str(path)],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            stream = process.stdout
+        else:
+            stream = path.open("rb")
+        with stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        if process is not None and process.wait() != 0:
+            raise OSError
+        return digest.hexdigest()
+    except OSError:
+        if process is not None and process.poll() is None:
+            process.kill()
+            process.wait()
+        fail("module_size_unavailable", "cannot inspect an existing module payload")
+
+
+def existing_module_set_is_exact(root, kernel, expected_payload_hashes):
+    destination = (
+        root / "usr/lib/modules" / kernel
+        / "updates/open-gpu-kernel-modules-steamos"
+    )
+    if not destination.exists():
+        return False
+    try:
+        entries = list(destination.iterdir())
+    except OSError:
+        fail("target_path_unsafe", "existing module destination is unreadable")
+    if any(path.is_symlink() or not path.is_file() for path in entries):
+        fail("target_path_unsafe", "existing module destination has an unsafe entry")
+    normalized = {path.name.removesuffix(".zst"): path for path in entries}
+    if set(normalized) != EXPECTED_MODULES or len(entries) != len(EXPECTED_MODULES):
+        return False
+    return all(
+        module_payload_sha256(normalized[name]) == expected_payload_hashes[name]
+        for name in EXPECTED_MODULES
+    )
+
+
+def require_installed_package_integrity(root, package_name):
+    database = root / "usr/lib/holo/pacmandb"
+    try:
+        completed = subprocess.run(
+            [
+                "pacman", "--root", str(root), "--dbpath", str(database),
+                "-Qkk", package_name,
+            ],
+            check=False,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=120,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        fail(
+            "existing_package_integrity_unverified",
+            "an exact-version installed package could not be integrity checked",
+            packageName=package_name,
+        )
+    if completed.returncode != 0:
+        fail(
+            "existing_package_integrity_unverified",
+            "an exact-version installed package failed its integrity check",
+            packageName=package_name,
+        )
+
+
 def compression_context(root):
     try:
         completed = subprocess.run(
@@ -593,6 +719,11 @@ def measured_btrfs_payload(args, package_paths, declared_payload_bytes):
             "metadataAllocatedBytes": metadata,
             "systemAllocatedBytes": system,
             "filesystemOverheadBytes": max(0, payload - data),
+            "packageMeasurements": [
+                {"filename": path.name, "allocatedBytes": 0}
+                for path in package_paths
+            ],
+            "moduleAllocatedBytes": payload,
         }
     if os.geteuid() != 0:
         fail(
@@ -628,12 +759,16 @@ def measured_btrfs_payload(args, package_paths, declared_payload_bytes):
     expected = {
         "schemaVersion", "status", "profile", "writePolicy", "measurementMethod",
         "declaredPayloadBytes", "scratchFilesystemBytes", "payloadAllocatedBytes",
+        "packageMeasurements", "moduleAllocatedBytes",
         "dataAllocatedBytes", "metadataAllocatedBytes", "systemAllocatedBytes",
         "filesystemOverheadBytes",
     }
     numeric = expected - {
         "status", "profile", "writePolicy", "measurementMethod",
+        "packageMeasurements",
     }
+    package_measurements = measurement.get("packageMeasurements")
+    measured_package_names = [path.name for path in package_paths]
     if (not isinstance(measurement, dict) or set(measurement) != expected
             or measurement.get("schemaVersion") != 1
             or measurement.get("status") != "measured"
@@ -646,6 +781,22 @@ def measured_btrfs_payload(args, package_paths, declared_payload_bytes):
                    or measurement[field] < 0 for field in numeric)
             or measurement["declaredPayloadBytes"] != declared_payload_bytes
             or measurement["payloadAllocatedBytes"] <= 0
+            or not isinstance(package_measurements, list)
+            or len(package_measurements) != len(measured_package_names)
+            or any(
+                not isinstance(item, dict)
+                or set(item) != {"filename", "allocatedBytes"}
+                or item.get("filename") != expected_name
+                or not isinstance(item.get("allocatedBytes"), int)
+                or isinstance(item.get("allocatedBytes"), bool)
+                or item["allocatedBytes"] < 0
+                for item, expected_name in zip(
+                    package_measurements, measured_package_names
+                )
+            )
+            or sum(item["allocatedBytes"] for item in package_measurements)
+            + measurement["moduleAllocatedBytes"]
+            > measurement["payloadAllocatedBytes"]
             or measurement["dataAllocatedBytes"] <= 0
             or measurement["dataAllocatedBytes"] > measurement["payloadAllocatedBytes"]):
         fail(
@@ -1126,6 +1277,7 @@ def validate(args, progress):
                 archive.extract(member, temporary, filter="data")
                 modules.append(temporary / member.name)
         records = []
+        module_payload_hashes = {}
         module_installed_bytes = 0
         progress.emit("modules", unit="items", completed=0, total=len(modules), force=True)
         for module_index, module in enumerate(modules, 1):
@@ -1133,7 +1285,9 @@ def validate(args, progress):
             vermagic = module_metadata(module, "vermagic")
             if version != nvidia or vermagic.split(maxsplit=1)[0] != args.kernel:
                 fail("module_metadata_mismatch", f"{module.name} does not match target")
-            records.append((module.name.removesuffix(".zst"), sha256(module, progress)))
+            normalized_module_name = module.name.removesuffix(".zst")
+            records.append((normalized_module_name, sha256(module, progress)))
+            module_payload_hashes[normalized_module_name] = module_payload_sha256(module)
             module_installed_bytes += compressed_module_bytes(module)
             progress.emit(
                 "modules", unit="items", completed=module_index, total=len(modules)
@@ -1344,8 +1498,13 @@ def validate(args, progress):
                 invalidFields=["ISIZE"],
             )
         replaced_package_bytes += replaced["installedSize"]
-    existing_module_bytes = tree_regular_bytes(
-        root / "usr/lib/modules" / args.kernel / "updates/open-gpu-kernel-modules-steamos"
+    module_destination_relative = (
+        f"usr/lib/modules/{args.kernel}/updates/open-gpu-kernel-modules-steamos"
+    )
+    require_safe_destination(root, module_destination_relative)
+    existing_module_bytes = tree_regular_bytes(root / module_destination_relative)
+    exact_existing_modules = existing_module_set_is_exact(
+        root, args.kernel, module_payload_hashes
     )
     initramfs_images = [
         path for path in (root / "boot").glob("initramfs*.img")
@@ -1399,29 +1558,97 @@ def validate(args, progress):
                 packageDependencyClosure=closure,
                 compression=compression,
             )
+        for parsed in parsed_packages:
+            for member in parsed["members"]:
+                require_root_filesystem_destination(root, member)
+        for relative in (
+            module_destination_relative,
+            "etc/modprobe.d",
+            "etc/mkinitcpio.conf.d",
+            "boot",
+        ):
+            require_root_filesystem_destination(root, relative)
         measurement = measured_btrfs_payload(
             args,
             [package for package, _, _, _ in package_inputs],
             package_installed_bytes + module_installed_bytes,
         )
+        package_measurement_by_name = {
+            item["filename"]: item["allocatedBytes"]
+            for item in measurement["packageMeasurements"]
+        }
+        if len(package_measurement_by_name) != len(measurement["packageMeasurements"]):
+            fail(
+                "compression_measurement_invalid",
+                "scratch-Btrfs package allocation identities are ambiguous",
+            )
+        exact_noop_packages = [
+            parsed
+            for parsed in parsed_packages
+            if installed_packages.get(parsed["lockRecord"]["name"], {}).get("version")
+            == parsed["lockRecord"]["version"]
+        ]
+        for parsed in exact_noop_packages:
+            require_installed_package_integrity(
+                root, parsed["lockRecord"]["name"]
+            )
+        exact_noop_package_credit = sum(
+            package_measurement_by_name[parsed["lockRecord"]["filename"]]
+            for parsed in exact_noop_packages
+        )
+        # Upgrades receive no physical replacement credit: pacman may need the
+        # old and new extents concurrently. Exact --needed no-ops are safe to
+        # credit because those payloads are not written at all.
+        exact_noop_module_credit = (
+            measurement["moduleAllocatedBytes"] if exact_existing_modules else 0
+        )
+        replacement_credit_bytes = min(
+            exact_noop_package_credit + exact_noop_module_credit,
+            measurement["payloadAllocatedBytes"],
+        )
+        admitted_payload_bytes = (
+            measurement["payloadAllocatedBytes"] - replacement_credit_bytes
+        )
         measured_required_bytes = (
-            measurement["payloadAllocatedBytes"]
+            admitted_payload_bytes
             + initramfs_reserve_bytes
             + ROOT_METADATA_RESERVE_BYTES
         )
+        logical_payload_bytes = package_installed_bytes + module_installed_bytes
+        ratio_millionths = (
+            measurement["payloadAllocatedBytes"] * 1_000_000
+            // max(1, logical_payload_bytes)
+        )
+        final_margin_bytes = storage["rootAvailableBytes"] - measured_required_bytes
         storage.update({
             "rootConservativeRequiredBytes": conservative_root_required_bytes,
+            "rootLogicalRequiredBytes": (
+                logical_payload_bytes + initramfs_reserve_bytes
+                + ROOT_METADATA_RESERVE_BYTES
+            ),
             "rootMeasuredRequiredBytes": measured_required_bytes,
+            "measuredPayloadAllocatedBytes": measurement["payloadAllocatedBytes"],
             "compressionPayloadAllocatedBytes": measurement["payloadAllocatedBytes"],
             "compressionFilesystemOverheadBytes": measurement["filesystemOverheadBytes"],
             "compressionSafetyReserveBytes": ROOT_METADATA_RESERVE_BYTES,
+            "compressionReserveBytes": (
+                initramfs_reserve_bytes + ROOT_METADATA_RESERVE_BYTES
+            ),
+            "replacementCandidateLogicalBytes": (
+                replaced_package_bytes + existing_module_bytes
+            ),
+            "replacementCreditBytes": replacement_credit_bytes,
+            "packageNoopCreditBytes": exact_noop_package_credit,
+            "moduleNoopCreditBytes": exact_noop_module_credit,
+            "rootFinalMarginBytes": final_margin_bytes,
+            "rootShortfallBytes": max(0, -final_margin_bytes),
             "rootRequiredBytes": measured_required_bytes,
         })
         compression.update({
             "requestedProfile": COMPRESSION_PROFILE,
             "writePolicy": COMPRESSION_WRITE_POLICY,
             "measurement": measurement,
-            "admissionBasis": "scratch-btrfs-allocated-physical-bytes-plus-reserves",
+            "admissionBasis": "scratch-btrfs-allocated-physical-bytes-minus-noop-credit-plus-reserves",
             "compressionSavingsCreditedBytes": max(
                 0, conservative_root_required_bytes - measured_required_bytes
             ),
@@ -1438,8 +1665,15 @@ def validate(args, progress):
                 storage[f"{name}RequiredBytes"] <= storage[f"{name}AvailableBytes"]
                 for name in ("root", "var", "efi")
             ),
-            "mutationProfileImplemented": False,
-            "assessment": "measured-profile-validation-only",
+            "compressionRatio": (
+                f"{ratio_millionths // 1_000_000}."
+                f"{ratio_millionths % 1_000_000:06d}"
+            ),
+            "allPayloadDestinationsOnRootFilesystem": True,
+            "replacementCreditPolicy": "exact-payload-noop-only",
+            "modulePayloadNoop": exact_existing_modules,
+            "mutationProfileImplemented": True,
+            "assessment": "measured-profile-admission-ready",
         })
     insufficient = [
         name

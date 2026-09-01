@@ -84,7 +84,7 @@ Options:
   --dependency-package FILE       Repeat with its paired signature.
   --dependency-signature FILE     Repeat in the same order as packages.
   --progress-attempt NUMBER       Correlates progress records (0-1000000).
-  --compression-profile PROFILE  Currently: btrfs-zstd3 (validation only).
+  --compression-profile PROFILE  Currently: btrfs-zstd3.
   --validate-only
   -h, --help
 
@@ -252,6 +252,7 @@ json_value()
 STEAMOS_VERSION="$(json_value target steamosVersion)"
 NVIDIA_VERSION="$(json_value target nvidiaVersion)"
 TRUST="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["trust"])' "$VALIDATION_JSON")"
+MODULE_PAYLOAD_NOOP="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("compression", {}).get("modulePayloadNoop", False))' "$VALIDATION_JSON")"
 
 write_install_result()
 {
@@ -284,11 +285,6 @@ if (( VALIDATE_ONLY )); then
         --validation "$VALIDATION_JSON"
     ok "Offline-root NVIDIA inputs validated without mutation."
     exit 0
-fi
-
-if [[ -n "$COMPRESSION_PROFILE" ]]; then
-    fail_pre_mutation compression_profile_mutation_not_implemented \
-        "The measured compression profile is validation-only until target policy restoration and post-install verification are implemented."
 fi
 
 (( EUID == 0 || ${PROJECT_TEST_MODE:-0} == 1 )) ||
@@ -338,6 +334,60 @@ PHASE=mutation_preflight
 COMPLETED=0
 ACTIVE_CHILD=""
 CANCELLED=0
+COMPRESSION_POLICY_ACTIVE=0
+ORIGINAL_COMPRESSION_OPTION=""
+
+compression_option()
+{
+    local output filesystem options option found=""
+    output="$(findmnt -rn -T "$ROOT" -o FSTYPE,OPTIONS)" || return 1
+    read -r filesystem options <<< "$output"
+    [[ "$filesystem" == btrfs && -n "$options" ]] || return 1
+    local old_ifs="$IFS"
+    IFS=,
+    for option in $options; do
+        case "$option" in
+            compress=*|compress-force=*)
+                [[ -z "$found" ]] || { IFS="$old_ifs"; return 1; }
+                found="$option"
+                ;;
+        esac
+    done
+    IFS="$old_ifs"
+    printf '%s\n' "$found"
+}
+
+require_active_compression_policy()
+{
+    [[ "$(compression_option)" == "compress-force=zstd:3" ]] ||
+        die "The measured Btrfs compression policy is no longer active."
+}
+
+activate_compression_policy()
+{
+    [[ "$COMPRESSION_PROFILE" == btrfs-zstd3 ]] || return 0
+    ORIGINAL_COMPRESSION_OPTION="$(compression_option)" || return 1
+    COMPRESSION_POLICY_ACTIVE=1
+    mount -o remount,compress-force=zstd:3 "$ROOT" || return 1
+    require_active_compression_policy
+}
+
+restore_compression_policy()
+{
+    [[ "$COMPRESSION_POLICY_ACTIVE" == 1 ]] || return 0
+    if [[ -n "$ORIGINAL_COMPRESSION_OPTION" &&
+          "$ORIGINAL_COMPRESSION_OPTION" != compress=no ]]; then
+        mount -o "remount,$ORIGINAL_COMPRESSION_OPTION" "$ROOT" || return 1
+        [[ "$(compression_option)" == "$ORIGINAL_COMPRESSION_OPTION" ]] || return 1
+    else
+        mount -o remount,compress=no "$ROOT" || return 1
+        case "$(compression_option)" in
+            ""|compress=no) ;;
+            *) return 1 ;;
+        esac
+    fi
+    COMPRESSION_POLICY_ACTIVE=0
+}
 
 run_mutation_command()
 {
@@ -362,13 +412,14 @@ unmount_tree()
 
 cleanup_mutation()
 {
-    local rc=$? index mounts_released=true
+    local rc=$? index mounts_released=true compression_restored=true
     trap - EXIT INT TERM
     for (( index=${#MOUNTS[@]}-1; index>=0; index-- )); do
         unmount_tree "${MOUNTS[$index]}" || mounts_released=false
     done
+    restore_compression_policy || compression_restored=false
     if [[ "$COMPLETED" != 1 ]]; then
-        if [[ "$mounts_released" == true ]]; then
+        if [[ "$mounts_released" == true && "$compression_restored" == true ]]; then
             if [[ "$CANCELLED" == 1 ]]; then
                 write_install_result cancelled cancelled \
                     "Offline-root mutation was cancelled; discard the disposable overlay." \
@@ -379,8 +430,8 @@ cleanup_mutation()
                     "$PHASE" true || true
             fi
         else
-            write_install_result failed mount_cleanup_failed \
-                "Offline-root mutation failed and one or more mounts remain active." \
+            write_install_result failed mutation_cleanup_failed \
+                "Offline-root mutation failed and mount or compression policy cleanup was incomplete." \
                 cleanup false || true
         fi
     fi
@@ -401,7 +452,14 @@ cancel_mutation()
 trap cleanup_mutation EXIT
 trap cancel_mutation INT TERM
 
+if [[ -n "$COMPRESSION_PROFILE" ]]; then
+    PHASE=compression_policy_activation
+    activate_compression_policy ||
+        die "The measured Btrfs compression policy could not be activated and verified."
+fi
+
 PHASE=userspace_install
+[[ -z "$COMPRESSION_PROFILE" ]] || require_active_compression_policy
 TARGET_PACMAN_DATABASE="$ROOT/usr/lib/holo/pacmandb"
 PACMAN_PACKAGES=("$NVIDIA_UTILS" "$LIB32_NVIDIA_UTILS")
 for (( dependency_index=0; dependency_index<${#DEPENDENCY_PACKAGES[@]}; dependency_index++ )); do
@@ -410,6 +468,7 @@ done
 run_mutation_command env SYSTEMD_OFFLINE=1 pacman \
     --root "$ROOT" --dbpath "$TARGET_PACMAN_DATABASE" \
     --noconfirm --needed -U "${PACMAN_PACKAGES[@]}"
+[[ -z "$COMPRESSION_PROFILE" ]] || require_active_compression_policy
 
 installed_package_version()
 {
@@ -427,18 +486,21 @@ find "$ROOT/usr/lib/firmware/nvidia/$NVIDIA_VERSION" \
     die "Matching GSP firmware was not installed into the target root."
 
 PHASE=module_install
+[[ -z "$COMPRESSION_PROFILE" ]] || require_active_compression_policy
 bsdtar -xzf "$ARCHIVE" -C "$MUTATION_WORK"
 TARGET_MODULES="$ROOT/usr/lib/modules/$KERNEL/updates/open-gpu-kernel-modules-steamos"
-rm -rf "$TARGET_MODULES"
-install -d -m 0755 "$TARGET_MODULES"
-for module in "$MUTATION_WORK"/modules/*.ko*; do
-    module_name="$(basename "$module")"
-    case "$module_name" in
-        *.ko.zst) install -m 0644 "$module" "$TARGET_MODULES/$module_name" ;;
-        *.ko) zstd -q -f -T0 "$module" -o "$TARGET_MODULES/${module_name}.zst" ;;
-        *) die "Unexpected module filename after validated extraction." ;;
-    esac
-done
+if [[ "$MODULE_PAYLOAD_NOOP" != True ]]; then
+    rm -rf "$TARGET_MODULES"
+    install -d -m 0755 "$TARGET_MODULES"
+    for module in "$MUTATION_WORK"/modules/*.ko*; do
+        module_name="$(basename "$module")"
+        case "$module_name" in
+            *.ko.zst) install -m 0644 "$module" "$TARGET_MODULES/$module_name" ;;
+            *.ko) zstd -q -f -T0 "$module" -o "$TARGET_MODULES/${module_name}.zst" ;;
+            *) die "Unexpected module filename after validated extraction." ;;
+        esac
+    done
+fi
 
 install -d -m 0755 "$ROOT/etc/modprobe.d" "$ROOT/etc/mkinitcpio.conf.d"
 printf '%s\n' \
@@ -452,15 +514,19 @@ printf '%s\n' \
     "# Managed by ${PROJECT_NAME}" \
     'MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm)' \
     > "$ROOT/etc/mkinitcpio.conf.d/90-open-gpu-kernel-modules-steamos.conf"
+[[ -z "$COMPRESSION_PROFILE" ]] || require_active_compression_policy
 
 PHASE=bootloader_config
 run_mutation_command python3 "$SUPPORT_ROOT/lib/update_grub_nvidia_args.py" \
     --grub-config "$ROOT/efi/EFI/steamos/grub.cfg"
 
 PHASE=depmod
+[[ -z "$COMPRESSION_PROFILE" ]] || require_active_compression_policy
 run_mutation_command depmod -b "$ROOT" -a "$KERNEL"
+[[ -z "$COMPRESSION_PROFILE" ]] || require_active_compression_policy
 
 PHASE=initramfs
+[[ -z "$COMPRESSION_PROFILE" ]] || require_active_compression_policy
 for bind_path in dev proc sys; do
     install -d -m 0755 "$ROOT/$bind_path"
     MOUNTS+=("$ROOT/$bind_path")
@@ -468,8 +534,10 @@ for bind_path in dev proc sys; do
     run_mutation_command mount --make-rslave "$ROOT/$bind_path"
 done
 run_mutation_command env SYSTEMD_OFFLINE=1 chroot "$ROOT" /usr/bin/mkinitcpio -P
+[[ -z "$COMPRESSION_PROFILE" ]] || require_active_compression_policy
 
 PHASE=state_write
+[[ -z "$COMPRESSION_PROFILE" ]] || require_active_compression_policy
 STATE_ROOT="$ROOT/var/lib/$PROJECT_NAME/offline-install"
 install -d -m 0755 "$STATE_ROOT"
 install -m 0644 "$MUTATION_WORK/BUILD-INFO.txt" "$STATE_ROOT/BUILD-INFO.txt"
@@ -486,6 +554,11 @@ if findmnt -rn -R "$ROOT/dev" >/dev/null 2>&1 ||
    findmnt -rn -R "$ROOT/proc" >/dev/null 2>&1 ||
    findmnt -rn -R "$ROOT/sys" >/dev/null 2>&1; then
     die "One or more target bind mounts remain after recursive cleanup."
+fi
+if [[ -n "$COMPRESSION_PROFILE" ]]; then
+    PHASE=compression_policy_restore
+    restore_compression_policy ||
+        die "The target Btrfs compression policy could not be restored."
 fi
 
 PHASE=complete

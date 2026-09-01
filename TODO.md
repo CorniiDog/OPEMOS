@@ -14,12 +14,12 @@ index in the same commit.
 * [ ] Run `btrfs-zstd3` through the complete validator against a freshly mounted
   recovery overlay and confirm its structured storage result reproduces the
   standalone real-payload measurement within the documented safety policy.
-* [ ] Apply the authorized compression policy during mutation, restore the
-  original target mount policy on success/failure/cancellation, and independently
-  verify package records, files, modules, initramfs, and final Btrfs state.
-* [ ] Add real and synthetic compression-profile *mutation* success,
-  insufficient-space, cancellation, cleanup, rollback, and repeat-run tests.
-  Never delete AMD/Mesa content, resize partitions, or credit archive estimates.
+* [ ] Run the implemented fail-closed compression mutation against a disposable
+  recovery overlay and independently verify package records, files, modules,
+  initramfs, final Btrfs state, rollback, and repeat execution. Synthetic
+  activation/restoration, success, insufficient-space, cancellation, cleanup,
+  and repeat-run coverage now passes. Never delete AMD/Mesa content, resize
+  partitions, or credit archive estimates.
 * [ ] After repinning this support commit, make the image builder deserialize
   and independently compare `provenanceSha256`, `userspaceLock`, compression
   authorization, and every extended package record field.
@@ -1378,11 +1378,12 @@ signing policy.
 * [x] Bound cancellation with TERM-to-KILL escalation, cover the process-group
   creation race, reap children, and repeatedly exercise validation/mutation
   cancellation without stale mounts.
-* [x] Add a maintainer-only `btrfs-zstd3` scratch measurement path using exact
+* [x] Add a `btrfs-zstd3` scratch measurement and mutation path using exact
   authenticated payloads and Btrfs allocated-byte deltas, with bounded inputs,
-  structured physical/storage fields, and success/failure/cancellation cleanup
-  tests; keep mutation blocked pending policy restoration and independent
-  final-root validation.
+  structured physical/storage fields, exact no-op-only replacement credit,
+  verified target policy activation/restoration, and
+  success/failure/cancellation/cleanup/repeat tests; keep release readiness
+  blocked pending independent final-root validation.
 * [x] Run the exact reviewed six-package/module payload through real x86_64
   Fedora scratch Btrfs: 528,154,624 allocated payload bytes and 757,461,736
   bytes including current initramfs/safety reserves, fitting the observed root

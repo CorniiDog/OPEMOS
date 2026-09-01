@@ -229,14 +229,24 @@ def main():
             run(["mount", "-o", MOUNT_OPTIONS, str(image), str(mount_path)])
             MOUNTED = True
             baseline = filesystem_usage(mount_path)
+            previous = baseline
+            package_measurements = []
             package_root = mount_path / "payload/packages"
             package_root.mkdir(parents=True)
             for index, package in enumerate(args.package):
                 destination = package_root / str(index)
                 install_package_payload(package, destination)
+                os.sync()
+                current = filesystem_usage(mount_path)
+                package_measurements.append({
+                    "filename": package.name,
+                    "allocatedBytes": max(0, current["used"] - previous["used"]),
+                })
+                previous = current
             install_module_payload(args.module_archive, mount_path / "payload/modules")
             os.sync()
             measured = filesystem_usage(mount_path)
+            module_allocated_bytes = max(0, measured["used"] - previous["used"])
             delta = {
                 key: max(0, measured[key] - baseline[key])
                 for key in ("used", "data", "metadata", "system")
@@ -256,6 +266,8 @@ def main():
                 "metadataAllocatedBytes": delta["metadata"],
                 "systemAllocatedBytes": delta["system"],
                 "filesystemOverheadBytes": max(0, delta["used"] - delta["data"]),
+                "packageMeasurements": package_measurements,
+                "moduleAllocatedBytes": module_allocated_bytes,
             })
         except MeasurementFailure as error:
             raise SystemExit(f"Scratch-Btrfs measurement failed: {error}") from error

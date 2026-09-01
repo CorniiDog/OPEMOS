@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import tarfile
@@ -289,7 +290,7 @@ def make_mocks(root):
         encoding="utf-8",
     )
     (binaries / "pacman").write_text(
-        """#!/bin/sh
+        r"""#!/bin/sh
 root=
 dbpath=
 previous=
@@ -300,6 +301,7 @@ for argument in "$@"; do
 done
 [ "$dbpath" = "$root/usr/lib/holo/pacmandb" ] || exit 91
 case " $* " in
+  *" -Qkk "*) [ "${MOCK_FAIL_QKK:-0}" = 0 ];;
   *" -U "*)
     mkdir -p "$root/usr/lib/firmware/nvidia/$MOCK_NVIDIA"
     printf firmware > "$root/usr/lib/firmware/nvidia/$MOCK_NVIDIA/gsp_ga10x.bin"
@@ -315,12 +317,35 @@ esac
         encoding="utf-8",
     )
     (binaries / "mount").write_text(
-        "#!/bin/sh\ncase \" $* \" in *' --rbind '*) eval target=\\${$#}; echo \"$target\" >> \"$MOCK_MOUNT_STATE\";; esac\n",
+        r"""#!/bin/sh
+case " $* " in
+  *' --rbind '*) eval target=\${$#}; echo "$target" >> "$MOCK_MOUNT_STATE";;
+  *' remount,compress-force=zstd:3 '*)
+    [ "${MOCK_FAIL_COMPRESSION_ACTIVATE:-0}" = 0 ] || exit 1
+    printf '%s\n' 'compress-force=zstd:3' > "$MOCK_COMPRESSION_STATE"
+    ;;
+  *' remount,compress=no '*) : > "$MOCK_COMPRESSION_STATE";;
+  *' remount,compress='*) option=${2#remount,}; printf '%s\n' "$option" > "$MOCK_COMPRESSION_STATE";;
+esac
+""",
         encoding="utf-8",
     )
     (binaries / "mountpoint").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     (binaries / "findmnt").write_text(
-        "#!/bin/sh\ncase \" $* \" in *' -T '*) echo 'btrfs rw,compress=zstd:3'; exit 0;; esac\neval target=\\${$#}; grep -F -q \"$target\" \"$MOCK_MOUNT_STATE\" 2>/dev/null\n",
+        r"""#!/bin/sh
+case " $* " in
+  *' -T '*)
+    if [ -z "${MOCK_COMPRESSION_STATE:-}" ]; then
+      option='compress=zstd:3'
+    else
+      option=$(cat "$MOCK_COMPRESSION_STATE" 2>/dev/null || true)
+    fi
+    if [ -n "$option" ]; then echo "btrfs rw,$option"; else echo 'btrfs rw'; fi
+    exit 0
+    ;;
+esac
+eval target=\${$#}; grep -F -q "$target" "$MOCK_MOUNT_STATE" 2>/dev/null
+""",
         encoding="utf-8",
     )
     (binaries / "umount").write_text(
@@ -328,7 +353,7 @@ esac
         encoding="utf-8",
     )
     (binaries / "chroot").write_text(
-        "#!/bin/sh\nsleep \"${MOCK_CHROOT_DELAY:-0}\"\n[ \"${MOCK_FAIL_CHROOT:-0}\" = 0 ] || exit 1\nmkdir -p \"$1/boot\"; echo initramfs > \"$1/boot/initramfs-fixture.img\"\n",
+        "#!/bin/sh\nsleep \"${MOCK_CHROOT_DELAY:-0}\"\n[ \"${MOCK_FAIL_CHROOT:-0}\" = 0 ] || exit 1\nmkdir -p \"$1/boot\"; echo initramfs > \"$1/boot/initramfs-fixture.img\"\n[ \"${MOCK_DRIFT_COMPRESSION:-0}\" = 0 ] || : > \"$MOCK_COMPRESSION_STATE\"\n",
         encoding="utf-8",
     )
     for path in binaries.iterdir():
@@ -428,6 +453,7 @@ def installer_environment(binaries, mount_state, **environment):
         PROJECT_TEST_MODE="1",
         PROJECT_TEST_APPLIANCE_ARCH="x86_64",
         MOCK_MOUNT_STATE=str(mount_state),
+        MOCK_COMPRESSION_STATE=str(mount_state.with_suffix(".compression")),
         **environment,
     )
     return env
@@ -437,18 +463,31 @@ def run_installer(paths, binaries, result, success, preserve_lock=False, **envir
     command = installer_command(paths, result, preserve_lock=preserve_lock)
     mount_state = result.with_suffix(".mounts")
     mount_state.write_text("", encoding="utf-8")
+    initial_compression = environment.pop(
+        "MOCK_INITIAL_COMPRESSION", "compress=zstd:3"
+    )
+    mount_state.with_suffix(".compression").write_text(
+        initial_compression, encoding="utf-8"
+    )
     env = installer_environment(binaries, mount_state, **environment)
     completed = subprocess.run(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     result.with_suffix(result.suffix + ".stderr").write_text(completed.stderr, encoding="utf-8")
     if (completed.returncode == 0) != success:
         raise AssertionError(f"installer result did not match expectation: {completed.stderr}")
     assert not mount_state.read_text(encoding="utf-8").strip()
+    assert mount_state.with_suffix(".compression").read_text().strip() == initial_compression
     return json.loads(result.read_text(encoding="utf-8"))
 
 
 def cancel_installer(paths, binaries, result, expected_phase, **environment):
     mount_state = result.with_suffix(".mounts")
     mount_state.write_text("", encoding="utf-8")
+    initial_compression = environment.pop(
+        "MOCK_INITIAL_COMPRESSION", "compress=zstd:3"
+    )
+    mount_state.with_suffix(".compression").write_text(
+        initial_compression, encoding="utf-8"
+    )
     env = installer_environment(binaries, mount_state, **environment)
     before_validation_files = set(Path("/tmp").glob("offline-root-validation.*"))
     process = subprocess.Popen(
@@ -479,6 +518,7 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
     assert document["phase"] == expected_phase
     assert document["cleanup"]["mountsReleased"] is True
     assert not mount_state.read_text(encoding="utf-8").strip()
+    assert mount_state.with_suffix(".compression").read_text().strip() == initial_compression
     assert set(Path("/tmp").glob("offline-root-validation.*")) == before_validation_files
 
 
@@ -736,7 +776,19 @@ def main():
         assert measured["compression"]["requestedProfile"] == "btrfs-zstd3"
         assert measured["compression"]["writePolicy"] == "compress-force=zstd:3"
         assert measured["compression"]["admissionAuthorized"] is True
-        assert measured["compression"]["mutationProfileImplemented"] is False
+        assert measured["compression"]["mutationProfileImplemented"] is True
+        assert measured["compression"]["allPayloadDestinationsOnRootFilesystem"] is True
+        assert re.fullmatch(
+            r"[0-9]+\.[0-9]{6}", measured["compression"]["compressionRatio"]
+        )
+        assert measured["storage"]["measuredPayloadAllocatedBytes"] == 8 * 1024 * 1024
+        assert measured["storage"]["compressionReserveBytes"] == (
+            measured["storage"]["initramfsReserveBytes"] + 64 * 1024 * 1024
+        )
+        assert measured["storage"]["rootFinalMarginBytes"] == (
+            measured["storage"]["rootAvailableBytes"]
+            - measured["storage"]["rootRequiredBytes"]
+        )
         expected_payload_savings = max(
             0,
             measured["compression"]["measurement"]["declaredPayloadBytes"]
@@ -803,17 +855,101 @@ def main():
         )
         assert measurement_invalid["reason"] == "compression_measurement_invalid"
 
-        profile_mutation = run_installer(
+        ineligible_destination = run(
             paths,
             binaries,
-            temporary / "compression-profile-mutation-blocked.json",
+            temporary / "compression-destination-ineligible.json",
+            False,
+            PROJECT_TEST_COMPRESSION_DESTINATION_INELIGIBLE="1",
+        )
+        assert ineligible_destination["reason"] == "compression_target_ineligible"
+
+        profile_fixture_root = temporary / "compression-profile-install-fixture"
+        profile_fixture_root.mkdir()
+        profile_paths = make_fixture(profile_fixture_root)
+        profile_paths["compression_profile"] = "btrfs-zstd3"
+        activation_failed = run_installer(
+            profile_paths,
+            binaries,
+            temporary / "compression-profile-activation-failed.json",
             False,
             PROJECT_TEST_ROOT_AVAILABLE_BYTES=str(256 * 1024 * 1024),
             PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
+            MOCK_FAIL_COMPRESSION_ACTIVATE="1",
         )
-        assert profile_mutation["reason"] == "compression_profile_mutation_not_implemented"
-        assert profile_mutation["phase"] == "mutation_preflight"
+        assert activation_failed["reason"] == "compression_policy_activation"
+        assert activation_failed["cleanup"]["mountsReleased"] is True
+        profile_mutation = run_installer(
+            profile_paths,
+            binaries,
+            temporary / "compression-profile-mutation.json",
+            True,
+            PROJECT_TEST_ROOT_AVAILABLE_BYTES=str(256 * 1024 * 1024),
+            PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
+        )
+        assert profile_mutation["reason"] == "install_complete"
+        assert profile_mutation["validation"]["compression"][
+            "mutationProfileImplemented"
+        ] is True
         assert profile_mutation["cleanup"]["mountsReleased"] is True
+        profile_database = profile_paths["target"] / "usr/lib/holo/pacmandb/local"
+        for package_name, version, installed_size in (
+            ("nvidia-utils", f"{NVIDIA}-2", 8192),
+            ("lib32-nvidia-utils", f"{NVIDIA}-1", 4096),
+        ):
+            record = profile_database / f"{package_name}-{version}"
+            record.mkdir()
+            (record / "desc").write_text(
+                f"%NAME%\n{package_name}\n\n%VERSION%\n{version}\n\n"
+                f"%ISIZE%\n{installed_size}\n",
+                encoding="utf-8",
+            )
+        integrity_failed = run_installer(
+            profile_paths,
+            binaries,
+            temporary / "compression-profile-integrity-failed.json",
+            False,
+            PROJECT_TEST_ROOT_AVAILABLE_BYTES=str(256 * 1024 * 1024),
+            PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
+            MOCK_FAIL_QKK="1",
+        )
+        assert integrity_failed["reason"] == "existing_package_integrity_unverified"
+        assert integrity_failed["phase"] == "validation"
+        repeated_profile = run_installer(
+            profile_paths,
+            binaries,
+            temporary / "compression-profile-repeat.json",
+            True,
+            PROJECT_TEST_ROOT_AVAILABLE_BYTES=str(256 * 1024 * 1024),
+            PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
+            MOCK_INITIAL_COMPRESSION="",
+        )
+        assert repeated_profile["validation"]["compression"]["modulePayloadNoop"] is True
+        assert repeated_profile["validation"]["storage"]["moduleNoopCreditBytes"] == (
+            8 * 1024 * 1024
+        )
+        drifted_profile = run_installer(
+            profile_paths,
+            binaries,
+            temporary / "compression-profile-drift.json",
+            False,
+            PROJECT_TEST_ROOT_AVAILABLE_BYTES=str(256 * 1024 * 1024),
+            PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
+            MOCK_DRIFT_COMPRESSION="1",
+            MOCK_INITIAL_COMPRESSION="",
+        )
+        assert drifted_profile["reason"] == "initramfs"
+        assert drifted_profile["cleanup"]["mountsReleased"] is True
+        cancel_installer(
+            profile_paths,
+            binaries,
+            temporary / "compression-profile-cancel.json",
+            "initramfs",
+            PROJECT_TEST_ROOT_AVAILABLE_BYTES=str(256 * 1024 * 1024),
+            PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
+            MOCK_CHROOT_DELAY="30",
+            MOCK_INITIAL_COMPRESSION="",
+        )
         del paths["compression_profile"]
 
         local_database = paths["target"] / "usr/lib/holo/pacmandb/local"

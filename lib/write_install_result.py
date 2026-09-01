@@ -153,8 +153,12 @@ def validate_verified_metadata(validation):
     if "requestedProfile" in compression:
         measured_storage = {
             "rootConservativeRequiredBytes", "rootMeasuredRequiredBytes",
+            "rootLogicalRequiredBytes", "measuredPayloadAllocatedBytes",
             "compressionPayloadAllocatedBytes", "compressionFilesystemOverheadBytes",
-            "compressionSafetyReserveBytes",
+            "compressionSafetyReserveBytes", "compressionReserveBytes",
+            "replacementCandidateLogicalBytes", "replacementCreditBytes",
+            "packageNoopCreditBytes", "moduleNoopCreditBytes",
+            "rootShortfallBytes",
         }
         measurement = compression.get("measurement")
         measurement_numbers = {
@@ -162,10 +166,15 @@ def validate_verified_metadata(validation):
             "payloadAllocatedBytes", "dataAllocatedBytes", "metadataAllocatedBytes",
             "systemAllocatedBytes", "filesystemOverheadBytes",
         }
+        package_measurements = measurement.get("packageMeasurements", []) \
+            if isinstance(measurement, dict) else []
+        expected_package_filenames = [
+            package["filename"] for package in validation["packages"]
+        ]
         if (compression.get("requestedProfile") != "btrfs-zstd3"
                 or compression.get("writePolicy") != "compress-force=zstd:3"
                 or compression.get("admissionBasis")
-                != "scratch-btrfs-allocated-physical-bytes-plus-reserves"
+                != "scratch-btrfs-allocated-physical-bytes-minus-noop-credit-plus-reserves"
                 or not isinstance(measurement, dict)
                 or not isinstance(compression.get("admissionAuthorized"), bool)
                 or not isinstance(compression.get("measuredPayloadSavingsBytes"), int)
@@ -184,7 +193,15 @@ def validate_verified_metadata(validation):
                     storage["rootConservativeRequiredBytes"]
                     - storage["rootMeasuredRequiredBytes"],
                 )
-                or compression.get("mutationProfileImplemented") is not False
+                or compression.get("mutationProfileImplemented") is not True
+                or compression.get("allPayloadDestinationsOnRootFilesystem") is not True
+                or compression.get("replacementCreditPolicy")
+                != "exact-payload-noop-only"
+                or not isinstance(compression.get("modulePayloadNoop"), bool)
+                or compression.get("assessment") != "measured-profile-admission-ready"
+                or not isinstance(compression.get("compressionRatio"), str)
+                or re.fullmatch(r"[0-9]+\.[0-9]{6}", compression["compressionRatio"])
+                is None
                 or not measured_storage <= storage.keys()
                 or any(not isinstance(storage[field], int)
                        or isinstance(storage[field], bool) or storage[field] < 0
@@ -195,11 +212,59 @@ def validate_verified_metadata(validation):
                 or measurement.get("writePolicy") != "compress-force=zstd:3"
                 or measurement.get("measurementMethod")
                 != "scratch-btrfs-filesystem-usage-used-delta"
+                or not isinstance(package_measurements, list)
+                or len(package_measurements) != len(expected_package_filenames)
+                or any(
+                    not isinstance(item, dict)
+                    or set(item) != {"filename", "allocatedBytes"}
+                    or item.get("filename") != expected_filename
+                    or not isinstance(item.get("allocatedBytes"), int)
+                    or isinstance(item.get("allocatedBytes"), bool)
+                    or item["allocatedBytes"] < 0
+                    for item, expected_filename in zip(
+                        package_measurements, expected_package_filenames
+                    )
+                )
+                or not isinstance(measurement.get("moduleAllocatedBytes"), int)
+                or isinstance(measurement.get("moduleAllocatedBytes"), bool)
+                or measurement.get("moduleAllocatedBytes", -1) < 0
+                or sum(item["allocatedBytes"] for item in package_measurements)
+                + measurement.get("moduleAllocatedBytes", 0)
+                > measurement.get("payloadAllocatedBytes", 0)
                 or not measurement_numbers <= measurement.keys()
                 or any(not isinstance(measurement[field], int)
                        or isinstance(measurement[field], bool) or measurement[field] < 0
                        for field in measurement_numbers)
                 or storage["rootRequiredBytes"] != storage["rootMeasuredRequiredBytes"]
+                or storage["measuredPayloadAllocatedBytes"]
+                != measurement.get("payloadAllocatedBytes")
+                or storage["compressionPayloadAllocatedBytes"]
+                != measurement.get("payloadAllocatedBytes")
+                or storage["replacementCreditBytes"]
+                > storage["measuredPayloadAllocatedBytes"]
+                or storage["replacementCreditBytes"] != (
+                    storage["packageNoopCreditBytes"]
+                    + storage["moduleNoopCreditBytes"]
+                )
+                or storage["moduleNoopCreditBytes"] != (
+                    measurement.get("moduleAllocatedBytes", 0)
+                    if compression["modulePayloadNoop"] else 0
+                )
+                or storage["compressionReserveBytes"] != (
+                    storage["initramfsReserveBytes"]
+                    + storage["compressionSafetyReserveBytes"]
+                )
+                or storage["rootMeasuredRequiredBytes"] != (
+                    storage["measuredPayloadAllocatedBytes"]
+                    - storage["replacementCreditBytes"]
+                    + storage["compressionReserveBytes"]
+                )
+                or storage.get("rootFinalMarginBytes") != (
+                    storage["rootAvailableBytes"] - storage["rootRequiredBytes"]
+                )
+                or storage["rootShortfallBytes"] != max(
+                    0, -storage["rootFinalMarginBytes"]
+                )
                 or compression["admissionAuthorized"]
                 != all(storage[f"{name}RequiredBytes"] <= storage[f"{name}AvailableBytes"]
                        for name in ("root", "var", "efi"))):

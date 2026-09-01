@@ -310,23 +310,32 @@ credited. The default remains intentionally conservative: a target that fits
 only under an assumed compression ratio is rejected unless an explicit measured
 profile is requested.
 
-Maintainers can request `--compression-profile btrfs-zstd3` during
-`--validate-only`. This creates a disposable sparse Btrfs filesystem, mounts it
+Maintainers can request `--compression-profile btrfs-zstd3`. Validation creates
+a disposable sparse Btrfs filesystem, mounts it
 with `compress-force=zstd:3`, writes the already-authenticated package payload
 and target-format compressed modules, synchronizes it, and measures the delta in
 Btrfs allocated `Used` bytes. The structured result retains conservative logical
-and measured physical requirements, data/metadata/system allocation, filesystem
-overhead, explicit initramfs and metadata reserves, and whether the measurement
-fits the target's reported free space. Scratch mounts are checked and released
-on success, failure, and cancellation.
+and measured physical requirements, per-package and module allocation,
+data/metadata/system allocation, filesystem overhead, explicit initramfs and
+metadata reserves, compression ratio, available space, shortfall, and final
+margin. Scratch mounts are checked and released on success, failure, and
+cancellation.
 
-This profile is intentionally validation-only. A non-validation installer call
-with the profile fails before mutation with
-`compression_profile_mutation_not_implemented`. It must not become installable
-until the target-root compression policy can be applied and restored exactly and
-an independent post-install validator covers package ownership/content, modules,
-initramfs, and final Btrfs state. Archive-size savings remain informational and
-never authorize installation.
+Mutation with this profile is fail-closed. Every package, module, configuration,
+and `/boot` destination must resolve to the target Btrfs filesystem. Existing
+destination ancestors carrying Btrfs NOCOW or NOCOMPRESS attributes are
+rejected because the remount cannot make those writes equivalent to the scratch
+measurement. Immediately
+before writing, the installer records the original compression option, remounts
+the disposable target with `compress-force=zstd:3`, verifies that policy at each
+mutation boundary, then restores and verifies the original option on success,
+failure, or cancellation. An exact installed package version skipped by
+`pacman --needed`, or an exact five-module payload that the installer does not
+rewrite, may receive its measured no-op allocation as replacement credit.
+Ordinary upgrades receive no physical credit because old and new extents may
+coexist during the transaction. Archive-size savings remain informational and
+never authorize installation. Independent recovery-overlay validation remains
+required before this path is considered release-ready.
 
 The first real Fedora measurement of the reviewed SteamOS 3.8.14/NVIDIA
 575.64.05 six-package set plus the five target-format modules produced
