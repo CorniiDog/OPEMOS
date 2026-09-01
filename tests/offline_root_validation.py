@@ -7,6 +7,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tarfile
@@ -32,10 +33,46 @@ MODULES = (
 )
 
 
-def add_bytes(archive, name, content):
+def add_bytes(archive, name, content, mode=0o644):
     member = tarfile.TarInfo(name)
     member.size = len(content)
+    member.mode = mode
     archive.addfile(member, io.BytesIO(content))
+
+
+def compress_module_archive(paths):
+    provenance = json.loads(paths["provenance"].read_text(encoding="utf-8"))
+    compressed = {}
+    with tarfile.open(paths["archive"], "r:gz") as archive:
+        for name in MODULES:
+            payload = archive.extractfile(f"modules/{name}").read()
+            completed = subprocess.run(
+                ["zstd", "-q", "-c"], input=payload,
+                stdout=subprocess.PIPE, check=True,
+            )
+            compressed[name] = completed.stdout
+    hashes = {name: hashlib.sha256(payload).hexdigest()
+              for name, payload in compressed.items()}
+    for record in provenance["modules"]:
+        record["sha256"] = hashes[record["name"]]
+    provenance_bytes = (
+        json.dumps(provenance, sort_keys=True, separators=(",", ":")) + "\n"
+    ).encode()
+    paths["provenance"].write_bytes(provenance_bytes)
+    with tarfile.open(paths["archive"], "w:gz") as archive:
+        directory = tarfile.TarInfo("modules/")
+        directory.type = tarfile.DIRTYPE
+        directory.mode = 0o755
+        archive.addfile(directory)
+        for name, payload in compressed.items():
+            add_bytes(archive, f"modules/{name}.zst", payload, mode=0o777)
+        add_bytes(archive, "BUILD-INFO.txt", b"fixture\n")
+        add_bytes(archive, "PROVENANCE.json", provenance_bytes)
+    paths["checksum"].write_text(
+        f"{hashlib.sha256(paths['archive'].read_bytes()).hexdigest()}  "
+        f"{paths['archive'].name}\n",
+        encoding="utf-8",
+    )
 
 
 def altered_module_archive(source, destination, alteration):
@@ -189,7 +226,7 @@ def make_fixture(root):
         directory.mode = 0o755
         archive.addfile(directory)
         for name, content in module_content.items():
-            add_bytes(archive, f"modules/{name}", content)
+            add_bytes(archive, f"modules/{name}", content, mode=0o755)
         add_bytes(archive, "BUILD-INFO.txt", b"fixture\n")
         add_bytes(archive, "PROVENANCE.json", provenance_bytes)
     checksum = root / "artifact.tar.gz.sha256"
@@ -317,6 +354,10 @@ printf '%s\n' "$*" >> "$MOCK_PACMAN_LOG"
 case " $* " in
   *" -Qkk "*) [ "${MOCK_FAIL_QKK:-0}" = 0 ];;
   *" -U "*)
+    for runtime in dev proc sys; do
+      grep -F -x -q "$root/$runtime" "$MOCK_MOUNT_STATE" || exit 96
+    done
+    printf '%s\n' pacman-hooks >> "$MOCK_TRANSACTION_LOG"
     if [ "${MOCK_REQUIRE_CHECKSPACE_BYPASS:-0}" != 0 ]; then
       [ -n "$config" ] && [ -f "$config" ] || exit 92
       ! grep -E '^[[:space:]]*CheckSpace([[:space:]]*(#.*)?)?$' "$config" || exit 93
@@ -354,8 +395,12 @@ esac
 {real_install} "$@" || exit $?
 eval target=\${{$#}}
 case "$target" in
-  */open-gpu-kernel-modules-steamos/nvidia.ko.zst)
-    [ "${{MOCK_CORRUPT_INSTALLED_MODULE:-0}}" = 0 ] || printf corrupt >> "$target"
+  */open-gpu-kernel-modules-steamos/nvidia.ko.zst|\
+  */open-gpu-kernel-modules-steamos/nvidia-drm.ko.zst)
+    if [ "${{MOCK_CORRUPT_INSTALLED_MODULE:-0}}" != 0 ]; then
+      printf corrupt >> "$target"
+      case "$target" in *nvidia-drm.ko.zst) chmod 0600 "$target";; esac
+    fi
     ;;
 esac
 """,
@@ -364,6 +409,17 @@ esac
     (binaries / "zstd").write_text(
         f"""#!/bin/sh
 {real_zstd} "$@" || exit $?
+previous=
+output=
+for argument in "$@"; do
+  [ "$previous" != -o ] || output=$argument
+  previous=$argument
+done
+case "$output" in
+  */module-compression/*)
+    [ "${{MOCK_FAIL_MODULE_COMPRESSION:-0}}" = 0 ] || exit 88
+    ;;
+esac
 [ "${{MOCK_CORRUPT_INSTALLED_MODULE:-0}}" = 0 ] && exit 0
 previous=
 for argument in "$@"; do
@@ -380,7 +436,11 @@ done
     (binaries / "mount").write_text(
         r"""#!/bin/sh
 case " $* " in
-  *' --rbind '*) eval target=\${$#}; echo "$target" >> "$MOCK_MOUNT_STATE";;
+  *' --rbind '*)
+    eval target=\${$#}
+    echo "$target" >> "$MOCK_MOUNT_STATE"
+    case "$target" in */dev) echo "$target/pts" >> "$MOCK_MOUNT_STATE";; esac
+    ;;
   *' remount,compress-force=zstd:3 '*)
     [ "${MOCK_FAIL_COMPRESSION_ACTIVATE:-0}" = 0 ] || exit 1
     printf '%s\n' 'compress-force=zstd:3' > "$MOCK_COMPRESSION_STATE"
@@ -395,6 +455,17 @@ esac
     (binaries / "findmnt").write_text(
         r"""#!/bin/sh
 case " $* " in
+  *' -M '*' -o MAJ:MIN'*)
+    previous=
+    target=
+    for argument in "$@"; do
+      [ "$previous" != -M ] || target=$argument
+      previous=$argument
+    done
+    grep -F -x -q "$target" "$MOCK_MOUNT_STATE" 2>/dev/null || exit 1
+    echo '7:1'
+    exit 0
+    ;;
   *' -T '*' -o MAJ:MIN'*) echo '7:1'; exit 0;;
   *' -o MAJ:MIN'*)
     echo '7:1'
@@ -427,7 +498,7 @@ eval target=\${$#}; grep -F -q "$target" "$MOCK_MOUNT_STATE" 2>/dev/null
         encoding="utf-8",
     )
     (binaries / "chroot").write_text(
-        "#!/bin/sh\nsleep \"${MOCK_CHROOT_DELAY:-0}\"\n[ \"${MOCK_FAIL_CHROOT:-0}\" = 0 ] || exit 1\nmkdir -p \"$1/boot\"; echo initramfs > \"$1/boot/initramfs-fixture.img\"\n[ \"${MOCK_DRIFT_COMPRESSION:-0}\" = 0 ] || : > \"$MOCK_COMPRESSION_STATE\"\n",
+        "#!/bin/sh\nprintf active > \"$MOCK_CHROOT_STATE\"\nsleep \"${MOCK_CHROOT_DELAY:-0}\"\n[ \"${MOCK_FAIL_CHROOT:-0}\" = 0 ] || exit 1\nfor runtime in dev proc sys; do grep -F -x -q \"$1/$runtime\" \"$MOCK_MOUNT_STATE\" || exit 97; done\nprintf '%s\\n' mkinitcpio >> \"$MOCK_TRANSACTION_LOG\"\nmkdir -p \"$1/boot\"; echo initramfs > \"$1/boot/initramfs-fixture.img\"\n[ \"${MOCK_DRIFT_COMPRESSION:-0}\" = 0 ] || : > \"$MOCK_COMPRESSION_STATE\"\n",
         encoding="utf-8",
     )
     for path in binaries.iterdir():
@@ -530,9 +601,74 @@ def installer_environment(binaries, mount_state, **environment):
         MOCK_MOUNT_STATE=str(mount_state),
         MOCK_COMPRESSION_STATE=str(mount_state.with_suffix(".compression")),
         MOCK_PACMAN_LOG=str(mount_state.with_suffix(".pacman")),
+        MOCK_CHROOT_STATE=str(mount_state.with_suffix(".chroot")),
+        MOCK_TRANSACTION_LOG=str(mount_state.with_suffix(".transaction")),
     )
     env.update(environment)
     return env
+
+
+def parse_progress_records(stderr):
+    records = [
+        json.loads(line.removeprefix("STEAMOS_NVIDIA_PROGRESS "))
+        for line in stderr.splitlines()
+        if line.startswith("STEAMOS_NVIDIA_PROGRESS ")
+    ]
+    for record in records:
+        assert set(record) <= {
+            "schemaVersion", "attempt", "phase", "indeterminate",
+            "unit", "completed", "total",
+        }
+        assert record["schemaVersion"] == 1
+        assert isinstance(record["attempt"], int)
+        assert 0 <= record["attempt"] <= 1_000_000
+        assert re.fullmatch(r"[a-z][a-z0-9_]{0,63}", record["phase"])
+        assert isinstance(record["indeterminate"], bool)
+        if record["indeterminate"]:
+            assert set(record) == {
+                "schemaVersion", "attempt", "phase", "indeterminate",
+            }
+        else:
+            assert set(record) == {
+                "schemaVersion", "attempt", "phase", "indeterminate",
+                "unit", "completed", "total",
+            }
+            assert record["unit"] in {"bytes", "items"}
+            assert all(
+                isinstance(record[field], int) and not isinstance(record[field], bool)
+                for field in ("completed", "total")
+            )
+            assert 0 <= record["completed"] <= record["total"]
+    return records
+
+
+def assert_item_progress(records, phase, total, *, complete=True):
+    phase_records = [
+        record for record in records
+        if record["phase"] == phase and not record["indeterminate"]
+    ]
+    assert phase_records, phase
+    assert all(record["unit"] == "items" for record in phase_records)
+    assert all(record["total"] == total for record in phase_records)
+    completions = [record["completed"] for record in phase_records]
+    assert completions[0] == 0 or (total == 1 and completions[0] == 1)
+    assert completions == sorted(completions)
+    if complete:
+        assert completions[-1] == total
+
+
+def assert_indeterminate_then_complete(records, phase):
+    phase_records = [record for record in records if record["phase"] == phase]
+    assert phase_records and phase_records[0]["indeterminate"] is True, phase
+    assert phase_records[-1] == {
+        "schemaVersion": 1,
+        "attempt": phase_records[0]["attempt"],
+        "phase": phase,
+        "indeterminate": False,
+        "unit": "items",
+        "completed": 1,
+        "total": 1,
+    }
 
 
 def run_installer(paths, binaries, result, success, preserve_lock=False, **environment):
@@ -579,6 +715,11 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
     deadline = time.monotonic() + 10
     if expected_phase == "validation":
         time.sleep(0.5)
+    elif expected_phase == "initramfs":
+        child_state = mount_state.with_suffix(".chroot")
+        while time.monotonic() < deadline and not child_state.exists():
+            time.sleep(0.05)
+        assert child_state.exists(), "target mkinitcpio was not started"
     else:
         while (
             time.monotonic() < deadline
@@ -600,6 +741,13 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
     assert mount_state.with_suffix(".compression").read_text().strip() == initial_compression
     assert set(Path("/tmp").glob("offline-root-validation.*")) == before_validation_files
     assert set(Path("/tmp").glob("offline-root-mutation.*")) == before_mutation_work
+    records = parse_progress_records(stderr)
+    if expected_phase == "initramfs":
+        assert any(
+            record["phase"] == "initramfs" and record["indeterminate"]
+            for record in records
+        )
+        assert_item_progress(records, "mount_cleanup", 3)
 
 
 def main():
@@ -858,7 +1006,24 @@ def main():
             True,
             MOCK_REQUIRE_NORMAL_CHECKSPACE="1",
         )
-        assert ordinary["reason"] == "install_complete"
+        assert ordinary["reason"] == "install_complete", (
+            ordinary,
+            ordinary_result_path.with_suffix(".json.stderr").read_text(
+                encoding="utf-8"
+            ),
+        )
+        assert ordinary["moduleVerification"]["status"] == "verified"
+        ordinary_destination = (
+            ordinary_paths["target"] / "usr/lib/modules" / KERNEL
+            / "updates/open-gpu-kernel-modules-steamos"
+        )
+        assert all(
+            stat.S_IMODE(path.stat().st_mode) == 0o644
+            for path in ordinary_destination.iterdir()
+        )
+        assert ordinary_result_path.with_suffix(".transaction").read_text(
+            encoding="utf-8"
+        ).splitlines() == ["pacman-hooks", "mkinitcpio"]
         ordinary_log = ordinary_result_path.with_suffix(".pacman").read_text(
             encoding="utf-8"
         )
@@ -866,6 +1031,29 @@ def main():
             line for line in ordinary_log.splitlines() if " -U " in f" {line} "
         )
         assert "--config" not in ordinary_transaction
+
+        compressed_fixture_root = temporary / "compressed-module-fixture"
+        compressed_fixture_root.mkdir()
+        compressed_paths = make_fixture(compressed_fixture_root)
+        compress_module_archive(compressed_paths)
+        compressed_result = run_installer(
+            compressed_paths,
+            binaries,
+            temporary / "compressed-module-install.json",
+            True,
+        )
+        assert compressed_result["moduleVerification"]["status"] == "verified"
+        compressed_destination = (
+            compressed_paths["target"] / "usr/lib/modules" / KERNEL
+            / "updates/open-gpu-kernel-modules-steamos"
+        )
+        assert {path.name for path in compressed_destination.iterdir()} == {
+            f"{name}.zst" for name in MODULES
+        }
+        assert all(
+            stat.S_IMODE(path.stat().st_mode) == 0o644
+            for path in compressed_destination.iterdir()
+        )
 
         paths["compression_profile"] = "btrfs-zstd3"
         measured = run(
@@ -1282,6 +1470,25 @@ def main():
         )
         assert corrupt_module["reason"] == "module_install"
         assert corrupt_module["cleanup"]["compressionPolicyRestored"] is True
+        mismatches = corrupt_module["moduleVerification"]["moduleMismatches"]
+        assert [record["moduleName"] for record in mismatches] == [
+            "nvidia-drm.ko", "nvidia.ko",
+        ]
+        assert "mode" in mismatches[0]["invalidFields"]
+        assert all("payloadSha256" in record["invalidFields"] for record in mismatches)
+        assert all(record["expectedPayloadSha256"] for record in mismatches)
+        assert all(record["compressedSizeBytes"] > 0 for record in mismatches)
+        compression_failure_root = temporary / "module-compression-failure-fixture"
+        compression_failure_root.mkdir()
+        compression_failure_paths = make_fixture(compression_failure_root)
+        compression_failure = run_installer(
+            compression_failure_paths,
+            binaries,
+            temporary / "module-compression-failure.json",
+            False,
+            MOCK_FAIL_MODULE_COMPRESSION="1",
+        )
+        assert compression_failure["reason"] == "module_install"
         del paths["compression_profile"]
 
         local_database = paths["target"] / "usr/lib/holo/pacmandb/local"
@@ -1580,16 +1787,32 @@ def main():
         run(paths, binaries, temporary / "wrong-gsp-version.json", False)
 
         make_package(paths["nvidia"], "nvidia-utils", pkgrel="2", gsp=True)
-        paths["progress_attempt"] = 7
+        # Leading zeroes are accepted at the CLI but records must contain a
+        # canonical JSON integer, never an invalid JSON numeric literal.
+        paths["progress_attempt"] = "0000007"
         successful = run_installer(paths, binaries, temporary / "install.json", True)
         assert successful["status"] == "success", successful
-        installer_progress = [
-            json.loads(line.removeprefix("STEAMOS_NVIDIA_PROGRESS "))
-            for line in (temporary / "install.json.stderr").read_text(encoding="utf-8").splitlines()
-            if line.startswith("STEAMOS_NVIDIA_PROGRESS ")
-        ]
+        installer_progress = parse_progress_records(
+            (temporary / "install.json.stderr").read_text(encoding="utf-8")
+        )
         assert installer_progress
         assert {record["attempt"] for record in installer_progress} == {7}
+        installed_package_count = 2 + len(paths.get("dependency_packages", []))
+        assert_indeterminate_then_complete(installer_progress, "pacman_policy")
+        assert_item_progress(installer_progress, "runtime_mounts", 3)
+        assert_item_progress(
+            installer_progress, "userspace_install", installed_package_count
+        )
+        assert_item_progress(
+            installer_progress, "userspace_verification", installed_package_count
+        )
+        assert_item_progress(installer_progress, "module_install", 5)
+        assert_item_progress(installer_progress, "module_verification", 5)
+        for phase in (
+            "grub_update", "depmod", "initramfs", "installation_state",
+        ):
+            assert_indeterminate_then_complete(installer_progress, phase)
+        assert_item_progress(installer_progress, "mount_cleanup", 3)
         del paths["progress_attempt"]
         assert successful["cleanup"]["mountsReleased"] is True
         assert successful["validation"]["keyring"]["name"] == "approved.gpg"
@@ -1671,6 +1894,14 @@ def main():
         assert failed["status"] == "failed"
         assert failed["reason"] == "initramfs"
         assert failed["cleanup"]["mountsReleased"] is True
+        failed_progress = parse_progress_records(
+            (temporary / "install-failed.json.stderr").read_text(encoding="utf-8")
+        )
+        failed_initramfs = [
+            record for record in failed_progress if record["phase"] == "initramfs"
+        ]
+        assert failed_initramfs[-1]["indeterminate"] is True
+        assert_item_progress(failed_progress, "mount_cleanup", 3)
 
         cancel_installer(
             paths,

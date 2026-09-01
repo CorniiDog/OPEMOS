@@ -8,6 +8,7 @@ import os
 import re
 import stat
 import subprocess
+import sys
 import tarfile
 import time
 from pathlib import Path, PurePosixPath
@@ -21,6 +22,36 @@ MAX_PACKAGE_MEMBERS = 250_000
 PACMAN_METADATA = {".BUILDINFO", ".CHANGELOG", ".INSTALL", ".MTREE", ".PKGINFO"}
 SAFE_NAME = re.compile(r"[A-Za-z0-9@._+:-]{1,256}")
 SAFE_VERSION = re.compile(r"[A-Za-z0-9@._+:-]{1,256}")
+MAX_PROGRESS_ATTEMPT = 1_000_000
+
+
+def progress_attempt(value):
+    if re.fullmatch(r"[0-9]{1,7}", value) is None:
+        raise argparse.ArgumentTypeError("progress attempt must be an integer")
+    attempt = int(value, 10)
+    if not 0 <= attempt <= MAX_PROGRESS_ATTEMPT:
+        raise argparse.ArgumentTypeError("progress attempt is outside its supported range")
+    return attempt
+
+
+def emit_progress(attempt, completed, total):
+    if attempt is None:
+        return
+    record = {
+        "schemaVersion": 1,
+        "attempt": attempt,
+        "phase": "userspace_verification",
+        "indeterminate": False,
+        "unit": "items",
+        "completed": completed,
+        "total": total,
+    }
+    print(
+        "STEAMOS_NVIDIA_PROGRESS "
+        + json.dumps(record, sort_keys=True, separators=(",", ":")),
+        file=sys.stderr,
+        flush=True,
+    )
 
 
 def arguments():
@@ -28,6 +59,7 @@ def arguments():
     parser.add_argument("--root", required=True, type=Path)
     parser.add_argument("--validation", required=True, type=Path)
     parser.add_argument("--package", action="append", default=[], type=Path)
+    parser.add_argument("--progress-attempt", type=progress_attempt)
     return parser.parse_args()
 
 
@@ -243,7 +275,9 @@ def main():
 
     packages = load_packages(args.validation, args.package)
     deadline = time.monotonic() + MAX_TOTAL_SECONDS
-    for name, expected_version, package, expected_digest in packages:
+    for completed, (name, expected_version, package, expected_digest) in enumerate(
+        packages, start=1
+    ):
         if sha256(package, deadline) != expected_digest:
             fail("An incoming userspace package changed after validation.")
         query = run_pacman([
@@ -262,6 +296,7 @@ def main():
         verify_package_payload(args.root, package, deadline)
         if sha256(package, deadline) != expected_digest:
             fail("An incoming userspace package changed during verification.")
+        emit_progress(args.progress_attempt, completed, len(packages))
     return 0
 
 

@@ -147,6 +147,8 @@ if [[ -n "$PROGRESS_ATTEMPT" ]]; then
     (( ${#PROGRESS_ATTEMPT} <= 7 )) || fail_argument "Progress attempt exceeds 1000000."
     (( 10#$PROGRESS_ATTEMPT <= 1000000 )) || fail_argument "Progress attempt exceeds 1000000."
 fi
+PROGRESS_ATTEMPT_VALUE=0
+[[ -z "$PROGRESS_ATTEMPT" ]] || PROGRESS_ATTEMPT_VALUE=$((10#$PROGRESS_ATTEMPT))
 if [[ -n "$COMPRESSION_PROFILE" && "$COMPRESSION_PROFILE" != btrfs-zstd3 ]]; then
     fail_argument "Compression profile is not supported."
 fi
@@ -157,6 +159,35 @@ for value in ROOT ARCHIVE CHECKSUM PROVENANCE KERNEL NVIDIA_UTILS \
 do
     [[ -n "${!value}" ]] || fail_argument "Required offline-root argument is missing: $value"
 done
+
+# Keep runtime progress records as small and predictable as validator records.
+# Phase names are internal constants; no command output or filesystem path is
+# ever copied into this machine-readable channel.
+emit_progress_indeterminate()
+{
+    local phase="$1"
+    case "$phase" in
+        pacman_policy|grub_update|depmod|initramfs|installation_state) ;;
+        *) return 1 ;;
+    esac
+    printf 'STEAMOS_NVIDIA_PROGRESS {"attempt":%d,"indeterminate":true,"phase":"%s","schemaVersion":1}\n' \
+        "$PROGRESS_ATTEMPT_VALUE" "$phase" >&2
+}
+
+emit_progress_items()
+{
+    local phase="$1" completed="$2" total="$3"
+    case "$phase" in
+        pacman_policy|runtime_mounts|userspace_install|userspace_verification|\
+        module_install|module_verification|grub_update|depmod|initramfs|\
+        installation_state|mount_cleanup) ;;
+        *) return 1 ;;
+    esac
+    [[ "$completed" =~ ^[0-9]+$ && "$total" =~ ^[0-9]+$ ]] || return 1
+    (( completed <= total && total <= 1000000 )) || return 1
+    printf 'STEAMOS_NVIDIA_PROGRESS {"attempt":%d,"completed":%d,"indeterminate":false,"phase":"%s","schemaVersion":1,"total":%d,"unit":"items"}\n' \
+        "$PROGRESS_ATTEMPT_VALUE" "$completed" "$phase" "$total" >&2
+}
 
 VALIDATION_JSON="$(mktemp /tmp/offline-root-validation.XXXXXX)"
 VALIDATOR_PID=""
@@ -261,7 +292,7 @@ VALIDATION_SHA256="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(s
 
 write_install_result()
 {
-    python3 "${SUPPORT_ROOT}/lib/write_install_result.py" \
+    set -- python3 "${SUPPORT_ROOT}/lib/write_install_result.py" \
         --output "$RESULT_JSON" --status "$1" --reason "$2" --message "$3" \
         --phase "$4" --root /target-root --kernel "$KERNEL" \
         --steamos "$STEAMOS_VERSION" --nvidia "$NVIDIA_VERSION" --trust "$TRUST" \
@@ -271,6 +302,9 @@ write_install_result()
         --mounts-released "${5:-true}" \
         --compression-policy-restored "${6:-true}" \
         --validation "$VALIDATION_JSON"
+    [[ -z "${MODULE_VERIFICATION_JSON:-}" || ! -s "$MODULE_VERIFICATION_JSON" ]] ||
+        set -- "$@" --module-verification "$MODULE_VERIFICATION_JSON"
+    "$@"
 }
 
 fail_pre_mutation()
@@ -336,6 +370,7 @@ for command_name in bsdtar chroot depmod findmnt install mount mountpoint pacman
 done
 
 MUTATION_WORK="$(mktemp -d /tmp/offline-root-mutation.XXXXXX)"
+MODULE_VERIFICATION_JSON="$MUTATION_WORK/module-verification.json"
 MOUNTS=()
 PHASE=mutation_preflight
 COMPLETED=0
@@ -431,6 +466,23 @@ require_active_compression_policy()
         die "The measured Btrfs compression policy is no longer active."
 }
 
+require_runtime_bind_mount()
+{
+    local source="$1" target="$2" source_device target_device
+    mountpoint -q "$target" || return 1
+    source_device="$(findmnt -rn -T "$source" -o MAJ:MIN)" || return 1
+    target_device="$(findmnt -rn -M "$target" -o MAJ:MIN)" || return 1
+    [[ -n "$source_device" && "$source_device" == "$target_device" ]]
+}
+
+require_runtime_bind_mounts()
+{
+    local bind_path
+    for bind_path in dev proc sys; do
+        require_runtime_bind_mount "/$bind_path" "$ROOT/$bind_path" || return 1
+    done
+}
+
 activate_compression_policy()
 {
     [[ "$COMPRESSION_PROFILE" == btrfs-zstd3 ]] || return 0
@@ -482,9 +534,16 @@ unmount_tree()
 cleanup_mutation()
 {
     local rc=$? index mounts_released=true compression_restored=true
+    local released_mounts=0 total_mounts=${#MOUNTS[@]}
     trap - EXIT INT TERM
+    emit_progress_items mount_cleanup 0 "$total_mounts"
     for (( index=${#MOUNTS[@]}-1; index>=0; index-- )); do
-        unmount_tree "${MOUNTS[$index]}" || mounts_released=false
+        if unmount_tree "${MOUNTS[$index]}"; then
+            released_mounts=$((released_mounts + 1))
+            emit_progress_items mount_cleanup "$released_mounts" "$total_mounts"
+        else
+            mounts_released=false
+        fi
     done
     restore_compression_policy || compression_restored=false
     if [[ "$COMPLETED" != 1 ]]; then
@@ -527,6 +586,7 @@ if [[ -n "$COMPRESSION_PROFILE" ]]; then
         die "The measured Btrfs compression policy could not be activated and verified."
 fi
 
+emit_progress_indeterminate pacman_policy
 if [[ "$COMPRESSION_PROFILE" == btrfs-zstd3 ]]; then
     PHASE=pacman_checkspace_policy
     require_validation_document_unchanged ||
@@ -551,14 +611,35 @@ if [[ "$COMPRESSION_PROFILE" == btrfs-zstd3 ]]; then
     require_active_compression_policy ||
         die "The measured Btrfs policy changed during pacman transaction preparation."
 fi
+emit_progress_items pacman_policy 1 1
+
+PHASE=runtime_mounts
+runtime_mount_count=0
+emit_progress_items runtime_mounts 0 3
+for bind_path in dev proc sys; do
+    install -d -m 0755 "$ROOT/$bind_path"
+    MOUNTS+=("$ROOT/$bind_path")
+    run_mutation_command mount --rbind "/$bind_path" "$ROOT/$bind_path"
+    run_mutation_command mount --make-rslave "$ROOT/$bind_path"
+    require_runtime_bind_mount "/$bind_path" "$ROOT/$bind_path" ||
+        die "A target runtime bind mount could not be independently verified."
+    runtime_mount_count=$((runtime_mount_count + 1))
+    emit_progress_items runtime_mounts "$runtime_mount_count" 3
+done
+require_runtime_bind_mounts ||
+    die "The complete target runtime mount set is unavailable."
 
 PHASE=userspace_install
+require_runtime_bind_mounts ||
+    die "Target runtime mounts disappeared before the pacman transaction."
 [[ -z "$COMPRESSION_PROFILE" ]] || require_active_compression_policy
 TARGET_PACMAN_DATABASE="$ROOT/usr/lib/holo/pacmandb"
 PACMAN_PACKAGES=("$NVIDIA_UTILS" "$LIB32_NVIDIA_UTILS")
 for (( dependency_index=0; dependency_index<${#DEPENDENCY_PACKAGES[@]}; dependency_index++ )); do
     PACMAN_PACKAGES+=("${DEPENDENCY_PACKAGES[$dependency_index]}")
 done
+package_count=${#PACMAN_PACKAGES[@]}
+emit_progress_items userspace_install 0 "$package_count"
 PACMAN_ARGS=(
     --root "$ROOT" --dbpath "$TARGET_PACMAN_DATABASE"
     --noconfirm --needed -U "${PACMAN_PACKAGES[@]}"
@@ -568,6 +649,9 @@ PACMAN_ARGS=(
 require_validation_document_unchanged ||
     die "The validated compression admission document changed before the pacman transaction."
 run_mutation_command env SYSTEMD_OFFLINE=1 pacman "${PACMAN_ARGS[@]}"
+emit_progress_items userspace_install "$package_count" "$package_count"
+require_runtime_bind_mounts ||
+    die "A pacman hook changed or released a target runtime mount."
 require_validation_document_unchanged ||
     die "The validated compression admission document changed during the pacman transaction."
 [[ -z "$COMPRESSION_PROFILE" ]] || require_active_compression_policy
@@ -578,30 +662,59 @@ POST_INSTALL_VERIFY_ARGS=(
 for package in "${PACMAN_PACKAGES[@]}"; do
     POST_INSTALL_VERIFY_ARGS+=(--package "$package")
 done
+emit_progress_items userspace_verification 0 "$package_count"
 run_mutation_command python3 "$SUPPORT_ROOT/lib/verify_installed_userspace.py" \
-    "${POST_INSTALL_VERIFY_ARGS[@]}"
+    "${POST_INSTALL_VERIFY_ARGS[@]}" --progress-attempt "$PROGRESS_ATTEMPT_VALUE"
 find "$ROOT/usr/lib/firmware/nvidia/$NVIDIA_VERSION" \
     -type f -name 'gsp*.bin' -print -quit 2>/dev/null | grep -q . ||
     die "Matching GSP firmware was not installed into the target root."
 
 PHASE=module_install
+module_count=0
+emit_progress_items module_install 0 5
 [[ -z "$COMPRESSION_PROFILE" ]] || require_active_compression_policy
 bsdtar -xzf "$ARCHIVE" -C "$MUTATION_WORK"
 TARGET_MODULES="$ROOT/usr/lib/modules/$KERNEL/updates/open-gpu-kernel-modules-steamos"
 if [[ "$MODULE_PAYLOAD_NOOP" != True ]]; then
     rm -rf "$TARGET_MODULES"
     install -d -m 0755 "$TARGET_MODULES"
+    install -d -m 0700 "$MUTATION_WORK/module-compression"
     for module in "$MUTATION_WORK"/modules/*.ko*; do
         module_name="$(basename "$module")"
         case "$module_name" in
-            *.ko.zst) install -m 0644 "$module" "$TARGET_MODULES/$module_name" ;;
-            *.ko) zstd -q -f -T0 "$module" -o "$TARGET_MODULES/${module_name}.zst" ;;
+            *.ko.zst)
+                if [[ "${PROJECT_TEST_MODE:-0}" == 1 ]]; then
+                    install -m 0644 "$module" "$TARGET_MODULES/$module_name"
+                else
+                    install -o 0 -g 0 -m 0644 \
+                        "$module" "$TARGET_MODULES/$module_name"
+                fi
+                ;;
+            *.ko)
+                compressed="$MUTATION_WORK/module-compression/${module_name}.zst"
+                zstd -q -f -T0 "$module" -o "$compressed"
+                if [[ "${PROJECT_TEST_MODE:-0}" == 1 ]]; then
+                    install -m 0644 \
+                        "$compressed" "$TARGET_MODULES/${module_name}.zst"
+                else
+                    install -o 0 -g 0 -m 0644 \
+                        "$compressed" "$TARGET_MODULES/${module_name}.zst"
+                fi
+                rm -f "$compressed"
+                ;;
             *) die "Unexpected module filename after validated extraction." ;;
         esac
+        module_count=$((module_count + 1))
+        emit_progress_items module_install "$module_count" 5
     done
+    (( module_count == 5 )) || die "The validated module payload count changed during installation."
+else
+    emit_progress_items module_install 5 5
 fi
+emit_progress_items module_verification 0 5
 run_mutation_command python3 "$SUPPORT_ROOT/lib/verify_installed_modules.py" \
-    --root "$ROOT" --kernel "$KERNEL" --validation "$VALIDATION_JSON"
+    --root "$ROOT" --kernel "$KERNEL" --validation "$VALIDATION_JSON" \
+    --output "$MODULE_VERIFICATION_JSON" --progress-attempt "$PROGRESS_ATTEMPT_VALUE"
 
 install -d -m 0755 "$ROOT/etc/modprobe.d" "$ROOT/etc/mkinitcpio.conf.d"
 printf '%s\n' \
@@ -618,26 +731,29 @@ printf '%s\n' \
 [[ -z "$COMPRESSION_PROFILE" ]] || require_active_compression_policy
 
 PHASE=bootloader_config
+emit_progress_indeterminate grub_update
 run_mutation_command python3 "$SUPPORT_ROOT/lib/update_grub_nvidia_args.py" \
     --grub-config "$ROOT/efi/EFI/steamos/grub.cfg"
+emit_progress_items grub_update 1 1
 
 PHASE=depmod
+emit_progress_indeterminate depmod
 [[ -z "$COMPRESSION_PROFILE" ]] || require_active_compression_policy
 run_mutation_command depmod -b "$ROOT" -a "$KERNEL"
 [[ -z "$COMPRESSION_PROFILE" ]] || require_active_compression_policy
+emit_progress_items depmod 1 1
 
 PHASE=initramfs
+emit_progress_indeterminate initramfs
 [[ -z "$COMPRESSION_PROFILE" ]] || require_active_compression_policy
-for bind_path in dev proc sys; do
-    install -d -m 0755 "$ROOT/$bind_path"
-    MOUNTS+=("$ROOT/$bind_path")
-    run_mutation_command mount --rbind "/$bind_path" "$ROOT/$bind_path"
-    run_mutation_command mount --make-rslave "$ROOT/$bind_path"
-done
+require_runtime_bind_mounts ||
+    die "Target runtime mounts disappeared before initramfs generation."
 run_mutation_command env SYSTEMD_OFFLINE=1 chroot "$ROOT" /usr/bin/mkinitcpio -P
 [[ -z "$COMPRESSION_PROFILE" ]] || require_active_compression_policy
+emit_progress_items initramfs 1 1
 
 PHASE=state_write
+emit_progress_indeterminate installation_state
 [[ -z "$COMPRESSION_PROFILE" ]] || require_active_compression_policy
 STATE_ROOT="$ROOT/var/lib/$PROJECT_NAME/offline-install"
 install -d -m 0755 "$STATE_ROOT"
@@ -645,10 +761,16 @@ install -m 0644 "$MUTATION_WORK/BUILD-INFO.txt" "$STATE_ROOT/BUILD-INFO.txt"
 install -m 0644 "$PROVENANCE" "$STATE_ROOT/PROVENANCE.json"
 printf '%s\n' "$KERNEL" > "$STATE_ROOT/kernel-version"
 printf '%s\n' "$NVIDIA_VERSION" > "$STATE_ROOT/nvidia-version"
+emit_progress_items installation_state 1 1
 
 PHASE=cleanup
+released_mounts=0
+total_mounts=${#MOUNTS[@]}
+emit_progress_items mount_cleanup 0 "$total_mounts"
 for (( index=${#MOUNTS[@]}-1; index>=0; index-- )); do
     unmount_tree "${MOUNTS[$index]}"
+    released_mounts=$((released_mounts + 1))
+    emit_progress_items mount_cleanup "$released_mounts" "$total_mounts"
 done
 MOUNTS=()
 if findmnt -rn -R "$ROOT/dev" >/dev/null 2>&1 ||

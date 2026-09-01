@@ -359,6 +359,15 @@ progress covers hashing; item progress covers the Holo database, modules, and
 userspace packages; archive layout, dependency closure, and storage calculation
 are explicitly indeterminate phases.
 
+Mutation uses the same schema and attempt. It reports pacman-policy preparation,
+the three runtime bind mounts, the exact incoming package count, all five
+modules, GRUB, depmod, initramfs, installation-state writing, and reverse-order
+mount cleanup. Package, module, and mount work uses real item totals. Opaque
+operations begin indeterminate and emit a one-item completion only after the
+command succeeds; in particular, mkinitcpio output is never converted into a
+fabricated percentage. A failed or cancelled command therefore leaves its phase
+incomplete while cleanup continues to report independently.
+
 Validation also performs the authoritative storage preflight. It reads each
 authenticated package's declared installed size and dependency/provides fields,
 resolves the complete incoming-plus-installed dependency closure against parsed
@@ -478,12 +487,27 @@ package/signature hashes, signer, installed size, dependencies, and provides.
 Malformed CLI input writes `invalid_arguments` when a result path is available;
 duplicate singleton options are rejected. Cancellation escalates from TERM to
 KILL after a bounded grace period and reaps the process group before reporting
-cleanup. Mutation uses target-root pacman semantics, offline `depmod`,
+cleanup. Before pacman, mutation recursively bind-mounts `/dev`, `/proc`, and
+`/sys` into the confined target, makes each tree recursively slave, verifies
+the source/target mount identities, and retains the mounts through the target's
+explicit `mkinitcpio` run. Reverse-order recursive cleanup is required on every
+terminal path, including pacman-hook failure and cancellation.
+
+Mutation uses target-root pacman semantics, offline `depmod`,
 explicit NVIDIA mkinitcpio configuration, and the target's own `mkinitcpio` in
 an x86_64 chroot. Synthetic tests cover success, repeated execution, injected
 initramfs failure, and cleanup-safe failure results. On a real recovery image,
 the disposable qcow2 overlay is the authoritative rollback boundary and must be
 discarded after any non-success result.
+
+Raw and already-zstd-compressed archive modules both install canonically as
+root-owned mode-0644 `.ko.zst` files. Raw input is compressed into confined
+temporary storage before an explicit install step; archive member modes are
+never inherited. Post-install module verification aggregates all five module
+outcomes and returns bounded target-relative diagnostics containing
+representation, expected/actual decompressed hashes, mode, UID/GID, compressed
+size, decompression status, and deterministic invalid-field lists. The final
+installer result preserves this module-verification record.
 
 The module archive safety policy allows at most 1 GiB compressed, 1 GiB for any
 individual module member, and 2 GiB total expansion. External and embedded

@@ -9,6 +9,7 @@ from atomic_output import atomic_write_bytes
 
 
 MAX_VALIDATION_BYTES = 16 * 1024 * 1024
+MAX_MODULE_VERIFICATION_BYTES = 1024 * 1024
 TOKEN = re.compile(r"[a-z][a-z0-9_]{0,63}")
 KERNEL = re.compile(r"(?:unknown|[A-Za-z0-9._+~-]{1,255})")
 VERSION = re.compile(r"(?:unknown|[0-9]+\.[0-9]+(?:\.[0-9]+)?)")
@@ -28,6 +29,14 @@ PACKAGE_KEYS = {
 EXPECTED_MODULES = {
     "nvidia.ko", "nvidia-drm.ko", "nvidia-modeset.ko",
     "nvidia-peermem.ko", "nvidia-uvm.ko",
+}
+MODULE_MISMATCH_FIELDS = (
+    "presence", "representation", "payloadSha256", "mode", "uid", "gid",
+    "decompression",
+)
+MODULE_DECOMPRESSION_STATUSES = {
+    "verified", "not-required", "failed", "timeout", "size-limit", "empty",
+    "not-attempted", "missing", "ambiguous", "unreadable",
 }
 MEASUREMENT_PHASES = {
     "dependency_check", "image_create", "filesystem_create", "mount",
@@ -65,6 +74,7 @@ def parse_args():
         default="true",
     )
     parser.add_argument("--validation", type=Path)
+    parser.add_argument("--module-verification", type=Path)
     return parser.parse_args()
 
 
@@ -98,6 +108,105 @@ def load_validation(path):
         raise SystemExit("Result validation metadata is unreadable or exceeds its size limit.")
     if not isinstance(document, dict) or document.get("schemaVersion") != 1:
         raise SystemExit("Result validation metadata has an unsupported schema.")
+    return document
+
+
+def load_module_verification(path):
+    try:
+        if (path.is_symlink() or not path.is_file()
+                or not 0 < path.stat().st_size <= MAX_MODULE_VERIFICATION_BYTES):
+            raise OSError
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        raise SystemExit("Module verification metadata is unreadable or excessive.")
+    if not isinstance(document, dict) or document.get("schemaVersion") != 1:
+        raise SystemExit("Module verification metadata is malformed.")
+    status = document.get("status")
+    records = (document.get("modules") if status == "verified"
+               else document.get("moduleMismatches"))
+    expected_keys = {
+        "moduleName", "targetRelativePath", "representation",
+        "expectedPayloadSha256", "actualPayloadSha256", "expectedMode",
+        "actualMode", "expectedUid", "actualUid", "expectedGid", "actualGid",
+        "compressedSizeBytes", "decompressionStatus", "invalidFields",
+    }
+    if not isinstance(records, list) or not 1 <= len(records) <= 6:
+        raise SystemExit("Module verification records are malformed.")
+    for record in records:
+        if not isinstance(record, dict):
+            raise SystemExit("Module verification records are malformed.")
+        keys = set(record)
+        if keys not in (expected_keys, expected_keys | {"unexpectedEntries"}):
+            raise SystemExit("Module verification records are malformed.")
+        name = record.get("moduleName")
+        relative = record.get("targetRelativePath")
+        invalid = record.get("invalidFields")
+        if (name not in EXPECTED_MODULES | {"unexpected"}
+                or not isinstance(relative, str) or not 1 <= len(relative) <= 512
+                or Path(relative).is_absolute() or ".." in Path(relative).parts
+                or not relative.startswith("usr/lib/modules/")
+                or re.fullmatch(r"[A-Za-z0-9._+~/-]+", relative) is None
+                or record.get("representation") not in (None, ".ko", ".ko.zst")
+                or record.get("decompressionStatus")
+                not in MODULE_DECOMPRESSION_STATUSES
+                or not isinstance(invalid, list)
+                or invalid != [field for field in MODULE_MISMATCH_FIELDS if field in invalid]
+                or any(field not in MODULE_MISMATCH_FIELDS for field in invalid)):
+            raise SystemExit("Module verification records are malformed.")
+        if name in EXPECTED_MODULES and (
+                record.get("expectedPayloadSha256") is None
+                or record.get("expectedMode") != "0644"
+                or record.get("expectedUid") != 0
+                or record.get("expectedGid") != 0):
+            raise SystemExit("Module verification expectations are malformed.")
+        for field in ("expectedPayloadSha256", "actualPayloadSha256"):
+            value = record.get(field)
+            if value is not None and (not isinstance(value, str)
+                                      or HEX_SHA256.fullmatch(value) is None):
+                raise SystemExit("Module verification records are malformed.")
+        for field in ("expectedMode", "actualMode"):
+            value = record.get(field)
+            if value is not None and (not isinstance(value, str)
+                                      or re.fullmatch(r"[0-7]{4}", value) is None):
+                raise SystemExit("Module verification records are malformed.")
+        for field in ("expectedUid", "actualUid", "expectedGid", "actualGid"):
+            value = record.get(field)
+            if value is not None and (not isinstance(value, int)
+                                      or isinstance(value, bool)
+                                      or not 0 <= value <= 2**32 - 1):
+                raise SystemExit("Module verification records are malformed.")
+        compressed_size = record.get("compressedSizeBytes")
+        if compressed_size is not None and (
+                not isinstance(compressed_size, int)
+                or isinstance(compressed_size, bool)
+                or not 0 <= compressed_size <= 1024 * 1024 * 1024):
+            raise SystemExit("Module verification records are malformed.")
+        unexpected = record.get("unexpectedEntries")
+        if unexpected is not None and (
+                name != "unexpected" or not isinstance(unexpected, list)
+                or not 1 <= len(unexpected) <= 16
+                or unexpected != sorted(set(unexpected))
+                or any(not isinstance(value, str)
+                       or PLAIN_FILENAME.fullmatch(value) is None
+                       for value in unexpected)):
+            raise SystemExit("Module verification records are malformed.")
+    if status == "verified":
+        if (set(document) != {"schemaVersion", "status", "reason", "modules"}
+                or document.get("reason") != "installed_modules_verified"
+                or len(records) != len(EXPECTED_MODULES)
+                or {record["moduleName"] for record in records} != EXPECTED_MODULES
+                or any(record["invalidFields"] for record in records)):
+            raise SystemExit("Successful module verification metadata is inconsistent.")
+    elif status == "failed":
+        if (set(document) != {"schemaVersion", "status", "reason", "message",
+                             "moduleMismatches"}
+                or document.get("reason") != "installed_module_mismatch"
+                or not isinstance(document.get("message"), str)
+                or not bounded_message(document["message"])
+                or any(not record["invalidFields"] for record in records)):
+            raise SystemExit("Failed module verification metadata is inconsistent.")
+    else:
+        raise SystemExit("Module verification status is unsupported.")
     return document
 
 
@@ -525,6 +634,14 @@ def main():
                 document["validation"] = failure_validation
         else:
             raise SystemExit("Result validation metadata does not match result status.")
+    if args.module_verification:
+        module_verification = load_module_verification(args.module_verification)
+        if (module_verification["status"] == "failed"
+                and (args.status != "failed" or args.phase != "module_install")):
+            raise SystemExit(
+                "Failed module verification metadata does not match result phase."
+            )
+        document["moduleVerification"] = module_verification
     atomic_write_bytes(
         args.output,
         (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode(),

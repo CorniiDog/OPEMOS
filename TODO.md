@@ -45,8 +45,6 @@ index in the same commit.
 * [ ] Re-test the 575 production release and its second-run idempotent path.
 * [ ] Test uninstall/reinstall plus SteamOS kernel update and A/B rollback.
 * [ ] Define Secure Boot/module-signing behavior before claiming support.
-* [ ] Reproduce the 580 Gamescope issue, compare pristine and patched modules,
-  and develop the smallest source-level compatibility patch if one is required.
 
 ### Remaining engineering cleanup
 
@@ -99,16 +97,10 @@ the recovery image remain integration-validation items for the image builder.
    path performs no module replacement, initramfs rebuild, or reboot prompt.
 3. [ ] Test uninstall followed by a clean certified reinstall.
 4. [ ] Reboot and verify the 575 runtime with `nvidia-smi`, `modinfo`,
-   `/proc/driver/nvidia/version`, Gamescope, Xwayland, Steam, and Gaming Mode.
+   `/proc/driver/nvidia/version`, Xwayland, Steam, and Gaming Mode.
 5. [ ] Perform a completely clean-stock SteamOS installation using only the
    intended public one-line workflow.
 6. [ ] Test behavior across a SteamOS/kernel update and rollback.
-7. [ ] Use the project itself for the NVIDIA 580 patch-development cycle instead
-   of manually copying or installing modules.
-8. [ ] Reproduce the NVIDIA 580 Gamescope graphical bug consistently.
-9. [ ] Create or refresh `nvidia/580.119.02` from exact NVIDIA upstream.
-10. [ ] Develop the smallest possible 580 compatibility patch and compare it
-    directly against the pristine upstream control.
 
 ---
 
@@ -158,7 +150,7 @@ the recovery image remain integration-validation items for the image builder.
 * [x] Verify NVIDIA 575.64.05 runtime.
 * [x] Verify `/proc/driver/nvidia/version`.
 * [x] Verify `modinfo` points to project-installed modules.
-* [x] Verify Gamescope/Xwayland actually use the RTX 2060.
+* [x] Verify Xwayland and Gaming Mode actually use the RTX 2060.
 * [x] Verify Gaming Mode works with the project modules.
 * [x] Verify no NVIDIA Xid failures in that working state.
 * [x] Publish known-good 575 release:
@@ -210,7 +202,7 @@ the recovery image remain integration-validation items for the image builder.
   * `nvidia-smi` = 580.119.02
   * kernel module version = 580.119.02
   * `/proc/driver/nvidia/version` = open kernel module 580.119.02
-* [x] Verify Gamescope is using the RTX 2060.
+* [x] Verify Gaming Mode is using the RTX 2060.
 * [x] Verify Xwayland/Steam/Mangoapp processes use the GPU.
 * [x] Verify installed path:
 
@@ -788,7 +780,6 @@ Desired design:
 * [x] Add `schema_version=1` to newly generated BUILD-INFO files.
 * [ ] Consider module SHA entries in BUILD-INFO.
 * [ ] Consider explicit patch-series identifier.
-* [ ] Consider `gamescope` version/build metadata for reproducibility.
 
 ---
 
@@ -881,11 +872,11 @@ This still needs an end-to-end test.
 * [ ] Install exact matching project modules.
 * [ ] Rebuild initramfs.
 * [ ] Reboot once.
-* [ ] Boot directly into Gamescope.
+* [ ] Boot directly into Gaming Mode.
 * [ ] Verify `nvidia-smi`.
 * [ ] Verify `modinfo`.
 * [ ] Verify `/proc/driver/nvidia/version`.
-* [ ] Verify Gamescope uses the GPU.
+* [ ] Verify Gaming Mode uses the GPU.
 * [ ] Verify desktop mode.
 * [ ] Verify Steam Gaming Mode.
 * [ ] Verify no manual recovery steps required.
@@ -904,85 +895,6 @@ This still needs an end-to-end test.
 * [ ] Test installed userspace older than project module.
 * [ ] Test broken/incomplete `nvidia-utils`.
 * [ ] Make error messages explain required remediation.
-
----
-
-# 26. Actual Gamescope / NVIDIA graphics problem — ACTIVE
-
-This is the ultimate reason for the project. The support infrastructure is now
-mature enough that this work should proceed through the project workflows rather
-than waiting for every infrastructure TODO to be completed.
-
-## Already explored
-
-* [x] Establish that NVIDIA SteamOS Gaming Mode can function at all.
-* [x] Establish known-good 575 state.
-* [x] Establish pristine 580 control state.
-* [x] Test Gamescope/NVIDIA-related session changes experimentally.
-* [x] Experiment with:
-
-  * `--generate-drm-mode fixed`
-* [x] Experiment separately with:
-
-  * `--disable-color-management`
-* [x] Inspect DRM connector state with `modetest`.
-* [x] Observe `DP-1` disconnected in relevant test.
-* [x] Distinguish basic driver bring-up from actual rendering/artifact bugs.
-
-## Next graphics debugging work
-
-* [ ] Reproduce the specific 580 graphical bug consistently.
-* [ ] Use the public/development project workflows for 580 experiments instead of manual module copying.
-* [ ] Record the exact project support commit used for each graphics experiment.
-* [ ] Record the exact NVIDIA source commit used for each graphics experiment.
-* [ ] Define exact visual symptom.
-* [ ] Define exact startup sequence that triggers it.
-* [ ] Capture Gamescope logs.
-* [ ] Capture kernel NVIDIA/DRM logs.
-* [ ] Capture Xwayland logs if relevant.
-* [ ] Compare 575 working versus 580 broken.
-* [ ] Compare NVIDIA module source deltas between 575 and 580.
-* [ ] Determine whether issue is:
-
-  * atomic modesetting,
-  * explicit sync,
-  * DRM leases,
-  * color management,
-  * HDR,
-  * VRR,
-  * modifier negotiation,
-  * plane selection,
-  * direct scanout,
-  * cursor plane,
-  * framebuffer,
-  * PRIME,
-  * Wayland/Xwayland synchronization,
-  * Gamescope assumptions.
-* [ ] Identify the smallest reproducible code path.
-* [ ] Patch NVIDIA source branch for 580.
-* [ ] Build patched 580 modules.
-* [ ] Install patched modules using the hardened installer.
-* [ ] Reboot and compare against pristine upstream.
-* [ ] Keep only changes that affect the target bug.
-* [ ] Bisect if necessary.
-* [ ] Create clean patch commits.
-* [ ] Document rationale for each patch.
-* [ ] Publish patched 580 project release once stable.
-* [ ] Verify project patches do not regress known-good behavior.
-
----
-
-# 27. Gamescope project integration
-
-* [x] Use `gamescope-nvidia` as a reference project for lifecycle/idempotency patterns.
-* [x] Inspect Gamescope source for NVIDIA-specific/debug behavior.
-* [x] Locate `g_bDebugLayers`.
-* [ ] Decide whether NVIDIA kernel-module project needs any Gamescope patch at all.
-* [ ] Prefer fixing the correct layer rather than permanently carrying unrelated Gamescope hacks.
-* [ ] If Gamescope patch is necessary, isolate it as separate project/release concern.
-* [ ] Record Gamescope commit/version used for every successful test.
-* [ ] Test patched NVIDIA modules against stock Gamescope.
-* [ ] Test patched Gamescope against pristine NVIDIA modules to separate causality.
 
 ---
 
@@ -1421,6 +1333,15 @@ signing policy.
   Btrfs admission using an exact-validation, live-policy-verified, temporary
   confined config; preserve normal CheckSpace and signature/offline policy for
   every other transaction, with cleanup and negative regression coverage.
+* [x] Establish and independently verify confined recursive `/dev`, `/proc`,
+  and `/sys` target mounts before pacman hooks, retain them through mkinitcpio,
+  and recursively clean them on every terminal path. Normalize raw/compressed
+  modules to explicit root:root 0644 `.ko.zst` destinations and preserve
+  aggregate five-module mismatch diagnostics in the installer result.
+* [x] Emit schema-1 mutation progress for pacman policy, runtime mounts, exact
+  package/module installation and verification counts, GRUB, depmod,
+  indeterminate initramfs generation, installation state, and cleanup; retain
+  the caller's bounded attempt and never expose paths or command output.
 * [x] Preserve bounded typed scratch-measurement failures through validation and
   the final installer result, including phase, safe command identity, exit
   status, and sanitized stderr for dependency, mkfs, mount, extraction, Zstd,
@@ -1468,17 +1389,11 @@ compatibility development.
 4. [ ] Verify the rebooted 575 Gaming Mode runtime.
 5. [ ] Complete a clean-stock one-command SteamOS installation to reach **Alpha**.
 6. [ ] Test SteamOS/kernel update and rollback behavior to progress toward **Beta**.
-7. [ ] Use the project workflows for all new 580 module experiments.
-8. [ ] Reproduce and characterize the remaining 580 Gamescope graphical bug.
-9. [ ] Create or refresh `nvidia/580.119.02` from the exact upstream base.
-10. [ ] Develop, build, install, and compare the smallest possible compatibility patch.
-11. [ ] Publish a 580 project release only after the improvement is repeatable.
-12. [ ] Expand testing to additional NVIDIA hardware before treating the project as stable.
+7. [ ] Expand testing to additional NVIDIA hardware before treating the project as stable.
 
 ## Non-blocking cleanup
 
-These items are worthwhile but should not delay dogfooding or the 580 graphics
-investigation:
+These items are worthwhile but should not delay dogfooding:
 
 * [ ] Decide backup retention policy.
 * [ ] Decide whether release archives should remain raw `.ko` or become `.ko.zst`.
@@ -1491,10 +1406,8 @@ investigation:
 ## Overall state
 
 The project has crossed the bring-up threshold. SteamOS 3.8.16 has successfully
-booted and run Gamescope on the RTX 2060 with both the known-good project
-NVIDIA 575.64.05 path and pristine upstream NVIDIA 580.119.02 as a control.
+booted into Gaming Mode on the RTX 2060 with the known-good project NVIDIA
+575.64.05 path and pristine upstream NVIDIA 580.119.02 as a control.
 
 The infrastructure should now be actively dogfooded. The next major validation
-gate is a completely clean-stock one-command certified installation. In parallel,
-the project can now be used for the actual NVIDIA 580 / Gamescope compatibility
-work that motivated it.
+gate is a completely clean-stock one-command certified installation.
