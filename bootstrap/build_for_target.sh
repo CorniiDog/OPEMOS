@@ -197,6 +197,8 @@ FINAL_PROVENANCE=""
 FINAL_ARCHIVE=""
 FINAL_CHECKSUM=""
 FINAL_OUTPUTS_OWNED=0
+CACHE_PACKAGE_TEMP=""
+CACHE_SIGNATURE_TEMP=""
 
 write_final_result()
 {
@@ -217,6 +219,8 @@ cleanup_build()
 {
     local rc=$?
     [[ -z "$WORK_DIR" ]] || rm -rf "$WORK_DIR"
+    [[ -z "$CACHE_PACKAGE_TEMP" ]] || rm -f "$CACHE_PACKAGE_TEMP"
+    [[ -z "$CACHE_SIGNATURE_TEMP" ]] || rm -f "$CACHE_SIGNATURE_TEMP"
     if [[ "$BUILD_COMPLETED" == "0" && "$FINAL_OUTPUTS_OWNED" == "1" ]]; then
         [[ -z "$FINAL_BUILD_INFO" ]] || rm -f "$FINAL_BUILD_INFO"
         [[ -z "$FINAL_PROVENANCE" ]] || rm -f "$FINAL_PROVENANCE"
@@ -334,6 +338,11 @@ SOURCE_VERSION="$(sed -n 's/^NVIDIA_VERSION[[:space:]]*=[[:space:]]*//p' "$SOURC
 
 BUILD_PHASE=headers_not_found
 if [[ -z "$HEADERS_PACKAGE" ]]; then
+    HEADER_CACHE_DIR="$CACHE_ROOT/authenticated-headers"
+    HEADER_CACHE_PACKAGE="$HEADER_CACHE_DIR/$HEADERS_FILENAME"
+    HEADER_CACHE_SIGNATURE="$HEADER_CACHE_PACKAGE.sig"
+    HEADER_CACHE_ELIGIBLE=0
+    HEADER_CACHE_HIT=0
     if [[ -z "$HEADERS_URL" ]]; then
         MIRROR="https://steamdeck-packages.steamos.cloud/archlinux-mirror"
         log "Discovering exact Valve headers package ${HEADERS_FILENAME}..."
@@ -348,10 +357,30 @@ if [[ -z "$HEADERS_PACKAGE" ]]; then
         done
         [[ -n "$HEADERS_URL" ]] || die "Exact Valve headers package was not found."
     fi
-    HEADERS_PACKAGE="$WORK_DIR/$HEADERS_FILENAME"
-    log "Downloading exact Valve headers..."
-    BUILD_PHASE=header_download_failed
-    run_cancellable curl -fL "$HEADERS_URL" -o "$HEADERS_PACKAGE"
+    # Only cache the normal remote package/signature pair. An explicitly supplied
+    # detached signature remains caller-owned and must never be replaced by cache.
+    if [[ -n "$HEADER_KEYRING" && -z "$HEADERS_SIGNATURE" ]]; then
+        HEADER_CACHE_ELIGIBLE=1
+        mkdir -p "$HEADER_CACHE_DIR"
+        exec 7>"$HEADER_CACHE_DIR/.lock"
+        flock 7
+        if [[ -f "$HEADER_CACHE_PACKAGE" && ! -L "$HEADER_CACHE_PACKAGE" &&
+              -f "$HEADER_CACHE_SIGNATURE" && ! -L "$HEADER_CACHE_SIGNATURE" ]]; then
+            HEADERS_PACKAGE="$WORK_DIR/$HEADERS_FILENAME"
+            HEADERS_SIGNATURE="$WORK_DIR/$HEADERS_FILENAME.sig"
+            cp "$HEADER_CACHE_PACKAGE" "$HEADERS_PACKAGE"
+            cp "$HEADER_CACHE_SIGNATURE" "$HEADERS_SIGNATURE"
+            HEADER_CACHE_HIT=1
+            log "Using cached authenticated Valve headers candidate..."
+        fi
+        flock -u 7
+    fi
+    if [[ "$HEADER_CACHE_HIT" != 1 ]]; then
+        HEADERS_PACKAGE="$WORK_DIR/$HEADERS_FILENAME"
+        log "Downloading exact Valve headers..."
+        BUILD_PHASE=header_download_failed
+        run_cancellable curl -fL "$HEADERS_URL" -o "$HEADERS_PACKAGE"
+    fi
 fi
 
 HEADER_SIGNATURE_STATUS=not-verified
@@ -401,6 +430,22 @@ python3 "$SUPPORT_ROOT/lib/validate_target_headers.py" package \
     --package "$HEADERS_PACKAGE" --name "$PACKAGE_NAME" \
     --version "$PACKAGE_VERSION" --architecture "$PACKAGE_ARCH" ||
     die "Headers package identity or archive paths failed validation."
+
+if [[ "${HEADER_CACHE_ELIGIBLE:-0}" == 1 && "${HEADER_CACHE_HIT:-0}" != 1 ]]; then
+    BUILD_PHASE=header_cache_failed
+    exec 7>"$HEADER_CACHE_DIR/.lock"
+    flock 7
+    CACHE_PACKAGE_TEMP="$(mktemp "$HEADER_CACHE_DIR/.package.XXXXXX")"
+    CACHE_SIGNATURE_TEMP="$(mktemp "$HEADER_CACHE_DIR/.signature.XXXXXX")"
+    cp "$HEADERS_PACKAGE" "$CACHE_PACKAGE_TEMP"
+    cp "$HEADERS_SIGNATURE" "$CACHE_SIGNATURE_TEMP"
+    chmod 0600 "$CACHE_PACKAGE_TEMP" "$CACHE_SIGNATURE_TEMP"
+    mv -f "$CACHE_PACKAGE_TEMP" "$HEADER_CACHE_PACKAGE"
+    CACHE_PACKAGE_TEMP=""
+    mv -f "$CACHE_SIGNATURE_TEMP" "$HEADER_CACHE_SIGNATURE"
+    CACHE_SIGNATURE_TEMP=""
+    flock -u 7
+fi
 
 KERNEL_ROOT="$WORK_DIR/kernel-root"
 mkdir -p "$KERNEL_ROOT"

@@ -17,6 +17,7 @@ BUILDER = ROOT / "bootstrap/build_for_target.sh"
 STEAMOS = "3.8.14"
 KERNEL = "6.16.12-valve24.4-1-neptune-616-gfixture"
 NVIDIA = "575.64.05"
+HEADER_SIGNER = "889B5EBDDD505A683621900DAF1D2199EF0A3CCF"
 HEADERS_NAME = (
     "linux-neptune-616-headers-6.16.12.valve24.4-1-x86_64.pkg.tar.zst"
 )
@@ -66,6 +67,7 @@ def make_mocks(path):
         "gcc": "#!/bin/sh\ncase \" $* \" in *' -dumpfullversion -dumpversion '*) echo 15.1.1;; *) exit 0;; esac\n",
         "flock": "#!/bin/sh\nexit 0\n",
         "git": "#!/bin/sh\nexit 1\n",
+        "gpgv": f"#!/bin/sh\necho '[GNUPG:] VALIDSIG {HEADER_SIGNER} 2026-01-01 0 4 0 1 10 00 {HEADER_SIGNER}'\n",
         "ld": "#!/bin/sh\necho 'GNU ld 2.45'\n",
         "modinfo": f"""#!/bin/sh
 case "${{1:-}}" in
@@ -123,6 +125,12 @@ done
 case "${MOCK_CURL_MODE:?}" in
   fail) exit 22 ;;
   truncate) printf truncated > "${output:?}" ;;
+  valid)
+    case "$output" in
+      *.sig) printf fixture-signature > "${output:?}" ;;
+      *) cp "${MOCK_HEADERS_FIXTURE:?}" "${output:?}" ;;
+    esac
+    ;;
   sleep)
     echo $$ > "${MOCK_CHILD_PID:?}"
     : > "${MOCK_CHILD_STARTED:?}"
@@ -175,6 +183,7 @@ def environment(fixture, mode):
         MOCK_CURL_MODE=mode,
         MOCK_CHILD_PID=str(fixture / "child.pid"),
         MOCK_CHILD_STARTED=str(fixture / "child.started"),
+        MOCK_HEADERS_FIXTURE=str(fixture / HEADERS_NAME),
     )
     return env
 
@@ -270,6 +279,28 @@ def run_output_exhaustion(fixture):
     assert_clean(fixture, output)
 
 
+def run_authenticated_header_cache(fixture):
+    keyring = fixture / "keyring.gpg"
+    keyring.write_bytes(b"fixture")
+    for index, curl_mode in enumerate(("valid", "fail"), start=1):
+        result = fixture / f"cache-{index}.result.json"
+        output = fixture / f"cache-{index}.output"
+        arguments = command(fixture, result, output)
+        arguments.extend(["--header-keyring", str(keyring), "--header-signer", HEADER_SIGNER])
+        env = environment(fixture, curl_mode)
+        env.update(MOCK_MAKE_MODE="complete")
+        completed = subprocess.run(
+            arguments, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        )
+        assert completed.returncode == 0, completed.stderr
+    cache = fixture / "home/.cache/open-gpu-kernel-modules-steamos-support/authenticated-headers"
+    assert (cache / HEADERS_NAME).is_file()
+    assert (cache / f"{HEADERS_NAME}.sig").is_file()
+    assert "Using cached authenticated Valve headers candidate" in (
+        completed.stdout + completed.stderr
+    )
+
+
 def main():
     with tempfile.TemporaryDirectory(prefix="target-build-failures-") as temporary:
         fixture = Path(temporary)
@@ -282,6 +313,7 @@ def main():
         run_cancellation(fixture, "sleep")
         run_cancellation(fixture, "unused", local_headers=True)
         run_output_exhaustion(fixture)
+        run_authenticated_header_cache(fixture)
 
 
 if __name__ == "__main__":
