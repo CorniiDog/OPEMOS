@@ -15,6 +15,8 @@ printf 'Checking shell syntax...\n'
 for script_file in bootstrap/*.sh lib/*.sh commit_myself.sh tests/*.sh; do
     bash -n "$script_file"
 done
+bash -n tests/vm/run-steamos-recovery.sh tests/vm/inspect-steamos-recovery.sh \
+    tests/vm/steamos-recovery-fixture.sh
 bash -n tests/fixtures/no-sudo/bin/sudo
 for mock_file in tests/fixtures/transaction/bin/*; do
     bash -n "$mock_file"
@@ -130,6 +132,9 @@ python3 tests/target_execution_trust.py
 printf 'Checking exact initramfs verification...\n'
 python3 tests/initramfs_verification.py
 python3 tests/bounded_capture.py
+
+printf 'Checking optional SteamOS recovery provenance...\n'
+python3 tests/steamos_recovery_input.py
 
 printf 'Checking built-module metadata validation...\n'
 python3 tests/module_validation.py

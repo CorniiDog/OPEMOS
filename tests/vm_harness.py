@@ -13,6 +13,8 @@ CHROOT_HOOKS = ROOT / "tests/vm/chroot-hooks.sh"
 MOUNT_LIFECYCLE = ROOT / "tests/vm/mount-lifecycle.sh"
 ARCH_RUNNER = ROOT / "tests/vm/run-arch.sh"
 ARCH_GUEST = ROOT / "tests/vm/arch-guest-checks.sh"
+STEAMOS_RUNNER = ROOT / "tests/vm/run-steamos-recovery.sh"
+STEAMOS_INSPECTOR = ROOT / "tests/vm/inspect-steamos-recovery.sh"
 IGNORE = ROOT / "tests/vm/.gitignore"
 
 
@@ -37,6 +39,11 @@ def main():
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
     )
     assert arch_help.returncode == 0 and "--no-download" in arch_help.stdout
+    steamos_help = subprocess.run(
+        [str(STEAMOS_RUNNER), "--help"], text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    assert steamos_help.returncode == 0 and "--archive" in steamos_help.stdout
 
     runner = RUNNER.read_text(encoding="utf-8")
     guest = GUEST.read_text(encoding="utf-8")
@@ -45,6 +52,8 @@ def main():
     mount_lifecycle = MOUNT_LIFECYCLE.read_text(encoding="utf-8")
     arch_runner = ARCH_RUNNER.read_text(encoding="utf-8")
     arch_guest = ARCH_GUEST.read_text(encoding="utf-8")
+    steamos_runner = STEAMOS_RUNNER.read_text(encoding="utf-8")
+    steamos_inspector = STEAMOS_INSPECTOR.read_text(encoding="utf-8")
     ignored = IGNORE.read_text(encoding="utf-8")
     assert "e401a4db2e5e04d1967b6729774faa96da629bcf3ba90b67d8d9cce9906bec0f" in runner
     assert "sha256sum -c" in runner
@@ -69,6 +78,7 @@ def main():
     assert "tests/install_contract.py" in guest
     assert "tests/target_execution_trust.py" in guest
     assert "tests/initramfs_verification.py" in guest
+    assert "steamos-recovery-fixture.sh" in guest
     assert "5d8be8d28cfd290f051b0f67df0a6874596ad23de3f3f18b90c91aeb758eb878" in arch_runner
     assert "656E4C5AC1CC3B86E539D97E343635A6859A9174" in arch_runner
     assert "gpgv --keyring" in arch_runner and "sha256sum -c" in arch_runner
@@ -77,6 +87,13 @@ def main():
     assert "stop_qemu" in arch_runner and "cleanup_partial_downloads" in arch_runner
     assert "pacman -S" in arch_guest and "mkinitcpio -P" in arch_guest
     assert "kill -TERM" in arch_guest and "lsinitcpio" in arch_guest
+    assert "validate_steamos_recovery_input.py" in steamos_runner
+    assert "decompress_bzip2_image.py" in steamos_runner
+    assert "readonly=on" in steamos_runner and "-display none" in steamos_runner
+    assert "hostfwd" not in steamos_runner and "2700" in steamos_runner
+    assert 'mount -o ro,nosuid,nodev,noexec' in steamos_inspector
+    assert 'truncate -s 256M "$work/$slot.img"' in steamos_inspector
+    assert "caller-provided block device" in steamos_inspector
     for pattern in (".cache/", ".runtime/", "*.qcow2", "*.img", "*.iso", "*.log", "*.sock"):
         assert pattern in ignored
 

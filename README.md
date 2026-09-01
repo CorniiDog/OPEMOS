@@ -828,6 +828,25 @@ a clean repeat. `--no-download` requires all three already verified cache inputs
 This proves upstream Arch tooling behavior, not Valve's package set, hooks,
 presets, recovery propagation, or SteamOS boot behavior.
 
+An optional Valve-recovery controller is available as
+`tests/vm/run-steamos-recovery.sh`. `--fixture` runs the deterministic disposable
+A/B filesystem, preset, hook, rollback, and idempotency path. The real-media form
+accepts only `--archive /absolute/path/to/steamdeck-recovery-*.img.bz2`; it never
+downloads recovery media or accepts a URL/hash supplied on the command line.
+Instead it requires a reviewed immutable filename, compressed size/hash, raw
+size, release identity, and Valve source-evidence record in
+`trust/steamos-recovery-images.json`, streams decompression with an exact 32-GiB
+cap, and attaches the raw image read-only to a pinned Fedora serial controller.
+The controller mounts recovery partitions read-only/noexec, locates exactly one
+SteamOS root, checks the real Holo database, mkinitcpio executable/presets, and
+libalpm hooks, then propagates those inputs into temporary guest-local A/B image
+files. It performs no SSH, GUI, bridging, host mounts, or writes to the recovery
+media. The committed manifest is deliberately `unconfigured`: Valve's current
+official support/download pages do not publish a checksum file or detached
+signature, so real-media execution fails closed until trustworthy immutable
+evidence is reviewed and pinned. Even then, this controller proves filesystem
+and transaction compatibility only—not Valve Secure Boot or NVIDIA hardware.
+
 After reinstalling and cloning the same support commit, run:
 
 ```bash

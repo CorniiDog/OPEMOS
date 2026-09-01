@@ -1330,6 +1330,10 @@ signing policy.
 * [ ] Authenticate or allowlist target-owned pacman hooks and mkinitcpio code,
   or require a verified official-recovery-image attestation from the image
   builder before executing target-controlled programs.
+  * [x] Provide a disabled-by-default serial controller, reviewed provenance
+    manifest contract, bounded decompressor, read-only recovery inspection, and
+    deterministic guest-local A/B fixture; no Valve checksum/signature is
+    currently available to populate the real-media manifest honestly.
 
 ## Public online-installer trust and certification
 

@@ -12,16 +12,17 @@ mount_lifecycle_status=not-run
 consumer_contract_status=not-run
 target_execution_trust_status=not-run
 initramfs_contract_status=not-run
+steamos_recovery_status=not-run
 
 cleanup()
 {
     local rc=$?
-    printf '{"schemaVersion":1,"status":"%s","transaction":"%s","flock":"%s","mountNamespace":"%s","btrfs":"%s","recoveryAB":"%s","chrootHooks":"%s","mountLifecycle":"%s","consumerContract":"%s","targetExecutionTrust":"%s","initramfsContract":"%s"}\n' \
+    printf '{"schemaVersion":1,"status":"%s","transaction":"%s","flock":"%s","mountNamespace":"%s","btrfs":"%s","recoveryAB":"%s","chrootHooks":"%s","mountLifecycle":"%s","consumerContract":"%s","targetExecutionTrust":"%s","initramfsContract":"%s","steamosRecoveryHarness":"%s"}\n' \
         "$([[ "$rc" == 0 ]] && printf passed || printf failed)" \
         "$transaction_status" "$flock_status" "$namespace_status" "$btrfs_status" \
         "$recovery_ab_status" "$chroot_hooks_status" "$mount_lifecycle_status" \
         "$consumer_contract_status" "$target_execution_trust_status" \
-        "$initramfs_contract_status"
+        "$initramfs_contract_status" "$steamos_recovery_status"
     return "$rc"
 }
 trap cleanup EXIT
@@ -76,3 +77,7 @@ target_execution_trust_status=passed
 
 python3 "$REPOSITORY_ROOT/tests/initramfs_verification.py"
 initramfs_contract_status=passed
+
+recovery_result="$(bash "$REPOSITORY_ROOT/tests/vm/steamos-recovery-fixture.sh")"
+[[ "$recovery_result" == '{"schemaVersion":1,"status":"passed","media":"deterministic-fixture","layout":"passed","presets":"passed","hooks":"passed","recoveryAB":"passed","rollback":"passed","cancellation":"passed","idempotency":"passed"}' ]]
+steamos_recovery_status=passed

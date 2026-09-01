@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "status": "unconfigured",
+  "officialPage": "https://help.steampowered.com/en/faqs/view/65B4-2AA3-5F37-4227",
+  "publisher": "Valve Corporation",
+  "images": [],
+  "requirements": {
+    "artifactFormat": "bzip2-raw-disk",
+    "immutableSha256": true,
+    "maximumCompressedBytes": 8589934592,
+    "maximumRawBytes": 34359738368,
+    "reviewedSourceEvidence": true
+  }
+}
