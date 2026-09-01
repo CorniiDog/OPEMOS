@@ -6,13 +6,15 @@ transaction_status=not-run
 namespace_status=not-run
 btrfs_status=not-run
 flock_status=not-run
+recovery_ab_status=not-run
 
 cleanup()
 {
     local rc=$?
-    printf '{"schemaVersion":1,"status":"%s","transaction":"%s","flock":"%s","mountNamespace":"%s","btrfs":"%s"}\n' \
+    printf '{"schemaVersion":1,"status":"%s","transaction":"%s","flock":"%s","mountNamespace":"%s","btrfs":"%s","recoveryAB":"%s"}\n' \
         "$([[ "$rc" == 0 ]] && printf passed || printf failed)" \
-        "$transaction_status" "$flock_status" "$namespace_status" "$btrfs_status"
+        "$transaction_status" "$flock_status" "$namespace_status" "$btrfs_status" \
+        "$recovery_ab_status"
     return "$rc"
 }
 trap cleanup EXIT
@@ -49,3 +51,6 @@ sync
 btrfs filesystem usage --raw "$btrfs_mount" >/dev/null
 umount "$btrfs_mount"
 btrfs_status=passed
+
+bash "$REPOSITORY_ROOT/tests/vm/recovery-ab.sh"
+recovery_ab_status=passed

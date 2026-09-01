@@ -763,12 +763,15 @@ The runner pins and verifies the Fedora 42 cloud image, creates a fresh sparse
 overlay and NoCloud seed on every invocation, uses QEMU user-mode networking
 (never bridged networking or SSH), and returns a schema-1 JSON result over the
 serial console. It also probes advisory locking, private mount namespaces, and
-a synthetic loop-backed Btrfs filesystem. Guest disks, seed media, logs,
+a synthetic loop-backed Btrfs filesystem. A disposable recovery/A-B fixture
+also proves pre-mutation space refusal, signal rollback, inactive-slot
+activation, active-slot preservation, and repeat execution using real Btrfs
+subvolumes and read-only snapshots. Guest disks, seed media, logs,
 sockets, and runtime files stay under ignored `tests/vm/.cache` and
 `tests/vm/.runtime` directories. The base image is the only persistent cache;
 delete it to force a verified refetch. This harness does not prove real
-SteamOS pacman/mkinitcpio behavior, recovery/A-B propagation, or NVIDIA hardware
-boot behavior.
+SteamOS pacman/mkinitcpio behavior, Valve bootloader propagation, or NVIDIA
+hardware boot behavior.
 
 After reinstalling and cloning the same support commit, run:
 
