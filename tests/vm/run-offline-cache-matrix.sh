@@ -49,6 +49,7 @@ for path in map(Path, sys.argv[3:]):
 passed = all(status == 0 for status in statuses) and all(
     isinstance(result, dict) and result.get("status") == "passed"
     and result.get("offlineAuthenticatedCache") == "passed"
+    and result.get("offlineBundleSelection") == "passed"
     for result in results
 )
 print(json.dumps({"schemaVersion": 1, "status": "passed" if passed else "failed",

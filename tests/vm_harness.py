@@ -63,6 +63,7 @@ def main():
     assert "-nic user" in runner and "hostfwd" not in runner
     assert "2700" in runner and "20G" in runner
     assert "expected_result=" in runner and "OPEN_GPU_VM_COMPLETE" in runner
+    assert "schemaVersion" in runner and "sed -n" in runner
     assert "--offline-cache-only" in runner
     assert "stop_qemu" in runner and 'rm -f "$BASE_IMAGE.partial"' in runner
     assert 'RUNTIME_DIR="$SCRIPT_DIR/.runtime/fedora"' in runner
@@ -91,6 +92,7 @@ def main():
     assert "gpgv --keyring" in arch_runner and "sha256sum -c" in arch_runner
     assert '--homedir "$RUNTIME_DIR/inspect-gnupg" --dearmor' in arch_runner
     assert "expected_result=" in arch_runner and "OPEN_GPU_ARCH_VM_COMPLETE" in arch_runner
+    assert "schemaVersion" in arch_runner and "sed -n" in arch_runner
     assert "--offline-cache-only" in arch_runner
     assert "stop_qemu" in arch_runner and "cleanup_partial_downloads" in arch_runner
     assert 'RUNTIME_DIR="$SCRIPT_DIR/.runtime/arch"' in arch_runner

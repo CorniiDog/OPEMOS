@@ -1360,6 +1360,10 @@ signing policy.
 * [ ] Test GitHub, Valve, and Arch Linux Archive outages. Reuse only exact
   previously authenticated cache entries and otherwise return an actionable
   typed failure.
+  * [x] Integrate verified userspace/certified bundle generations into the
+    offline-root input selector with an explicit no-fallback source mode,
+    exact target/policy/provenance/keyring/package binding, private snapshots,
+    cache-ID result provenance, and Fedora/Arch offline-only guest coverage.
 
 ---
 

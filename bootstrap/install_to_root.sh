@@ -23,6 +23,15 @@ RESULT_JSON=""
 PROGRESS_ATTEMPT=""
 COMPRESSION_PROFILE=""
 VALIDATE_ONLY=0
+INPUT_SOURCE=direct
+AUTHENTICATED_BUNDLE=""
+BUNDLE_STORE=""
+BUNDLE_KEYRING=""
+BUNDLE_REVIEWED_SIGNERS=""
+BUNDLE_STEAMOS=""
+BUNDLE_NVIDIA=""
+BUNDLE_CACHE_ID=""
+BUNDLE_GENERATION=""
 ORIGINAL_ARGS=("$@")
 
 # Locate the result path before normal parsing so malformed CLI input can still
@@ -87,6 +96,13 @@ Options:
   --progress-attempt NUMBER       Correlates progress records (0-1000000).
   --compression-profile PROFILE  Currently: btrfs-zstd3.
   --gaming-payload-profile FILE  Reviewed exact-target CUDA-omission profile.
+  --input-source MODE            direct or authenticated-bundle (no fallback).
+  --authenticated-bundle DIR    Verified offline bundle for bundle mode.
+  --bundle-store DIR             Immutable imported-generation store.
+  --bundle-keyring FILE          Exact reviewed package keyring.
+  --bundle-reviewed-signers FILE Exact reviewed signer policy.
+  --bundle-steamos VERSION       Exact target SteamOS identity.
+  --bundle-nvidia VERSION        Exact target NVIDIA identity.
   --validate-only
   -h, --help
 
@@ -122,6 +138,21 @@ while (( $# > 0 )); do
             esac
             shift 2
             ;;
+        --input-source|--authenticated-bundle|--bundle-store|--bundle-keyring|\
+        --bundle-reviewed-signers|--bundle-steamos|--bundle-nvidia)
+            require_option_value "$@"
+            mark_single_option "$1"
+            case "$1" in
+                --input-source) INPUT_SOURCE="$2" ;;
+                --authenticated-bundle) AUTHENTICATED_BUNDLE="$2" ;;
+                --bundle-store) BUNDLE_STORE="$2" ;;
+                --bundle-keyring) BUNDLE_KEYRING="$2" ;;
+                --bundle-reviewed-signers) BUNDLE_REVIEWED_SIGNERS="$2" ;;
+                --bundle-steamos) BUNDLE_STEAMOS="$2" ;;
+                --bundle-nvidia) BUNDLE_NVIDIA="$2" ;;
+            esac
+            shift 2
+            ;;
         --dependency-package|--dependency-signature)
             require_option_value "$@"
             if [[ "$1" == "--dependency-package" ]]; then
@@ -140,6 +171,47 @@ while (( $# > 0 )); do
         *) fail_argument "An unknown offline-root installer argument was supplied." ;;
     esac
 done
+[[ "$INPUT_SOURCE" == direct || "$INPUT_SOURCE" == authenticated-bundle ]] ||
+    fail_argument "Input source must be direct or authenticated-bundle."
+if [[ "$INPUT_SOURCE" == authenticated-bundle ]]; then
+    [[ -n "$AUTHENTICATED_BUNDLE" && -n "$BUNDLE_STORE" && -n "$BUNDLE_KEYRING" &&
+       -n "$BUNDLE_REVIEWED_SIGNERS" && "$BUNDLE_STEAMOS" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ &&
+       "$BUNDLE_NVIDIA" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] ||
+        fail_argument "Authenticated-bundle mode requires its bundle, store, trust, and exact target options."
+    [[ -z "$PROVENANCE$NVIDIA_UTILS$NVIDIA_UTILS_SIGNATURE$LIB32_NVIDIA_UTILS$LIB32_NVIDIA_UTILS_SIGNATURE$PACKAGE_KEYRING$USERSPACE_LOCK" &&
+       ${#DEPENDENCY_PACKAGES[@]} == 0 && ${#DEPENDENCY_SIGNATURES[@]} == 0 ]] ||
+        fail_argument "Authenticated-bundle mode cannot be mixed with direct userspace or provenance inputs."
+    BUNDLE_IMPORT_RESULT="$(mktemp /tmp/offline-bundle-import.XXXXXX)"
+    BUNDLE_RESOLUTION="$(mktemp /tmp/offline-bundle-resolution.XXXXXX)"
+    rm -f "$BUNDLE_RESOLUTION"
+    trap 'rm -f "$BUNDLE_IMPORT_RESULT" "$BUNDLE_RESOLUTION"' EXIT
+    python3 "$SUPPORT_ROOT/lib/authenticated_cache_bundle.py" import-set \
+        --bundle "$AUTHENTICATED_BUNDLE" --store "$BUNDLE_STORE" \
+        --keyring "$BUNDLE_KEYRING" --reviewed-signers "$BUNDLE_REVIEWED_SIGNERS" \
+        > "$BUNDLE_IMPORT_RESULT" || fail_argument "Authenticated bundle import failed closed."
+    BUNDLE_CACHE_ID="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["cacheId"])' "$BUNDLE_IMPORT_RESULT")" ||
+        fail_argument "Authenticated bundle import result is invalid."
+    BUNDLE_GENERATION="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["generation"])' "$BUNDLE_IMPORT_RESULT")" ||
+        fail_argument "Authenticated bundle generation result is invalid."
+    python3 "$SUPPORT_ROOT/lib/resolve_authenticated_install_bundle.py" \
+        --generation "$BUNDLE_GENERATION" --cache-id "$BUNDLE_CACHE_ID" \
+        --steamos "$BUNDLE_STEAMOS" --nvidia "$BUNDLE_NVIDIA" \
+        --keyring "$BUNDLE_KEYRING" --output "$BUNDLE_RESOLUTION" ||
+        fail_argument "Authenticated bundle does not satisfy the exact install policy."
+    PROVENANCE="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["provenance"])' "$BUNDLE_RESOLUTION")"
+    USERSPACE_LOCK="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["policy"])' "$BUNDLE_RESOLUTION")"
+    PACKAGE_KEYRING="$BUNDLE_KEYRING"
+    NVIDIA_UTILS="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(next(x["package"] for x in d["packages"] if x["name"]=="nvidia-utils"))' "$BUNDLE_RESOLUTION")"
+    NVIDIA_UTILS_SIGNATURE="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(next(x["signature"] for x in d["packages"] if x["name"]=="nvidia-utils"))' "$BUNDLE_RESOLUTION")"
+    LIB32_NVIDIA_UTILS="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(next(x["package"] for x in d["packages"] if x["name"]=="lib32-nvidia-utils"))' "$BUNDLE_RESOLUTION")"
+    LIB32_NVIDIA_UTILS_SIGNATURE="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(next(x["signature"] for x in d["packages"] if x["name"]=="lib32-nvidia-utils"))' "$BUNDLE_RESOLUTION")"
+    while IFS= read -r dependency_path; do DEPENDENCY_PACKAGES+=("$dependency_path"); done < <(
+        python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); [print(x["package"]) for x in d["packages"] if x["name"] not in ("nvidia-utils","lib32-nvidia-utils")]' "$BUNDLE_RESOLUTION")
+    while IFS= read -r dependency_path; do DEPENDENCY_SIGNATURES+=("$dependency_path"); done < <(
+        python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); [print(x["signature"]) for x in d["packages"] if x["name"] not in ("nvidia-utils","lib32-nvidia-utils")]' "$BUNDLE_RESOLUTION")
+elif [[ -n "$AUTHENTICATED_BUNDLE$BUNDLE_STORE$BUNDLE_KEYRING$BUNDLE_REVIEWED_SIGNERS$BUNDLE_STEAMOS$BUNDLE_NVIDIA" ]]; then
+    fail_argument "Bundle options require --input-source authenticated-bundle."
+fi
 (( ${#DEPENDENCY_PACKAGES[@]} == ${#DEPENDENCY_SIGNATURES[@]} )) ||
     fail_argument "Each dependency package requires one positionally paired signature."
 if [[ -n "$PROGRESS_ATTEMPT" ]]; then
@@ -260,6 +332,8 @@ cleanup_prevalidation_files()
     rm -f "$VALIDATION_JSON"
     [[ -z "${INITRAMFS_WORKSPACE_JSON:-}" ]] || rm -f "$INITRAMFS_WORKSPACE_JSON"
     rm -rf "$INPUT_SNAPSHOT_ROOT"
+    [[ -z "${BUNDLE_IMPORT_RESULT:-}" ]] || rm -f "$BUNDLE_IMPORT_RESULT"
+    [[ -z "${BUNDLE_RESOLUTION:-}" ]] || rm -f "$BUNDLE_RESOLUTION"
 }
 
 trap cleanup_prevalidation_files EXIT
@@ -386,7 +460,9 @@ VALIDATOR_ARGS=(
     --package-keyring "$PACKAGE_KEYRING"
     --userspace-lock "$USERSPACE_LOCK"
     --output "$VALIDATION_JSON"
+    --input-source "$INPUT_SOURCE"
 )
+[[ -z "$BUNDLE_CACHE_ID" ]] || VALIDATOR_ARGS+=(--input-bundle-id "$BUNDLE_CACHE_ID")
 [[ -z "$PROGRESS_ATTEMPT" ]] || VALIDATOR_ARGS+=(--progress-attempt "$PROGRESS_ATTEMPT")
 [[ -z "$COMPRESSION_PROFILE" ]] || VALIDATOR_ARGS+=(--compression-profile "$COMPRESSION_PROFILE")
 [[ -z "$GAMING_PAYLOAD_PROFILE" ]] || VALIDATOR_ARGS+=(--gaming-payload-profile "$GAMING_PAYLOAD_PROFILE")
@@ -813,6 +889,8 @@ cleanup_mutation()
     fi
     rm -rf "$MUTATION_WORK" "$INPUT_SNAPSHOT_ROOT" "$VALIDATION_JSON" \
         "$INITRAMFS_WORKSPACE_JSON" \
+        ${BUNDLE_IMPORT_RESULT:+"$BUNDLE_IMPORT_RESULT"} \
+        ${BUNDLE_RESOLUTION:+"$BUNDLE_RESOLUTION"} \
         >/dev/null 2>&1 || true
     exit "$rc"
 }
@@ -1170,5 +1248,7 @@ write_install_result success install_complete \
 COMPLETED=1
 trap - EXIT INT TERM
 rm -rf "$MUTATION_WORK" "$INPUT_SNAPSHOT_ROOT" "$VALIDATION_JSON" \
-    "$INITRAMFS_WORKSPACE_JSON"
+    "$INITRAMFS_WORKSPACE_JSON" \
+    ${BUNDLE_IMPORT_RESULT:+"$BUNDLE_IMPORT_RESULT"} \
+    ${BUNDLE_RESOLUTION:+"$BUNDLE_RESOLUTION"}
 ok "Offline-root NVIDIA installation completed with all mounts released."

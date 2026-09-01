@@ -889,6 +889,31 @@ and Arch guests:
 The matrix returns one schema-1 JSON result containing each guest result and
 uses only the existing pinned caches; it never falls back to the network.
 
+The offline-root installer can select the imported userspace/certified inputs
+directly without translating them into an online or loose-file fallback:
+
+```bash
+bootstrap/install_to_root.sh \
+    --input-source authenticated-bundle \
+    --authenticated-bundle /media/certified-userspace.bundle \
+    --bundle-store /appliance/cache/imported \
+    --bundle-keyring /appliance/trust/nvidia-userspace.gpg \
+    --bundle-reviewed-signers trust/nvidia-userspace-package-signers.json \
+    --bundle-steamos 3.8.14 --bundle-nvidia 575.64.05 \
+    --root /target-root --archive /appliance/modules.tar.gz \
+    --checksum /appliance/modules.tar.gz.sha256 \
+    --kernel 6.11.11-valve19-1-neptune-611 \
+    --result-json /appliance/results/install.json
+```
+
+Bundle mode is explicit and mutually exclusive with loose userspace,
+signature, lock, provenance, keyring, and dependency arguments. It reimports
+and revalidates the immutable generation, requires the exact reviewed target,
+package set, hashes, signatures, keyring, policy, and provenance, then uses the
+normal private installer snapshots and full validation path. There is no
+network fallback. Validation/results identify `authenticated-bundle` plus the
+canonical cache ID; cancellation or policy drift fails before target mutation.
+
 An optional Valve-recovery controller is available as
 `tests/vm/run-steamos-recovery.sh`. `--fixture` runs the deterministic disposable
 A/B filesystem, preset, hook, rollback, and idempotency path. The real-media form

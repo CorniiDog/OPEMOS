@@ -159,6 +159,8 @@ def arguments():
     parser.add_argument("--compression-profile", choices=(COMPRESSION_PROFILE,))
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--progress-attempt", type=bounded_progress_attempt, default=0)
+    parser.add_argument("--input-source", choices=("direct", "authenticated-bundle"), default="direct")
+    parser.add_argument("--input-bundle-id", default="")
     return parser.parse_args()
 
 
@@ -1875,6 +1877,10 @@ def validate(args, progress):
         "schemaVersion": 1,
         "status": "verified",
         "trust": trust,
+        "inputSource": {
+            "mode": args.input_source,
+            "bundleCacheId": args.input_bundle_id or None,
+        },
         "target": {
             "steamosVersion": identity["VERSION_ID"],
             "kernelVersion": args.kernel,
@@ -1920,6 +1926,9 @@ def main():
     args = arguments()
     progress = ProgressReporter(args.progress_attempt)
     try:
+        if ((args.input_source == "authenticated-bundle")
+                != bool(re.fullmatch(r"[0-9a-f]{64}", args.input_bundle_id))):
+            fail("input_source_invalid", "authenticated bundle source requires one exact cache identity")
         document = validate(args, progress)
     except Exception as error:
         if isinstance(error, ValidationFailure):

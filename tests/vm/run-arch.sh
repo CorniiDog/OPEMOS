@@ -166,9 +166,9 @@ set +e; wait "$qemu_pid"; qemu_status=$?; set -e
 qemu_pid=""
 release_runtime_lock
 trap - EXIT INT TERM
-result="$(grep -E '^\{"schemaVersion":1,' "$SERIAL_LOG" | tail -n1 | tr -d '\r' || true)"
+result="$(sed -n '/{"schemaVersion":1,/ { s/^[^{]*//; p; }' "$SERIAL_LOG" | tail -n1 | tr -d '\r' || true)"
 if [[ "$OFFLINE_CACHE_ONLY" == 1 ]]; then
-    expected_result='{"schemaVersion":1,"status":"passed","offlineAuthenticatedCache":"passed"}'
+    expected_result='{"schemaVersion":1,"status":"passed","offlineAuthenticatedCache":"passed","offlineBundleSelection":"passed"}'
 else
     expected_result='{"schemaVersion":1,"status":"passed","pacman":"passed","mkinitcpio":"passed","cancellation":"passed","idempotency":"passed","initramfsContract":"passed","offlineAuthenticatedCache":"passed"}'
 fi
