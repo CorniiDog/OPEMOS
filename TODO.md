@@ -55,6 +55,19 @@ index in the same commit.
 * [ ] Audit fresh-machine prerequisites, duplicated environment setup, stale
   terminology, unused variables, and intended remote/raw invocation paths.
 
+### Newly identified security gates
+
+* [ ] Snapshot every authenticated installer input, add an exclusive per-target
+  lifecycle lock, and preserve exact rootfs/EFI mount identity through cleanup.
+* [ ] Require structured module, userspace, initramfs, and Holo-database
+  verification before any schema-1 installer success result.
+* [ ] Formalize result/progress compatibility, opaque-operation liveness, and a
+  real phase-by-phase failure/cancellation matrix.
+* [ ] Authenticate target-owned executable code and raise the public online
+  bootstrap/release/certification path to the offline installer's trust level.
+* [ ] Define authenticated archival/cache recovery and typed outage behavior for
+  GitHub, Valve, and Arch Linux Archive dependencies.
+
 The detailed unchecked items and their historical context remain below. Search
 for `* [ ]` to enumerate them mechanically.
 
@@ -1263,6 +1276,71 @@ signing policy.
 * [ ] Verify SteamOS updates and slot changes do not silently leave stale modules.
 * [ ] Preserve a recovery route if NVIDIA initialization fails on first hardware
   boot.
+
+---
+
+# Newly identified installer and publication hardening
+
+## Immutable inputs and exclusive target lifecycle
+
+* [ ] Copy every validated archive, package, signature, keyring, lock, and
+  provenance document into a private immutable staging directory. Validate and
+  mutate only from those copies, rejecting any source that changes during
+  snapshot creation.
+* [ ] Add an exclusive per-target lifecycle lock to `install_to_root.sh` so
+  concurrent validation or mutation of one mounted root fails before mutation.
+* [ ] Record and repeatedly verify rootfs and EFI mount identities between
+  validation, every destructive phase, and cleanup. Abort on replacement,
+  unexpected remount, or filesystem-identity drift.
+
+## Mandatory structured post-install verification
+
+* [ ] Make `moduleVerification` mandatory for success and require all five
+  modules to pass exact payload-hash, ownership, mode, architecture, NVIDIA
+  version, and vermagic verification.
+* [ ] Add mandatory structured `userspaceVerification` covering every locked
+  package, owned file/link/library, and matching GSP firmware result.
+* [ ] Add mandatory structured `initramfsVerification`; inspect the exact
+  generated initramfs and require the intended NVIDIA modules and configuration
+  rather than trusting only mkinitcpio's exit status.
+* [ ] Verify the target Holo pacman database after mutation, including package
+  records, ownership, dependency state, and database consistency.
+
+## Schema, liveness, failure, and target-code trust
+
+* [ ] Formalize result/progress schema evolution, mandatory versus additive
+  schema-1 fields, forward/backward fixtures, and an image-builder consumer
+  fixture covering all three structured post-install verification records.
+* [ ] Add a real phase-by-phase failure/cancellation matrix for pacman hooks,
+  userspace verification, module extraction/compression/copy/verification,
+  GRUB, depmod, mkinitcpio, state writing, compression restoration, and
+  recursive mount cleanup.
+* [ ] Emit bounded heartbeats or safe subphase records during opaque pacman and
+  mkinitcpio subprocesses without exposing paths, credentials, or unbounded
+  output.
+* [ ] Authenticate or allowlist target-owned pacman hooks and mkinitcpio code,
+  or require a verified official-recovery-image attestation from the image
+  builder before executing target-controlled programs.
+
+## Public online-installer trust and certification
+
+* [ ] Replace production curl bootstrap from mutable `main` with an immutable,
+  authenticated release, tag, or commit bootstrap.
+* [ ] Require a signed or independently authenticated online release manifest
+  binding archive, checksum, build info, provenance, userspace version, source
+  commit, and certification identity.
+* [ ] Define a machine-readable hardware-certification attestation bound to
+  exact artifact hashes, tested GPUs, SteamOS/kernel versions, test date/result,
+  and maintainer identity before assigning `certified-published`.
+
+## Availability and authenticated recovery
+
+* [ ] Define archival/recovery policy for historical Valve headers, reviewed
+  userspace packages/signatures, minimal keyrings, provenance, and certified
+  release assets; hash manifests alone are not backups.
+* [ ] Test GitHub, Valve, and Arch Linux Archive outages. Reuse only exact
+  previously authenticated cache entries and otherwise return an actionable
+  typed failure.
 
 ---
 
