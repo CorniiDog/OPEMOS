@@ -197,6 +197,8 @@ if [[ "${PROJECT_TEST_MODE:-0}" == 1 && -n "${PROJECT_TEST_TEMP_ROOT:-}" ]]; the
     INSTALLER_TEMP_ROOT="$PROJECT_TEST_TEMP_ROOT"
 fi
 VALIDATION_JSON="$(mktemp "$INSTALLER_TEMP_ROOT/offline-root-validation.XXXXXX")"
+INPUT_SNAPSHOT_ROOT="$(mktemp -d "$INSTALLER_TEMP_ROOT/offline-root-inputs.XXXXXX")"
+chmod 0700 "$INPUT_SNAPSHOT_ROOT"
 VALIDATOR_PID=""
 
 terminate_process_group()
@@ -253,7 +255,13 @@ cancel_validation()
     exit 143
 }
 
-trap 'rm -f "$VALIDATION_JSON"' EXIT
+cleanup_prevalidation_files()
+{
+    rm -f "$VALIDATION_JSON"
+    rm -rf "$INPUT_SNAPSHOT_ROOT"
+}
+
+trap cleanup_prevalidation_files EXIT
 trap cancel_validation INT TERM
 
 if ! command -v flock >/dev/null 2>&1; then
@@ -278,6 +286,63 @@ case "$TARGET_LOCK_RC" in
         exit 1
         ;;
 esac
+
+snapshot_input()
+{
+    local variable_name="$1" label="$2" maximum="$3" source="${!1}" destination
+    destination="$INPUT_SNAPSHOT_ROOT/$label/$(basename "$source")"
+    mkdir -m 0700 "$INPUT_SNAPSHOT_ROOT/$label"
+    python3 "$SUPPORT_ROOT/lib/snapshot_install_input.py" \
+        --source "$source" --destination "$destination" \
+        --max-bytes "$maximum" || return 1
+    printf -v "$variable_name" '%s' "$destination"
+}
+
+for input_specification in \
+    "ARCHIVE:archive:1073741824" "CHECKSUM:checksum:4096" \
+    "PROVENANCE:provenance:1048576" \
+    "NVIDIA_UTILS:nvidia-utils:2147483648" \
+    "NVIDIA_UTILS_SIGNATURE:nvidia-utils-signature:1048576" \
+    "LIB32_NVIDIA_UTILS:lib32-nvidia-utils:2147483648" \
+    "LIB32_NVIDIA_UTILS_SIGNATURE:lib32-nvidia-utils-signature:1048576" \
+    "PACKAGE_KEYRING:package-keyring:67108864" \
+    "USERSPACE_LOCK:userspace-lock:1048576"
+do
+    input_variable="${input_specification%%:*}"
+    input_remainder="${input_specification#*:}"
+    input_label="${input_remainder%%:*}"
+    input_maximum="${input_remainder#*:}"
+    snapshot_input "$input_variable" "$input_label" "$input_maximum" || {
+        write_prevalidation_result failed input_snapshot_failed \
+            "An authenticated installer input could not be snapshotted safely."
+        exit 1
+    }
+done
+if [[ -n "$GAMING_PAYLOAD_PROFILE" ]]; then
+    snapshot_input GAMING_PAYLOAD_PROFILE gaming-payload-profile 1048576 || {
+        write_prevalidation_result failed input_snapshot_failed \
+            "The gaming payload profile could not be snapshotted safely."
+        exit 1
+    }
+fi
+for (( dependency_index=0; dependency_index<${#DEPENDENCY_PACKAGES[@]}; dependency_index++ )); do
+    dependency_package="${DEPENDENCY_PACKAGES[$dependency_index]}"
+    dependency_signature="${DEPENDENCY_SIGNATURES[$dependency_index]}"
+    dependency_label="dependency-$dependency_index"
+    dependency_signature_label="dependency-signature-$dependency_index"
+    snapshot_input dependency_package "$dependency_label" 2147483648 || {
+        write_prevalidation_result failed input_snapshot_failed \
+            "A dependency package could not be snapshotted safely."
+        exit 1
+    }
+    snapshot_input dependency_signature "$dependency_signature_label" 1048576 || {
+        write_prevalidation_result failed input_snapshot_failed \
+            "A dependency signature could not be snapshotted safely."
+        exit 1
+    }
+    DEPENDENCY_PACKAGES[$dependency_index]="$dependency_package"
+    DEPENDENCY_SIGNATURES[$dependency_index]="$dependency_signature"
+done
 
 VALIDATOR_ARGS=(
     --root "$ROOT"
@@ -638,7 +703,8 @@ cleanup_mutation()
                 cleanup "$mounts_released" "$compression_restored" || true
         fi
     fi
-    rm -rf "$MUTATION_WORK" "$VALIDATION_JSON" >/dev/null 2>&1 || true
+    rm -rf "$MUTATION_WORK" "$INPUT_SNAPSHOT_ROOT" "$VALIDATION_JSON" \
+        >/dev/null 2>&1 || true
     exit "$rc"
 }
 
@@ -919,5 +985,5 @@ write_install_result success install_complete \
     complete true
 COMPLETED=1
 trap - EXIT INT TERM
-rm -rf "$MUTATION_WORK" "$VALIDATION_JSON"
+rm -rf "$MUTATION_WORK" "$INPUT_SNAPSHOT_ROOT" "$VALIDATION_JSON"
 ok "Offline-root NVIDIA installation completed with all mounts released."

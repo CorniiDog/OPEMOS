@@ -1288,7 +1288,7 @@ signing policy.
 
 ## Immutable inputs and exclusive target lifecycle
 
-* [ ] Copy every validated archive, package, signature, keyring, lock, and
+* [x] Copy every validated archive, package, signature, keyring, lock, and
   provenance document into a private immutable staging directory. Validate and
   mutate only from those copies, rejecting any source that changes during
   snapshot creation.

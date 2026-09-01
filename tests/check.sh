@@ -42,6 +42,39 @@ python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/write_install_result.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/snapshot_install_input.py
+
+printf 'Checking immutable installer input snapshots...\n'
+SNAPSHOT_FIXTURE="$(mktemp -d /tmp/installer-input-snapshot.XXXXXX)"
+printf 'authenticated fixture\n' > "$SNAPSHOT_FIXTURE/source"
+python3 lib/snapshot_install_input.py \
+    --source "$SNAPSHOT_FIXTURE/source" --destination "$SNAPSHOT_FIXTURE/copy" \
+    --max-bytes 1024
+cmp "$SNAPSHOT_FIXTURE/source" "$SNAPSHOT_FIXTURE/copy" || \
+    fail "installer input snapshot content differs"
+python3 - "$SNAPSHOT_FIXTURE/copy" <<'PY' || fail "installer input snapshot mode is unsafe"
+import os, stat, sys
+assert stat.S_IMODE(os.stat(sys.argv[1]).st_mode) == 0o600
+PY
+ln -s "$SNAPSHOT_FIXTURE/source" "$SNAPSHOT_FIXTURE/link"
+if python3 lib/snapshot_install_input.py \
+    --source "$SNAPSHOT_FIXTURE/link" --destination "$SNAPSHOT_FIXTURE/link-copy" \
+    --max-bytes 1024 >/dev/null 2>&1
+then
+    fail "installer input snapshot accepted a symlink source"
+fi
+[[ ! -e "$SNAPSHOT_FIXTURE/link-copy" ]] || \
+    fail "failed installer input snapshot left partial output"
+if python3 lib/snapshot_install_input.py \
+    --source "$SNAPSHOT_FIXTURE/source" --destination "$SNAPSHOT_FIXTURE/oversize" \
+    --max-bytes 4 >/dev/null 2>&1
+then
+    fail "installer input snapshot exceeded its byte limit"
+fi
+[[ ! -e "$SNAPSHOT_FIXTURE/oversize" ]] || \
+    fail "oversized installer input snapshot left partial output"
+rm -rf "$SNAPSHOT_FIXTURE"
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/verify_installed_userspace.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/verify_installed_modules.py

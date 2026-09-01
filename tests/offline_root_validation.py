@@ -702,6 +702,7 @@ def run_installer(paths, binaries, result, success, preserve_lock=False, **envir
     )
     test_temp_root = binaries.parent / "appliance-tmp"
     before_mutation_work = set(test_temp_root.glob("offline-root-mutation.*"))
+    before_input_snapshots = set(test_temp_root.glob("offline-root-inputs.*"))
     scratch_parent = binaries.parent / "appliance-var-tmp"
     before_scratch = set(scratch_parent.glob("offline-root-initramfs.*"))
     env = installer_environment(binaries, mount_state, **environment)
@@ -712,6 +713,7 @@ def run_installer(paths, binaries, result, success, preserve_lock=False, **envir
     assert not mount_state.read_text(encoding="utf-8").strip()
     assert mount_state.with_suffix(".compression").read_text().strip() == initial_compression
     assert set(test_temp_root.glob("offline-root-mutation.*")) == before_mutation_work
+    assert set(test_temp_root.glob("offline-root-inputs.*")) == before_input_snapshots
     assert set(scratch_parent.glob("offline-root-initramfs.*")) == before_scratch
     return json.loads(result.read_text(encoding="utf-8"))
 
@@ -729,6 +731,7 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
     test_temp_root = binaries.parent / "appliance-tmp"
     before_validation_files = set(test_temp_root.glob("offline-root-validation.*"))
     before_mutation_work = set(test_temp_root.glob("offline-root-mutation.*"))
+    before_input_snapshots = set(test_temp_root.glob("offline-root-inputs.*"))
     scratch_parent = binaries.parent / "appliance-var-tmp"
     before_scratch = set(scratch_parent.glob("offline-root-initramfs.*"))
     process = subprocess.Popen(
@@ -767,6 +770,7 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
     assert mount_state.with_suffix(".compression").read_text().strip() == initial_compression
     assert set(test_temp_root.glob("offline-root-validation.*")) == before_validation_files
     assert set(test_temp_root.glob("offline-root-mutation.*")) == before_mutation_work
+    assert set(test_temp_root.glob("offline-root-inputs.*")) == before_input_snapshots
     assert set(scratch_parent.glob("offline-root-initramfs.*")) == before_scratch
     records = parse_progress_records(stderr)
     if expected_phase == "initramfs":

@@ -494,7 +494,14 @@ package/signature hashes, signer, installed size, dependencies, and provides.
 Malformed CLI input writes `invalid_arguments` when a result path is available;
 duplicate singleton options are rejected. Cancellation escalates from TERM to
 KILL after a bounded grace period and reaps the process group before reporting
-cleanup. Before pacman, mutation recursively bind-mounts `/dev`, `/proc`, and
+cleanup. Before validation, every authenticated archive, package, signature,
+keyring, lock, provenance document, and optional payload profile is copied into
+a private mode-0700 staging tree with bounded per-input sizes. Each copy is
+mode 0600 and is rejected if the source is a symlink, changes identity or
+metadata while being copied, is replaced at its pathname, or exceeds its
+validator-aligned size limit. Validation and mutation use only these snapshots,
+which are removed on validation, failure, cancellation, and success paths.
+Before pacman, mutation recursively bind-mounts `/dev`, `/proc`, and
 `/sys` into the confined target, makes each tree recursively slave, verifies
 the source/target mount identities, and bind-mounts a private appliance-backed
 scratch directory at target `/var/tmp`. The target directory must be confined,
