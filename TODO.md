@@ -865,8 +865,8 @@ offline installer contract.
 * [x] Test archive traversal rejection across installer and publisher inputs.
 * [x] Test checksum rejection.
 * [x] Test BUILD-INFO parsing and embedded/sidecar agreement.
-* [ ] Test raw `.ko` idempotency.
-* [ ] Test `.ko.zst` idempotency.
+* [x] Test raw `.ko` idempotency.
+* [x] Test `.ko.zst` idempotency.
 * [x] Test empty/incomplete module-set rejection.
 * [x] Test wrong-kernel rejection.
 * [x] Test wrong NVIDIA version rejection.

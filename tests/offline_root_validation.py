@@ -1364,6 +1364,25 @@ def main():
             stat.S_IMODE(path.stat().st_mode) == 0o644
             for path in compressed_destination.iterdir()
         )
+        compressed_hashes = {
+            path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in compressed_destination.iterdir()
+        }
+        compressed_again = run_installer(
+            compressed_paths,
+            binaries,
+            temporary / "compressed-module-install-again.json",
+            True,
+        )
+        assert compressed_again["moduleVerification"]["status"] == "verified"
+        assert {
+            record["representation"]
+            for record in compressed_again["moduleVerification"]["modules"]
+        } == {".ko.zst"}
+        assert {
+            path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in compressed_destination.iterdir()
+        } == compressed_hashes
 
         paths["compression_profile"] = "btrfs-zstd3"
         measured = run(
@@ -2241,8 +2260,21 @@ def main():
                     assert line.index("nvidia-drm.fbdev=1") < line.index("#")
         assert b"steamenv_boot\tlinux /boot/vmlinuz-linux-neptune-616" in first_grub
 
+        raw_first_hashes = {
+            path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in (module_root / "updates/open-gpu-kernel-modules-steamos").iterdir()
+        }
         second = run_installer(paths, binaries, temporary / "install-again.json", True)
         assert second["status"] == "success"
+        assert second["moduleVerification"]["status"] == "verified"
+        assert {
+            record["representation"]
+            for record in second["moduleVerification"]["modules"]
+        } == {".ko.zst"}
+        assert {
+            path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in (module_root / "updates/open-gpu-kernel-modules-steamos").iterdir()
+        } == raw_first_hashes
         assert grub_path.read_bytes() == first_grub
 
         valid_grub = grub_path.read_bytes()
