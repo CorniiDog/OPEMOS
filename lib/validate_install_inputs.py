@@ -834,6 +834,7 @@ def measured_btrfs_payload(args, package_paths, declared_payload_bytes):
     with tempfile.TemporaryDirectory(prefix="offline-root-btrfs-result-") as temporary:
         output = Path(temporary) / "measurement.json"
         command = [
+            sys.executable,
             str(Path(__file__).resolve().with_name("measure_btrfs_payload.py")),
             "--module-archive", str(args.archive),
             "--declared-payload-bytes", str(declared_payload_bytes),
@@ -853,13 +854,15 @@ def measured_btrfs_payload(args, package_paths, declared_payload_bytes):
             if output.is_symlink() or output.stat().st_size > MAX_METADATA_MEMBER_BYTES:
                 raise OSError
             measurement = json.loads(output.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError, json.JSONDecodeError):
+        except (OSError, UnicodeError, json.JSONDecodeError) as error:
             stderr = None
             status = None
             if completed is not None:
                 status = completed.returncode
                 stderr = completed.stderr.decode("utf-8", errors="replace")
-                stderr = sanitized_measurement_stderr(stderr)
+            elif isinstance(error, OSError):
+                stderr = str(error)
+            stderr = sanitized_measurement_stderr(stderr)
             fail(
                 "compression_measurement_launcher_failed",
                 "Scratch-Btrfs measurement did not return structured metadata.",
