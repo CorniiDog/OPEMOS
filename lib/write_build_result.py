@@ -8,6 +8,19 @@ import re
 from pathlib import Path
 
 
+TOKEN = re.compile(r"[a-z][a-z0-9_]{0,63}")
+STEAMOS_VERSION = re.compile(r"(?:unknown|[0-9]+\.[0-9]+\.[0-9]+)")
+NVIDIA_VERSION = re.compile(r"(?:unknown|[0-9]+\.[0-9]+(?:\.[0-9]+)?)")
+KERNEL_VERSION = re.compile(r"(?:unknown|[A-Za-z0-9._+~-]{1,255})")
+SAFE_IDENTITY = re.compile(r"[A-Za-z0-9._+~-]{1,255}")
+PLAIN_FILENAME = re.compile(r"[A-Za-z0-9@._+~:-]{1,255}")
+TRUST_VALUES = {
+    "development-unverified",
+    "locally-built-verified",
+    "certified-published",
+}
+
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", required=True, type=Path)
@@ -29,6 +42,35 @@ def parse_args():
 
 def main():
     args = parse_args()
+    if not TOKEN.fullmatch(args.reason):
+        raise SystemExit("Build result reason must be a stable token.")
+    if (not args.message or len(args.message) > 2048 or "\x00" in args.message
+            or any(character not in "\n\t" and ord(character) < 32 for character in args.message)):
+        raise SystemExit("Build result message is empty, excessive, or contains control data.")
+    identity_patterns = (STEAMOS_VERSION, KERNEL_VERSION, NVIDIA_VERSION)
+    if args.status != "success":
+        args.steamos = args.steamos if SAFE_IDENTITY.fullmatch(args.steamos) else "invalid"
+        args.kernel = args.kernel if SAFE_IDENTITY.fullmatch(args.kernel) else "invalid"
+        args.nvidia = args.nvidia if SAFE_IDENTITY.fullmatch(args.nvidia) else "invalid"
+        args.architecture = (
+            args.architecture if SAFE_IDENTITY.fullmatch(args.architecture) else "invalid"
+        )
+        identity_patterns = (SAFE_IDENTITY, SAFE_IDENTITY, SAFE_IDENTITY)
+    if any(
+        pattern.fullmatch(value) is None
+        for pattern, value in zip(
+            identity_patterns, (args.steamos, args.kernel, args.nvidia)
+        )
+    ):
+        raise SystemExit("Build result target identity is invalid.")
+    if args.status == "success" and args.architecture != "x86_64":
+        raise SystemExit("Build result architecture is invalid.")
+    if args.trust not in TRUST_VALUES:
+        raise SystemExit("Build result trust classification is invalid.")
+    if args.status == "success" and args.reason != "build_complete":
+        raise SystemExit("Successful build results require reason=build_complete.")
+    if args.status == "cancelled" and args.reason != "cancelled":
+        raise SystemExit("Cancelled build results require reason=cancelled.")
     if args.status == "success":
         artifact_names = (
             args.archive,
@@ -37,7 +79,10 @@ def main():
             args.provenance,
         )
         if any(
-            not value or Path(value).name != value or value in (".", "..")
+            not value
+            or PLAIN_FILENAME.fullmatch(value) is None
+            or Path(value).name != value
+            or value in (".", "..")
             for value in artifact_names
         ):
             raise SystemExit(
@@ -67,7 +112,7 @@ def main():
             "checksum": args.checksum,
             "buildInfo": args.build_info,
             "provenance": args.provenance,
-            "sha256": args.archive_sha256,
+            "sha256": args.archive_sha256.lower(),
         }
 
     args.output.parent.mkdir(parents=True, exist_ok=True)

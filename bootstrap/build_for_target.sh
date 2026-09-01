@@ -40,8 +40,10 @@ fail_argument()
         python3 "$SUPPORT_ROOT/lib/write_build_result.py" \
             --output "$RESULT_JSON" --status failed --reason "$reason" \
             --message "$message" --trust development-unverified \
-            --steamos "$STEAMOS_VERSION" --kernel "$KERNEL_VERSION" \
-            --nvidia "$NVIDIA_VERSION" --architecture "$ARCHITECTURE" || true
+            --steamos "${STEAMOS_VERSION:-unknown}" \
+            --kernel "${KERNEL_VERSION:-unknown}" \
+            --nvidia "${NVIDIA_VERSION:-unknown}" \
+            --architecture "${ARCHITECTURE:-unknown}" || true
     fi
     die "$message"
 }
@@ -103,7 +105,7 @@ while [[ $# -gt 0 ]]; do
         --result-json) [[ $# -ge 2 ]] || fail_argument invalid_target "$1 requires a file."; RESULT_JSON="$2"; shift 2 ;;
         --resolve-only) RESOLVE_ONLY=1; shift ;;
         -h|--help) usage; exit 0 ;;
-        *) fail_argument invalid_target "Unknown argument: $1" ;;
+        *) fail_argument invalid_target "An unknown offline-target build argument was supplied." ;;
     esac
 done
 
@@ -236,12 +238,17 @@ terminate_active_process_group()
 {
     local attempt
     [[ -n "$ACTIVE_PROCESS_GROUP" ]] || return 0
-    kill -TERM -- "-${ACTIVE_PROCESS_GROUP}" 2>/dev/null || true
+    kill -TERM -- "-${ACTIVE_PROCESS_GROUP}" 2>/dev/null ||
+        kill -TERM "${ACTIVE_PROCESS_GROUP}" 2>/dev/null || true
     for attempt in 1 2 3 4 5 6 7 8 9 10; do
-        kill -0 -- "-${ACTIVE_PROCESS_GROUP}" 2>/dev/null || return 0
+        if ! kill -0 -- "-${ACTIVE_PROCESS_GROUP}" 2>/dev/null &&
+           ! kill -0 "${ACTIVE_PROCESS_GROUP}" 2>/dev/null; then
+            return 0
+        fi
         sleep 0.1
     done
     kill -KILL -- "-${ACTIVE_PROCESS_GROUP}" 2>/dev/null || true
+    kill -KILL "${ACTIVE_PROCESS_GROUP}" 2>/dev/null || true
 }
 
 cancel_build()

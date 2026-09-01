@@ -16,6 +16,7 @@ EXPECTED_MODULES = {
     "nvidia-peermem.ko",
     "nvidia-uvm.ko",
 }
+MAX_MODULE_BYTES = 1024 * 1024 * 1024
 
 
 class ValidationFailure(Exception):
@@ -59,10 +60,19 @@ def validate(args):
     results = []
     for name in sorted(modules):
         path = modules[name]
-        if not path.is_file():
+        if not path.is_file() or path.is_symlink():
             raise ValidationFailure(
-                "module_set_incomplete", "A required NVIDIA module is missing."
+                "module_set_incomplete", "A required NVIDIA module is missing or unsafe."
             )
+        try:
+            if path.stat().st_size > MAX_MODULE_BYTES:
+                raise ValidationFailure(
+                    "module_too_large", "A required NVIDIA module exceeds the size limit."
+                )
+        except OSError as error:
+            raise ValidationFailure(
+                "module_set_incomplete", "A required NVIDIA module cannot be inspected."
+            ) from error
         version = command_output(["modinfo", "-F", "version", str(path)])
         if version != args.nvidia:
             raise ValidationFailure(

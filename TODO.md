@@ -1318,12 +1318,27 @@ signing policy.
   savings, so compression context cannot silently override a space failure.
 * [x] Add synthetic success, repeated-execution, corrupt-input, injected
   initramfs failure, and mounts-released result coverage.
+* [x] Make malformed and duplicate installer arguments return a bounded schema-1
+  `invalid_arguments` result whenever `--result-json` is discoverable.
+* [x] Bound signed userspace package files/listings/member counts and reject
+  duplicate/noncanonical paths, special entries, malformed links, and excessive
+  expansion before target-root pacman execution; verify the real staged NVIDIA
+  and egl-gbm packages remain accepted.
+* [x] Return exact provenance and reviewed-lock hashes plus the complete verified
+  package metadata needed by the image-builder consumer.
+* [x] Bound cancellation with TERM-to-KILL escalation, cover the process-group
+  creation race, reap children, and repeatedly exercise validation/mutation
+  cancellation without stale mounts.
 * [ ] Rerun the real Fedora/recovery-overlay mutation suite with the Holo pacman
   database contract and verify ownership, repeat execution, failure rollback,
   initramfs output, and mount cleanup before accepting an exported image.
 
 ## Known cross-project edge cases
 
+* [ ] After repinning this support commit, make the image builder deserialize
+  and independently compare `provenanceSha256`, `userspaceLock`, and every
+  extended package record field; its current consumer safely ignores these
+  additive schema-1 fields and validates the older strict subset only.
 * [ ] Image builder must determine the actual boot kernel when multiple module
   trees exist; support-side compilation must receive one explicit target.
 * [x] Image builder can launch an x86_64 TCG build appliance on Apple Silicon;

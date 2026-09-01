@@ -21,6 +21,44 @@ DEPENDENCY_SIGNATURES=()
 RESULT_JSON=""
 PROGRESS_ATTEMPT=""
 VALIDATE_ONLY=0
+ORIGINAL_ARGS=("$@")
+
+# Locate the result path before normal parsing so malformed CLI input can still
+# return the same machine-readable contract consumed by the image builder.
+for (( argument_index=0; argument_index<${#ORIGINAL_ARGS[@]}; argument_index++ )); do
+    if [[ "${ORIGINAL_ARGS[$argument_index]}" == "--result-json" &&
+          $((argument_index + 1)) -lt ${#ORIGINAL_ARGS[@]} &&
+          "${ORIGINAL_ARGS[$((argument_index + 1))]}" != --* ]]; then
+        RESULT_JSON="${ORIGINAL_ARGS[$((argument_index + 1))]}"
+        break
+    fi
+done
+
+fail_argument()
+{
+    local message="$1"
+    if [[ -n "$RESULT_JSON" ]]; then
+        python3 "${SUPPORT_ROOT}/lib/write_install_result.py" \
+            --output "$RESULT_JSON" --status failed --reason invalid_arguments \
+            --message "$message" --phase argument_validation --root /target-root \
+            --kernel "${KERNEL:-unknown}" || true
+    fi
+    die "$message"
+}
+
+require_option_value()
+{
+    [[ $# -ge 2 && "$2" != --* ]] || fail_argument "$1 requires a value."
+}
+
+SEEN_SINGLE_OPTIONS="|"
+mark_single_option()
+{
+    case "$SEEN_SINGLE_OPTIONS" in
+        *"|$1|"*) fail_argument "Option may be specified only once: $1" ;;
+    esac
+    SEEN_SINGLE_OPTIONS="${SEEN_SINGLE_OPTIONS}$1|"
+}
 
 usage()
 {
@@ -56,43 +94,81 @@ EOF
 
 while (( $# > 0 )); do
     case "$1" in
-        --root) ROOT="${2:-}"; shift 2 ;;
-        --archive) ARCHIVE="${2:-}"; shift 2 ;;
-        --checksum) CHECKSUM="${2:-}"; shift 2 ;;
-        --provenance) PROVENANCE="${2:-}"; shift 2 ;;
-        --kernel) KERNEL="${2:-}"; shift 2 ;;
-        --nvidia-utils) NVIDIA_UTILS="${2:-}"; shift 2 ;;
-        --nvidia-utils-signature) NVIDIA_UTILS_SIGNATURE="${2:-}"; shift 2 ;;
-        --lib32-nvidia-utils) LIB32_NVIDIA_UTILS="${2:-}"; shift 2 ;;
-        --lib32-nvidia-utils-signature) LIB32_NVIDIA_UTILS_SIGNATURE="${2:-}"; shift 2 ;;
-        --package-keyring) PACKAGE_KEYRING="${2:-}"; shift 2 ;;
-        --userspace-lock) USERSPACE_LOCK="${2:-}"; shift 2 ;;
-        --dependency-package) DEPENDENCY_PACKAGES+=("${2:-}"); shift 2 ;;
-        --dependency-signature) DEPENDENCY_SIGNATURES+=("${2:-}"); shift 2 ;;
-        --result-json) RESULT_JSON="${2:-}"; shift 2 ;;
-        --progress-attempt) PROGRESS_ATTEMPT="${2:-}"; shift 2 ;;
-        --validate-only) VALIDATE_ONLY=1; shift ;;
+        --root|--archive|--checksum|--provenance|--kernel|--nvidia-utils|\
+        --nvidia-utils-signature|--lib32-nvidia-utils|--lib32-nvidia-utils-signature|\
+        --package-keyring|--userspace-lock|--result-json|--progress-attempt)
+            require_option_value "$@"
+            mark_single_option "$1"
+            case "$1" in
+                --root) ROOT="$2" ;;
+                --archive) ARCHIVE="$2" ;;
+                --checksum) CHECKSUM="$2" ;;
+                --provenance) PROVENANCE="$2" ;;
+                --kernel) KERNEL="$2" ;;
+                --nvidia-utils) NVIDIA_UTILS="$2" ;;
+                --nvidia-utils-signature) NVIDIA_UTILS_SIGNATURE="$2" ;;
+                --lib32-nvidia-utils) LIB32_NVIDIA_UTILS="$2" ;;
+                --lib32-nvidia-utils-signature) LIB32_NVIDIA_UTILS_SIGNATURE="$2" ;;
+                --package-keyring) PACKAGE_KEYRING="$2" ;;
+                --userspace-lock) USERSPACE_LOCK="$2" ;;
+                --result-json) RESULT_JSON="$2" ;;
+                --progress-attempt) PROGRESS_ATTEMPT="$2" ;;
+            esac
+            shift 2
+            ;;
+        --dependency-package|--dependency-signature)
+            require_option_value "$@"
+            if [[ "$1" == "--dependency-package" ]]; then
+                DEPENDENCY_PACKAGES+=("$2")
+            else
+                DEPENDENCY_SIGNATURES+=("$2")
+            fi
+            shift 2
+            ;;
+        --validate-only)
+            mark_single_option "$1"
+            VALIDATE_ONLY=1
+            shift
+            ;;
         -h|--help) usage; exit 0 ;;
-        *) die "Unknown argument: $1" ;;
+        *) fail_argument "An unknown offline-root installer argument was supplied." ;;
     esac
 done
 (( ${#DEPENDENCY_PACKAGES[@]} == ${#DEPENDENCY_SIGNATURES[@]} )) ||
-    die "Each dependency package requires one positionally paired signature."
+    fail_argument "Each dependency package requires one positionally paired signature."
 if [[ -n "$PROGRESS_ATTEMPT" ]]; then
-    [[ "$PROGRESS_ATTEMPT" =~ ^[0-9]+$ ]] || die "Progress attempt must be an integer."
-    (( ${#PROGRESS_ATTEMPT} <= 7 )) || die "Progress attempt exceeds 1000000."
-    (( 10#$PROGRESS_ATTEMPT <= 1000000 )) || die "Progress attempt exceeds 1000000."
+    [[ "$PROGRESS_ATTEMPT" =~ ^[0-9]+$ ]] || fail_argument "Progress attempt must be an integer."
+    (( ${#PROGRESS_ATTEMPT} <= 7 )) || fail_argument "Progress attempt exceeds 1000000."
+    (( 10#$PROGRESS_ATTEMPT <= 1000000 )) || fail_argument "Progress attempt exceeds 1000000."
 fi
 
 for value in ROOT ARCHIVE CHECKSUM PROVENANCE KERNEL NVIDIA_UTILS \
     NVIDIA_UTILS_SIGNATURE LIB32_NVIDIA_UTILS LIB32_NVIDIA_UTILS_SIGNATURE \
     PACKAGE_KEYRING USERSPACE_LOCK RESULT_JSON
 do
-    [[ -n "${!value}" ]] || die "Required offline-root argument is missing: $value"
+    [[ -n "${!value}" ]] || fail_argument "Required offline-root argument is missing: $value"
 done
 
 VALIDATION_JSON="$(mktemp /tmp/offline-root-validation.XXXXXX)"
 VALIDATOR_PID=""
+
+terminate_process_group()
+{
+    local process_group="$1" attempt
+    [[ -n "$process_group" ]] || return 0
+    kill -TERM -- "-$process_group" >/dev/null 2>&1 ||
+        kill -TERM "$process_group" >/dev/null 2>&1 || true
+    for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+        if ! kill -0 -- "-$process_group" >/dev/null 2>&1 &&
+           ! kill -0 "$process_group" >/dev/null 2>&1; then
+            break
+        fi
+        sleep 0.1
+    done
+    kill -KILL -- "-$process_group" >/dev/null 2>&1 || true
+    kill -KILL "$process_group" >/dev/null 2>&1 || true
+    wait "$process_group" >/dev/null 2>&1 || true
+}
 
 write_prevalidation_result()
 {
@@ -110,8 +186,7 @@ cancel_validation()
 {
     trap - INT TERM
     if [[ -n "$VALIDATOR_PID" ]]; then
-        kill -TERM -- "-$VALIDATOR_PID" >/dev/null 2>&1 || true
-        wait "$VALIDATOR_PID" >/dev/null 2>&1 || true
+        terminate_process_group "$VALIDATOR_PID"
     fi
     write_prevalidation_result cancelled cancelled \
         "Offline-root validation was cancelled."
@@ -183,6 +258,13 @@ write_install_result()
         --mounts-released "${5:-true}" --validation "$VALIDATION_JSON"
 }
 
+fail_pre_mutation()
+{
+    local reason="$1" message="$2"
+    write_install_result failed "$reason" "$message" mutation_preflight true || true
+    die "$message"
+}
+
 if (( VALIDATE_ONLY )); then
     python3 "${SUPPORT_ROOT}/lib/write_install_result.py" \
         --output "$RESULT_JSON" --status validated --reason validation_complete \
@@ -198,30 +280,44 @@ if (( VALIDATE_ONLY )); then
 fi
 
 (( EUID == 0 || ${PROJECT_TEST_MODE:-0} == 1 )) ||
-    die "Offline-root mutation must run as root in the managed appliance."
+    fail_pre_mutation privilege_required \
+        "Offline-root mutation must run as root in the managed appliance."
 if [[ "${PROJECT_TEST_MODE:-0}" != 1 ]]; then
-    [[ "$(uname -m)" == x86_64 ]] || die "Offline-root mutation requires x86_64."
-    mountpoint -q "$ROOT" || die "Target root must be an explicit mountpoint."
+    [[ "$(uname -m)" == x86_64 ]] ||
+        fail_pre_mutation unsupported_appliance_architecture \
+            "Offline-root mutation requires an x86_64 appliance."
+    mountpoint -q "$ROOT" ||
+        fail_pre_mutation target_mount_invalid \
+            "Target root must be an explicit mountpoint."
     ! mountpoint -q "$ROOT/boot" ||
-        die "Target rootfs /boot must remain visible and must not be covered by EFI."
+        fail_pre_mutation target_boot_invalid \
+            "Target rootfs /boot must remain visible and must not be covered by EFI."
     mountpoint -q "$ROOT/efi" ||
-        die "The image builder must mount the target efi-A partition at /efi before mutation."
+        fail_pre_mutation target_efi_invalid \
+            "The image builder must mount target efi-A at /efi before mutation."
     ROOT_SOURCE="$(findmnt -rn -M "$ROOT" -o SOURCE)" ||
-        die "Target root mount identity could not be determined."
+        fail_pre_mutation target_mount_invalid \
+            "Target root mount identity could not be determined."
     EFI_SOURCE="$(findmnt -rn -M "$ROOT/efi" -o SOURCE)" ||
-        die "Target EFI mount identity could not be determined."
+        fail_pre_mutation target_efi_invalid \
+            "Target EFI mount identity could not be determined."
     EFI_FSTYPE="$(findmnt -rn -M "$ROOT/efi" -o FSTYPE)" ||
-        die "Target EFI filesystem type could not be determined."
+        fail_pre_mutation target_efi_invalid \
+            "Target EFI filesystem type could not be determined."
     [[ -n "$ROOT_SOURCE" && -n "$EFI_SOURCE" && "$ROOT_SOURCE" != "$EFI_SOURCE" ]] ||
-        die "Target /efi must be a distinct filesystem from the rootfs."
+        fail_pre_mutation target_efi_invalid \
+            "Target /efi must be a distinct filesystem from the rootfs."
     case "$EFI_FSTYPE" in
         vfat|fat|msdos) ;;
-        *) die "Target /efi must be a FAT filesystem." ;;
+        *) fail_pre_mutation target_efi_invalid \
+            "Target /efi must be a FAT filesystem." ;;
     esac
 fi
 
 for command_name in bsdtar chroot depmod findmnt install mount mountpoint pacman umount vercmp zstd; do
-    need_cmd "$command_name"
+    command -v "$command_name" >/dev/null 2>&1 ||
+        fail_pre_mutation appliance_dependency_missing \
+            "The managed appliance lacks a required installer command: $command_name"
 done
 
 MUTATION_WORK="$(mktemp -d /tmp/offline-root-mutation.XXXXXX)"
@@ -284,8 +380,7 @@ cancel_mutation()
 {
     CANCELLED=1
     if [[ -n "$ACTIVE_CHILD" ]]; then
-        kill -TERM -- "-$ACTIVE_CHILD" >/dev/null 2>&1 || true
-        wait "$ACTIVE_CHILD" >/dev/null 2>&1 || true
+        terminate_process_group "$ACTIVE_CHILD"
         ACTIVE_CHILD=""
     fi
     exit 130

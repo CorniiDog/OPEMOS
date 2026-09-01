@@ -117,6 +117,17 @@ def main():
             assert result["status"] == "failed"
             assert result["reason"] == expected_reason
 
+        unsafe = module_directory / "unsafe"
+        unsafe.mkdir()
+        unsafe_modules = []
+        for module in modules:
+            link = unsafe / module.name
+            link.symlink_to(module)
+            unsafe_modules.append(link)
+        returncode, result = validate(temporary, unsafe_modules)
+        assert returncode != 0
+        assert result["reason"] == "module_set_incomplete"
+
 
 if __name__ == "__main__":
     main()

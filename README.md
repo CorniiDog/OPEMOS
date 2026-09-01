@@ -327,11 +327,22 @@ Use `--validate-only` before allowing any image mutation. Validation requires
 the exact target kernel directory, byte-identical external/embedded provenance,
 all five module hashes and metadata, matching signed userspace package releases,
 and versioned GSP firmware. Module archives use an exact allowlist with duplicate,
-extra, and oversized compressed/decompressed content rejected. Every existing
-component of every project-owned or package-member mutation destination must be
-confined beneath the target root and must not be a symlink. A versioned
-`--result-json` contains filenames rather
-than host paths. Mutation uses target-root pacman semantics, offline `depmod`,
+extra, and oversized compressed/decompressed content rejected. Signed userspace
+packages are also independently bounded and inspected before `pacman`: duplicate
+or noncanonical paths, device/FIFO entries, malformed or escaping links, excessive
+member counts, and excessive expanded sizes fail closed. Every existing component
+of every project-owned or package-member mutation destination must be confined
+beneath the target root and must not be a symlink.
+
+The versioned `--result-json` uses stable bounded status/reason/phase tokens and
+logical filenames rather than host paths. Successful validation records the
+archive and provenance hashes, reviewed lock identity/hash, keyring identity/hash,
+storage accounting, and every package's filenames, full version, architecture,
+package/signature hashes, signer, installed size, dependencies, and provides.
+Malformed CLI input writes `invalid_arguments` when a result path is available;
+duplicate singleton options are rejected. Cancellation escalates from TERM to
+KILL after a bounded grace period and reaps the process group before reporting
+cleanup. Mutation uses target-root pacman semantics, offline `depmod`,
 explicit NVIDIA mkinitcpio configuration, and the target's own `mkinitcpio` in
 an x86_64 chroot. Synthetic tests cover success, repeated execution, injected
 initramfs failure, and cleanup-safe failure results. On a real recovery image,
@@ -341,7 +352,11 @@ discarded after any non-success result.
 The module archive safety policy allows at most 1 GiB compressed, 1 GiB for any
 individual module member, and 2 GiB total expansion. External and embedded
 metadata remain capped at 1 MiB each. These bounds accommodate the observed
-632.5 MB development artifact without permitting unbounded extraction.
+632.5 MB development artifact without permitting unbounded extraction. Each
+userspace package is capped at 2 GiB compressed, 2 GiB per member, 16 GiB total
+declared expansion, 250,000 members, and a 64 MiB bounded archive listing;
+signatures, keyrings, locks, checksums, and provenance have smaller type-specific
+limits.
 
 Pass `--result-json FILE` when invoking the build from an appliance controller.
 The file is written atomically with schema version `1`, target identity, trust

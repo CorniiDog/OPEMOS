@@ -49,6 +49,16 @@ def altered_module_archive(source, destination, alteration):
             add_bytes(output, "PROVENANCE.json", source.read_bytes()[:16])
 
 
+def provenance_archive(source, destination, provenance_bytes):
+    with tarfile.open(source, "r:gz") as original, tarfile.open(destination, "w:gz") as output:
+        for member in original:
+            if member.name == "PROVENANCE.json":
+                add_bytes(output, member.name, provenance_bytes)
+            else:
+                stream = original.extractfile(member) if member.isfile() else None
+                output.addfile(member, stream)
+
+
 def make_package(
     path,
     name,
@@ -61,6 +71,8 @@ def make_package(
     dependencies=(),
     provides=(),
     architecture="x86_64",
+    duplicate_member=False,
+    special_member=False,
 ):
     with tarfile.open(path, "w:gz") as archive:
         add_bytes(
@@ -74,6 +86,12 @@ def make_package(
             ).encode(),
         )
         add_bytes(archive, f"usr/lib/{name}/fixture", b"userspace\n")
+        if duplicate_member:
+            add_bytes(archive, f"usr/lib/{name}/fixture", b"duplicate\n")
+        if special_member:
+            member = tarfile.TarInfo(f"usr/lib/{name}/unsafe-pipe")
+            member.type = tarfile.FIFOTYPE
+            archive.addfile(member)
         if gsp:
             add_bytes(
                 archive,
@@ -439,9 +457,14 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
     if expected_phase == "validation":
         time.sleep(0.5)
     else:
-        while time.monotonic() < deadline and not mount_state.read_text().strip():
+        while (
+            time.monotonic() < deadline
+            and len(mount_state.read_text().splitlines()) < 3
+        ):
             time.sleep(0.05)
-        assert mount_state.read_text().strip(), "mutation never established bind mounts"
+        assert len(mount_state.read_text().splitlines()) == 3, (
+            "mutation never established all bind mounts"
+        )
     process.terminate()
     _, stderr = process.communicate(timeout=5)
     assert process.returncode != 0, stderr
@@ -463,6 +486,25 @@ def main():
     assert "exceeds 1000000" in excessive_attempt.stderr
     with tempfile.TemporaryDirectory(prefix="offline-root-validation-") as temporary:
         temporary = Path(temporary)
+        for label, arguments in (
+            ("unknown", ["--token=supersecret"]),
+            ("missing-value", ["--root"]),
+            ("duplicate", ["--progress-attempt", "1", "--progress-attempt", "2"]),
+        ):
+            cli_result = temporary / f"cli-{label}.json"
+            completed = subprocess.run(
+                [str(INSTALLER), *arguments, "--result-json", str(cli_result)],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            )
+            assert completed.returncode != 0
+            cli_document = json.loads(cli_result.read_text(encoding="utf-8"))
+            assert cli_document["schemaVersion"] == 1
+            assert cli_document["status"] == "failed"
+            assert cli_document["reason"] == "invalid_arguments"
+            assert cli_document["phase"] == "argument_validation"
+            assert cli_document["target"]["root"] == "/target-root"
+            assert cli_document["cleanup"]["mountsReleased"] is True
+            assert "supersecret" not in json.dumps(cli_document)
         binaries = make_mocks(temporary)
         paths = make_fixture(temporary)
         run(paths, binaries, temporary / "valid.json", True)
@@ -489,6 +531,13 @@ def main():
         )
         assert str(paths["target"]) not in "\n".join(progress_lines)
         assert valid["status"] == "verified"
+        assert valid["provenanceSha256"] == hashlib.sha256(
+            paths["provenance"].read_bytes()
+        ).hexdigest()
+        assert valid["userspaceLock"] == {
+            "name": paths["userspace_lock"].name,
+            "sha256": hashlib.sha256(paths["userspace_lock"].read_bytes()).hexdigest(),
+        }
         locked = json.loads(paths["userspace_lock"].read_text())
         locked["packages"][0]["packageSha256"] = "0" * 64
         paths["userspace_lock"].write_text(json.dumps(locked), encoding="utf-8")
@@ -500,6 +549,18 @@ def main():
         assert lock_mismatch["packageMismatches"][0]["invalidFields"] == [
             "packageSha256"
         ]
+
+        paths["userspace_lock"].write_text("[]\n", encoding="utf-8")
+        malformed_lock = run(
+            paths, binaries, temporary / "malformed-lock-object.json", False,
+            preserve_lock=True,
+        )
+        assert malformed_lock == {
+            "schemaVersion": 1,
+            "status": "failed",
+            "reason": "userspace_lock_invalid",
+            "message": "reviewed userspace lock is not an object",
+        }
 
         write_userspace_lock(paths)
         unexpected_one = temporary / "dependency-placeholder.pkg.tar.gz"
@@ -685,6 +746,15 @@ def main():
             f"{NVIDIA}-2",
             f"{NVIDIA}-1",
         ]
+        for package in valid["packages"]:
+            assert set(package) == {
+                "name", "role", "filename", "signatureFilename", "fullVersion",
+                "pkgver", "pkgrel", "architecture", "signer", "sha256",
+                "signatureSha256", "installedSize", "dependencies", "provides",
+            }
+            assert package["architecture"] == "x86_64"
+            assert len(package["sha256"]) == 64
+            assert len(package["signatureSha256"]) == 64
 
         original_checksum = paths["checksum"].read_text()
         paths["checksum"].write_text("0" * 64 + "  artifact.tar.gz\n")
@@ -764,6 +834,50 @@ def main():
             assert invalid_archive["reason"] == expected_reason
         paths["archive"] = original_archive
         paths["checksum"] = original_checksum_path
+
+        original_provenance_path = paths["provenance"]
+        original_provenance = json.loads(original_provenance_path.read_text())
+        duplicate_provenance = dict(original_provenance)
+        duplicate_provenance["modules"] = [
+            *original_provenance["modules"][:-1],
+            original_provenance["modules"][0],
+        ]
+        duplicate_provenance_bytes = (
+            json.dumps(duplicate_provenance, sort_keys=True, separators=(",", ":")) + "\n"
+        ).encode()
+        duplicate_provenance_path = temporary / "duplicate-module.provenance.json"
+        duplicate_provenance_path.write_bytes(duplicate_provenance_bytes)
+        duplicate_provenance_archive = temporary / "duplicate-module.tar.gz"
+        provenance_archive(
+            original_archive, duplicate_provenance_archive, duplicate_provenance_bytes
+        )
+        duplicate_provenance_checksum = temporary / "duplicate-module.tar.gz.sha256"
+        duplicate_provenance_checksum.write_text(
+            f"{hashlib.sha256(duplicate_provenance_archive.read_bytes()).hexdigest()}  "
+            f"{duplicate_provenance_archive.name}\n",
+            encoding="utf-8",
+        )
+        paths["archive"] = duplicate_provenance_archive
+        paths["checksum"] = duplicate_provenance_checksum
+        paths["provenance"] = duplicate_provenance_path
+        invalid_provenance = run(
+            paths, binaries, temporary / "duplicate-provenance-module.json", False
+        )
+        assert invalid_provenance["reason"] == "provenance_invalid"
+        paths["archive"] = original_archive
+        paths["checksum"] = original_checksum_path
+        paths["provenance"] = original_provenance_path
+
+        oversized_provenance = temporary / "oversized.provenance.json"
+        with oversized_provenance.open("wb") as stream:
+            stream.truncate(1024 * 1024 + 1)
+        paths["provenance"] = oversized_provenance
+        oversized_input = run(
+            paths, binaries, temporary / "oversized-provenance.json", False
+        )
+        assert oversized_input["reason"] == "input_too_large"
+        assert str(temporary) not in json.dumps(oversized_input)
+        paths["provenance"] = original_provenance_path
 
         bad_signature = run(
             paths, binaries, temporary / "bad-signature.json", False,
@@ -858,6 +972,24 @@ def main():
         unsafe_link = run(paths, binaries, temporary / "unsafe-link.json", False)
         assert unsafe_link["reason"] == "userspace_package_unsafe"
 
+        make_package(
+            paths["nvidia"], "nvidia-utils", pkgrel="2", gsp=True,
+            duplicate_member=True,
+        )
+        duplicate_package_member = run(
+            paths, binaries, temporary / "duplicate-package-member.json", False
+        )
+        assert duplicate_package_member["reason"] == "userspace_package_unsafe"
+
+        make_package(
+            paths["nvidia"], "nvidia-utils", pkgrel="2", gsp=True,
+            special_member=True,
+        )
+        special_package_member = run(
+            paths, binaries, temporary / "special-package-member.json", False
+        )
+        assert special_package_member["reason"] == "userspace_package_unsafe"
+
         make_package(paths["nvidia"], "nvidia-utils", pkgrel="2", gsp=False)
         run(paths, binaries, temporary / "missing-gsp.json", False)
 
@@ -884,6 +1016,11 @@ def main():
         del paths["progress_attempt"]
         assert successful["cleanup"]["mountsReleased"] is True
         assert successful["validation"]["keyring"]["name"] == "approved.gpg"
+        assert successful["validation"]["provenanceSha256"] == valid["provenanceSha256"]
+        assert successful["validation"]["userspaceLock"] == {
+            "name": paths["userspace_lock"].name,
+            "sha256": hashlib.sha256(paths["userspace_lock"].read_bytes()).hexdigest(),
+        }
         assert successful["validation"]["pacmanDatabase"] == {
             "path": "/usr/lib/holo/pacmandb",
             "packageCount": 4,
@@ -898,6 +1035,21 @@ def main():
             package["signer"]
             for package in successful["validation"]["packages"]
         ] == [NVIDIA_SIGNER, LIB32_SIGNER]
+        current_lock = json.loads(paths["userspace_lock"].read_text(encoding="utf-8"))
+        current_locked_packages = {
+            package["name"]: package for package in current_lock["packages"]
+        }
+        for package in successful["validation"]["packages"]:
+            locked = current_locked_packages[package["name"]]
+            assert package["filename"] == locked["filename"]
+            assert package["signatureFilename"] == locked["signatureFilename"]
+            assert package["fullVersion"] == locked["version"]
+            assert package["architecture"] == locked["architecture"]
+            assert package["sha256"] == locked["packageSha256"]
+            assert package["signatureSha256"] == locked["signatureSha256"]
+            assert package["installedSize"] == locked["installedSize"]
+            assert package["dependencies"] == sorted(set(locked["dependencies"]))
+            assert package["provides"] == sorted(set(locked["provides"]))
         module_root = paths["target"] / "usr/lib/modules" / KERNEL
         assert (module_root / "updates/open-gpu-kernel-modules-steamos/nvidia.ko.zst").is_file()
         assert (module_root / "modules.dep").is_file()

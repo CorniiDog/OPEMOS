@@ -29,9 +29,19 @@ PACKAGE_SIGNER_MANIFEST = (
     / "trust/nvidia-userspace-package-signers.json"
 )
 MAX_MODULE_ARCHIVE_BYTES = 1024 * 1024 * 1024
+MAX_MODULE_ARCHIVE_MEMBERS = 13
 MAX_MODULE_MEMBER_BYTES = 1024 * 1024 * 1024
 MAX_METADATA_MEMBER_BYTES = 1024 * 1024
 MAX_TOTAL_MEMBER_BYTES = 2 * 1024 * 1024 * 1024
+MAX_CHECKSUM_BYTES = 4096
+MAX_PROVENANCE_BYTES = 1024 * 1024
+MAX_USERSPACE_PACKAGE_BYTES = 2 * 1024 * 1024 * 1024
+MAX_SIGNATURE_BYTES = 1024 * 1024
+MAX_KEYRING_BYTES = 64 * 1024 * 1024
+MAX_PACKAGE_LISTING_BYTES = 64 * 1024 * 1024
+MAX_PACKAGE_MEMBERS = 250_000
+MAX_PACKAGE_MEMBER_BYTES = 2 * 1024 * 1024 * 1024
+MAX_PACKAGE_EXPANDED_BYTES = 16 * 1024 * 1024 * 1024
 MAX_PACMAN_RECORD_BYTES = 1024 * 1024
 MAX_PACMAN_RECORDS = 100_000
 REQUIRED_BASE_PACKAGES = {"filesystem", "glibc", "pacman"}
@@ -45,6 +55,8 @@ PROGRESS_MIN_BYTE_DELTA = 4 * 1024 * 1024
 MAX_USERSPACE_PACKAGES = 64
 MAX_USERSPACE_LOCK_BYTES = 1024 * 1024
 MAX_PACKAGE_RELATIONS = 64
+MAX_INSTALLED_PACKAGE_RELATIONS = 1024
+MAX_REVIEWED_SIGNERS = 256
 MAX_DIAGNOSTIC_VALUE_CHARS = 256
 LOCK_PACKAGE_FIELDS = (
     "filename",
@@ -144,8 +156,10 @@ def safe_lock_string(value, pattern=r"[A-Za-z0-9@._+<>=:-]+"):
     )
 
 
-def normalized_relations(values, source, reason="userspace_lock_invalid"):
-    if (not isinstance(values, list) or len(values) > MAX_PACKAGE_RELATIONS
+def normalized_relations(
+    values, source, reason="userspace_lock_invalid", maximum=MAX_PACKAGE_RELATIONS
+):
+    if (not isinstance(values, list) or len(values) > maximum
             or any(not safe_lock_string(value) for value in values)):
         fail(reason, f"{source} has invalid dependency/provides metadata")
     return sorted(set(values))
@@ -175,7 +189,7 @@ def normalized_lock_package(record, source):
         fail("userspace_lock_invalid", f"{source} has an invalid signerFingerprint")
     if (not isinstance(record.get("installedSize"), int)
             or isinstance(record["installedSize"], bool)
-            or record["installedSize"] < 0):
+            or not 0 <= record["installedSize"] <= MAX_PACKAGE_EXPANDED_BYTES):
         fail("userspace_lock_invalid", f"{source} has an invalid installedSize")
     normalized = dict(record)
     normalized["dependencies"] = normalized_relations(
@@ -276,10 +290,22 @@ def safe_member(name):
     return bool(name) and not path.is_absolute() and ".." not in path.parts
 
 
+def require_regular_input(path, label, maximum):
+    try:
+        if path.is_symlink() or not path.is_file():
+            fail("input_missing", f"required {label} input is absent or unsafe")
+        size = path.stat().st_size
+    except OSError:
+        fail("input_missing", f"required {label} input is absent or unsafe")
+    if size > maximum:
+        fail("input_too_large", f"required {label} input exceeds its size limit")
+    return size
+
+
 def require_safe_destination(root, relative):
     relative_path = PurePosixPath(relative)
     if relative_path.is_absolute() or ".." in relative_path.parts:
-        fail("target_path_unsafe", f"unsafe target destination: {relative}")
+        fail("target_path_unsafe", "a target destination is unsafe")
     current = root
     for component in relative_path.parts:
         if component in ("", "."):
@@ -290,17 +316,19 @@ def require_safe_destination(root, relative):
         except FileNotFoundError:
             continue
         except NotADirectoryError:
-            fail("target_path_unsafe", f"target destination traverses a non-directory: {relative}")
+            fail("target_path_unsafe", "a target destination traverses a non-directory")
         if stat.S_ISLNK(mode):
-            fail("target_path_unsafe", f"target destination traverses a symlink: {relative}")
+            fail("target_path_unsafe", "a target destination traverses a symlink")
         try:
             current.resolve(strict=True).relative_to(root)
         except (FileNotFoundError, RuntimeError, ValueError):
-            fail("target_path_unsafe", f"target destination escapes the root: {relative}")
+            fail("target_path_unsafe", "a target destination escapes the root")
 
 
 def pacman_desc_fields(path):
     record_name = path.parent.name
+    if not safe_lock_string(record_name):
+        fail("target_pacman_database_invalid", "package record has an unsafe identity")
     if path.stat().st_size > MAX_PACMAN_RECORD_BYTES:
         fail("target_pacman_database_invalid", f"oversized package record: {record_name}/desc")
     try:
@@ -353,7 +381,10 @@ def pacman_desc_fields(path):
             invalidFields=["NAME", "VERSION"],
         )
     installed_size_valid = (
-        len(installed_size) == 1 and installed_size[0].isdigit()
+        len(installed_size) == 1
+        and installed_size[0].isdigit()
+        and len(installed_size[0]) <= 20
+        and int(installed_size[0]) <= MAX_PACKAGE_EXPANDED_BYTES
     )
     return {
         "name": name[0],
@@ -364,8 +395,14 @@ def pacman_desc_fields(path):
             "missing" if not installed_size else "duplicate-or-nonnumeric"
         ) if not installed_size_valid else None,
         "packageRecord": record_name,
-        "depends": fields.get("DEPENDS", []),
-        "provides": fields.get("PROVIDES", []),
+        "depends": normalized_relations(
+            fields.get("DEPENDS", []), f"package record {record_name} dependencies",
+            "target_pacman_database_invalid", MAX_INSTALLED_PACKAGE_RELATIONS,
+        ),
+        "provides": normalized_relations(
+            fields.get("PROVIDES", []), f"package record {record_name} provides",
+            "target_pacman_database_invalid", MAX_INSTALLED_PACKAGE_RELATIONS,
+        ),
     }
 
 
@@ -382,8 +419,8 @@ def version_satisfies(candidate, operator, required):
             ["vercmp", candidate, required], check=True,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         ).stdout.strip())
-    except (OSError, subprocess.CalledProcessError, ValueError) as error:
-        fail("package_dependency_invalid", f"cannot compare dependency versions: {error}")
+    except (OSError, subprocess.CalledProcessError, ValueError):
+        fail("package_dependency_invalid", "cannot compare dependency versions")
     return {
         "=": comparison == 0,
         ">": comparison > 0,
@@ -471,7 +508,7 @@ def tree_regular_bytes(path):
         for name in directories + files:
             candidate = current_root / name
             if candidate.is_symlink():
-                fail("target_path_unsafe", f"replacement tree contains a symlink: {candidate}")
+                fail("target_path_unsafe", "replacement module tree contains a symlink")
             if candidate.is_file():
                 total += candidate.stat().st_size
     return total
@@ -489,8 +526,8 @@ def compressed_module_bytes(path):
                 stderr=subprocess.PIPE,
             )
             return compressed.tell()
-    except (OSError, subprocess.CalledProcessError) as error:
-        fail("module_size_unavailable", f"cannot estimate compressed module size: {error}")
+    except (OSError, subprocess.CalledProcessError):
+        fail("module_size_unavailable", "cannot estimate compressed module size")
 
 
 def compression_context(root):
@@ -517,21 +554,44 @@ def compression_context(root):
     }
 
 
-def package_metadata(path):
+def bounded_command_text(arguments, maximum, reason, message):
+    environment = os.environ.copy()
+    environment["LC_ALL"] = "C"
     try:
-        completed = subprocess.run(
-            ["bsdtar", "-xOf", str(path), ".PKGINFO"],
-            check=True,
+        process = subprocess.Popen(
+            arguments,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
+            stderr=subprocess.DEVNULL,
+            env=environment,
         )
-    except (OSError, subprocess.CalledProcessError) as error:
-        fail("userspace_package_invalid", f"Cannot read {path.name} metadata: {error}")
+    except OSError:
+        fail(reason, message)
+    try:
+        output = process.stdout.read(maximum + 1)
+        if len(output) > maximum:
+            process.kill()
+            process.wait()
+            fail(reason, message + " Output exceeds the size limit.")
+        if process.wait() != 0:
+            fail(reason, message)
+        return output.decode("utf-8", errors="strict")
+    except UnicodeError:
+        process.kill()
+        process.wait()
+        fail(reason, message + " Output is not UTF-8 text.")
+
+
+def package_metadata(path):
+    output = bounded_command_text(
+        ["bsdtar", "-xOf", str(path), ".PKGINFO"],
+        MAX_METADATA_MEMBER_BYTES,
+        "userspace_package_invalid",
+        "Cannot read userspace package metadata.",
+    )
     fields = {}
     dependencies = []
     provides = []
-    for line in completed.stdout.splitlines():
+    for line in output.splitlines():
         if " = " in line:
             key, value = line.split(" = ", 1)
             fields.setdefault(key, value)
@@ -545,48 +605,60 @@ def package_metadata(path):
 
 
 def package_members(path):
-    try:
-        completed = subprocess.run(
-            ["bsdtar", "-tf", str(path)],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-    except (OSError, subprocess.CalledProcessError) as error:
-        fail("userspace_package_invalid", f"Cannot list {path.name}: {error}")
-    members = completed.stdout.splitlines()
+    listing = bounded_command_text(
+        ["bsdtar", "-tf", str(path)],
+        MAX_PACKAGE_LISTING_BYTES,
+        "userspace_package_invalid",
+        "Cannot list a userspace package.",
+    )
+    verbose = bounded_command_text(
+        ["bsdtar", "-tvf", str(path)],
+        MAX_PACKAGE_LISTING_BYTES,
+        "userspace_package_invalid",
+        "Cannot inspect userspace package archive metadata.",
+    )
+    members = listing.splitlines()
+    verbose_lines = verbose.splitlines()
+    if (not members or len(members) != len(verbose_lines)
+            or len(members) > MAX_PACKAGE_MEMBERS):
+        fail("userspace_package_invalid", "userspace package has an invalid member listing")
     if not all(safe_member(name) for name in members):
-        fail("userspace_package_unsafe", f"{path.name} contains an unsafe path")
-    return members
-
-
-def validate_package_links(path):
-    try:
-        completed = subprocess.run(
-            ["bsdtar", "-tvf", str(path)],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-    except (OSError, subprocess.CalledProcessError) as error:
-        fail("userspace_package_invalid", f"Cannot inspect links in {path.name}: {error}")
-    for line in completed.stdout.splitlines():
-        if not line or line[0] not in ("l", "h"):
-            continue
+        fail("userspace_package_unsafe", "userspace package contains an unsafe path")
+    normalized = [str(PurePosixPath(name)) for name in members]
+    if len(set(normalized)) != len(normalized):
+        fail("userspace_package_unsafe", "userspace package contains duplicate member paths")
+    member_names = set(normalized)
+    total_size = 0
+    for original_name, name, line in zip(members, normalized, verbose_lines):
         fields = line.split(maxsplit=8)
-        if len(fields) != 9:
-            fail("userspace_package_invalid", f"Cannot parse a link in {path.name}")
+        if len(fields) != 9 or not fields[4].isdigit():
+            fail("userspace_package_invalid", "Cannot parse a userspace package member")
+        kind = line[0]
+        if kind not in ("-", "d", "l", "h"):
+            fail("userspace_package_unsafe", "userspace package contains a special archive entry")
+        size = int(fields[4])
+        if size > MAX_PACKAGE_MEMBER_BYTES:
+            fail("userspace_package_invalid", "userspace package contains an oversized member")
+        total_size += size
+        if total_size > MAX_PACKAGE_EXPANDED_BYTES:
+            fail("userspace_package_invalid", "userspace package exceeds the expansion limit")
+        canonical = {name, f"{name}/"} if kind == "d" else {name}
+        if original_name not in canonical:
+            fail("userspace_package_unsafe", "userspace package contains a noncanonical member path")
+        if kind not in ("l", "h"):
+            if fields[8] != original_name:
+                fail("userspace_package_invalid", "Cannot parse a userspace package member name")
+            continue
         relation = " -> " if line[0] == "l" else " link to "
-        if relation not in fields[8]:
-            fail("userspace_package_invalid", f"Cannot parse a link target in {path.name}")
-        name, target = fields[8].split(relation, 1)
+        prefix = original_name + relation
+        if not fields[8].startswith(prefix):
+            fail("userspace_package_invalid", "Cannot parse a userspace package link target")
+        target = fields[8][len(prefix):]
         member = PurePosixPath(name)
         destination = PurePosixPath(target)
         if destination.is_absolute():
             destination = PurePosixPath(*destination.parts[1:])
-        else:
+        elif kind == "l":
             destination = member.parent / destination
         depth = 0
         for component in destination.parts:
@@ -595,9 +667,15 @@ def validate_package_links(path):
             if component == "..":
                 depth -= 1
                 if depth < 0:
-                    fail("userspace_package_unsafe", f"{path.name} has an escaping link")
+                    fail("userspace_package_unsafe", "userspace package has an escaping link")
             else:
                 depth += 1
+        confined_target = str(destination)
+        if not confined_target or confined_target == ".":
+            fail("userspace_package_unsafe", "userspace package has an unsafe link target")
+        if kind == "h" and confined_target not in member_names:
+            fail("userspace_package_unsafe", "userspace package has a hardlink to an absent member")
+    return normalized
 
 
 def verify_signature(package, signature, keyring, package_name):
@@ -634,16 +712,21 @@ def verify_signature(package, signature, keyring, package_name):
 def require_reviewed_signer(fingerprint, package_name):
     try:
         manifest = json.loads(PACKAGE_SIGNER_MANIFEST.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
-        fail("userspace_trust_invalid", f"Cannot read package signer policy: {error}")
-    if manifest.get("schemaVersion") != 1:
+    except (OSError, json.JSONDecodeError):
+        fail("userspace_trust_invalid", "Cannot read package signer policy")
+    if not isinstance(manifest, dict) or manifest.get("schemaVersion") != 1:
         fail("userspace_trust_invalid", "unsupported package signer policy schema")
+    signers = manifest.get("signers")
+    if (not isinstance(signers, list) or len(signers) > MAX_REVIEWED_SIGNERS
+            or any(not isinstance(signer, dict) for signer in signers)):
+        fail("userspace_trust_invalid", "package signer policy is malformed")
     matches = [
         signer
-        for signer in manifest.get("signers", [])
+        for signer in signers
         if signer.get("fingerprint", "").upper() == fingerprint
         and signer.get("status") == "active"
-        and package_name in signer.get("packages", [])
+        and isinstance(signer.get("packages"), list)
+        and package_name in signer["packages"]
     ]
     if len(matches) != 1:
         fail(
@@ -672,8 +755,8 @@ def module_metadata(path, field):
             stderr=subprocess.PIPE,
             text=True,
         ).stdout.strip()
-    except (OSError, subprocess.CalledProcessError) as error:
-        fail("module_metadata_invalid", f"Cannot read {path.name}: {error}")
+    except (OSError, subprocess.CalledProcessError):
+        fail("module_metadata_invalid", "Cannot read NVIDIA module metadata")
 
 
 def validate(args, progress):
@@ -787,7 +870,7 @@ def validate(args, progress):
         if entry.name == "ALPM_DB_VERSION" and entry.is_file() and not entry.is_symlink():
             continue
         if entry.is_symlink() or not entry.is_dir():
-            fail("target_pacman_database_invalid", f"unexpected local database entry: {entry.name}")
+            fail("target_pacman_database_invalid", "unexpected local package database entry")
         description = entry / "desc"
         try:
             description.resolve(strict=True).relative_to(resolved_database)
@@ -822,23 +905,27 @@ def validate(args, progress):
             "target Holo pacman database lacks base records: " + ", ".join(missing_base_packages),
         )
 
-    for path in (
-        args.archive,
-        args.checksum,
-        args.provenance,
-        args.nvidia_utils,
-        args.nvidia_utils_signature,
-        args.lib32_nvidia_utils,
+    require_regular_input(args.archive, "module archive", MAX_MODULE_ARCHIVE_BYTES)
+    require_regular_input(args.checksum, "checksum", MAX_CHECKSUM_BYTES)
+    require_regular_input(args.provenance, "provenance", MAX_PROVENANCE_BYTES)
+    require_regular_input(args.nvidia_utils, "nvidia-utils package", MAX_USERSPACE_PACKAGE_BYTES)
+    require_regular_input(
+        args.nvidia_utils_signature, "nvidia-utils signature", MAX_SIGNATURE_BYTES
+    )
+    require_regular_input(
+        args.lib32_nvidia_utils, "lib32-nvidia-utils package", MAX_USERSPACE_PACKAGE_BYTES
+    )
+    require_regular_input(
         args.lib32_nvidia_utils_signature,
-        args.package_keyring,
-        args.userspace_lock,
-        *args.dependency_package,
-        *args.dependency_signature,
-    ):
-        if not path.is_file() or path.is_symlink():
-            fail("input_missing", f"required input is absent: {path}")
-    if args.archive.stat().st_size > MAX_MODULE_ARCHIVE_BYTES:
-        fail("archive_too_large", "module archive exceeds the compressed-size limit")
+        "lib32-nvidia-utils signature",
+        MAX_SIGNATURE_BYTES,
+    )
+    require_regular_input(args.package_keyring, "package keyring", MAX_KEYRING_BYTES)
+    require_regular_input(args.userspace_lock, "userspace lock", MAX_USERSPACE_LOCK_BYTES)
+    for package in args.dependency_package:
+        require_regular_input(package, "dependency package", MAX_USERSPACE_PACKAGE_BYTES)
+    for signature in args.dependency_signature:
+        require_regular_input(signature, "dependency signature", MAX_SIGNATURE_BYTES)
 
     expected = args.checksum.read_text(encoding="utf-8").split()
     if (len(expected) != 2
@@ -849,10 +936,16 @@ def validate(args, progress):
     if archive_sha != expected[0].lower():
         fail("archive_checksum_mismatch", "archive checksum does not match")
     provenance_bytes = args.provenance.read_bytes()
-    provenance = json.loads(provenance_bytes)
-    if provenance.get("schemaVersion") != 1:
+    provenance_sha = hashlib.sha256(provenance_bytes).hexdigest()
+    try:
+        provenance = json.loads(provenance_bytes)
+    except json.JSONDecodeError:
+        fail("provenance_invalid", "provenance is not valid JSON")
+    if not isinstance(provenance, dict) or provenance.get("schemaVersion") != 1:
         fail("provenance_invalid", "unsupported provenance schema")
     target = provenance.get("target", {})
+    if not isinstance(target, dict):
+        fail("provenance_invalid", "provenance target is malformed")
     nvidia = target.get("nvidiaVersion", "")
     trust = provenance.get("trust", "")
     if target.get("kernelVersion") != args.kernel or target.get("architecture") != "x86_64":
@@ -866,7 +959,11 @@ def validate(args, progress):
     with tempfile.TemporaryDirectory(prefix="offline-root-modules-") as temporary:
         temporary = Path(temporary)
         with tarfile.open(args.archive, "r:gz") as archive:
-            members = archive.getmembers()
+            members = []
+            for member in archive:
+                members.append(member)
+                if len(members) > MAX_MODULE_ARCHIVE_MEMBERS:
+                    fail("archive_layout_invalid", "module archive has too many entries")
             if not all(safe_member(member.name) for member in members):
                 fail("archive_path_unsafe", "module archive contains an unsafe path")
             normalized_members = {}
@@ -943,10 +1040,25 @@ def validate(args, progress):
         progress.emit(
             "modules", unit="items", completed=len(modules), total=len(modules), force=True
         )
-        expected_modules = {
-            item.get("name"): item.get("sha256", "").lower()
-            for item in provenance.get("modules", [])
-        }
+        provenance_modules = provenance.get("modules")
+        if not isinstance(provenance_modules, list) or len(provenance_modules) != 5:
+            fail("provenance_invalid", "provenance does not describe exactly five modules")
+        expected_modules = {}
+        for item in provenance_modules:
+            if not isinstance(item, dict):
+                fail("provenance_invalid", "provenance contains a malformed module record")
+            name = item.get("name")
+            digest = item.get("sha256")
+            if (name not in EXPECTED_MODULES or name in expected_modules
+                    or not isinstance(digest, str)
+                    or not re.fullmatch(r"[0-9a-fA-F]{64}", digest)):
+                fail("provenance_invalid", "provenance module identities or hashes are invalid")
+            if (item.get("version") not in (None, nvidia)
+                    or item.get("architecture") not in (None, "x86_64")
+                    or (item.get("vermagic") is not None
+                        and not isinstance(item.get("vermagic"), str))):
+                fail("provenance_invalid", "provenance module metadata does not match target")
+            expected_modules[name] = digest.lower()
         if dict(records) != expected_modules:
             fail("module_hash_mismatch", "module hashes do not match provenance")
 
@@ -978,7 +1090,7 @@ def validate(args, progress):
         if (not safe_lock_string(package_name)
                 or not safe_lock_string(architecture)
                 or not safe_lock_string(pkgver)):
-            fail("userspace_package_mismatch", f"{package.name} has unsafe identity metadata")
+            fail("userspace_package_mismatch", "userspace package has unsafe identity metadata")
         dependencies = normalized_relations(
             metadata["depends"], f"incoming package {package_name} dependencies",
             "userspace_package_invalid",
@@ -990,12 +1102,12 @@ def validate(args, progress):
         members = package_members(package)
         for member in members:
             require_safe_destination(root, member)
-        validate_package_links(package)
         signer = verify_signature(
             package, signature, args.package_keyring, package_name
         )
         installed_size = metadata.get("size", "")
-        if not installed_size.isdigit():
+        if (not installed_size.isdigit() or len(installed_size) > 20
+                or int(installed_size) > MAX_PACKAGE_EXPANDED_BYTES):
             fail(
                 "userspace_package_invalid",
                 f"{package_name} lacks a valid declared installed size",
@@ -1038,9 +1150,13 @@ def validate(args, progress):
         if args.userspace_lock.stat().st_size > MAX_USERSPACE_LOCK_BYTES:
             fail("userspace_lock_invalid", "userspace lock exceeds the size limit")
         userspace_lock = json.loads(args.userspace_lock.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as error:
-        fail("userspace_lock_invalid", f"cannot read userspace lock: {error}")
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        fail("userspace_lock_invalid", "cannot read userspace lock")
+    if not isinstance(userspace_lock, dict):
+        fail("userspace_lock_invalid", "reviewed userspace lock is not an object")
     lock_target = userspace_lock.get("target", {})
+    if not isinstance(lock_target, dict):
+        fail("userspace_lock_invalid", "reviewed userspace lock target is malformed")
     if (userspace_lock.get("schemaVersion") != 1
             or userspace_lock.get("status") != "reviewed"
             or userspace_lock.get("missingReview") != []
@@ -1051,6 +1167,8 @@ def validate(args, progress):
             }):
         fail("userspace_lock_invalid", "userspace lock is not reviewed for the exact target")
     lock_keyring = userspace_lock.get("keyring", {})
+    if not isinstance(lock_keyring, dict):
+        fail("userspace_lock_invalid", "reviewed userspace lock keyring is malformed")
     if (lock_keyring.get("filename") != args.package_keyring.name
             or lock_keyring.get("sha256") != sha256(args.package_keyring, progress)):
         fail("userspace_lock_mismatch", "minimal reviewed keyring does not match userspace lock")
@@ -1084,11 +1202,22 @@ def validate(args, progress):
             for name in parsed["members"]
         ):
             fail("gsp_firmware_missing", "nvidia-utils lacks exact-version GSP firmware")
-        package_records.append((
-            package_name, record["version"], pkgver_only, pkgrel,
-            record["signerFingerprint"], record["packageSha256"],
-            not is_nvidia_package,
-        ))
+        package_records.append({
+            "name": package_name,
+            "role": "dependency" if not is_nvidia_package else "nvidia-userspace",
+            "filename": record["filename"],
+            "signatureFilename": record["signatureFilename"],
+            "fullVersion": record["version"],
+            "pkgver": pkgver_only,
+            "pkgrel": pkgrel,
+            "architecture": record["architecture"],
+            "signer": record["signerFingerprint"],
+            "sha256": record["packageSha256"],
+            "signatureSha256": record["signatureSha256"],
+            "installedSize": record["installedSize"],
+            "dependencies": record["dependencies"],
+            "provides": record["provides"],
+        })
         incoming_packages[package_name] = {
             "name": package_name,
             "version": record["version"],
@@ -1189,6 +1318,11 @@ def validate(args, progress):
             "architecture": "x86_64",
         },
         "archiveSha256": archive_sha,
+        "provenanceSha256": provenance_sha,
+        "userspaceLock": {
+            "name": args.userspace_lock.name,
+            "sha256": sha256(args.userspace_lock, progress),
+        },
         "storage": storage,
         "packageDependencyClosure": closure,
         "compression": compression,
@@ -1206,18 +1340,7 @@ def validate(args, progress):
             "name": args.package_keyring.name,
             "sha256": sha256(args.package_keyring, progress),
         },
-        "packages": [
-            {
-                "name": name,
-                "fullVersion": full_version,
-                "pkgver": pkgver,
-                "pkgrel": pkgrel,
-                "signer": signer,
-                "sha256": digest,
-                "role": "dependency" if dependency else "nvidia-userspace",
-            }
-            for name, full_version, pkgver, pkgrel, signer, digest, dependency in package_records
-        ],
+        "packages": package_records,
     }
 
 
@@ -1226,15 +1349,15 @@ def main():
     progress = ProgressReporter(args.progress_attempt)
     try:
         document = validate(args, progress)
-    except (ValueError, OSError, UnicodeError, json.JSONDecodeError, tarfile.TarError) as error:
+    except Exception as error:
         if isinstance(error, ValidationFailure):
             reason, message = error.reason, error.message
             details = error.details
         else:
-            text = str(error)
-            reason, separator, message = text.partition(": ")
-            if not separator:
-                reason, message = "validation_failed", text
+            # Always leave the caller a stable, non-sensitive result even when
+            # an unexpected parser/tool failure reaches this outer boundary.
+            reason = "validation_internal_error"
+            message = "Offline-root validation failed unexpectedly before mutation."
             details = {}
         document = {
             "schemaVersion": 1,
@@ -1249,7 +1372,10 @@ def main():
             json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n"
         )
         staged.replace(args.output)
-        print(f"validate_install_inputs.py: {error}", file=__import__("sys").stderr)
+        print(
+            f"validate_install_inputs.py: {reason}: {message}",
+            file=__import__("sys").stderr,
+        )
         return 1
     args.output.parent.mkdir(parents=True, exist_ok=True)
     staged = args.output.with_name(f".{args.output.name}.tmp-{os.getpid()}")

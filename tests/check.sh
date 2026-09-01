@@ -336,6 +336,36 @@ assert result["missingAssets"] == [
 ]
 PY
 
+python3 - "$PROJECT_ROOT/lib" <<'PY' || fail "resolver accepted malformed metadata"
+import sys
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[1])
+from resolve_target import resolve_target
+
+for releases, repository, reason in (
+    (["not-an-object"], "CorniiDog/open-gpu-kernel-modules-steamos-support", "release_metadata_invalid"),
+    ([], "invalid/repository/path", "invalid_repository"),
+):
+    result = resolve_target("3.8.16", "kernel-a", "x86_64", releases, repository)
+    assert result["schemaVersion"] == 2
+    assert result["status"] in ("invalid_target", "resolver_error")
+    assert result["reason"] == reason
+    assert "artifact" not in result
+
+release = {
+    "tag_name": "steamos-3.8.16-nvidia-575.64.05-kkernel-a",
+    "draft": False,
+    "prerelease": False,
+    "published_at": "2026-01-01T00:00:00Z",
+    "assets": [],
+}
+result = resolve_target(
+    "3.8.16", "kernel-a", "x86_64", [release, dict(release)], "owner/repo"
+)
+assert result["status"] == "resolver_error"
+assert result["reason"] == "release_metadata_ambiguous"
+PY
+
 RESOLVED="$(python3 "$PROJECT_ROOT/lib/resolve_target.py" \
     --steamos 3.8.16 --kernel absent-kernel --architecture x86_64 \
     --releases "$POLICY_FIXTURE")"
@@ -577,6 +607,20 @@ if python3 "$PROJECT_ROOT/lib/write_install_result.py" \
     --root /target-root --kernel kernel-a --mounts-released false >/dev/null 2>&1
 then
     fail "install-result writer accepted success with active mounts"
+fi
+if python3 "$PROJECT_ROOT/lib/write_install_result.py" \
+    --output "${INSTALL_RESULT_FIXTURE}.invalid" --status validated \
+    --reason wrong_reason --message invalid --phase validated \
+    --root /target-root --kernel kernel-a >/dev/null 2>&1
+then
+    fail "install-result writer accepted an inconsistent terminal status"
+fi
+if python3 "$PROJECT_ROOT/lib/write_install_result.py" \
+    --output "${INSTALL_RESULT_FIXTURE}.invalid" --status failed \
+    --reason 'bad reason' --message invalid --phase validation \
+    --root /target-root --kernel kernel-a >/dev/null 2>&1
+then
+    fail "install-result writer accepted a noncanonical reason"
 fi
 rm -f "$INSTALL_RESULT_FIXTURE" "${INSTALL_RESULT_FIXTURE}.invalid"
 
