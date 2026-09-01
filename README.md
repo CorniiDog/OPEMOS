@@ -314,6 +314,8 @@ the exact locked package identities, versions and hashes, affirmative pacman
 query/integrity/payload checks, per-package file/link/library counts, and the
 exact-version GSP firmware inventory. It also identifies the confined Holo
 pacman database and binds its verified locked-package count to the reviewed lock.
+Pacman's local-database consistency check must also pass after the transaction,
+covering dependency and record consistency before module mutation begins.
 Installer success is impossible without this record matching the validated
 database, package set, and NVIDIA version; the result does not expose host
 paths or an unbounded package-file inventory.

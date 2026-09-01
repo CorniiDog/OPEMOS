@@ -358,6 +358,7 @@ done
 [ "$dbpath" = "$root/usr/lib/holo/pacmandb" ] || exit 91
 printf '%s\n' "$*" >> "$MOCK_PACMAN_LOG"
 case " $* " in
+  *" -Dk "*) [ "${MOCK_FAIL_DATABASE_CHECK:-0}" = 0 ];;
   *" -Qkk "*) [ "${MOCK_FAIL_QKK:-0}" = 0 ];;
   *" -U "*)
     for runtime in dev proc sys var/tmp; do
@@ -900,6 +901,7 @@ def main():
                     "path": "/usr/lib/holo/pacmandb",
                     "status": "verified",
                     "verifiedPackageCount": 2,
+                    "consistencyVerified": True,
                 },
                 "packages": [
                     {
@@ -1741,6 +1743,19 @@ def main():
         assert corrupt_installed_payload["cleanup"][
             "compressionPolicyRestored"
         ] is True
+        inconsistent_database = run_installer(
+            profile_paths,
+            binaries,
+            temporary / "compression-profile-database-inconsistent.json",
+            False,
+            PROJECT_TEST_ROOT_AVAILABLE_BYTES=str(256 * 1024 * 1024),
+            PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
+            MOCK_FAIL_DATABASE_CHECK="1",
+        )
+        assert inconsistent_database["reason"] == "userspace_verification"
+        assert inconsistent_database["cleanup"][
+            "compressionPolicyRestored"
+        ] is True
         drifted_profile = run_installer(
             profile_paths,
             binaries,
@@ -2155,6 +2170,7 @@ def main():
             "path": "/usr/lib/holo/pacmandb",
             "status": "verified",
             "verifiedPackageCount": len(successful["validation"]["packages"]),
+            "consistencyVerified": True,
         }
         assert {
             package["packageName"]

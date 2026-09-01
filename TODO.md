@@ -1308,7 +1308,7 @@ signing policy.
 * [ ] Add mandatory structured `initramfsVerification`; inspect the exact
   generated initramfs and require the intended NVIDIA modules and configuration
   rather than trusting only mkinitcpio's exit status.
-* [ ] Verify the target Holo pacman database after mutation, including package
+* [x] Verify the target Holo pacman database after mutation, including package
   records, ownership, dependency state, and database consistency.
 
 ## Schema, liveness, failure, and target-code trust

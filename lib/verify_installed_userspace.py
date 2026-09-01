@@ -358,6 +358,11 @@ def main():
         fail("Matching GSP firmware was not installed into the target root.")
     if len(all_gsp_firmware) > 16:
         fail("Matching GSP firmware inventory exceeds its limit.")
+    consistency = run_pacman([
+        "pacman", "--root", str(args.root), "--dbpath", str(database), "-Dk",
+    ], deadline)
+    if consistency.returncode != 0:
+        fail("The target userspace package database failed its consistency check.")
     publish(args.output, {
         "schemaVersion": 1,
         "status": "verified",
@@ -366,6 +371,7 @@ def main():
             "path": "/usr/lib/holo/pacmandb",
             "status": "verified",
             "verifiedPackageCount": len(records),
+            "consistencyVerified": True,
         },
         "packages": records,
         "gspFirmware": {

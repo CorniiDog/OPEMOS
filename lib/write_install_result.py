@@ -335,9 +335,12 @@ def load_userspace_verification(path):
         raise SystemExit("Userspace verification package identities are duplicated.")
     database = document.get("pacmanDatabase")
     if (not isinstance(database, dict)
-            or set(database) != {"path", "status", "verifiedPackageCount"}
+            or set(database) != {
+                "path", "status", "verifiedPackageCount", "consistencyVerified",
+            }
             or database.get("path") != "/usr/lib/holo/pacmandb"
             or database.get("status") != "verified"
+            or database.get("consistencyVerified") is not True
             or not isinstance(database.get("verifiedPackageCount"), int)
             or isinstance(database["verifiedPackageCount"], bool)
             or database["verifiedPackageCount"] != len(packages)):
