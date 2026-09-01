@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent
 RUNNER = ROOT / "tests/vm/run.sh"
 GUEST = ROOT / "tests/vm/guest-checks.sh"
 RECOVERY_AB = ROOT / "tests/vm/recovery-ab.sh"
+CHROOT_HOOKS = ROOT / "tests/vm/chroot-hooks.sh"
 IGNORE = ROOT / "tests/vm/.gitignore"
 
 
@@ -31,6 +32,7 @@ def main():
     runner = RUNNER.read_text(encoding="utf-8")
     guest = GUEST.read_text(encoding="utf-8")
     recovery_ab = RECOVERY_AB.read_text(encoding="utf-8")
+    chroot_hooks = CHROOT_HOOKS.read_text(encoding="utf-8")
     ignored = IGNORE.read_text(encoding="utf-8")
     assert "e401a4db2e5e04d1967b6729774faa96da629bcf3ba90b67d8d9cce9906bec0f" in runner
     assert "sha256sum -c" in runner
@@ -43,6 +45,10 @@ def main():
     assert "btrfs subvolume snapshot -r" in recovery_ab
     assert "kill -TERM" in recovery_ab and "assert_original_slots" in recovery_ab
     assert "IMAGE_BYTES * 4" in recovery_ab and "mutate_inactive success" in recovery_ab
+    assert 'chroot "$TARGET"' in chroot_hooks
+    assert "cpio --reproducible --null -o -H newc" in chroot_hooks
+    assert "INJECT_HOOK_FAILURE" in chroot_hooks and "INJECT_HOOK_SLEEP" in chroot_hooks
+    assert "AVAILABLE_BYTES" in chroot_hooks and "initramfs-linux.img" in chroot_hooks
     for pattern in (".cache/", ".runtime/", "*.qcow2", "*.img", "*.iso", "*.log", "*.sock"):
         assert pattern in ignored
 

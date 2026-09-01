@@ -7,14 +7,15 @@ namespace_status=not-run
 btrfs_status=not-run
 flock_status=not-run
 recovery_ab_status=not-run
+chroot_hooks_status=not-run
 
 cleanup()
 {
     local rc=$?
-    printf '{"schemaVersion":1,"status":"%s","transaction":"%s","flock":"%s","mountNamespace":"%s","btrfs":"%s","recoveryAB":"%s"}\n' \
+    printf '{"schemaVersion":1,"status":"%s","transaction":"%s","flock":"%s","mountNamespace":"%s","btrfs":"%s","recoveryAB":"%s","chrootHooks":"%s"}\n' \
         "$([[ "$rc" == 0 ]] && printf passed || printf failed)" \
         "$transaction_status" "$flock_status" "$namespace_status" "$btrfs_status" \
-        "$recovery_ab_status"
+        "$recovery_ab_status" "$chroot_hooks_status"
     return "$rc"
 }
 trap cleanup EXIT
@@ -54,3 +55,6 @@ btrfs_status=passed
 
 bash "$REPOSITORY_ROOT/tests/vm/recovery-ab.sh"
 recovery_ab_status=passed
+
+bash "$REPOSITORY_ROOT/tests/vm/chroot-hooks.sh"
+chroot_hooks_status=passed

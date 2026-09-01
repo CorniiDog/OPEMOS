@@ -773,6 +773,14 @@ delete it to force a verified refetch. This harness does not prove real
 SteamOS pacman/mkinitcpio behavior, Valve bootloader propagation, or NVIDIA
 hardware boot behavior.
 
+The guest additionally runs a deterministic pacman/mkinitcpio compatibility
+fixture inside a real Linux `chroot`. It installs the exact five-module set,
+runs a package hook that creates a reproducible gzip/newc initramfs, and inspects
+the image for all modules and the NVIDIA modprobe policy. Capacity refusal,
+hook failure, process-group cancellation, rollback, and repeat execution are
+covered. These fixture commands model transaction boundaries; they are not the
+real Arch pacman or Valve mkinitcpio packages.
+
 After reinstalling and cloning the same support commit, run:
 
 ```bash

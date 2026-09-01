@@ -70,6 +70,7 @@ package_update: false
 packages:
   - bash
   - btrfs-progs
+  - cpio
   - git
   - util-linux
   - zstd
