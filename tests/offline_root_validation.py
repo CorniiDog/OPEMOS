@@ -153,6 +153,8 @@ def make_fixture(root):
     (target / "usr/bin").mkdir(parents=True)
     (target / "usr/bin/mkinitcpio").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     (target / "usr/bin/mkinitcpio").chmod(0o755)
+    (target / "usr/bin/lsinitcpio").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    (target / "usr/bin/lsinitcpio").chmod(0o755)
     (target / "usr/lib/initcpio").mkdir(parents=True)
     (target / "usr/share/libalpm/hooks").mkdir(parents=True)
     (target / "etc/mkinitcpio.conf").write_text("HOOKS=(base)\n", encoding="utf-8")
@@ -526,7 +528,11 @@ eval target=\${$#}; grep -F -q "$target" "$MOCK_MOUNT_STATE" 2>/dev/null
         encoding="utf-8",
     )
     (binaries / "chroot").write_text(
-        "#!/bin/sh\nprintf active > \"$MOCK_CHROOT_STATE\"\nsleep \"${MOCK_CHROOT_DELAY:-0}\"\n[ \"${MOCK_FAIL_CHROOT:-0}\" = 0 ] || exit 1\nfor runtime in dev proc sys var/tmp; do grep -F -x -q \"$1/$runtime\" \"$MOCK_MOUNT_STATE\" || exit 97; done\nworkspace=\"$1/var/tmp/explicit-mkinitcpio.$$\"\n: > \"$workspace\" || exit 98\nrm -f \"$workspace\"\nprintf '%s\\n' mkinitcpio >> \"$MOCK_TRANSACTION_LOG\"\nmkdir -p \"$1/boot\"; echo initramfs > \"$1/boot/initramfs-fixture.img\"\n[ \"${MOCK_DRIFT_COMPRESSION:-0}\" = 0 ] || : > \"$MOCK_COMPRESSION_STATE\"\n",
+        "#!/bin/sh\nif [ \"$2\" = /usr/bin/lsinitcpio ]; then\n"
+        "  if [ \"${MOCK_BAD_INITRAMFS_LISTING:-0}\" != 0 ]; then printf 'etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf\\n'; exit 0; fi\n"
+        "  for module in nvidia nvidia-drm nvidia-modeset nvidia-peermem nvidia-uvm; do printf 'usr/lib/modules/%s/%s.ko.zst\\n' \"$MOCK_KERNEL\" \"$module\"; done\n"
+        "  printf 'etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf\\n'\n  exit 0\nfi\n"
+        "printf active > \"$MOCK_CHROOT_STATE\"\nsleep \"${MOCK_CHROOT_DELAY:-0}\"\n[ \"${MOCK_FAIL_CHROOT:-0}\" = 0 ] || exit 1\nfor runtime in dev proc sys var/tmp; do grep -F -x -q \"$1/$runtime\" \"$MOCK_MOUNT_STATE\" || exit 97; done\nworkspace=\"$1/var/tmp/explicit-mkinitcpio.$$\"\n: > \"$workspace\" || exit 98\nrm -f \"$workspace\"\nprintf '%s\\n' mkinitcpio >> \"$MOCK_TRANSACTION_LOG\"\nmkdir -p \"$1/boot\"; echo initramfs > \"$1/boot/initramfs-fixture.img\"\n[ \"${MOCK_DRIFT_COMPRESSION:-0}\" = 0 ] || : > \"$MOCK_COMPRESSION_STATE\"\n",
         encoding="utf-8",
     )
     for path in binaries.iterdir():
@@ -2295,6 +2301,10 @@ def main():
         assert successful["initramfsWorkspace"]["status"] == "verified"
         assert successful["initramfsWorkspace"]["phase"] == "mounted_workspace"
         assert successful["initramfsWorkspace"]["mode"] == "1777"
+        assert successful["initramfsVerification"]["status"] == "verified"
+        assert successful["initramfsVerification"]["kernelVersion"] == KERNEL
+        assert len(successful["initramfsVerification"]["images"]) == 1
+        assert set(successful["initramfsVerification"]["images"][0]["modules"]) == set(MODULES)
         assert successful["validation"]["keyring"]["name"] == "approved.gpg"
         assert successful["validation"]["provenanceSha256"] == valid["provenanceSha256"]
         assert successful["validation"]["userspaceLock"] == {
@@ -2389,6 +2399,17 @@ def main():
         (paths["target"] / "etc/mkinitcpio.conf").write_text(
             "HOOKS=(base)\n", encoding="utf-8"
         )
+
+        failed_verification = run_installer(
+            paths,
+            binaries,
+            temporary / "install-initramfs-verification-failed.json",
+            False,
+            MOCK_BAD_INITRAMFS_LISTING="1",
+        )
+        assert failed_verification["reason"] == "initramfs_verification"
+        assert failed_verification["cleanup"]["mountsReleased"] is True
+        assert failed_verification["cleanup"]["runtimeMountsReleased"] == 4
 
         failed = run_installer(
             paths,

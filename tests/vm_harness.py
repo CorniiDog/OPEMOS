@@ -68,6 +68,7 @@ def main():
     assert "fcntl.flock" in mount_lifecycle and "unshare --mount" in mount_lifecycle
     assert "tests/install_contract.py" in guest
     assert "tests/target_execution_trust.py" in guest
+    assert "tests/initramfs_verification.py" in guest
     assert "5d8be8d28cfd290f051b0f67df0a6874596ad23de3f3f18b90c91aeb758eb878" in arch_runner
     assert "656E4C5AC1CC3B86E539D97E343635A6859A9174" in arch_runner
     assert "gpgv --keyring" in arch_runner and "sha256sum -c" in arch_runner

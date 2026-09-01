@@ -447,6 +447,8 @@ write_install_result()
         set -- "$@" --userspace-verification "$USERSPACE_VERIFICATION_JSON"
     [[ -z "${INITRAMFS_WORKSPACE_JSON:-}" || ! -s "$INITRAMFS_WORKSPACE_JSON" ]] ||
         set -- "$@" --initramfs-workspace "$INITRAMFS_WORKSPACE_JSON"
+    [[ -z "${INITRAMFS_VERIFICATION_JSON:-}" || ! -s "$INITRAMFS_VERIFICATION_JSON" ]] ||
+        set -- "$@" --initramfs-verification "$INITRAMFS_VERIFICATION_JSON"
     "$@"
 }
 
@@ -544,6 +546,7 @@ done
 MUTATION_WORK="$(mktemp -d "$INSTALLER_TEMP_ROOT/offline-root-mutation.XXXXXX")"
 MODULE_VERIFICATION_JSON="$MUTATION_WORK/module-verification.json"
 USERSPACE_VERIFICATION_JSON="$MUTATION_WORK/userspace-verification.json"
+INITRAMFS_VERIFICATION_JSON="$MUTATION_WORK/initramfs-verification.json"
 PACMAN_TRANSACTION_RESULT="$MUTATION_WORK/pacman-transaction.json"
 TARGET_EXECUTION_MANIFEST="$MUTATION_WORK/target-execution.json"
 POST_TRANSACTION_EXECUTION_MANIFEST="$MUTATION_WORK/post-transaction-execution.json"
@@ -1084,6 +1087,39 @@ run_mutation_command python3 "$SUPPORT_ROOT/lib/snapshot_target_execution.py" \
 }
 run_mutation_command env SYSTEMD_OFFLINE=1 chroot "$ROOT" /usr/bin/mkinitcpio -P
 [[ -z "$COMPRESSION_PROFILE" ]] || require_active_compression_policy
+INITRAMFS_VERIFY_ARGS=(
+    --kernel "$KERNEL" --execution-manifest "$POST_TRANSACTION_EXECUTION_MANIFEST"
+    --config "$ROOT/etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf"
+    --output "$INITRAMFS_VERIFICATION_JSON"
+)
+shopt -s nullglob
+INITRAMFS_IMAGES=("$ROOT"/boot/initramfs-*.img)
+shopt -u nullglob
+(( ${#INITRAMFS_IMAGES[@]} > 0 && ${#INITRAMFS_IMAGES[@]} <= 32 )) || {
+    PHASE=initramfs_verification
+    die "Initramfs generation did not produce a bounded image set."
+}
+for (( initramfs_index=0; initramfs_index<${#INITRAMFS_IMAGES[@]}; initramfs_index++ )); do
+    image="${INITRAMFS_IMAGES[$initramfs_index]}"
+    listing="$MUTATION_WORK/initramfs-listing-$initramfs_index"
+    image_sha256="$(python3 -c 'import sys; from pathlib import Path; sys.path.insert(0, sys.argv[1]); from verify_initramfs import regular_digest; print(regular_digest(Path(sys.argv[2]), 2 * 1024 * 1024 * 1024, "initramfs image")[1])' "$SUPPORT_ROOT/lib" "$image")" || {
+        PHASE=initramfs_verification
+        die "An initramfs image could not be hashed safely."
+    }
+    run_mutation_command python3 "$SUPPORT_ROOT/lib/capture_bounded_command.py" \
+        --output "$listing" --max-bytes 8388608 --timeout 120 -- \
+        chroot "$ROOT" /usr/bin/lsinitcpio -l "/boot/${image##*/}" || {
+        PHASE=initramfs_verification
+        die "An initramfs image listing could not be captured safely."
+    }
+    INITRAMFS_VERIFY_ARGS+=(--image "$image" --listing "$listing" \
+        --image-sha256 "$image_sha256")
+done
+run_mutation_command python3 "$SUPPORT_ROOT/lib/verify_initramfs.py" \
+    "${INITRAMFS_VERIFY_ARGS[@]}" || {
+    PHASE=initramfs_verification
+    die "Generated initramfs contents failed exact verification."
+}
 emit_progress_items initramfs 1 1
 
 PHASE=state_write

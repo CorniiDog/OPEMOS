@@ -67,6 +67,7 @@ def validate_result(path):
         mandatory = {
             "moduleVerification": "verified",
             "userspaceVerification": "verified", "initramfsWorkspace": "verified",
+            "initramfsVerification": "verified",
         }
         for field, status in mandatory.items():
             value = document.get(field)

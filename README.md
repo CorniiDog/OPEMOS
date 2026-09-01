@@ -546,6 +546,15 @@ their expected/released counts plus bounded workspace condition and capacity
 metadata. Reverse-order recursive cleanup is required on every terminal path,
 including pacman-hook failure and cancellation.
 
+Success also requires bounded `initramfsVerification`. The installer hashes each
+generated `initramfs-*.img` before a time/byte-capped target `lsinitcpio -l`
+capture, then rechecks the unchanged image while producing exact image and
+ordered-listing hashes. Every image must contain exactly one copy of all five
+NVIDIA modules and the managed modprobe configuration. The result binds those
+records to the snapshotted mkinitcpio/lsinitcpio identities and configuration
+hash; malformed, duplicate security-relevant, oversized, linked, partial, or
+drifted inputs fail closed before installation state is committed.
+
 Pacman post-transaction hook failures are detected independently from pacman's
 exit status using fixed C-locale failure markers. A reported hook failure stops
 the installer before userspace verification or module mutation.

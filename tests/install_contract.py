@@ -31,6 +31,7 @@ def main():
             "moduleVerification": {"status": "verified"},
             "userspaceVerification": {"status": "verified"},
             "initramfsWorkspace": {"status": "verified", "phase": "mounted_workspace"},
+            "initramfsVerification": {"status": "verified"},
             "futureAdditiveField": {"accepted": True},
         }
         result.write_text(json.dumps(document))

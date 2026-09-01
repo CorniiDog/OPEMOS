@@ -138,7 +138,7 @@ set +e; wait "$qemu_pid"; qemu_status=$?; set -e
 qemu_pid=""
 trap - EXIT INT TERM
 result="$(grep -E '^\{"schemaVersion":1,' "$SERIAL_LOG" | tail -n1 | tr -d '\r' || true)"
-expected_result='{"schemaVersion":1,"status":"passed","pacman":"passed","mkinitcpio":"passed","cancellation":"passed","idempotency":"passed"}'
+expected_result='{"schemaVersion":1,"status":"passed","pacman":"passed","mkinitcpio":"passed","cancellation":"passed","idempotency":"passed","initramfsContract":"passed"}'
 [[ "$qemu_status" == 0 && "$result" == "$expected_result" ]] &&
     grep -q 'OPEN_GPU_ARCH_VM_COMPLETE' "$SERIAL_LOG" || {
     printf 'Arch VM failed; serial log: %s\n' "$SERIAL_LOG" >&2

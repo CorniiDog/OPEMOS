@@ -18,6 +18,7 @@ MAX_FILE_BYTES = 8 * 1024 * 1024
 MAX_TOTAL_BYTES = 64 * 1024 * 1024
 HOOK_EXEC = re.compile(r"^[ \t]*Exec[ \t]*=[ \t]*(.+?)\s*$")
 SCAN_PATHS = (
+    "etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf",
     "etc/mkinitcpio.conf", "etc/mkinitcpio.conf.d", "etc/mkinitcpio.d",
     "usr/lib/initcpio", "usr/share/libalpm/hooks",
 )
@@ -150,10 +151,11 @@ def inspect(root):
                 fail(f"pacman hook executor is unsafe: {relative}")
             executors.add(words[0].lstrip("/"))
 
-    mkinitcpio = root / "usr/bin/mkinitcpio"
-    record(mkinitcpio, required=True)
-    if not os.access(mkinitcpio, os.X_OK):
-        fail("target mkinitcpio is not executable")
+    for tool_name in ("mkinitcpio", "lsinitcpio"):
+        tool = root / "usr/bin" / tool_name
+        record(tool, required=True)
+        if not os.access(tool, os.X_OK):
+            fail(f"target {tool_name} is not executable")
     for relative in SCAN_PATHS:
         record(root / relative)
     for relative in sorted(executors):

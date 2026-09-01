@@ -12,6 +12,7 @@ MAX_VALIDATION_BYTES = 16 * 1024 * 1024
 MAX_MODULE_VERIFICATION_BYTES = 1024 * 1024
 MAX_USERSPACE_VERIFICATION_BYTES = 256 * 1024
 MAX_WORKSPACE_VERIFICATION_BYTES = 16 * 1024
+MAX_INITRAMFS_VERIFICATION_BYTES = 256 * 1024
 TOKEN = re.compile(r"[a-z][a-z0-9_]{0,63}")
 KERNEL = re.compile(r"(?:unknown|[A-Za-z0-9._+~-]{1,255})")
 VERSION = re.compile(r"(?:unknown|[0-9]+\.[0-9]+(?:\.[0-9]+)?)")
@@ -79,6 +80,7 @@ def parse_args():
     parser.add_argument("--module-verification", type=Path)
     parser.add_argument("--userspace-verification", type=Path)
     parser.add_argument("--initramfs-workspace", type=Path)
+    parser.add_argument("--initramfs-verification", type=Path)
     parser.add_argument("--runtime-mounts-expected", type=int, default=0)
     parser.add_argument("--runtime-mounts-released", type=int, default=0)
     return parser.parse_args()
@@ -103,6 +105,15 @@ def bounded_message(value):
         and "\x00" not in value
         and all(character in "\n\t" or ord(character) >= 32 for character in value)
     )
+
+
+def unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON key")
+        result[key] = value
+    return result
 
 
 def load_validation(path):
@@ -289,6 +300,82 @@ def load_initramfs_workspace(path):
             raise SystemExit("Failed initramfs workspace metadata is inconsistent.")
     else:
         raise SystemExit("Initramfs workspace status is unsupported.")
+    return document
+
+
+def load_initramfs_verification(path):
+    try:
+        if (path.is_symlink() or not path.is_file()
+                or not 0 < path.stat().st_size <= MAX_INITRAMFS_VERIFICATION_BYTES):
+            raise OSError
+        document = json.loads(path.read_text(encoding="utf-8"),
+                              object_pairs_hook=unique_object)
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+        raise SystemExit("Initramfs verification metadata is unreadable or excessive.")
+    if (not isinstance(document, dict) or set(document) != {
+            "schemaVersion", "status", "kernelVersion", "tools", "config", "images"}
+            or document.get("schemaVersion") != 1 or document.get("status") != "verified"
+            or not KERNEL.fullmatch(document.get("kernelVersion", ""))):
+        raise SystemExit("Initramfs verification metadata is malformed.")
+    tools = document["tools"]
+    if not isinstance(tools, dict) or set(tools) != {"mkinitcpio", "lsinitcpio"}:
+        raise SystemExit("Initramfs tool verification metadata is malformed.")
+    for name, record in tools.items():
+        if (not isinstance(record, dict) or set(record) != {"path", "sizeBytes", "sha256"}
+                or record.get("path") != f"/usr/bin/{name}"
+                or not isinstance(record.get("sizeBytes"), int)
+                or isinstance(record.get("sizeBytes"), bool)
+                or not 0 < record["sizeBytes"] <= 8 * 1024 * 1024
+                or not isinstance(record.get("sha256"), str)
+                or HEX_SHA256.fullmatch(record["sha256"]) is None):
+            raise SystemExit("Initramfs tool verification metadata is malformed.")
+    config = document["config"]
+    if (not isinstance(config, dict) or set(config) != {"path", "sizeBytes", "sha256"}
+            or config.get("path") != "/etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf"
+            or not isinstance(config.get("sizeBytes"), int)
+            or isinstance(config.get("sizeBytes"), bool)
+            or not 0 < config["sizeBytes"] <= 1024 * 1024
+            or not isinstance(config.get("sha256"), str)
+            or HEX_SHA256.fullmatch(config["sha256"]) is None):
+        raise SystemExit("Initramfs configuration verification metadata is malformed.")
+    images = document["images"]
+    if not isinstance(images, list) or not 1 <= len(images) <= 32:
+        raise SystemExit("Initramfs image verification metadata is malformed.")
+    filenames = set()
+    for image in images:
+        if (not isinstance(image, dict) or set(image) != {
+                "filename", "sizeBytes", "sha256", "listingSha256", "entries",
+                "modules", "configPath"}
+                or not plain_name(image.get("filename", ""))
+                or image["filename"] in filenames
+                or not isinstance(image.get("sizeBytes"), int)
+                or isinstance(image.get("sizeBytes"), bool)
+                or not 0 < image["sizeBytes"] <= 2 * 1024 * 1024 * 1024
+                or not isinstance(image.get("entries"), int)
+                or isinstance(image.get("entries"), bool)
+                or not 1 <= image["entries"] <= 200000
+                or any(not isinstance(image.get(field), str)
+                       or HEX_SHA256.fullmatch(image[field]) is None
+                       for field in ("sha256", "listingSha256"))
+                or image.get("configPath")
+                != "etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf"
+                or not isinstance(image.get("modules"), dict)
+                or set(image["modules"]) != EXPECTED_MODULES):
+            raise SystemExit("Initramfs image verification metadata is malformed.")
+        filenames.add(image["filename"])
+        module_values = list(image["modules"].values())
+        if (len(set(module_values)) != len(module_values)
+                or any(
+                    not isinstance(value, str) or len(value) > 1024
+                    or value.startswith("/") or ".." in Path(value).parts
+                    or not value.startswith(
+                        f"usr/lib/modules/{document['kernelVersion']}/")
+                    or Path(value).name not in {
+                        module + suffix for suffix in ("", ".gz", ".xz", ".zst", ".lz4", ".lzo")
+                    }
+                    for module, value in image["modules"].items()
+                )):
+            raise SystemExit("Initramfs module verification metadata is malformed.")
     return document
 
 
@@ -886,6 +973,14 @@ def main():
         document["initramfsWorkspace"] = workspace
     elif args.status == "success":
         raise SystemExit("A successful installation requires workspace verification metadata.")
+    if args.initramfs_verification:
+        initramfs_verification = load_initramfs_verification(args.initramfs_verification)
+        if (args.status != "success"
+                or initramfs_verification["kernelVersion"] != args.kernel):
+            raise SystemExit("Initramfs verification metadata does not match the result.")
+        document["initramfsVerification"] = initramfs_verification
+    elif args.status == "success":
+        raise SystemExit("A successful installation requires exact initramfs verification metadata.")
     atomic_write_bytes(
         args.output,
         (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode(),

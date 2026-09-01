@@ -1309,7 +1309,7 @@ signing policy.
   version, and vermagic verification.
 * [x] Add mandatory structured `userspaceVerification` covering every locked
   package, owned file/link/library, and matching GSP firmware result.
-* [ ] Add mandatory structured `initramfsVerification`; inspect the exact
+* [x] Add mandatory structured `initramfsVerification`; inspect the exact
   generated initramfs and require the intended NVIDIA modules and configuration
   rather than trusting only mkinitcpio's exit status.
 * [x] Verify the target Holo pacman database after mutation, including package
