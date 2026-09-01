@@ -63,6 +63,10 @@ python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __
     lib/write_compile_provenance.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/update_grub_nvidia_args.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/check_initramfs_workspace.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/run_pacman_transaction.py
 
 printf 'Checking exact target-header validation...\n'
 python3 tests/header_validation.py
@@ -538,6 +542,8 @@ printf 'Checking offline-root installer contract...\n'
 ./bootstrap/install_to_root.sh --help >/dev/null
 ./lib/verify_installed_userspace.py --help >/dev/null
 ./lib/verify_installed_modules.py --help >/dev/null
+./lib/check_initramfs_workspace.py --help >/dev/null
+./lib/run_pacman_transaction.py --help >/dev/null
 python3 bootstrap/audit_userspace_closure.py --help >/dev/null
 python3 bootstrap/finalize_userspace_lock.py --help >/dev/null
 python3 - "$PROJECT_ROOT/trust/arch-full-keyring-provenance.json" <<'PY' || \

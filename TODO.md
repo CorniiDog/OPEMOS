@@ -1239,6 +1239,11 @@ signing policy.
   and recursively clean them on every terminal path. Normalize raw/compressed
   modules to explicit root:root 0644 `.ko.zst` destinations and preserve
   aggregate five-module mismatch diagnostics in the installer result.
+* [x] Add a private appliance-backed `/var/tmp` bind before pacman hooks, retain
+  it through explicit mkinitcpio, require confined mode-1777 target semantics
+  plus bounded byte/inode capacity, report typed workspace failures, record all
+  four runtime mounts in progress/results, and detect post-transaction hook
+  failure independently from pacman's exit status.
 * [x] Emit schema-1 mutation progress for pacman policy, runtime mounts, exact
   package/module installation and verification counts, GRUB, depmod,
   indeterminate initramfs generation, installation state, and cleanup; retain

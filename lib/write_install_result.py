@@ -10,6 +10,7 @@ from atomic_output import atomic_write_bytes
 
 MAX_VALIDATION_BYTES = 16 * 1024 * 1024
 MAX_MODULE_VERIFICATION_BYTES = 1024 * 1024
+MAX_WORKSPACE_VERIFICATION_BYTES = 16 * 1024
 TOKEN = re.compile(r"[a-z][a-z0-9_]{0,63}")
 KERNEL = re.compile(r"(?:unknown|[A-Za-z0-9._+~-]{1,255})")
 VERSION = re.compile(r"(?:unknown|[0-9]+\.[0-9]+(?:\.[0-9]+)?)")
@@ -75,6 +76,9 @@ def parse_args():
     )
     parser.add_argument("--validation", type=Path)
     parser.add_argument("--module-verification", type=Path)
+    parser.add_argument("--initramfs-workspace", type=Path)
+    parser.add_argument("--runtime-mounts-expected", type=int, default=0)
+    parser.add_argument("--runtime-mounts-released", type=int, default=0)
     return parser.parse_args()
 
 
@@ -207,6 +211,67 @@ def load_module_verification(path):
             raise SystemExit("Failed module verification metadata is inconsistent.")
     else:
         raise SystemExit("Module verification status is unsupported.")
+    return document
+
+
+def load_initramfs_workspace(path):
+    try:
+        if (path.is_symlink() or not path.is_file()
+                or not 0 < path.stat().st_size <= MAX_WORKSPACE_VERIFICATION_BYTES):
+            raise OSError
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        raise SystemExit("Initramfs workspace metadata is unreadable or excessive.")
+    common = {
+        "schemaVersion", "status", "reason", "phase", "condition",
+        "requiredBytes", "requiredInodes",
+    }
+    optional = {
+        "message", "availableBytes", "availableInodes", "mode",
+        "expectedMode", "actualMode",
+    }
+    if (not isinstance(document, dict)
+            or not common <= set(document)
+            or not set(document) <= common | optional
+            or document.get("schemaVersion") != 1
+            or document.get("reason") not in {
+                "initramfs_workspace_available", "initramfs_workspace_unavailable",
+            }
+            or document.get("phase") not in {
+                "target_directory", "backing_directory", "backing_capacity",
+                "mounted_workspace",
+            }
+            or document.get("condition") not in {
+                "available", "missing_directory", "invalid_type", "permissions",
+                "insufficient_bytes", "insufficient_inodes",
+            }):
+        raise SystemExit("Initramfs workspace metadata is malformed.")
+    for field in ("requiredBytes", "requiredInodes", "availableBytes", "availableInodes"):
+        value = document.get(field)
+        if value is not None and (
+                not isinstance(value, int) or isinstance(value, bool)
+                or not 0 <= value <= 2**63 - 1):
+            raise SystemExit("Initramfs workspace capacity metadata is malformed.")
+    for field in ("mode", "expectedMode", "actualMode"):
+        value = document.get(field)
+        if value is not None and (
+                not isinstance(value, str) or re.fullmatch(r"[0-7]{4}", value) is None):
+            raise SystemExit("Initramfs workspace permission metadata is malformed.")
+    if document["status"] == "verified":
+        if (document["reason"] != "initramfs_workspace_available"
+                or document["condition"] != "available"
+                or document["phase"] not in {"backing_capacity", "mounted_workspace"}
+                or document.get("mode") != "1777"
+                or "message" in document):
+            raise SystemExit("Verified initramfs workspace metadata is inconsistent.")
+    elif document["status"] == "failed":
+        if (document["reason"] != "initramfs_workspace_unavailable"
+                or document["condition"] == "available"
+                or not isinstance(document.get("message"), str)
+                or not bounded_message(document["message"])):
+            raise SystemExit("Failed initramfs workspace metadata is inconsistent.")
+    else:
+        raise SystemExit("Initramfs workspace status is unsupported.")
     return document
 
 
@@ -554,9 +619,14 @@ def main():
         args.nvidia = args.nvidia if VERSION.fullmatch(args.nvidia) else "unknown"
     if args.trust not in TRUST_VALUES:
         raise SystemExit("Installation result trust classification is invalid.")
+    if (not 0 <= args.runtime_mounts_expected <= 4
+            or not 0 <= args.runtime_mounts_released <= args.runtime_mounts_expected):
+        raise SystemExit("Installation result runtime mount counts are invalid.")
     if args.status == "success" and (
         args.mounts_released != "true"
         or args.compression_policy_restored != "true"
+        or args.runtime_mounts_expected != 4
+        or args.runtime_mounts_released != 4
     ):
         raise SystemExit("A successful installation result requires complete cleanup.")
     expected_terminal = {
@@ -591,6 +661,8 @@ def main():
         },
         "cleanup": {
             "mountsReleased": args.mounts_released == "true",
+            "runtimeMountsExpected": args.runtime_mounts_expected,
+            "runtimeMountsReleased": args.runtime_mounts_released,
             "compressionPolicyRestored": (
                 args.compression_policy_restored == "true"
             ),
@@ -642,6 +714,21 @@ def main():
                 "Failed module verification metadata does not match result phase."
             )
         document["moduleVerification"] = module_verification
+    if args.initramfs_workspace:
+        workspace = load_initramfs_workspace(args.initramfs_workspace)
+        if (args.status == "success"
+                and (workspace["status"] != "verified"
+                     or workspace["phase"] != "mounted_workspace")):
+            raise SystemExit(
+                "A successful installation requires a verified mounted initramfs workspace."
+            )
+        if (workspace["status"] == "failed"
+                and (args.status != "failed"
+                     or args.reason != "initramfs_workspace_unavailable")):
+            raise SystemExit("Failed workspace metadata does not match result status.")
+        document["initramfsWorkspace"] = workspace
+    elif args.status == "success":
+        raise SystemExit("A successful installation requires workspace verification metadata.")
     atomic_write_bytes(
         args.output,
         (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode(),

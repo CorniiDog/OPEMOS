@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parent.parent
 VALIDATOR = ROOT / "lib/validate_install_inputs.py"
 INSTALLER = ROOT / "bootstrap/install_to_root.sh"
 RESULT_WRITER = ROOT / "lib/write_install_result.py"
+PACMAN_RUNNER = ROOT / "lib/run_pacman_transaction.py"
 KERNEL = "6.16.12-valve24.5-1-neptune-616-gfixture"
 NVIDIA = "575.64.05"
 NVIDIA_SIGNER = "05C7775A9E8B977407FE08E69D4C5AA15426DA0A"
@@ -178,6 +179,8 @@ def make_fixture(root):
     )
     (target / "boot").mkdir()
     (target / "var").mkdir()
+    (target / "var/tmp").mkdir(mode=0o1777)
+    (target / "var/tmp").chmod(0o1777)
     grub = target / "efi/EFI/steamos/grub.cfg"
     grub.parent.mkdir(parents=True)
     grub.write_text(
@@ -315,6 +318,8 @@ def write_userspace_lock(paths):
 def make_mocks(root):
     binaries = root / "bin"
     binaries.mkdir()
+    (root / "appliance-var-tmp").mkdir(mode=0o1777)
+    (root / "appliance-var-tmp").chmod(0o1777)
     (root / "pacman.conf").write_text(
         "[options]\nArchitecture = auto\nCheckSpace\n"
         "SigLevel = Required DatabaseOptional\nLocalFileSigLevel = Required\n\n"
@@ -354,10 +359,16 @@ printf '%s\n' "$*" >> "$MOCK_PACMAN_LOG"
 case " $* " in
   *" -Qkk "*) [ "${MOCK_FAIL_QKK:-0}" = 0 ];;
   *" -U "*)
-    for runtime in dev proc sys; do
+    for runtime in dev proc sys var/tmp; do
       grep -F -x -q "$root/$runtime" "$MOCK_MOUNT_STATE" || exit 96
     done
+    workspace="$root/var/tmp/pacman-hook-mkinitcpio.$$"
+    : > "$workspace" || exit 98
+    rm -f "$workspace"
     printf '%s\n' pacman-hooks >> "$MOCK_TRANSACTION_LOG"
+    if [ "${MOCK_POST_HOOK_FAILURE:-0}" != 0 ]; then
+      echo 'error: command failed to execute correctly' >&2
+    fi
     if [ "${MOCK_REQUIRE_CHECKSPACE_BYPASS:-0}" != 0 ]; then
       [ -n "$config" ] && [ -f "$config" ] || exit 92
       ! grep -E '^[[:space:]]*CheckSpace([[:space:]]*(#.*)?)?$' "$config" || exit 93
@@ -441,6 +452,8 @@ case " $* " in
     echo "$target" >> "$MOCK_MOUNT_STATE"
     case "$target" in */dev) echo "$target/pts" >> "$MOCK_MOUNT_STATE";; esac
     ;;
+  *' --bind '*) eval target=\${$#}; echo "$target" >> "$MOCK_MOUNT_STATE";;
+  *' --make-private '*) :;;
   *' remount,compress-force=zstd:3 '*)
     [ "${MOCK_FAIL_COMPRESSION_ACTIVATE:-0}" = 0 ] || exit 1
     printf '%s\n' 'compress-force=zstd:3' > "$MOCK_COMPRESSION_STATE"
@@ -498,7 +511,7 @@ eval target=\${$#}; grep -F -q "$target" "$MOCK_MOUNT_STATE" 2>/dev/null
         encoding="utf-8",
     )
     (binaries / "chroot").write_text(
-        "#!/bin/sh\nprintf active > \"$MOCK_CHROOT_STATE\"\nsleep \"${MOCK_CHROOT_DELAY:-0}\"\n[ \"${MOCK_FAIL_CHROOT:-0}\" = 0 ] || exit 1\nfor runtime in dev proc sys; do grep -F -x -q \"$1/$runtime\" \"$MOCK_MOUNT_STATE\" || exit 97; done\nprintf '%s\\n' mkinitcpio >> \"$MOCK_TRANSACTION_LOG\"\nmkdir -p \"$1/boot\"; echo initramfs > \"$1/boot/initramfs-fixture.img\"\n[ \"${MOCK_DRIFT_COMPRESSION:-0}\" = 0 ] || : > \"$MOCK_COMPRESSION_STATE\"\n",
+        "#!/bin/sh\nprintf active > \"$MOCK_CHROOT_STATE\"\nsleep \"${MOCK_CHROOT_DELAY:-0}\"\n[ \"${MOCK_FAIL_CHROOT:-0}\" = 0 ] || exit 1\nfor runtime in dev proc sys var/tmp; do grep -F -x -q \"$1/$runtime\" \"$MOCK_MOUNT_STATE\" || exit 97; done\nworkspace=\"$1/var/tmp/explicit-mkinitcpio.$$\"\n: > \"$workspace\" || exit 98\nrm -f \"$workspace\"\nprintf '%s\\n' mkinitcpio >> \"$MOCK_TRANSACTION_LOG\"\nmkdir -p \"$1/boot\"; echo initramfs > \"$1/boot/initramfs-fixture.img\"\n[ \"${MOCK_DRIFT_COMPRESSION:-0}\" = 0 ] || : > \"$MOCK_COMPRESSION_STATE\"\n",
         encoding="utf-8",
     )
     for path in binaries.iterdir():
@@ -598,6 +611,7 @@ def installer_environment(binaries, mount_state, **environment):
         PROJECT_TEST_MODE="1",
         PROJECT_TEST_APPLIANCE_ARCH="x86_64",
         PROJECT_TEST_PACMAN_CONFIG=str(binaries.parent / "pacman.conf"),
+        PROJECT_INITRAMFS_SCRATCH_PARENT=str(binaries.parent / "appliance-var-tmp"),
         MOCK_MOUNT_STATE=str(mount_state),
         MOCK_COMPRESSION_STATE=str(mount_state.with_suffix(".compression")),
         MOCK_PACMAN_LOG=str(mount_state.with_suffix(".pacman")),
@@ -682,6 +696,8 @@ def run_installer(paths, binaries, result, success, preserve_lock=False, **envir
         initial_compression, encoding="utf-8"
     )
     before_mutation_work = set(Path("/tmp").glob("offline-root-mutation.*"))
+    scratch_parent = binaries.parent / "appliance-var-tmp"
+    before_scratch = set(scratch_parent.glob("offline-root-initramfs.*"))
     env = installer_environment(binaries, mount_state, **environment)
     completed = subprocess.run(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     result.with_suffix(result.suffix + ".stderr").write_text(completed.stderr, encoding="utf-8")
@@ -690,6 +706,7 @@ def run_installer(paths, binaries, result, success, preserve_lock=False, **envir
     assert not mount_state.read_text(encoding="utf-8").strip()
     assert mount_state.with_suffix(".compression").read_text().strip() == initial_compression
     assert set(Path("/tmp").glob("offline-root-mutation.*")) == before_mutation_work
+    assert set(scratch_parent.glob("offline-root-initramfs.*")) == before_scratch
     return json.loads(result.read_text(encoding="utf-8"))
 
 
@@ -705,6 +722,8 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
     env = installer_environment(binaries, mount_state, **environment)
     before_validation_files = set(Path("/tmp").glob("offline-root-validation.*"))
     before_mutation_work = set(Path("/tmp").glob("offline-root-mutation.*"))
+    scratch_parent = binaries.parent / "appliance-var-tmp"
+    before_scratch = set(scratch_parent.glob("offline-root-initramfs.*"))
     process = subprocess.Popen(
         installer_command(paths, result),
         env=env,
@@ -723,10 +742,10 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
     else:
         while (
             time.monotonic() < deadline
-            and len(mount_state.read_text().splitlines()) < 3
+            and len(mount_state.read_text().splitlines()) < 4
         ):
             time.sleep(0.05)
-        assert len(mount_state.read_text().splitlines()) == 3, (
+        assert len(mount_state.read_text().splitlines()) == 4, (
             "mutation never established all bind mounts"
         )
     process.terminate()
@@ -741,16 +760,37 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
     assert mount_state.with_suffix(".compression").read_text().strip() == initial_compression
     assert set(Path("/tmp").glob("offline-root-validation.*")) == before_validation_files
     assert set(Path("/tmp").glob("offline-root-mutation.*")) == before_mutation_work
+    assert set(scratch_parent.glob("offline-root-initramfs.*")) == before_scratch
     records = parse_progress_records(stderr)
     if expected_phase == "initramfs":
         assert any(
             record["phase"] == "initramfs" and record["indeterminate"]
             for record in records
         )
-        assert_item_progress(records, "mount_cleanup", 3)
+        assert_item_progress(records, "mount_cleanup", 4)
 
 
 def main():
+    with tempfile.TemporaryDirectory(prefix="pacman-runner-") as runner_temporary:
+        runner_result = Path(runner_temporary) / "launch-failure.json"
+        launch_failure = subprocess.run(
+            [
+                sys.executable, str(PACMAN_RUNNER), "--output", str(runner_result),
+                "--", "definitely-not-a-real-pacman-command",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        assert launch_failure.returncode == 127
+        assert launch_failure.stderr == ""
+        assert json.loads(runner_result.read_text(encoding="utf-8")) == {
+            "schemaVersion": 1,
+            "status": "failed",
+            "reason": "userspace_transaction_failed",
+            "exitStatus": 127,
+            "hookFailure": False,
+        }
     excessive_attempt = subprocess.run(
         [str(INSTALLER), "--progress-attempt", "1000001"],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
@@ -783,6 +823,67 @@ def main():
         paths = make_fixture(temporary)
         run(paths, binaries, temporary / "valid.json", True)
         valid = json.loads((temporary / "valid.json").read_text())
+
+        workspace_cases = (
+            ("missing", "missing_directory", None),
+            ("symlink", "invalid_type", None),
+            ("permissions", "permissions", None),
+            ("bytes", "insufficient_bytes", {
+                "PROJECT_TEST_WORKSPACE_AVAILABLE_BYTES": "1",
+            }),
+            ("inodes", "insufficient_inodes", {
+                "PROJECT_TEST_WORKSPACE_AVAILABLE_BYTES": str(2**40),
+                "PROJECT_TEST_WORKSPACE_AVAILABLE_INODES": "1",
+            }),
+        )
+        for label, condition, case_environment in workspace_cases:
+            case_root = temporary / f"workspace-{label}"
+            case_root.mkdir()
+            case_paths = make_fixture(case_root)
+            if label == "missing":
+                (case_paths["target"] / "var/tmp").rmdir()
+            elif label == "symlink":
+                (case_paths["target"] / "var/tmp").rmdir()
+                (case_paths["target"] / "var/tmp").symlink_to(
+                    case_paths["target"] / "etc", target_is_directory=True
+                )
+            elif label == "permissions":
+                (case_paths["target"] / "var/tmp").chmod(0o755)
+            workspace_result = run_installer(
+                case_paths,
+                binaries,
+                temporary / f"workspace-{label}.json",
+                False,
+                **(case_environment or {}),
+            )
+            assert workspace_result["reason"] == "initramfs_workspace_unavailable"
+            assert workspace_result["initramfsWorkspace"]["condition"] == condition
+            assert workspace_result["cleanup"]["mountsReleased"] is True
+            assert workspace_result["cleanup"]["runtimeMountsExpected"] == 4
+            assert workspace_result["cleanup"]["runtimeMountsReleased"] == 3
+            pacman_log = (temporary / f"workspace-{label}.mounts").with_suffix(
+                ".pacman"
+            )
+            assert not pacman_log.exists() or " -U " not in (
+                " " + pacman_log.read_text(encoding="utf-8") + " "
+            )
+
+        hook_root = temporary / "post-hook-failure"
+        hook_root.mkdir()
+        hook_paths = make_fixture(hook_root)
+        hook_result = run_installer(
+            hook_paths,
+            binaries,
+            temporary / "post-hook-failure.json",
+            False,
+            MOCK_POST_HOOK_FAILURE="1",
+        )
+        assert hook_result["reason"] == "userspace_hook_failed"
+        assert hook_result["phase"] == "userspace_hook_failed"
+        assert hook_result["cleanup"]["runtimeMountsReleased"] == 4
+        assert (temporary / "post-hook-failure.transaction").read_text(
+            encoding="utf-8"
+        ).splitlines() == ["pacman-hooks"]
         symlink_root = temporary / "target-root-symlink"
         symlink_root.symlink_to(paths["target"], target_is_directory=True)
         symlink_paths = dict(paths)
@@ -1799,7 +1900,7 @@ def main():
         assert {record["attempt"] for record in installer_progress} == {7}
         installed_package_count = 2 + len(paths.get("dependency_packages", []))
         assert_indeterminate_then_complete(installer_progress, "pacman_policy")
-        assert_item_progress(installer_progress, "runtime_mounts", 3)
+        assert_item_progress(installer_progress, "runtime_mounts", 4)
         assert_item_progress(
             installer_progress, "userspace_install", installed_package_count
         )
@@ -1812,9 +1913,14 @@ def main():
             "grub_update", "depmod", "initramfs", "installation_state",
         ):
             assert_indeterminate_then_complete(installer_progress, phase)
-        assert_item_progress(installer_progress, "mount_cleanup", 3)
+        assert_item_progress(installer_progress, "mount_cleanup", 4)
         del paths["progress_attempt"]
         assert successful["cleanup"]["mountsReleased"] is True
+        assert successful["cleanup"]["runtimeMountsExpected"] == 4
+        assert successful["cleanup"]["runtimeMountsReleased"] == 4
+        assert successful["initramfsWorkspace"]["status"] == "verified"
+        assert successful["initramfsWorkspace"]["phase"] == "mounted_workspace"
+        assert successful["initramfsWorkspace"]["mode"] == "1777"
         assert successful["validation"]["keyring"]["name"] == "approved.gpg"
         assert successful["validation"]["provenanceSha256"] == valid["provenanceSha256"]
         assert successful["validation"]["userspaceLock"] == {
@@ -1901,7 +2007,7 @@ def main():
             record for record in failed_progress if record["phase"] == "initramfs"
         ]
         assert failed_initramfs[-1]["indeterminate"] is True
-        assert_item_progress(failed_progress, "mount_cleanup", 3)
+        assert_item_progress(failed_progress, "mount_cleanup", 4)
 
         cancel_installer(
             paths,

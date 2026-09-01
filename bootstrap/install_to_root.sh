@@ -301,9 +301,13 @@ write_install_result()
         --lib32-nvidia-utils "$(basename "$LIB32_NVIDIA_UTILS")" \
         --mounts-released "${5:-true}" \
         --compression-policy-restored "${6:-true}" \
+        --runtime-mounts-expected "${RUNTIME_MOUNTS_EXPECTED:-0}" \
+        --runtime-mounts-released "${RUNTIME_MOUNTS_RELEASED:-0}" \
         --validation "$VALIDATION_JSON"
     [[ -z "${MODULE_VERIFICATION_JSON:-}" || ! -s "$MODULE_VERIFICATION_JSON" ]] ||
         set -- "$@" --module-verification "$MODULE_VERIFICATION_JSON"
+    [[ -z "${INITRAMFS_WORKSPACE_JSON:-}" || ! -s "$INITRAMFS_WORKSPACE_JSON" ]] ||
+        set -- "$@" --initramfs-workspace "$INITRAMFS_WORKSPACE_JSON"
     "$@"
 }
 
@@ -371,7 +375,11 @@ done
 
 MUTATION_WORK="$(mktemp -d /tmp/offline-root-mutation.XXXXXX)"
 MODULE_VERIFICATION_JSON="$MUTATION_WORK/module-verification.json"
+INITRAMFS_WORKSPACE_JSON="$MUTATION_WORK/initramfs-workspace.json"
+PACMAN_TRANSACTION_RESULT="$MUTATION_WORK/pacman-transaction.json"
 MOUNTS=()
+RUNTIME_MOUNTS_EXPECTED=4
+RUNTIME_MOUNTS_RELEASED=0
 PHASE=mutation_preflight
 COMPLETED=0
 ACTIVE_CHILD=""
@@ -379,6 +387,10 @@ CANCELLED=0
 COMPRESSION_POLICY_ACTIVE=0
 ORIGINAL_COMPRESSION_OPTION=""
 PACMAN_TRANSACTION_CONFIG=""
+INITRAMFS_SCRATCH_ROOT=""
+INITRAMFS_SCRATCH=""
+INITRAMFS_WORKSPACE_REQUIRED_BYTES="$(json_value storage initramfsReserveBytes)"
+INITRAMFS_WORKSPACE_REQUIRED_INODES=4096
 
 require_validation_document_unchanged()
 {
@@ -481,6 +493,17 @@ require_runtime_bind_mounts()
     for bind_path in dev proc sys; do
         require_runtime_bind_mount "/$bind_path" "$ROOT/$bind_path" || return 1
     done
+    [[ -n "$INITRAMFS_SCRATCH" ]] || return 1
+    require_runtime_bind_mount "$INITRAMFS_SCRATCH" "$ROOT/var/tmp" || return 1
+    if ! python3 "$SUPPORT_ROOT/lib/check_initramfs_workspace.py" \
+        --root "$ROOT" --backing "$INITRAMFS_SCRATCH" \
+        --required-bytes "$INITRAMFS_WORKSPACE_REQUIRED_BYTES" \
+        --required-inodes "$INITRAMFS_WORKSPACE_REQUIRED_INODES" \
+        --output "$INITRAMFS_WORKSPACE_JSON" --mounted >/dev/null 2>&1
+    then
+        PHASE=initramfs_workspace_unavailable
+        return 1
+    fi
 }
 
 activate_compression_policy()
@@ -534,6 +557,7 @@ unmount_tree()
 cleanup_mutation()
 {
     local rc=$? index mounts_released=true compression_restored=true
+    local workspace_released=true
     local released_mounts=0 total_mounts=${#MOUNTS[@]}
     trap - EXIT INT TERM
     emit_progress_items mount_cleanup 0 "$total_mounts"
@@ -545,9 +569,15 @@ cleanup_mutation()
             mounts_released=false
         fi
     done
+    RUNTIME_MOUNTS_RELEASED=$released_mounts
     restore_compression_policy || compression_restored=false
+    if [[ -n "$INITRAMFS_SCRATCH_ROOT" ]]; then
+        rm -rf "$INITRAMFS_SCRATCH_ROOT" || workspace_released=false
+        [[ ! -e "$INITRAMFS_SCRATCH_ROOT" ]] || workspace_released=false
+    fi
     if [[ "$COMPLETED" != 1 ]]; then
-        if [[ "$mounts_released" == true && "$compression_restored" == true ]]; then
+        if [[ "$mounts_released" == true && "$compression_restored" == true &&
+              "$workspace_released" == true ]]; then
             if [[ "$CANCELLED" == 1 ]]; then
                 write_install_result cancelled cancelled \
                     "Offline-root mutation was cancelled; discard the disposable overlay." \
@@ -615,7 +645,7 @@ emit_progress_items pacman_policy 1 1
 
 PHASE=runtime_mounts
 runtime_mount_count=0
-emit_progress_items runtime_mounts 0 3
+emit_progress_items runtime_mounts 0 4
 for bind_path in dev proc sys; do
     install -d -m 0755 "$ROOT/$bind_path"
     MOUNTS+=("$ROOT/$bind_path")
@@ -624,8 +654,45 @@ for bind_path in dev proc sys; do
     require_runtime_bind_mount "/$bind_path" "$ROOT/$bind_path" ||
         die "A target runtime bind mount could not be independently verified."
     runtime_mount_count=$((runtime_mount_count + 1))
-    emit_progress_items runtime_mounts "$runtime_mount_count" 3
+    emit_progress_items runtime_mounts "$runtime_mount_count" 4
 done
+
+PHASE=initramfs_workspace_unavailable
+INITRAMFS_SCRATCH_PARENT="${PROJECT_INITRAMFS_SCRATCH_PARENT:-/var/tmp}"
+if [[ ! -d "$INITRAMFS_SCRATCH_PARENT" || -L "$INITRAMFS_SCRATCH_PARENT" ]]; then
+    python3 "$SUPPORT_ROOT/lib/check_initramfs_workspace.py" \
+        --root "$ROOT" \
+        --backing "$INITRAMFS_SCRATCH_PARENT/offline-root-initramfs-unavailable/workspace" \
+        --required-bytes "$INITRAMFS_WORKSPACE_REQUIRED_BYTES" \
+        --required-inodes "$INITRAMFS_WORKSPACE_REQUIRED_INODES" \
+        --output "$INITRAMFS_WORKSPACE_JSON" >/dev/null 2>&1 || true
+    die "The appliance initramfs scratch parent is unavailable."
+fi
+INITRAMFS_SCRATCH_ROOT="$(mktemp -d "$INITRAMFS_SCRATCH_PARENT/offline-root-initramfs.XXXXXX")" ||
+    die "The private initramfs scratch workspace could not be created."
+chmod 0700 "$INITRAMFS_SCRATCH_ROOT"
+INITRAMFS_SCRATCH="$INITRAMFS_SCRATCH_ROOT/workspace"
+install -d -m 1777 "$INITRAMFS_SCRATCH"
+run_mutation_command python3 "$SUPPORT_ROOT/lib/check_initramfs_workspace.py" \
+    --root "$ROOT" --backing "$INITRAMFS_SCRATCH" \
+    --required-bytes "$INITRAMFS_WORKSPACE_REQUIRED_BYTES" \
+    --required-inodes "$INITRAMFS_WORKSPACE_REQUIRED_INODES" \
+    --output "$INITRAMFS_WORKSPACE_JSON" ||
+    die "The private initramfs workspace failed validation."
+MOUNTS+=("$ROOT/var/tmp")
+run_mutation_command mount --bind "$INITRAMFS_SCRATCH" "$ROOT/var/tmp" ||
+    die "The private initramfs workspace could not be mounted."
+run_mutation_command mount --make-private "$ROOT/var/tmp" ||
+    die "The private initramfs workspace could not be isolated."
+run_mutation_command python3 "$SUPPORT_ROOT/lib/check_initramfs_workspace.py" \
+    --root "$ROOT" --backing "$INITRAMFS_SCRATCH" \
+    --required-bytes "$INITRAMFS_WORKSPACE_REQUIRED_BYTES" \
+    --required-inodes "$INITRAMFS_WORKSPACE_REQUIRED_INODES" \
+    --output "$INITRAMFS_WORKSPACE_JSON" --mounted ||
+    die "The mounted initramfs workspace failed verification."
+runtime_mount_count=$((runtime_mount_count + 1))
+emit_progress_items runtime_mounts "$runtime_mount_count" 4
+PHASE=runtime_mounts
 require_runtime_bind_mounts ||
     die "The complete target runtime mount set is unavailable."
 
@@ -648,7 +715,20 @@ PACMAN_ARGS=(
     PACMAN_ARGS=(--config "$PACMAN_TRANSACTION_CONFIG" "${PACMAN_ARGS[@]}")
 require_validation_document_unchanged ||
     die "The validated compression admission document changed before the pacman transaction."
-run_mutation_command env SYSTEMD_OFFLINE=1 pacman "${PACMAN_ARGS[@]}"
+set +e
+run_mutation_command python3 "$SUPPORT_ROOT/lib/run_pacman_transaction.py" \
+    --output "$PACMAN_TRANSACTION_RESULT" -- \
+    env SYSTEMD_OFFLINE=1 pacman "${PACMAN_ARGS[@]}"
+PACMAN_RC=$?
+set -e
+PACMAN_HOOK_FAILURE="$(python3 -c \
+    'import json,sys; print("true" if json.load(open(sys.argv[1])).get("hookFailure") is True else "false")' \
+    "$PACMAN_TRANSACTION_RESULT" 2>/dev/null || printf unknown)"
+if [[ "$PACMAN_HOOK_FAILURE" == true ]]; then
+    PHASE=userspace_hook_failed
+    die "A target pacman hook failed after the userspace transaction."
+fi
+(( PACMAN_RC == 0 )) || die "The authenticated userspace transaction failed."
 emit_progress_items userspace_install "$package_count" "$package_count"
 require_runtime_bind_mounts ||
     die "A pacman hook changed or released a target runtime mount."
@@ -773,9 +853,11 @@ for (( index=${#MOUNTS[@]}-1; index>=0; index-- )); do
     emit_progress_items mount_cleanup "$released_mounts" "$total_mounts"
 done
 MOUNTS=()
+RUNTIME_MOUNTS_RELEASED=$released_mounts
 if findmnt -rn -R "$ROOT/dev" >/dev/null 2>&1 ||
    findmnt -rn -R "$ROOT/proc" >/dev/null 2>&1 ||
-   findmnt -rn -R "$ROOT/sys" >/dev/null 2>&1; then
+   findmnt -rn -R "$ROOT/sys" >/dev/null 2>&1 ||
+   findmnt -rn -R "$ROOT/var/tmp" >/dev/null 2>&1; then
     die "One or more target bind mounts remain after recursive cleanup."
 fi
 if [[ -n "$COMPRESSION_PROFILE" ]]; then
@@ -784,6 +866,9 @@ if [[ -n "$COMPRESSION_PROFILE" ]]; then
         die "The target Btrfs compression policy could not be restored."
 fi
 
+PHASE=initramfs_workspace_cleanup
+rm -rf "$INITRAMFS_SCRATCH_ROOT"
+INITRAMFS_SCRATCH_ROOT=""
 PHASE=complete
 write_install_result success install_complete \
     "NVIDIA modules, authenticated userspace, GSP firmware, and initramfs were installed." \

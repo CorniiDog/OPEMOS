@@ -360,7 +360,7 @@ userspace packages; archive layout, dependency closure, and storage calculation
 are explicitly indeterminate phases.
 
 Mutation uses the same schema and attempt. It reports pacman-policy preparation,
-the three runtime bind mounts, the exact incoming package count, all five
+the four runtime mounts, the exact incoming package count, all five
 modules, GRUB, depmod, initramfs, installation-state writing, and reverse-order
 mount cleanup. Package, module, and mount work uses real item totals. Opaque
 operations begin indeterminate and emit a one-item completion only after the
@@ -489,9 +489,18 @@ duplicate singleton options are rejected. Cancellation escalates from TERM to
 KILL after a bounded grace period and reaps the process group before reporting
 cleanup. Before pacman, mutation recursively bind-mounts `/dev`, `/proc`, and
 `/sys` into the confined target, makes each tree recursively slave, verifies
-the source/target mount identities, and retains the mounts through the target's
-explicit `mkinitcpio` run. Reverse-order recursive cleanup is required on every
-terminal path, including pacman-hook failure and cancellation.
+the source/target mount identities, and bind-mounts a private appliance-backed
+scratch directory at target `/var/tmp`. The target directory must be confined,
+nonsymlinked, and mode 1777; the backing filesystem must have at least the
+validated initramfs reserve and 4096 available inodes. All four mounts remain
+through pacman hooks and the explicit `mkinitcpio` run. The final result records
+their expected/released counts plus bounded workspace condition and capacity
+metadata. Reverse-order recursive cleanup is required on every terminal path,
+including pacman-hook failure and cancellation.
+
+Pacman post-transaction hook failures are detected independently from pacman's
+exit status using fixed C-locale failure markers. A reported hook failure stops
+the installer before userspace verification or module mutation.
 
 Mutation uses target-root pacman semantics, offline `depmod`,
 explicit NVIDIA mkinitcpio configuration, and the target's own `mkinitcpio` in
