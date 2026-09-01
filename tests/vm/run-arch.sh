@@ -38,12 +38,17 @@ done
 
 rm -rf "$RUNTIME_DIR"
 mkdir -p "$CACHE_DIR" "$SEED_DIR"
+[[ ! -L "$CACHE_DIR" ]] || {
+    printf 'Arch VM cache directory must not be a symbolic link.\n' >&2
+    exit 1
+}
 if [[ "$NO_DOWNLOAD" == 0 ]]; then
     cleanup_partial_downloads()
     {
         rm -f "$BASE_IMAGE.partial" "$CHECKSUM.partial" "$SIGNATURE.partial"
     }
     trap cleanup_partial_downloads EXIT INT TERM
+    cleanup_partial_downloads
     for name in "$IMAGE_NAME" "$IMAGE_NAME.SHA256" "$IMAGE_NAME.SHA256.sig"; do
         [[ -f "$CACHE_DIR/$name" ]] ||
             curl -fL --retry 3 "$BASE_URL/$name" -o "$CACHE_DIR/$name.partial"
@@ -65,7 +70,8 @@ key_fingerprints="$(gpg --batch --homedir "$RUNTIME_DIR/inspect-gnupg" --show-ke
     "$SCRIPT_DIR/arch-boxes-signing-key.asc" |
     awk -F: '$1 == "fpr" {print $10}')"
 grep -qx "$SIGNER_FINGERPRINT" <<<"$key_fingerprints"
-gpg --batch --yes --dearmor --output "$RUNTIME_DIR/arch-boxes-keyring.gpg" \
+gpg --batch --yes --homedir "$RUNTIME_DIR/inspect-gnupg" --dearmor \
+    --output "$RUNTIME_DIR/arch-boxes-keyring.gpg" \
     "$SCRIPT_DIR/arch-boxes-signing-key.asc"
 gpgv --keyring "$RUNTIME_DIR/arch-boxes-keyring.gpg" "$SIGNATURE" "$CHECKSUM"
 [[ "$(<"$CHECKSUM")" == "$IMAGE_SHA256  $IMAGE_NAME" ]]
@@ -82,8 +88,11 @@ cat > "$SEED_DIR/user-data" <<'EOF'
 runcmd:
   - [bash, -lc, "mkdir -p /mnt/seed /opt/open-gpu && mount -o ro /dev/sr0 /mnt/seed && tar -xzf /mnt/seed/repo.tgz -C /opt/open-gpu"]
   - [bash, -lc, "/opt/open-gpu/tests/vm/arch-guest-checks.sh > /dev/ttyS0 2>&1"]
-  - [poweroff]
 final_message: OPEN_GPU_ARCH_VM_COMPLETE
+power_state:
+  mode: poweroff
+  timeout: 30
+  condition: true
 EOF
 if command -v hdiutil >/dev/null 2>&1; then
     hdiutil makehybrid -quiet -iso -joliet -default-volume-name cidata -o "$SEED_ISO" "$SEED_DIR"
@@ -96,6 +105,19 @@ fi
 
 qemu-img create -q -f qcow2 -F qcow2 -b "$BASE_IMAGE" "$OVERLAY" 20G
 deadline=$(( $(date +%s) + 2700 ))
+qemu_pid=""
+stop_qemu()
+{
+    [[ -n "$qemu_pid" ]] || return 0
+    kill -TERM "$qemu_pid" 2>/dev/null || true
+    sleep 2
+    kill -KILL "$qemu_pid" 2>/dev/null || true
+    wait "$qemu_pid" 2>/dev/null || true
+    qemu_pid=""
+}
+trap stop_qemu EXIT
+trap 'stop_qemu; exit 130' INT
+trap 'stop_qemu; exit 143' TERM
 qemu-system-x86_64 -machine q35,accel=tcg -cpu max -smp 4 -m 4096 \
     -display none -monitor none -serial "file:$SERIAL_LOG" -no-reboot \
     -nic user,model=virtio-net-pci \
@@ -113,8 +135,12 @@ while kill -0 "$qemu_pid" 2>/dev/null; do
     sleep 5
 done
 set +e; wait "$qemu_pid"; qemu_status=$?; set -e
-result="$(grep -E '^\{"schemaVersion":1,' "$SERIAL_LOG" | tail -n1 || true)"
-[[ "$qemu_status" == 0 && "$result" == *'"status":"passed"'* ]] || {
+qemu_pid=""
+trap - EXIT INT TERM
+result="$(grep -E '^\{"schemaVersion":1,' "$SERIAL_LOG" | tail -n1 | tr -d '\r' || true)"
+expected_result='{"schemaVersion":1,"status":"passed","pacman":"passed","mkinitcpio":"passed","cancellation":"passed","idempotency":"passed"}'
+[[ "$qemu_status" == 0 && "$result" == "$expected_result" ]] &&
+    grep -q 'OPEN_GPU_ARCH_VM_COMPLETE' "$SERIAL_LOG" || {
     printf 'Arch VM failed; serial log: %s\n' "$SERIAL_LOG" >&2
     exit 1
 }

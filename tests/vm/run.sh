@@ -38,6 +38,14 @@ done
 
 rm -rf "$RUNTIME_DIR"
 mkdir -p "$CACHE_DIR" "$SEED_DIR"
+[[ ! -L "$CACHE_DIR" ]] || {
+    printf 'VM cache directory must not be a symbolic link.\n' >&2
+    exit 1
+}
+[[ ! -L "$BASE_IMAGE" ]] || {
+    printf 'cached Fedora image must not be a symbolic link\n' >&2
+    exit 1
+}
 if [[ -f "$BASE_IMAGE" ]] &&
    ! printf '%s  %s\n' "$IMAGE_SHA256" "$BASE_IMAGE" | sha256sum -c - >/dev/null 2>&1; then
     if [[ "$NO_IMAGE_DOWNLOAD" == 1 ]]; then
@@ -51,6 +59,7 @@ if [[ ! -f "$BASE_IMAGE" && "$NO_IMAGE_DOWNLOAD" == 1 ]]; then
     exit 1
 fi
 if [[ ! -f "$BASE_IMAGE" ]]; then
+    rm -f "$BASE_IMAGE.partial"
     trap 'rm -f "$BASE_IMAGE.partial"' EXIT INT TERM
     curl -fL --retry 3 "$IMAGE_URL" -o "$BASE_IMAGE.partial"
     printf '%s  %s\n' "$IMAGE_SHA256" "$BASE_IMAGE.partial" | sha256sum -c -
@@ -77,8 +86,11 @@ packages:
 runcmd:
   - [bash, -lc, "mkdir -p /mnt/seed /opt/open-gpu && mount -o ro /dev/sr0 /mnt/seed && tar -xzf /mnt/seed/repo.tgz -C /opt/open-gpu"]
   - [bash, -lc, "/opt/open-gpu/tests/vm/guest-checks.sh /opt/open-gpu > /dev/ttyS0 2>&1"]
-  - [poweroff]
 final_message: OPEN_GPU_VM_COMPLETE
+power_state:
+  mode: poweroff
+  timeout: 30
+  condition: true
 EOF
 
 if command -v hdiutil >/dev/null 2>&1; then
@@ -94,6 +106,19 @@ fi
 
 qemu-img create -q -f qcow2 -F qcow2 -b "$BASE_IMAGE" "$OVERLAY" 20G
 deadline=$(( $(date +%s) + 2700 ))
+qemu_pid=""
+stop_qemu()
+{
+    [[ -n "$qemu_pid" ]] || return 0
+    kill -TERM "$qemu_pid" 2>/dev/null || true
+    sleep 2
+    kill -KILL "$qemu_pid" 2>/dev/null || true
+    wait "$qemu_pid" 2>/dev/null || true
+    qemu_pid=""
+}
+trap stop_qemu EXIT
+trap 'stop_qemu; exit 130' INT
+trap 'stop_qemu; exit 143' TERM
 qemu-system-x86_64 \
     -machine q35,accel=tcg -cpu max -smp 4 -m 4096 \
     -display none -monitor none -serial "file:$SERIAL_LOG" \
@@ -116,13 +141,16 @@ set +e
 wait "$qemu_pid"
 qemu_status=$?
 set -e
+qemu_pid=""
+trap - EXIT INT TERM
 
-result="$(grep -E '^\{"schemaVersion":1,' "$SERIAL_LOG" | tail -n1 || true)"
+result="$(grep -E '^\{"schemaVersion":1,' "$SERIAL_LOG" | tail -n1 | tr -d '\r' || true)"
+expected_result='{"schemaVersion":1,"status":"passed","transaction":"passed","flock":"passed","mountNamespace":"passed","btrfs":"passed","recoveryAB":"passed","chrootHooks":"passed"}'
 [[ "$qemu_status" == 0 ]] || {
     printf 'VM exited with status %s; serial log: %s\n' "$qemu_status" "$SERIAL_LOG" >&2
     exit "$qemu_status"
 }
-[[ "$result" == *'"status":"passed"'* ]] || {
+[[ "$result" == "$expected_result" ]] && grep -q 'OPEN_GPU_VM_COMPLETE' "$SERIAL_LOG" || {
     printf 'VM did not report success; serial log: %s\n' "$SERIAL_LOG" >&2
     exit 1
 }

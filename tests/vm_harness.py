@@ -49,6 +49,8 @@ def main():
     assert "-display none" in runner and "-serial" in runner
     assert "-nic user" in runner and "hostfwd" not in runner
     assert "2700" in runner and "20G" in runner
+    assert "expected_result=" in runner and "OPEN_GPU_VM_COMPLETE" in runner
+    assert "stop_qemu" in runner and 'rm -f "$BASE_IMAGE.partial"' in runner
     assert "tests/transaction.sh" in guest
     assert "unshare --mount" in guest and "mkfs.btrfs" in guest
     assert '"schemaVersion":1' in guest
@@ -62,6 +64,9 @@ def main():
     assert "5d8be8d28cfd290f051b0f67df0a6874596ad23de3f3f18b90c91aeb758eb878" in arch_runner
     assert "656E4C5AC1CC3B86E539D97E343635A6859A9174" in arch_runner
     assert "gpgv --keyring" in arch_runner and "sha256sum -c" in arch_runner
+    assert '--homedir "$RUNTIME_DIR/inspect-gnupg" --dearmor' in arch_runner
+    assert "expected_result=" in arch_runner and "OPEN_GPU_ARCH_VM_COMPLETE" in arch_runner
+    assert "stop_qemu" in arch_runner and "cleanup_partial_downloads" in arch_runner
     assert "pacman -S" in arch_guest and "mkinitcpio -P" in arch_guest
     assert "kill -TERM" in arch_guest and "lsinitcpio" in arch_guest
     for pattern in (".cache/", ".runtime/", "*.qcow2", "*.img", "*.iso", "*.log", "*.sock"):
