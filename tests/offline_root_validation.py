@@ -451,6 +451,9 @@ done
 case " $* " in
   *' --rbind '*)
     eval target=\${$#}
+    case "$target" in
+      *"/${MOCK_FAIL_RBIND:-__never__}") exit 1;;
+    esac
     echo "$target" >> "$MOCK_MOUNT_STATE"
     case "$target" in */dev) echo "$target/pts" >> "$MOCK_MOUNT_STATE";; esac
     ;;
@@ -512,7 +515,7 @@ eval target=\${$#}; grep -F -q "$target" "$MOCK_MOUNT_STATE" 2>/dev/null
         encoding="utf-8",
     )
     (binaries / "umount").write_text(
-        "#!/bin/sh\neval target=\\${$#}; grep -F -v \"$target\" \"$MOCK_MOUNT_STATE\" > \"$MOCK_MOUNT_STATE.next\" || true; mv \"$MOCK_MOUNT_STATE.next\" \"$MOCK_MOUNT_STATE\"\n",
+        "#!/bin/sh\neval target=\\${$#}; printf '%s\\n' \"$target\" >> \"$MOCK_UMOUNT_LOG\"; grep -F -v \"$target\" \"$MOCK_MOUNT_STATE\" > \"$MOCK_MOUNT_STATE.next\" || true; mv \"$MOCK_MOUNT_STATE.next\" \"$MOCK_MOUNT_STATE\"\n",
         encoding="utf-8",
     )
     (binaries / "chroot").write_text(
@@ -623,6 +626,7 @@ def installer_environment(binaries, mount_state, **environment):
         MOCK_PACMAN_LOG=str(mount_state.with_suffix(".pacman")),
         MOCK_CHROOT_STATE=str(mount_state.with_suffix(".chroot")),
         MOCK_TRANSACTION_LOG=str(mount_state.with_suffix(".transaction")),
+        MOCK_UMOUNT_LOG=str(mount_state.with_suffix(".umount")),
     )
     env.update(environment)
     return env
@@ -2130,6 +2134,28 @@ def main():
         run(paths, binaries, temporary / "wrong-gsp-version.json", False)
 
         make_package(paths["nvidia"], "nvidia-utils", pkgrel="2", gsp=True)
+        validation_mount_drift = run_installer(
+            paths,
+            binaries,
+            temporary / "validation-mount-identity-drift.json",
+            False,
+            MOCK_PREVALIDATION_MOUNT_IDENTITY_DRIFT="1",
+        )
+        assert validation_mount_drift["reason"] == "target_mount_identity"
+        assert validation_mount_drift["phase"] == "mutation_preflight"
+        assert not (temporary / "validation-mount-identity-drift.pacman").exists()
+
+        failed_first_bind = run_installer(
+            paths,
+            binaries,
+            temporary / "first-runtime-bind-failed.json",
+            False,
+            MOCK_FAIL_RBIND="dev",
+        )
+        assert failed_first_bind["reason"] == "runtime_mounts"
+        assert failed_first_bind["cleanup"]["runtimeMountsReleased"] == 0
+        assert not (temporary / "first-runtime-bind-failed.umount").exists()
+
         drifted_mount_identity = run_installer(
             paths,
             binaries,

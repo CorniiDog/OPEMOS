@@ -287,6 +287,34 @@ case "$TARGET_LOCK_RC" in
         ;;
 esac
 
+if [[ "${PROJECT_TEST_MODE:-0}" != 1 ]]; then
+    command -v findmnt >/dev/null 2>&1 && command -v mountpoint >/dev/null 2>&1 || {
+        write_prevalidation_result failed appliance_dependency_missing \
+            "The managed appliance lacks target mount identity commands."
+        exit 1
+    }
+    mountpoint -q "$ROOT" && mountpoint -q "$ROOT/efi" || {
+        write_prevalidation_result failed target_mount_invalid \
+            "Target rootfs and EFI must be explicit mounts before validation."
+        exit 1
+    }
+    PREVALIDATION_ROOT_MOUNT_IDENTITY="$(findmnt -rn -M "$ROOT" \
+        -o ID,SOURCE,FSTYPE,MAJ:MIN,VFS-OPTIONS)" || {
+        write_prevalidation_result failed target_mount_invalid \
+            "Target root mount identity could not be recorded before validation."
+        exit 1
+    }
+    PREVALIDATION_EFI_MOUNT_IDENTITY="$(findmnt -rn -M "$ROOT/efi" \
+        -o ID,SOURCE,FSTYPE,MAJ:MIN,VFS-OPTIONS,FS-OPTIONS)" || {
+        write_prevalidation_result failed target_efi_invalid \
+            "Target EFI mount identity could not be recorded before validation."
+        exit 1
+    }
+else
+    PREVALIDATION_ROOT_MOUNT_IDENTITY=project-test-root
+    PREVALIDATION_EFI_MOUNT_IDENTITY=project-test-efi
+fi
+
 snapshot_input()
 {
     local variable_name="$1" label="$2" maximum="$3" source="${!1}" destination
@@ -427,6 +455,25 @@ fail_pre_mutation()
     die "$message"
 }
 
+require_prevalidation_mount_identities()
+{
+    if [[ "${PROJECT_TEST_MODE:-0}" == 1 ]]; then
+        [[ "${MOCK_PREVALIDATION_MOUNT_IDENTITY_DRIFT:-0}" == 0 ]]
+        return
+    fi
+    local current_root current_efi
+    current_root="$(findmnt -rn -M "$ROOT" \
+        -o ID,SOURCE,FSTYPE,MAJ:MIN,VFS-OPTIONS)" || return 1
+    current_efi="$(findmnt -rn -M "$ROOT/efi" \
+        -o ID,SOURCE,FSTYPE,MAJ:MIN,VFS-OPTIONS,FS-OPTIONS)" || return 1
+    [[ "$current_root" == "$PREVALIDATION_ROOT_MOUNT_IDENTITY" &&
+       "$current_efi" == "$PREVALIDATION_EFI_MOUNT_IDENTITY" ]]
+}
+
+require_prevalidation_mount_identities ||
+    fail_pre_mutation target_mount_identity \
+        "The target rootfs or EFI mount identity changed during validation."
+
 if (( VALIDATE_ONLY )); then
     python3 "${SUPPORT_ROOT}/lib/write_install_result.py" \
         --output "$RESULT_JSON" --status validated --reason validation_complete \
@@ -474,14 +521,8 @@ if [[ "${PROJECT_TEST_MODE:-0}" != 1 ]]; then
         *) fail_pre_mutation target_efi_invalid \
             "Target /efi must be a FAT filesystem." ;;
     esac
-    ROOT_MOUNT_IDENTITY="$(findmnt -rn -M "$ROOT" \
-        -o ID,SOURCE,FSTYPE,MAJ:MIN,VFS-OPTIONS)" ||
-        fail_pre_mutation target_mount_invalid \
-            "Target root mount identity could not be recorded."
-    EFI_MOUNT_IDENTITY="$(findmnt -rn -M "$ROOT/efi" \
-        -o ID,SOURCE,FSTYPE,MAJ:MIN,VFS-OPTIONS,FS-OPTIONS)" ||
-        fail_pre_mutation target_efi_invalid \
-            "Target EFI mount identity could not be recorded."
+    ROOT_MOUNT_IDENTITY="$PREVALIDATION_ROOT_MOUNT_IDENTITY"
+    EFI_MOUNT_IDENTITY="$PREVALIDATION_EFI_MOUNT_IDENTITY"
 else
     ROOT_MOUNT_IDENTITY=project-test-root
     EFI_MOUNT_IDENTITY=project-test-efi
@@ -709,6 +750,11 @@ cleanup_mutation()
     emit_progress_items mount_cleanup 0 "$total_mounts"
     if (( total_mounts == 0 )) || require_target_mount_identities; then
         for (( index=${#MOUNTS[@]}-1; index>=0; index-- )); do
+            if ! require_target_mount_identities; then
+                mounts_released=false
+                target_identity_safe=false
+                break
+            fi
             if unmount_tree "${MOUNTS[$index]}"; then
                 released_mounts=$((released_mounts + 1))
                 emit_progress_items mount_cleanup "$released_mounts" "$total_mounts"
@@ -806,9 +852,11 @@ runtime_mount_count=0
 emit_progress_items runtime_mounts 0 4
 for bind_path in dev proc sys; do
     install -d -m 0755 "$ROOT/$bind_path"
+    run_mutation_command mount --rbind "/$bind_path" "$ROOT/$bind_path" ||
+        die "A target runtime bind mount could not be created."
     MOUNTS+=("$ROOT/$bind_path")
-    run_mutation_command mount --rbind "/$bind_path" "$ROOT/$bind_path"
-    run_mutation_command mount --make-rslave "$ROOT/$bind_path"
+    run_mutation_command mount --make-rslave "$ROOT/$bind_path" ||
+        die "A target runtime bind mount could not be made recursively slave."
     require_runtime_bind_mount "/$bind_path" "$ROOT/$bind_path" ||
         die "A target runtime bind mount could not be independently verified."
     runtime_mount_count=$((runtime_mount_count + 1))
@@ -837,9 +885,9 @@ run_mutation_command python3 "$SUPPORT_ROOT/lib/check_initramfs_workspace.py" \
     --required-inodes "$INITRAMFS_WORKSPACE_REQUIRED_INODES" \
     --output "$INITRAMFS_WORKSPACE_JSON" ||
     die "The private initramfs workspace failed validation."
-MOUNTS+=("$ROOT/var/tmp")
 run_mutation_command mount --bind "$INITRAMFS_SCRATCH" "$ROOT/var/tmp" ||
     die "The private initramfs workspace could not be mounted."
+MOUNTS+=("$ROOT/var/tmp")
 run_mutation_command mount --make-private "$ROOT/var/tmp" ||
     die "The private initramfs workspace could not be isolated."
 run_mutation_command python3 "$SUPPORT_ROOT/lib/check_initramfs_workspace.py" \
@@ -1012,6 +1060,7 @@ released_mounts=0
 total_mounts=${#MOUNTS[@]}
 emit_progress_items mount_cleanup 0 "$total_mounts"
 for (( index=${#MOUNTS[@]}-1; index>=0; index-- )); do
+    guard_target_mount_identities
     unmount_tree "${MOUNTS[$index]}"
     released_mounts=$((released_mounts + 1))
     emit_progress_items mount_cleanup "$released_mounts" "$total_mounts"
