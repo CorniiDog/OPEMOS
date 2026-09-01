@@ -18,11 +18,13 @@ SEED_DIR="$RUNTIME_DIR/seed"
 SEED_ISO="$RUNTIME_DIR/seed.iso"
 SERIAL_LOG="$RUNTIME_DIR/serial.log"
 NO_DOWNLOAD=0
+OFFLINE_CACHE_ONLY=0
 
-usage() { printf 'Usage: %s [--no-download]\n' "${0##*/}"; }
+usage() { printf 'Usage: %s [--no-download] [--offline-cache-only]\n' "${0##*/}"; }
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --no-download) NO_DOWNLOAD=1 ;;
+        --offline-cache-only) OFFLINE_CACHE_ONLY=1 ;;
         -h|--help) usage; exit 0 ;;
         *) usage >&2; printf 'unknown argument: %s\n' "$1" >&2; exit 2 ;;
     esac
@@ -83,6 +85,19 @@ cat > "$SEED_DIR/meta-data" <<EOF
 instance-id: open-gpu-arch-validation-$VERSION
 local-hostname: open-gpu-arch-validation
 EOF
+if [[ "$OFFLINE_CACHE_ONLY" == 1 ]]; then
+cat > "$SEED_DIR/user-data" <<'EOF'
+#cloud-config
+runcmd:
+  - [bash, -lc, "mkdir -p /mnt/seed /opt/open-gpu && mount -o ro /dev/sr0 /mnt/seed && tar -xzf /mnt/seed/repo.tgz -C /opt/open-gpu"]
+  - [bash, -lc, "/opt/open-gpu/tests/vm/offline-cache-guest.sh /opt/open-gpu > /dev/ttyS0 2>&1"]
+final_message: OPEN_GPU_ARCH_VM_COMPLETE
+power_state:
+  mode: poweroff
+  timeout: 30
+  condition: true
+EOF
+else
 cat > "$SEED_DIR/user-data" <<'EOF'
 #cloud-config
 runcmd:
@@ -94,6 +109,7 @@ power_state:
   timeout: 30
   condition: true
 EOF
+fi
 if command -v hdiutil >/dev/null 2>&1; then
     hdiutil makehybrid -quiet -iso -joliet -default-volume-name cidata -o "$SEED_ISO" "$SEED_DIR"
 elif command -v xorriso >/dev/null 2>&1; then
@@ -138,7 +154,11 @@ set +e; wait "$qemu_pid"; qemu_status=$?; set -e
 qemu_pid=""
 trap - EXIT INT TERM
 result="$(grep -E '^\{"schemaVersion":1,' "$SERIAL_LOG" | tail -n1 | tr -d '\r' || true)"
-expected_result='{"schemaVersion":1,"status":"passed","pacman":"passed","mkinitcpio":"passed","cancellation":"passed","idempotency":"passed","initramfsContract":"passed","offlineAuthenticatedCache":"passed"}'
+if [[ "$OFFLINE_CACHE_ONLY" == 1 ]]; then
+    expected_result='{"schemaVersion":1,"status":"passed","offlineAuthenticatedCache":"passed"}'
+else
+    expected_result='{"schemaVersion":1,"status":"passed","pacman":"passed","mkinitcpio":"passed","cancellation":"passed","idempotency":"passed","initramfsContract":"passed","offlineAuthenticatedCache":"passed"}'
+fi
 [[ "$qemu_status" == 0 && "$result" == "$expected_result" ]] &&
     grep -q 'OPEN_GPU_ARCH_VM_COMPLETE' "$SERIAL_LOG" || {
     printf 'Arch VM failed; serial log: %s\n' "$SERIAL_LOG" >&2

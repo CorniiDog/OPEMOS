@@ -673,6 +673,30 @@ generation again is idempotent. The output is suitable for passing back to
 `build_for_target.sh --headers-package` with its bundled signature. It is not a
 substitute for archiving reviewed keyrings and signer policy independently.
 
+Userspace closures and certified release assets use the multi-artifact form.
+Its JSON spec lists `{artifact, signature}` pairs; the generation additionally
+contains the exact reviewed policy and provenance documents:
+
+```bash
+python3 lib/authenticated_cache_bundle.py export-set \
+    --spec package-set.json --policy userspace-lock.json \
+    --provenance certified-provenance.json \
+    --keyring /appliance/trust/valve-package-signers.gpg \
+    --reviewed-signers trust/valve-package-signers.json \
+    --output /media/certified-userspace.bundle
+python3 lib/authenticated_cache_bundle.py import-set \
+    --bundle /media/certified-userspace.bundle \
+    --keyring /appliance/trust/valve-package-signers.gpg \
+    --reviewed-signers trust/valve-package-signers.json \
+    --store /appliance/cache/imported
+```
+
+The manifest is canonical and bounded to 64 uniquely named artifacts and 8 GiB
+total. Every import revalidates every detached signature and exact signer,
+keyring, policy, provenance, size, and hash before atomically publishing an
+immutable generation. Unexpected entries, duplicates, partial copies, symlinks,
+policy drift, and corrupt existing generations fail closed.
+
 Validate or install a local archive through the same online orchestration path:
 
 ```bash
@@ -853,6 +877,17 @@ lock, cancels a process-group generation loop, and compares image contents after
 a clean repeat. `--no-download` requires all three already verified cache inputs.
 This proves upstream Arch tooling behavior, not Valve's package set, hooks,
 presets, recovery propagation, or SteamOS boot behavior.
+
+With both verified base images already cached, the authenticated offline-cache
+contract can be exercised concurrently and without downloads in isolated Fedora
+and Arch guests:
+
+```bash
+./tests/vm/run-offline-cache-matrix.sh
+```
+
+The matrix returns one schema-1 JSON result containing each guest result and
+uses only the existing pinned caches; it never falls back to the network.
 
 An optional Valve-recovery controller is available as
 `tests/vm/run-steamos-recovery.sh`. `--fixture` runs the deterministic disposable

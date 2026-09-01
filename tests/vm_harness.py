@@ -13,6 +13,7 @@ CHROOT_HOOKS = ROOT / "tests/vm/chroot-hooks.sh"
 MOUNT_LIFECYCLE = ROOT / "tests/vm/mount-lifecycle.sh"
 ARCH_RUNNER = ROOT / "tests/vm/run-arch.sh"
 ARCH_GUEST = ROOT / "tests/vm/arch-guest-checks.sh"
+OFFLINE_CACHE_MATRIX = ROOT / "tests/vm/run-offline-cache-matrix.sh"
 STEAMOS_RUNNER = ROOT / "tests/vm/run-steamos-recovery.sh"
 STEAMOS_INSPECTOR = ROOT / "tests/vm/inspect-steamos-recovery.sh"
 IGNORE = ROOT / "tests/vm/.gitignore"
@@ -52,6 +53,7 @@ def main():
     mount_lifecycle = MOUNT_LIFECYCLE.read_text(encoding="utf-8")
     arch_runner = ARCH_RUNNER.read_text(encoding="utf-8")
     arch_guest = ARCH_GUEST.read_text(encoding="utf-8")
+    offline_cache_matrix = OFFLINE_CACHE_MATRIX.read_text(encoding="utf-8")
     steamos_runner = STEAMOS_RUNNER.read_text(encoding="utf-8")
     steamos_inspector = STEAMOS_INSPECTOR.read_text(encoding="utf-8")
     ignored = IGNORE.read_text(encoding="utf-8")
@@ -61,6 +63,7 @@ def main():
     assert "-nic user" in runner and "hostfwd" not in runner
     assert "2700" in runner and "20G" in runner
     assert "expected_result=" in runner and "OPEN_GPU_VM_COMPLETE" in runner
+    assert "--offline-cache-only" in runner
     assert "stop_qemu" in runner and 'rm -f "$BASE_IMAGE.partial"' in runner
     assert 'RUNTIME_DIR="$SCRIPT_DIR/.runtime/fedora"' in runner
     assert "tests/transaction.sh" in guest
@@ -86,11 +89,16 @@ def main():
     assert "gpgv --keyring" in arch_runner and "sha256sum -c" in arch_runner
     assert '--homedir "$RUNTIME_DIR/inspect-gnupg" --dearmor' in arch_runner
     assert "expected_result=" in arch_runner and "OPEN_GPU_ARCH_VM_COMPLETE" in arch_runner
+    assert "--offline-cache-only" in arch_runner
     assert "stop_qemu" in arch_runner and "cleanup_partial_downloads" in arch_runner
     assert 'RUNTIME_DIR="$SCRIPT_DIR/.runtime/arch"' in arch_runner
     assert "pacman -S" in arch_guest and "mkinitcpio -P" in arch_guest
     assert "kill -TERM" in arch_guest and "lsinitcpio" in arch_guest
     assert "tests/authenticated_cache_bundle.py" in arch_guest
+    assert 'run.sh" --no-image-download --offline-cache-only' in offline_cache_matrix
+    assert 'run-arch.sh" --no-download --offline-cache-only' in offline_cache_matrix
+    assert "concurrent" in offline_cache_matrix and '"disabled"' in offline_cache_matrix
+    assert "fedora_pid" in offline_cache_matrix and "arch_pid" in offline_cache_matrix
     assert "validate_steamos_recovery_input.py" in steamos_runner
     assert "decompress_bzip2_image.py" in steamos_runner
     assert "readonly=on" in steamos_runner and "-display none" in steamos_runner

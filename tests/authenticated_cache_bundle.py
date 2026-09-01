@@ -7,6 +7,8 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -34,6 +36,7 @@ def main():
         gpgv = binary / "gpgv"
         gpgv.write_text(
             "#!/bin/sh\n"
+            "[ -z \"${CACHE_GPGV_DELAY:-}\" ] || sleep \"$CACHE_GPGV_DELAY\"\n"
             "case \"$(cat \"$5\")\" in *valid*) printf '[GNUPG:] VALIDSIG %s 0 0 0 0 0 0 0 0 0\\n' ;; *) exit 1 ;; esac\n"
             % SIGNER, encoding="utf-8")
         gpgv.chmod(0o755)
@@ -105,6 +108,82 @@ def main():
              "--artifact", artifact, "--signature", signature,
              "--output", root / "untrusted"], env, success=False)
         assert not (root / "untrusted").exists()
+
+        # Multi-package userspace/certified-release bundles bind every package
+        # and signature to the exact reviewed policy, provenance and trust roots.
+        packages = []
+        for name in ("nvidia-utils.pkg.tar.zst", "lib32-nvidia-utils.pkg.tar.zst"):
+            package = root / name
+            package.write_bytes((name + " authenticated payload\n").encode())
+            package.with_name(name + ".sig").write_text("valid package signature\n")
+            packages.append({"artifact": str(package), "signature": str(package) + ".sig"})
+        policy = root / "userspace-lock.json"
+        provenance = root / "certified-provenance.json"
+        policy.write_text(json.dumps({"schemaVersion": 1, "profile": "gaming-no-cuda-v1",
+                                      "packages": [Path(item["artifact"]).name for item in packages]},
+                                     sort_keys=True) + "\n")
+        provenance.write_text(json.dumps({"schemaVersion": 1, "supportCommit": "a" * 40,
+                                          "policySha256": hashlib.sha256(policy.read_bytes()).hexdigest()},
+                                         sort_keys=True) + "\n")
+        spec = root / "set-spec.json"
+        spec.write_text(json.dumps({"schemaVersion": 1, "artifacts": packages}) + "\n")
+        set_bundle, set_store = root / "set-bundle", root / "set-store"
+        run(["export-set", *common, "--spec", spec, "--policy", policy,
+             "--provenance", provenance, "--output", set_bundle], env)
+
+        delayed_env = env.copy()
+        delayed_env["CACHE_GPGV_DELAY"] = "30"
+        interrupted_output = root / "interrupted-set"
+        interrupted = subprocess.Popen(
+            [sys.executable, str(TOOL), "export-set", *map(str, common),
+             "--spec", str(spec), "--policy", str(policy),
+             "--provenance", str(provenance), "--output", str(interrupted_output)],
+            env=delayed_env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        deadline = time.time() + 5
+        while not list(root.glob(".cache-set-export-*")) and time.time() < deadline:
+            time.sleep(0.02)
+        interrupted.terminate()
+        interrupted.wait(timeout=5)
+        assert interrupted.returncode != 0 and not interrupted_output.exists()
+        assert not list(root.glob(".cache-set-export-*"))
+        invocation = ["import-set", *common, "--bundle", set_bundle, "--store", set_store]
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            results = [json.loads(value.stdout) for value in pool.map(lambda _: run(invocation, env), range(4))]
+        assert all(value == results[0] for value in results)
+        assert results[0]["artifactCount"] == 2
+        assert len([entry for entry in set_store.iterdir() if entry.name != ".import.lock"]) == 1
+
+        # Exact policy/provenance drift, corruption, symlinks, duplicates and
+        # partial or unexpected layouts fail without publishing a generation.
+        mutations = []
+        for label in ("policy", "provenance", "corrupt", "partial", "symlink", "extra"):
+            candidate = root / f"set-{label}"
+            clone(set_bundle, candidate)
+            if label == "policy":
+                (candidate / "metadata/policy.json").write_text('{"schemaVersion":1,"profile":"drift"}\n')
+            elif label == "provenance":
+                (candidate / "metadata/provenance.json").write_text('{"schemaVersion":1,"supportCommit":"drift"}\n')
+            elif label == "corrupt":
+                (candidate / "payload/nvidia-utils.pkg.tar.zst").write_bytes(b"corrupt")
+            elif label == "partial":
+                (candidate / "payload/nvidia-utils.pkg.tar.zst.sig").unlink()
+            elif label == "symlink":
+                target = candidate / "payload/nvidia-utils.pkg.tar.zst"
+                target.unlink()
+                os.symlink(packages[0]["artifact"], target)
+            else:
+                (candidate / "payload/unexpected").write_bytes(b"unexpected")
+            mutations.append(candidate)
+        duplicate_set = root / "set-duplicate"
+        clone(set_bundle, duplicate_set)
+        manifest_text = (duplicate_set / "manifest.json").read_text()
+        (duplicate_set / "manifest.json").write_text(manifest_text.replace('{"artifacts":', '{"schemaVersion":1,"artifacts":', 1))
+        mutations.append(duplicate_set)
+        for index, candidate in enumerate(mutations):
+            rejected = root / f"set-rejected-{index}"
+            run(["import-set", *common, "--bundle", candidate, "--store", rejected], env, success=False)
+            if rejected.exists():
+                assert not [entry for entry in rejected.iterdir() if entry.name != ".import.lock"]
 
 
 if __name__ == "__main__":

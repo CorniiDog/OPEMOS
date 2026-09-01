@@ -14,15 +14,17 @@ SEED_DIR="$RUNTIME_DIR/seed"
 SEED_ISO="$RUNTIME_DIR/seed.iso"
 SERIAL_LOG="$RUNTIME_DIR/serial.log"
 NO_IMAGE_DOWNLOAD=0
+OFFLINE_CACHE_ONLY=0
 
 usage()
 {
-    printf 'Usage: %s [--no-image-download]\n' "${0##*/}"
+    printf 'Usage: %s [--no-image-download] [--offline-cache-only]\n' "${0##*/}"
 }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --no-image-download) NO_IMAGE_DOWNLOAD=1 ;;
+        --offline-cache-only) OFFLINE_CACHE_ONLY=1 ;;
         -h|--help) usage; exit 0 ;;
         *) usage >&2; printf 'unknown argument: %s\n' "$1" >&2; exit 2 ;;
     esac
@@ -71,6 +73,19 @@ printf '%s  %s\n' "$IMAGE_SHA256" "$BASE_IMAGE" | sha256sum -c -
 tar --exclude=.git --exclude=tests/vm/.cache --exclude=tests/vm/.runtime \
     -C "$PROJECT_ROOT" -czf "$SEED_DIR/repo.tgz" .
 cp "$SCRIPT_DIR/meta-data" "$SEED_DIR/meta-data"
+if [[ "$OFFLINE_CACHE_ONLY" == 1 ]]; then
+cat > "$SEED_DIR/user-data" <<'EOF'
+#cloud-config
+runcmd:
+  - [bash, -lc, "mkdir -p /mnt/seed /opt/open-gpu && mount -o ro /dev/sr0 /mnt/seed && tar -xzf /mnt/seed/repo.tgz -C /opt/open-gpu"]
+  - [bash, -lc, "/opt/open-gpu/tests/vm/offline-cache-guest.sh /opt/open-gpu > /dev/ttyS0 2>&1"]
+final_message: OPEN_GPU_VM_COMPLETE
+power_state:
+  mode: poweroff
+  timeout: 30
+  condition: true
+EOF
+else
 cat > "$SEED_DIR/user-data" <<'EOF'
 #cloud-config
 users:
@@ -92,6 +107,7 @@ power_state:
   timeout: 30
   condition: true
 EOF
+fi
 
 if command -v hdiutil >/dev/null 2>&1; then
     hdiutil makehybrid -quiet -iso -joliet -default-volume-name cidata \
@@ -145,7 +161,11 @@ qemu_pid=""
 trap - EXIT INT TERM
 
 result="$(grep -E '^\{"schemaVersion":1,' "$SERIAL_LOG" | tail -n1 | tr -d '\r' || true)"
-expected_result='{"schemaVersion":1,"status":"passed","transaction":"passed","flock":"passed","mountNamespace":"passed","btrfs":"passed","recoveryAB":"passed","chrootHooks":"passed","mountLifecycle":"passed","consumerContract":"passed","targetExecutionTrust":"passed","initramfsContract":"passed","steamosRecoveryHarness":"passed","offlineAuthenticatedCache":"passed"}'
+if [[ "$OFFLINE_CACHE_ONLY" == 1 ]]; then
+    expected_result='{"schemaVersion":1,"status":"passed","offlineAuthenticatedCache":"passed"}'
+else
+    expected_result='{"schemaVersion":1,"status":"passed","transaction":"passed","flock":"passed","mountNamespace":"passed","btrfs":"passed","recoveryAB":"passed","chrootHooks":"passed","mountLifecycle":"passed","consumerContract":"passed","targetExecutionTrust":"passed","initramfsContract":"passed","steamosRecoveryHarness":"passed","offlineAuthenticatedCache":"passed"}'
+fi
 [[ "$qemu_status" == 0 ]] || {
     printf 'VM exited with status %s; serial log: %s\n' "$qemu_status" "$SERIAL_LOG" >&2
     exit "$qemu_status"

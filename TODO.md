@@ -1353,7 +1353,10 @@ signing policy.
   release assets; hash manifests alone are not backups.
   Detached-signature Valve header packages now have an atomic, bounded offline
   export/import format that revalidates the reviewed signer and exact keyring;
-  userspace packages and certified release assets still need equivalent policy.
+  Userspace/certified package sets now have an atomic bounded multi-artifact
+  format binding every detached signature to the exact signer, reviewed keyring,
+  policy, and provenance, plus concurrent Fedora/Arch verified-cache-only VM
+  coverage. Long-term replicated archival ownership remains unresolved.
 * [ ] Test GitHub, Valve, and Arch Linux Archive outages. Reuse only exact
   previously authenticated cache entries and otherwise return an actionable
   typed failure.
