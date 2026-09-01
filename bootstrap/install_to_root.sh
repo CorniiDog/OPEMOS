@@ -32,6 +32,7 @@ BUNDLE_STEAMOS=""
 BUNDLE_NVIDIA=""
 BUNDLE_CACHE_ID=""
 BUNDLE_GENERATION=""
+BUNDLE_LEASE=""
 ORIGINAL_ARGS=("$@")
 
 # Locate the result path before normal parsing so malformed CLI input can still
@@ -188,11 +189,14 @@ if [[ "$INPUT_SOURCE" == authenticated-bundle ]]; then
     python3 "$SUPPORT_ROOT/lib/authenticated_cache_bundle.py" import-set \
         --bundle "$AUTHENTICATED_BUNDLE" --store "$BUNDLE_STORE" \
         --keyring "$BUNDLE_KEYRING" --reviewed-signers "$BUNDLE_REVIEWED_SIGNERS" \
+        --lease-token "installer-$$-$RANDOM" \
         > "$BUNDLE_IMPORT_RESULT" || fail_argument "Authenticated bundle import failed closed."
     BUNDLE_CACHE_ID="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["cacheId"])' "$BUNDLE_IMPORT_RESULT")" ||
         fail_argument "Authenticated bundle import result is invalid."
     BUNDLE_GENERATION="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["generation"])' "$BUNDLE_IMPORT_RESULT")" ||
         fail_argument "Authenticated bundle generation result is invalid."
+    BUNDLE_LEASE="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["lease"])' "$BUNDLE_IMPORT_RESULT")" ||
+        fail_argument "Authenticated bundle lease result is invalid."
     python3 "$SUPPORT_ROOT/lib/resolve_authenticated_install_bundle.py" \
         --generation "$BUNDLE_GENERATION" --cache-id "$BUNDLE_CACHE_ID" \
         --steamos "$BUNDLE_STEAMOS" --nvidia "$BUNDLE_NVIDIA" \
@@ -334,6 +338,7 @@ cleanup_prevalidation_files()
     rm -rf "$INPUT_SNAPSHOT_ROOT"
     [[ -z "${BUNDLE_IMPORT_RESULT:-}" ]] || rm -f "$BUNDLE_IMPORT_RESULT"
     [[ -z "${BUNDLE_RESOLUTION:-}" ]] || rm -f "$BUNDLE_RESOLUTION"
+    [[ -z "${BUNDLE_LEASE:-}" ]] || rm -f "$BUNDLE_LEASE"
 }
 
 trap cleanup_prevalidation_files EXIT
@@ -891,6 +896,7 @@ cleanup_mutation()
         "$INITRAMFS_WORKSPACE_JSON" \
         ${BUNDLE_IMPORT_RESULT:+"$BUNDLE_IMPORT_RESULT"} \
         ${BUNDLE_RESOLUTION:+"$BUNDLE_RESOLUTION"} \
+        ${BUNDLE_LEASE:+"$BUNDLE_LEASE"} \
         >/dev/null 2>&1 || true
     exit "$rc"
 }
@@ -1250,5 +1256,6 @@ trap - EXIT INT TERM
 rm -rf "$MUTATION_WORK" "$INPUT_SNAPSHOT_ROOT" "$VALIDATION_JSON" \
     "$INITRAMFS_WORKSPACE_JSON" \
     ${BUNDLE_IMPORT_RESULT:+"$BUNDLE_IMPORT_RESULT"} \
-    ${BUNDLE_RESOLUTION:+"$BUNDLE_RESOLUTION"}
+    ${BUNDLE_RESOLUTION:+"$BUNDLE_RESOLUTION"} \
+    ${BUNDLE_LEASE:+"$BUNDLE_LEASE"}
 ok "Offline-root NVIDIA installation completed with all mounts released."

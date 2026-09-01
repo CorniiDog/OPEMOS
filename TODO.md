@@ -1364,6 +1364,9 @@ signing policy.
     offline-root input selector with an explicit no-fallback source mode,
     exact target/policy/provenance/keyring/package binding, private snapshots,
     cache-ID result provenance, and Fedora/Arch offline-only guest coverage.
+  * [x] Add concurrency-safe authenticated-cache retention with active installer
+    leases, explicit protected generations, exact count/byte budgets, rollback
+    on interruption, unsafe/partial-generation cleanup, and schema-1 decisions.
 
 ---
 

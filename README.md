@@ -914,6 +914,23 @@ normal private installer snapshots and full validation path. There is no
 network fallback. Validation/results identify `authenticated-bundle` plus the
 canonical cache ID; cancellation or policy drift fails before target mutation.
 
+Prune the imported generation store under exact count and byte limits with:
+
+```bash
+python3 lib/prune_authenticated_cache.py \
+    --store /appliance/cache/imported --max-count 8 \
+    --max-bytes 17179869184 --protect CACHE_ID
+```
+
+The pruner shares the importer lock, automatically protects active installer
+leases, and refuses missing, corrupt, or over-budget protected generations.
+Unprotected symlinks, partial entries, corrupt generations, and excess valid
+generations are moved into a private rollback directory before deletion.
+Cancellation restores anything already moved. Its schema-1 result records every
+keep/remove decision and the exact retained count and bytes. Bundle-mode
+installers acquire a generation lease while importing and release it on every
+validation, failure, cancellation, and successful mutation path.
+
 An optional Valve-recovery controller is available as
 `tests/vm/run-steamos-recovery.sh`. `--fixture` runs the deterministic disposable
 A/B filesystem, preset, hook, rollback, and idempotency path. The real-media form

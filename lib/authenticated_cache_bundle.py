@@ -428,6 +428,7 @@ def import_set(args):
     verify_set(args.bundle, document, args.keyring, args.reviewed_signers)
     identity = digest(args.bundle / "manifest.json")
     args.store.mkdir(parents=True, exist_ok=True)
+    lease_path = None
     with (args.store / ".import.lock").open("a+b") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         destination = args.store / identity
@@ -453,10 +454,31 @@ def import_set(args):
                 os.replace(temporary, destination)
             finally:
                 shutil.rmtree(temporary, ignore_errors=True)
+        if args.lease_token:
+            if not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", args.lease_token):
+                fail("lease token is invalid")
+            leases = args.store / ".leases"
+            leases.mkdir(mode=0o700, exist_ok=True)
+            if leases.is_symlink() or not leases.is_dir():
+                fail("lease directory has an unsafe type")
+            lease_path = leases / f"{identity}.{args.lease_token}"
+            descriptor = os.open(lease_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as lease:
+                lease.write(identity + "\n")
+                lease.flush()
+                os.fsync(lease.fileno())
+        current_temporary = args.store / f".current.{os.getpid()}.tmp"
+        descriptor = os.open(current_temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as current:
+            current.write(identity + "\n")
+            current.flush()
+            os.fsync(current.fileno())
+        os.replace(current_temporary, args.store / ".current")
     print(json.dumps({"schemaVersion": 1, "status": "verified", "cacheId": identity,
                       "generation": str(destination), "artifactCount": len(document["artifacts"]),
                       "policySha256": document["trust"]["policySha256"],
-                      "provenanceSha256": document["trust"]["provenanceSha256"]}, sort_keys=True))
+                      "provenanceSha256": document["trust"]["provenanceSha256"],
+                      "lease": str(lease_path) if lease_path else None}, sort_keys=True))
 
 
 def arguments():
@@ -484,6 +506,7 @@ def arguments():
     export_group.add_argument("--output", required=True, type=Path)
     import_group.add_argument("--bundle", required=True, type=Path)
     import_group.add_argument("--store", required=True, type=Path)
+    import_group.add_argument("--lease-token")
     return parser.parse_args()
 
 

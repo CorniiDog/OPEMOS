@@ -202,7 +202,14 @@ def main():
             results = [json.loads(value.stdout) for value in pool.map(lambda _: run(invocation, env), range(4))]
         assert all(value == results[0] for value in results)
         assert results[0]["artifactCount"] == 2
-        assert len([entry for entry in set_store.iterdir() if entry.name != ".import.lock"]) == 1
+        assert len([entry for entry in set_store.iterdir()
+                    if entry.name not in (".import.lock", ".current")]) == 1
+        assert (set_store / ".current").read_text().strip() == results[0]["cacheId"]
+        leased = json.loads(run([*invocation, "--lease-token", "installer-test"], env).stdout)
+        lease = Path(leased["lease"])
+        assert lease.is_file() and lease.read_text().strip() == leased["cacheId"]
+        run([*invocation, "--lease-token", "installer-test"], env, success=False)
+        lease.unlink()
 
         # Exact policy/provenance drift, corruption, symlinks, duplicates and
         # partial or unexpected layouts fail without publishing a generation.

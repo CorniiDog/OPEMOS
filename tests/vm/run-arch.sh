@@ -168,7 +168,7 @@ release_runtime_lock
 trap - EXIT INT TERM
 result="$(sed -n '/{"schemaVersion":1,/ { s/^[^{]*//; p; }' "$SERIAL_LOG" | tail -n1 | tr -d '\r' || true)"
 if [[ "$OFFLINE_CACHE_ONLY" == 1 ]]; then
-    expected_result='{"schemaVersion":1,"status":"passed","offlineAuthenticatedCache":"passed","offlineBundleSelection":"passed"}'
+    expected_result='{"schemaVersion":1,"status":"passed","offlineAuthenticatedCache":"passed","offlineBundleSelection":"passed","offlineCacheRetention":"passed"}'
 else
     expected_result='{"schemaVersion":1,"status":"passed","pacman":"passed","mkinitcpio":"passed","cancellation":"passed","idempotency":"passed","initramfsContract":"passed","offlineAuthenticatedCache":"passed"}'
 fi
