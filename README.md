@@ -379,6 +379,14 @@ command succeeds; in particular, mkinitcpio output is never converted into a
 fabricated percentage. A failed or cancelled command therefore leaves its phase
 incomplete while cleanup continues to report independently.
 
+Image-builder consumers can run `lib/validate_install_contract.py --result
+RESULT --progress STDERR_LOG` before accepting either stream. Schema 1 requires
+the stable envelope and all successful verification/cleanup records while
+allowing additive fields for forward compatibility. Duplicate JSON keys,
+truncation, oversized records, invalid counts, decreasing progress, changing
+totals/units, incomplete cleanup, and missing structured success records fail
+closed. The validator emits its own bounded machine-readable verification result.
+
 Validation also performs the authoritative storage preflight. It reads each
 authenticated package's declared installed size and dependency/provides fields,
 resolves the complete incoming-plus-installed dependency closure against parsed

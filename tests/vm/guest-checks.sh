@@ -9,14 +9,16 @@ flock_status=not-run
 recovery_ab_status=not-run
 chroot_hooks_status=not-run
 mount_lifecycle_status=not-run
+consumer_contract_status=not-run
 
 cleanup()
 {
     local rc=$?
-    printf '{"schemaVersion":1,"status":"%s","transaction":"%s","flock":"%s","mountNamespace":"%s","btrfs":"%s","recoveryAB":"%s","chrootHooks":"%s","mountLifecycle":"%s"}\n' \
+    printf '{"schemaVersion":1,"status":"%s","transaction":"%s","flock":"%s","mountNamespace":"%s","btrfs":"%s","recoveryAB":"%s","chrootHooks":"%s","mountLifecycle":"%s","consumerContract":"%s"}\n' \
         "$([[ "$rc" == 0 ]] && printf passed || printf failed)" \
         "$transaction_status" "$flock_status" "$namespace_status" "$btrfs_status" \
-        "$recovery_ab_status" "$chroot_hooks_status" "$mount_lifecycle_status"
+        "$recovery_ab_status" "$chroot_hooks_status" "$mount_lifecycle_status" \
+        "$consumer_contract_status"
     return "$rc"
 }
 trap cleanup EXIT
@@ -62,3 +64,6 @@ chroot_hooks_status=passed
 
 bash "$REPOSITORY_ROOT/tests/vm/mount-lifecycle.sh" "$REPOSITORY_ROOT"
 mount_lifecycle_status=passed
+
+python3 "$REPOSITORY_ROOT/tests/install_contract.py"
+consumer_contract_status=passed

@@ -121,6 +121,9 @@ python3 tests/vm_harness.py
 printf 'Checking bind-mount source topology...\n'
 python3 tests/bind_mount.py
 
+printf 'Checking installer consumer compatibility...\n'
+python3 tests/install_contract.py
+
 printf 'Checking built-module metadata validation...\n'
 python3 tests/module_validation.py
 

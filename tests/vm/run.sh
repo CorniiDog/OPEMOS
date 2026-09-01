@@ -145,7 +145,7 @@ qemu_pid=""
 trap - EXIT INT TERM
 
 result="$(grep -E '^\{"schemaVersion":1,' "$SERIAL_LOG" | tail -n1 | tr -d '\r' || true)"
-expected_result='{"schemaVersion":1,"status":"passed","transaction":"passed","flock":"passed","mountNamespace":"passed","btrfs":"passed","recoveryAB":"passed","chrootHooks":"passed","mountLifecycle":"passed"}'
+expected_result='{"schemaVersion":1,"status":"passed","transaction":"passed","flock":"passed","mountNamespace":"passed","btrfs":"passed","recoveryAB":"passed","chrootHooks":"passed","mountLifecycle":"passed","consumerContract":"passed"}'
 [[ "$qemu_status" == 0 ]] || {
     printf 'VM exited with status %s; serial log: %s\n' "$qemu_status" "$SERIAL_LOG" >&2
     exit "$qemu_status"
