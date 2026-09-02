@@ -1,0 +1,36 @@
+---
+---
+
+@import "minima";
+
+:root {
+  color-scheme: light dark;
+}
+
+.site-header {
+  border-top-color: #76b900;
+}
+
+.site-title::before {
+  color: #76b900;
+  content: "◆ ";
+}
+
+.wrapper {
+  max-width: 1080px;
+}
+
+table {
+  display: block;
+  overflow-x: auto;
+  width: 100%;
+}
+
+code {
+  overflow-wrap: anywhere;
+}
+
+blockquote {
+  border-left-color: #76b900;
+}
+

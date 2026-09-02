@@ -46,6 +46,9 @@ index in the same commit.
 
 ### Remaining engineering cleanup
 
+* [ ] Enable **Settings → Pages → Build and deployment → GitHub Actions** in
+  the canonical repository, then verify the first documentation deployment and
+  published navigation links.
 * [ ] Finish online-installer failure, signal, readonly-restoration, userspace
   rollback, and raw-`.ko`/`.ko.zst` idempotency coverage.
 * [ ] Resolve build caching, compiler/certification policy, reproducibility,
@@ -888,6 +891,15 @@ offline installer contract.
 # 30. CLI / self-documentation
 
 * [x] Recognize current commands were insufficiently self-commenting.
+* [x] Move the comprehensive engineering reference under `docs/`, create a
+  task-oriented GitHub Pages site, and retain a concise root README with native
+  Steam Deck terminal commands.
+* [x] Add developer tutorials, image-builder integration guidance, API-style
+  command/result/progress documentation, security policy, navigation, and
+  per-page contents.
+* [x] Add CI validation for documentation front matter, navigation, links,
+  anchors, command paths, workflow permissions, and README size.
+* [ ] Enable and verify the GitHub Pages deployment in repository settings.
 * [x] Rename `--driver` to `--development`.
 * [x] Add proper `usage()` to `install_upstream.sh`.
 * [x] Make `--help` work everywhere.

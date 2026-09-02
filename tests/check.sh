@@ -133,6 +133,9 @@ python3 tests/build_for_target_failures.py
 printf 'Checking headless VM harness contract...\n'
 python3 tests/vm_harness.py
 
+printf 'Checking GitHub Pages documentation contract...\n'
+python3 tests/documentation.py
+
 printf 'Checking bind-mount source topology...\n'
 python3 tests/bind_mount.py
 
