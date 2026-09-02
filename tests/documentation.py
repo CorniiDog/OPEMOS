@@ -179,6 +179,8 @@ def main() -> None:
     assert ".opemos-hero" in stylesheet and ".opemos-wordmark" in stylesheet
     assert ".highlighter-rouge .highlight {" in stylesheet
     assert "table th {" in stylesheet
+    assert "background-color: var(--code-background) !important;" in stylesheet
+    assert "background-color: var(--surface-strong) !important;" in stylesheet
     index = (DOCS / "index.md").read_text(encoding="utf-8")
     assert 'class="opemos-hero"' in index
     assert 'class="opemos-wordmark"' in index

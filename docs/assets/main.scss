@@ -11,7 +11,7 @@
   --nvidia-green-accessible: #426b00;
   --page-background: #ffffff;
   --surface: #f3f6f9;
-  --surface-strong: #e7edf3;
+  --surface-strong: #dfe8f0;
   --text-primary: #1d2730;
   --text-muted: #526271;
   --border: #bdc9d4;
@@ -277,11 +277,11 @@ hr {
 }
 
 table {
-  background: var(--page-background);
+  background: var(--page-background) !important;
   border-color: var(--border);
   border-radius: 12px;
   box-shadow: 0 10px 28px var(--shadow);
-  color: var(--text-primary);
+  color: var(--text-primary) !important;
   display: block;
   overflow-x: auto;
   width: 100%;
@@ -290,24 +290,24 @@ table {
 table th,
 table td {
   border-color: var(--border);
+  color: var(--text-primary) !important;
 }
 
 table th {
-  background-color: var(--surface-strong);
-  color: var(--text-primary);
+  background-color: var(--surface-strong) !important;
 }
 
 table tr:nth-child(even) {
-  background-color: var(--surface);
+  background-color: var(--surface) !important;
 }
 
 pre,
 code,
 .highlight,
 .highlighter-rouge .highlight {
-  background-color: var(--code-background);
+  background-color: var(--code-background) !important;
   border-color: var(--border);
-  color: var(--code-text);
+  color: var(--code-text) !important;
 }
 
 code {
@@ -316,9 +316,9 @@ code {
 
 pre > code,
 .highlighter-rouge pre > code {
-  background: transparent;
+  background: transparent !important;
   border: 0;
-  color: inherit;
+  color: inherit !important;
 }
 
 // Minima assigns colors to many individual Rouge token classes. Reset every
@@ -396,7 +396,7 @@ pre > code,
     color-scheme: dark;
     --page-background: #121922;
     --surface: #1b2733;
-    --surface-strong: #263746;
+    --surface-strong: #2d4254;
     --text-primary: #edf2f6;
     --text-muted: #b9c5cf;
     --border: #506274;
@@ -413,6 +413,7 @@ pre > code,
     --steam-glow: rgba(26, 159, 255, 0.17);
     --nvidia-glow: rgba(118, 185, 0, 0.14);
   }
+
 }
 
 @media (prefers-reduced-motion: reduce) {
