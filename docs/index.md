@@ -51,4 +51,3 @@ A compiled module is not interchangeable merely because two kernels share a
 base version. The artifact must match the complete target kernel release and
 validated vermagic. Missing exact artifacts are built against the matching
 prepared Valve header tree; they are never approximated with a nearby kernel.
-
