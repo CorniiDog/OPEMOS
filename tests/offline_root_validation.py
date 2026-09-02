@@ -2395,6 +2395,18 @@ def main():
             MOCK_DRIFT_TARGET_EXECUTION="1",
         )
         assert drifted_execution["reason"] == "target_execution_trust"
+        assert drifted_execution["phase"] == "target_execution_trust"
+        assert drifted_execution["message"] == (
+            "Target-owned execution trust validation failed; discard the "
+            "disposable overlay."
+        )
+        assert drifted_execution["targetExecutionFailure"]["status"] == "failed"
+        assert drifted_execution["targetExecutionFailure"]["reason"] == (
+            "target_execution_trust_failed"
+        )
+        assert drifted_execution["targetExecutionFailure"]["condition"] == (
+            "execution_inputs_changed"
+        )
         assert drifted_execution["cleanup"]["mountsReleased"] is True
         (paths["target"] / "etc/mkinitcpio.conf").write_text(
             "HOOKS=(base)\n", encoding="utf-8"

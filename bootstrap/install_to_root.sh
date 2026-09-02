@@ -536,6 +536,7 @@ fi
 
 write_install_result()
 {
+    local result_status="$1" result_reason="$2"
     set -- python3 "${SUPPORT_ROOT}/lib/write_install_result.py" \
         --output "$RESULT_JSON" --status "$1" --reason "$2" --message "$3" \
         --phase "$4" --root /target-root --kernel "$KERNEL" \
@@ -556,6 +557,11 @@ write_install_result()
         set -- "$@" --initramfs-workspace "$INITRAMFS_WORKSPACE_JSON"
     [[ -z "${INITRAMFS_VERIFICATION_JSON:-}" || ! -s "$INITRAMFS_VERIFICATION_JSON" ]] ||
         set -- "$@" --initramfs-verification "$INITRAMFS_VERIFICATION_JSON"
+    if [[ "$result_status" == failed && "$result_reason" == target_execution_trust &&
+          -n "${TARGET_EXECUTION_FAILURE_JSON:-}" &&
+          -s "$TARGET_EXECUTION_FAILURE_JSON" ]]; then
+        set -- "$@" --target-execution-failure "$TARGET_EXECUTION_FAILURE_JSON"
+    fi
     "$@"
 }
 
@@ -657,6 +663,7 @@ INITRAMFS_VERIFICATION_JSON="$MUTATION_WORK/initramfs-verification.json"
 PACMAN_TRANSACTION_RESULT="$MUTATION_WORK/pacman-transaction.json"
 TARGET_EXECUTION_MANIFEST="$MUTATION_WORK/target-execution.json"
 POST_TRANSACTION_EXECUTION_MANIFEST="$MUTATION_WORK/post-transaction-execution.json"
+TARGET_EXECUTION_FAILURE_JSON="$MUTATION_WORK/target-execution-failure.json"
 MOUNTS=()
 RUNTIME_MOUNTS_EXPECTED=4
 RUNTIME_MOUNTS_RELEASED=0
@@ -908,9 +915,15 @@ cleanup_mutation()
                     "Offline-root mutation was cancelled; discard the disposable overlay." \
                     "$PHASE" true || true
             else
-                write_install_result failed "$PHASE" \
-                    "Offline-root mutation failed; discard the disposable overlay." \
-                    "$PHASE" true || true
+                if [[ "$PHASE" == target_execution_trust ]]; then
+                    write_install_result failed target_execution_trust \
+                        "Target-owned execution trust validation failed; discard the disposable overlay." \
+                        target_execution_trust true || true
+                else
+                    write_install_result failed "$PHASE" \
+                        "Offline-root mutation failed; discard the disposable overlay." \
+                        "$PHASE" true || true
+                fi
             fi
         else
             write_install_result failed mutation_cleanup_failed \
@@ -944,7 +957,8 @@ guard_target_mount_identities
 
 PHASE=target_execution_trust
 run_mutation_command python3 "$SUPPORT_ROOT/lib/snapshot_target_execution.py" \
-    --root "$ROOT" --output "$TARGET_EXECUTION_MANIFEST" ||
+    --root "$ROOT" --output "$TARGET_EXECUTION_MANIFEST" \
+    --diagnostic "$TARGET_EXECUTION_FAILURE_JSON" ||
     die "Target-owned pacman hooks or initramfs inputs are unsafe."
 
 PHASE=initramfs_workspace_unavailable
@@ -1078,7 +1092,8 @@ PACMAN_ARGS=(
 require_validation_document_unchanged ||
     die "The validated compression admission document changed before the pacman transaction."
 run_mutation_command python3 "$SUPPORT_ROOT/lib/snapshot_target_execution.py" \
-    --root "$ROOT" --verify "$TARGET_EXECUTION_MANIFEST" || {
+    --root "$ROOT" --verify "$TARGET_EXECUTION_MANIFEST" \
+    --diagnostic "$TARGET_EXECUTION_FAILURE_JSON" || {
     PHASE=target_execution_trust
     die "Target-owned pacman hooks or initramfs inputs changed before execution."
 }
@@ -1176,7 +1191,8 @@ printf '%s\n' \
     'MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm)' \
     > "$ROOT/etc/mkinitcpio.conf.d/90-open-gpu-kernel-modules-steamos.conf"
 run_mutation_command python3 "$SUPPORT_ROOT/lib/snapshot_target_execution.py" \
-    --root "$ROOT" --output "$POST_TRANSACTION_EXECUTION_MANIFEST" || {
+    --root "$ROOT" --output "$POST_TRANSACTION_EXECUTION_MANIFEST" \
+    --diagnostic "$TARGET_EXECUTION_FAILURE_JSON" || {
     PHASE=target_execution_trust
     die "The authenticated transaction left unsafe hook or initramfs inputs."
 }
@@ -1204,7 +1220,8 @@ emit_progress_indeterminate initramfs
 require_runtime_bind_mounts ||
     die "Target runtime mounts disappeared before initramfs generation."
 run_mutation_command python3 "$SUPPORT_ROOT/lib/snapshot_target_execution.py" \
-    --root "$ROOT" --verify "$POST_TRANSACTION_EXECUTION_MANIFEST" || {
+    --root "$ROOT" --verify "$POST_TRANSACTION_EXECUTION_MANIFEST" \
+    --diagnostic "$TARGET_EXECUTION_FAILURE_JSON" || {
     PHASE=target_execution_trust
     die "Target-owned initramfs inputs changed before execution."
 }

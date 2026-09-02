@@ -13,6 +13,7 @@ MAX_MODULE_VERIFICATION_BYTES = 1024 * 1024
 MAX_USERSPACE_VERIFICATION_BYTES = 256 * 1024
 MAX_WORKSPACE_VERIFICATION_BYTES = 16 * 1024
 MAX_INITRAMFS_VERIFICATION_BYTES = 256 * 1024
+MAX_TARGET_EXECUTION_FAILURE_BYTES = 16 * 1024
 TOKEN = re.compile(r"[a-z][a-z0-9_]{0,63}")
 KERNEL = re.compile(r"(?:unknown|[A-Za-z0-9._+~-]{1,255})")
 VERSION = re.compile(r"(?:unknown|[0-9]+\.[0-9]+(?:\.[0-9]+)?)")
@@ -81,6 +82,7 @@ def parse_args():
     parser.add_argument("--userspace-verification", type=Path)
     parser.add_argument("--initramfs-workspace", type=Path)
     parser.add_argument("--initramfs-verification", type=Path)
+    parser.add_argument("--target-execution-failure", type=Path)
     parser.add_argument("--runtime-mounts-expected", type=int, default=0)
     parser.add_argument("--runtime-mounts-released", type=int, default=0)
     return parser.parse_args()
@@ -468,6 +470,36 @@ def load_userspace_verification(path):
                 or not Path(relative).name.startswith("gsp")
                 or not Path(relative).name.endswith(".bin")):
             raise SystemExit("Userspace GSP firmware verification is malformed.")
+    return document
+
+
+def load_target_execution_failure(path):
+    try:
+        if (path.is_symlink() or not path.is_file()
+                or not 0 < path.stat().st_size <= MAX_TARGET_EXECUTION_FAILURE_BYTES):
+            raise OSError
+        document = json.loads(path.read_text(encoding="utf-8"),
+                              object_pairs_hook=unique_object)
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+        raise SystemExit("Target execution failure metadata is unreadable or excessive.")
+    if (not isinstance(document, dict) or set(document) != {
+            "schemaVersion", "status", "reason", "condition", "message",
+            "targetRelativePath",
+            }
+            or document.get("schemaVersion") != 1
+            or document.get("status") != "failed"
+            or document.get("reason") != "target_execution_trust_failed"
+            or TOKEN.fullmatch(document.get("condition", "")) is None
+            or not bounded_message(document.get("message", ""))):
+        raise SystemExit("Target execution failure metadata is malformed.")
+    relative = document.get("targetRelativePath")
+    if relative is not None and (
+            not isinstance(relative, str)
+            or not 1 <= len(relative) <= 512
+            or Path(relative).is_absolute()
+            or ".." in Path(relative).parts
+            or re.fullmatch(r"[A-Za-z0-9._+~/-]+", relative) is None):
+        raise SystemExit("Target execution failure path is malformed.")
     return document
 
 
@@ -1044,6 +1076,15 @@ def main():
         document["initramfsVerification"] = initramfs_verification
     elif args.status == "success":
         raise SystemExit("A successful installation requires exact initramfs verification metadata.")
+    if args.target_execution_failure:
+        if (args.status != "failed" or args.reason != "target_execution_trust"
+                or args.phase != "target_execution_trust"):
+            raise SystemExit(
+                "Target execution failure metadata does not match the result."
+            )
+        document["targetExecutionFailure"] = load_target_execution_failure(
+            args.target_execution_failure
+        )
     atomic_write_bytes(
         args.output,
         (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode(),

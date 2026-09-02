@@ -415,12 +415,16 @@ Before an offline-root mutation, `lib/snapshot_target_execution.py` records the
 target's standard libalpm hooks, hook executors, mkinitcpio executable,
 configuration fragments, presets, and initcpio tree. These inputs must be
 confined regular files/directories owned like the target root, must not be group-
-or world-writable, and may not contain symlinks, missing hook executors, or local
-`/etc/pacman.d/hooks` overrides. The installer revalidates the snapshot before
-pacman, then creates a fresh snapshot after the authenticated package transaction
-and its own managed configuration write and revalidates it immediately before
-mkinitcpio. Any drift fails closed with `target_execution_trust` and normal mount
-cleanup; executable mode alone is never accepted as sufficient trust.
+or world-writable, and may not contain final-input symlinks, missing hook
+executors, or local `/etc/pacman.d/hooks` overrides. Confined root-owned
+intermediate directory aliases such as SteamOS's relative `/bin -> usr/bin` are
+accepted only when both the alias and every resolved directory remain inside the
+target and have trusted ownership and modes. The installer revalidates the
+snapshot before pacman, then creates a fresh snapshot after the authenticated
+package transaction and its own managed configuration write and revalidates it
+immediately before mkinitcpio. Any drift fails closed with
+`target_execution_trust`, a bounded `targetExecutionFailure` record, and normal
+mount cleanup; executable mode alone is never accepted as sufficient trust.
 
 Validation also performs the authoritative storage preflight. It reads each
 authenticated package's declared installed size and dependency/provides fields,

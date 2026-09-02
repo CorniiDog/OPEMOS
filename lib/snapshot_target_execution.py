@@ -16,6 +16,8 @@ from atomic_output import atomic_create_bytes
 MAX_FILES = 4096
 MAX_FILE_BYTES = 8 * 1024 * 1024
 MAX_TOTAL_BYTES = 64 * 1024 * 1024
+MAX_DIAGNOSTIC_BYTES = 16 * 1024
+SAFE_RELATIVE = re.compile(r"[A-Za-z0-9._+~/-]{1,512}")
 HOOK_EXEC = re.compile(r"^[ \t]*Exec[ \t]*=[ \t]*(.+?)\s*$")
 SCAN_PATHS = (
     "etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf",
@@ -24,8 +26,16 @@ SCAN_PATHS = (
 )
 
 
-def fail(message):
-    raise SystemExit(f"snapshot_target_execution.py: {message}")
+class SnapshotFailure(Exception):
+    def __init__(self, message, condition="invalid_execution_input", relative=None):
+        super().__init__(message)
+        self.message = message
+        self.condition = condition
+        self.relative = relative
+
+
+def fail(message, condition="invalid_execution_input", relative=None):
+    raise SnapshotFailure(message, condition, relative)
 
 
 def arguments():
@@ -33,6 +43,7 @@ def arguments():
     parser.add_argument("--root", required=True, type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--verify", type=Path)
+    parser.add_argument("--diagnostic", type=Path)
     args = parser.parse_args()
     if (args.output is None) == (args.verify is None):
         parser.error("exactly one of --output or --verify is required")
@@ -61,42 +72,91 @@ def inspect(root):
 
     local_hooks = root / "etc/pacman.d/hooks"
     if local_hooks.exists() or local_hooks.is_symlink():
-        fail("local pacman hook overrides are not permitted")
+        fail("local pacman hook overrides are not permitted",
+             "local_hook_override", "etc/pacman.d/hooks")
+
+    def require_safe_directory(path, relative):
+        """Validate lexical and resolved parent chains without following escapes."""
+        try:
+            resolved = path.resolve(strict=True)
+            resolved.relative_to(root)
+        except (OSError, ValueError):
+            fail(f"execution input has an escaping parent: {relative}",
+                 "parent_symlink_escape", relative)
+
+        # A target may legitimately use a relative, root-owned directory alias
+        # such as /bin -> usr/bin.  Trust the alias only when every lexical
+        # component and every component of its canonical target is confined,
+        # root-owned, a directory, and not group/world writable.
+        current = root
+        for part in path.relative_to(root).parts:
+            current = current / part
+            try:
+                metadata = current.lstat()
+            except OSError:
+                fail(f"execution input has an unavailable parent: {relative}",
+                     "parent_unavailable", relative)
+            if stat.S_ISLNK(metadata.st_mode):
+                if metadata.st_uid != owner:
+                    fail(f"execution input has an unsafe parent: {relative}",
+                         "parent_symlink_ownership", relative)
+            elif (not stat.S_ISDIR(metadata.st_mode)
+                  or metadata.st_uid != owner
+                  or metadata.st_mode & 0o022):
+                fail(f"execution input has an unsafe parent: {relative}",
+                     "unsafe_parent", relative)
+
+        current = root
+        for part in resolved.relative_to(root).parts:
+            current = current / part
+            try:
+                metadata = current.lstat()
+            except OSError:
+                fail(f"execution input has an unavailable parent: {relative}",
+                     "parent_unavailable", relative)
+            if (stat.S_ISLNK(metadata.st_mode)
+                    or not stat.S_ISDIR(metadata.st_mode)
+                    or metadata.st_uid != owner
+                    or metadata.st_mode & 0o022):
+                fail(f"execution input has an unsafe resolved parent: {relative}",
+                     "unsafe_resolved_parent", relative)
 
     def record(path, required=False):
         nonlocal total
         try:
             relative = path.relative_to(root).as_posix()
-            metadata = path.lstat()
+            logical_metadata = path.lstat()
         except (OSError, ValueError):
             if required:
-                fail("required execution input is absent")
+                fail("required execution input is absent",
+                     "required_input_missing")
             return
         if relative in recorded:
             return
         try:
-            path.resolve(strict=True).relative_to(root)
+            resolved_path = path.resolve(strict=True)
+            resolved_path.relative_to(root)
         except (OSError, ValueError):
-            fail(f"execution input escapes the target: {relative}")
-        parent = path.parent
-        while parent != root:
-            parent_metadata = parent.lstat()
-            if (stat.S_ISLNK(parent_metadata.st_mode)
-                    or not stat.S_ISDIR(parent_metadata.st_mode)
-                    or parent_metadata.st_uid != owner
-                    or parent_metadata.st_mode & 0o022):
-                fail(f"execution input has an unsafe parent: {relative}")
-            parent = parent.parent
-        if stat.S_ISLNK(metadata.st_mode):
-            fail(f"execution input is a symlink: {relative}")
+            fail(f"execution input escapes the target: {relative}",
+                 "input_escape", relative)
+        require_safe_directory(path.parent, relative)
+        if stat.S_ISLNK(logical_metadata.st_mode):
+            fail(f"execution input is a symlink: {relative}",
+                 "input_symlink", relative)
+        try:
+            metadata = resolved_path.lstat()
+        except OSError:
+            fail(f"execution input is unavailable: {relative}",
+                 "input_unavailable", relative)
         if metadata.st_uid != owner or metadata.st_mode & 0o022:
-            fail(f"execution input has unsafe ownership or mode: {relative}")
+            fail(f"execution input has unsafe ownership or mode: {relative}",
+                 "unsafe_input_metadata", relative)
         recorded.add(relative)
         if stat.S_ISDIR(metadata.st_mode):
             records.append({"path": relative, "kind": "directory",
                             "mode": stat.S_IMODE(metadata.st_mode)})
             try:
-                children = sorted(path.iterdir(), key=lambda item: item.name)
+                children = sorted(resolved_path.iterdir(), key=lambda item: item.name)
             except OSError:
                 fail(f"execution directory is unreadable: {relative}")
             for child in children:
@@ -111,7 +171,8 @@ def inspect(root):
             fail("execution inputs exceed their total byte limit")
         descriptor = None
         try:
-            descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+            descriptor = os.open(resolved_path,
+                                 os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
             opened = os.fstat(descriptor)
             if ((opened.st_dev, opened.st_ino, opened.st_mode, opened.st_uid, opened.st_size)
                     != (metadata.st_dev, metadata.st_ino, metadata.st_mode,
@@ -130,6 +191,20 @@ def inspect(root):
                 os.close(descriptor)
         if len(payload) != metadata.st_size:
             fail(f"execution input changed while being read: {relative}")
+        try:
+            current_metadata = path.lstat()
+            current_resolved = path.resolve(strict=True)
+        except OSError:
+            fail(f"execution input changed while being read: {relative}",
+                 "input_changed", relative)
+        if (current_resolved != resolved_path
+                or (current_metadata.st_dev, current_metadata.st_ino,
+                    current_metadata.st_mode, current_metadata.st_uid,
+                    current_metadata.st_size)
+                != (metadata.st_dev, metadata.st_ino, metadata.st_mode,
+                    metadata.st_uid, metadata.st_size)):
+            fail(f"execution input changed while being read: {relative}",
+                 "input_changed", relative)
         records.append({"path": relative, "kind": "file",
                         "mode": stat.S_IMODE(metadata.st_mode),
                         "size": len(payload),
@@ -189,23 +264,53 @@ def load_manifest(path):
 
 def main():
     args = arguments()
-    root = safe_root(args.root)
-    current = inspect(root)
-    if args.verify is not None:
-        if current != load_manifest(args.verify):
-            fail("target execution inputs changed after validation")
-        print(json.dumps({"schemaVersion": 1, "status": "verified",
-                          "files": len(current["files"])}, sort_keys=True,
-                         separators=(",", ":")))
-        return
     try:
-        atomic_create_bytes(args.output,
-                            (json.dumps(current, sort_keys=True, separators=(",", ":")) + "\n").encode(),
-                            mode=0o600)
-    except FileExistsError:
-        fail("refusing to overwrite an execution manifest")
-    except OSError:
-        fail("execution manifest could not be created")
+        root = safe_root(args.root)
+        current = inspect(root)
+        if args.verify is not None:
+            if current != load_manifest(args.verify):
+                fail("target execution inputs changed after validation",
+                     "execution_inputs_changed")
+            print(json.dumps({"schemaVersion": 1, "status": "verified",
+                              "files": len(current["files"])}, sort_keys=True,
+                             separators=(",", ":")))
+            return
+        try:
+            atomic_create_bytes(
+                args.output,
+                (json.dumps(current, sort_keys=True, separators=(",", ":")) + "\n").encode(),
+                mode=0o600,
+            )
+        except FileExistsError:
+            fail("refusing to overwrite an execution manifest",
+                 "manifest_exists")
+        except OSError:
+            fail("execution manifest could not be created",
+                 "manifest_create_failed")
+    except SnapshotFailure as error:
+        if args.diagnostic is not None:
+            relative = error.relative
+            if (relative is not None
+                    and (SAFE_RELATIVE.fullmatch(relative) is None
+                         or Path(relative).is_absolute()
+                         or ".." in Path(relative).parts)):
+                relative = None
+            diagnostic = {
+                "schemaVersion": 1,
+                "status": "failed",
+                "reason": "target_execution_trust_failed",
+                "condition": error.condition,
+                "message": error.message[:512],
+                "targetRelativePath": relative,
+            }
+            payload = (json.dumps(diagnostic, sort_keys=True,
+                                  separators=(",", ":")) + "\n").encode()
+            if len(payload) <= MAX_DIAGNOSTIC_BYTES:
+                try:
+                    atomic_create_bytes(args.diagnostic, payload, mode=0o600)
+                except (FileExistsError, OSError):
+                    pass
+        raise SystemExit(f"snapshot_target_execution.py: {error.message}")
 
 
 if __name__ == "__main__":
