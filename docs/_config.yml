@@ -1,5 +1,5 @@
-title: SteamOS NVIDIA Support
-description: Exact-kernel NVIDIA open-module tooling for SteamOS and recovery-image builders.
+title: Unofficial SteamOS NVIDIA Toolkit
+description: Community-built exact-kernel NVIDIA open-module tooling for SteamOS and recovery-image builders.
 url: https://corniidog.github.io
 baseurl: /open-gpu-kernel-modules-steamos-support
 repository: CorniiDog/open-gpu-kernel-modules-steamos-support

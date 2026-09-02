@@ -122,6 +122,11 @@ def main() -> None:
             f"documentation navigation omits {page}"
         )
     assert "baseurl: /open-gpu-kernel-modules-steamos-support" in config
+    assert "title: Unofficial SteamOS NVIDIA Toolkit" in config
+
+    footer = (DOCS / "_includes/footer.html").read_text(encoding="utf-8")
+    assert "not affiliated with, endorsed by" in footer
+    assert "Valve Corporation" in footer and "NVIDIA Corporation" in footer
 
     workflow = (ROOT / ".github/workflows/pages.yml").read_text(encoding="utf-8")
     for action in (

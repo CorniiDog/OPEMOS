@@ -4,20 +4,47 @@
 @import "minima";
 
 :root {
-  color-scheme: light dark;
+  --steam-blue: #1679b8;
+  --steam-blue-bright: #1a9fff;
+  --steam-deep: #171d25;
+  --nvidia-green: #76b900;
+  --nvidia-green-dark: #4f7f00;
 }
 
 .site-header {
-  border-top-color: #76b900;
+  border-top: 5px solid transparent;
+  border-image: linear-gradient(90deg, var(--steam-blue-bright) 0 55%, var(--nvidia-green) 55% 100%) 1;
 }
 
 .site-title::before {
-  color: #76b900;
-  content: "◆ ";
+  background: linear-gradient(90deg, var(--steam-blue-bright) 0 50%, var(--nvidia-green) 50% 100%);
+  border-radius: 999px;
+  content: "";
+  display: inline-block;
+  height: 0.45rem;
+  margin-right: 0.55rem;
+  vertical-align: 0.16rem;
+  width: 1.65rem;
 }
 
 .wrapper {
   max-width: 1080px;
+}
+
+a,
+a:visited {
+  color: var(--steam-blue);
+}
+
+a:hover,
+a:focus {
+  color: var(--nvidia-green-dark);
+}
+
+.site-nav .page-link:hover,
+.site-nav .page-link:focus {
+  text-decoration-color: var(--nvidia-green);
+  text-decoration-thickness: 2px;
 }
 
 table {
@@ -31,5 +58,66 @@ code {
 }
 
 blockquote {
-  border-left-color: #76b900;
+  border-left-color: var(--nvidia-green);
+}
+
+.site-footer {
+  border-top: 3px solid transparent;
+  border-image: linear-gradient(90deg, var(--steam-blue-bright), var(--nvidia-green)) 1;
+}
+
+.trademark-notice {
+  color: #5b6570;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  max-width: 52rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+  }
+
+  body,
+  .site-header,
+  .site-footer {
+    background-color: var(--steam-deep);
+    color: #d6d7d8;
+  }
+
+  .site-title,
+  .site-title:visited,
+  .site-nav .page-link {
+    color: #f1f3f4;
+  }
+
+  a,
+  a:visited {
+    color: #66c0f4;
+  }
+
+  a:hover,
+  a:focus {
+    color: #9bdc45;
+  }
+
+  pre,
+  code,
+  .highlight {
+    background-color: #10151c;
+    border-color: #344454;
+  }
+
+  table tr:nth-child(even) {
+    background-color: #202a35;
+  }
+
+  th,
+  td {
+    border-color: #344454;
+  }
+
+  .trademark-notice {
+    color: #aeb8c2;
+  }
 }

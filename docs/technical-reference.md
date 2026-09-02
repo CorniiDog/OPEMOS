@@ -20,7 +20,7 @@ task-oriented introduction, start with the [documentation home](index.md).
 - [Local checks](#local-checks)
 - [Non-sudo reinstall baseline](#non-sudo-reinstall-baseline)
 
-## SteamOS NVIDIA Open Kernel Module Support
+## SteamOS NVIDIA Open Kernel Modules
 
 Build, install, and maintain NVIDIA open kernel modules matched to a specific
 SteamOS release, Neptune kernel, and NVIDIA userspace version.
