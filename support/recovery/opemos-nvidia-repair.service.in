@@ -1,0 +1,10 @@
+[Unit]
+Description=OPEMOS delayed-network exact NVIDIA repair
+After=network-online.target opemos-nvidia-guardian.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=@DEST@/bootstrap/recoveryctl.sh repair-auto --json
+SuccessExitStatus=75
+TimeoutStartSec=7200

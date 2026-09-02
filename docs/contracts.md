@@ -202,3 +202,50 @@ signature bytes, or unlimited stderr.
 - Optional gaming payloads require exact target support and do not inherit
   fallback eligibility.
 - A normal missing artifact is a safe no-match, never permission to approximate.
+
+## Installed recovery contract
+
+`recoveryctl.sh status --json` emits one bounded schema-1 document. Its stable
+top-level fields are `schemaVersion`, `status`, `reason`, `target`,
+`moduleVerification`, `fallback`, and `actions`. Supported statuses are:
+
+| Status | Meaning |
+| --- | --- |
+| `healthy` | All five modules match the running kernel and NVIDIA userspace |
+| `recovery-required` | The active slot cannot start the exact NVIDIA stack |
+| `fallback-active` | A mutually exclusive recovery profile is installed |
+| `unknown` | Inspection was unsafe, malformed, excessive, or incomplete |
+
+The default recovery action is `console`; it blacklists both driver families.
+`igpu-desktop` requires a validated boot-VGA Intel/AMD device.
+`nouveau-experimental` requires `--allow-nouveau` and is never returned as an
+automatic action. `disable-fallback` refuses to mutate until
+`moduleVerification.status` is `verified`.
+
+`repair-online` re-enters the canonical installer with the exact support commit
+recorded during guardian installation. It may install only an artifact accepted
+by the existing exact-kernel resolver. No match leaves recovery active.
+`rollback-plan` is coordination-only: its response deliberately does not name a
+disk or slot because those identities belong to the recovery environment or
+image-builder caller and must be revalidated immediately before mutation.
+
+Delayed repair state is stored atomically outside the replaceable rootfs and
+uses these UI phases: `offline_waiting`, `retry_scheduled`, `downloading`,
+`verifying`, `rebuilding`, `installing`, `restored`, `cancelled`, and `failed`.
+The transaction binds the exact kernel, NVIDIA version, and support commit.
+NetworkManager connectivity events trigger an immediate retry where available;
+a bounded systemd timer is the fallback. Network loss, DNS/TLS failure, captive
+portals, reboots, and flapping connectivity never block boot or disable the
+console fallback. Cancellation sets `automaticRetry=false` without touching a
+verified slot or partially activating a candidate.
+
+The first successful resolver response creates an immutable release plan. Its
+SteamOS, NVIDIA, full kernel tag, release tag, asset name, and downloaded
+archive hash remain fixed across connectivity retries and reboots. A newly
+published exact certified artifact may be selected while the transaction is
+still `offline_waiting`, before a plan exists. It cannot be spliced into an
+active download/install; changing plans requires cancellation or completion.
+A later certified equivalent does not invalidate a restored
+`locally-built-verified` system and is considered only by an explicit future
+maintenance transaction. Wrong-kernel or changed-NVIDIA publications remain
+ineligible under the ordinary resolver policy.

@@ -14,6 +14,7 @@ description: Authentication boundaries, fail-closed policies, storage admission,
 - [Archive and path confinement](#archive-and-path-confinement)
 - [Storage admission](#storage-admission)
 - [Mutation and rollback](#mutation-and-rollback)
+- [Installed-system update recovery](#installed-system-update-recovery)
 - [Optional CUDA omission](#optional-cuda-omission)
 - [Remaining certification gates](#remaining-certification-gates)
 
@@ -131,6 +132,50 @@ Cleanup unmounts exact recorded targets in reverse order, restores Btrfs policy,
 removes temporary state, and reports each invariant separately. A cleanup
 failure supersedes the original top-level reason while preserving bounded
 nested diagnostics. The caller must discard every failed or cancelled overlay.
+
+## Installed-system update recovery
+
+The canonical one-line installer installs a persistent, support-owned boot
+guardian. Its bounded schema-1 status document reports the active kernel,
+expected NVIDIA userspace, all five module paths, vermagic and module versions,
+active fallback profile, and supported next actions. It is intentionally
+UI-neutral: a terminal, OPEMOS.EXE, or a themed on-device recovery application
+must consume the same status and action contract instead of reimplementing
+kernel compatibility decisions.
+
+The guardian runs before the display manager. A newly active A/B slot that
+lacks an exact module set is classified `recovery-required` and enters the
+`console` profile. That profile blacklists NVIDIA and Nouveau together and
+removes the forced NVIDIA initramfs fragment before rebuilding initramfs. It
+therefore cannot race two DRM drivers for one GPU. `igpu-desktop` additionally
+requires a boot-VGA Intel or AMD device. `nouveau-experimental` is never
+automatic and requires explicit authorization; it preserves and disables the
+normal NVIDIA configuration before regeneration.
+
+The executable snapshot is root-owned on the shared home filesystem rather
+than inside the replaceable root slot. Its systemd entry point and NVIDIA
+configuration paths are registered through SteamOS's supported
+`/etc/atomic-update.conf.d` migration list. This is the persistence boundary;
+putting the service only in `/usr` would lose it when an update replaces the
+inactive rootfs.
+
+`repair-online` is bound to the exact support commit installed by the original
+transaction. It uses the normal published-release resolver and still requires
+the exact running kernel and matching userspace. If no authenticated exact
+artifact exists, it fails closed and leaves fallback active. Successful
+download or compilation alone never disables fallback: five-module verification
+must pass first. A/B rollback remains a coordination operation because disk,
+slot, EFI, and target identity must be established by the caller; the support
+CLI never guesses among multiple SteamOS layouts.
+
+Internet access is never a boot dependency. A delayed repair transaction is
+stored atomically with the shared root-owned guardian snapshot and binds the
+kernel, NVIDIA version, and support commit. NetworkManager connectivity changes
+may wake it, while a bounded timer supplies a fallback retry. DNS, TLS, captive
+portal, and network failures leave console recovery active. Cancelling disables
+automatic retries without changing either slot. An authenticated offline cache
+may be used only after its exact target and hashes are revalidated; dynamic or
+nearest-version cache substitution remains forbidden.
 
 ## Optional CUDA omission
 

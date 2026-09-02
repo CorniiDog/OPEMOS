@@ -58,7 +58,11 @@ need modinfo
 need realpath
 need python3
 
-SUPPORT_REV="$(git ls-remote "https://github.com/${SUPPORT_REPO}.git" "refs/heads/${SUPPORT_BRANCH}" | awk 'NR==1 {print $1}')"
+if [[ -n "${SUPPORT_REVISION:-}" ]]; then
+    SUPPORT_REV="$SUPPORT_REVISION"
+else
+    SUPPORT_REV="$(git ls-remote "https://github.com/${SUPPORT_REPO}.git" "refs/heads/${SUPPORT_BRANCH}" | awk 'NR==1 {print $1}')"
+fi
 [[ "$SUPPORT_REV" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "Could not resolve support revision." >&2; exit 1; }
 
 # common.sh is not available until the support repository is cloned, so this
@@ -92,6 +96,11 @@ else
     "$TMP/support/bootstrap/setup_nvidia.sh" "${SETUP_ARGS[@]}"
 
     NVIDIA_VERSION="$(get_nvidia_version)"
+fi
+
+if [[ -n "${OPEMOS_PINNED_NVIDIA_VERSION:-}" &&
+      "$NVIDIA_VERSION" != "$OPEMOS_PINNED_NVIDIA_VERSION" ]]; then
+    die "Resolved NVIDIA userspace ${NVIDIA_VERSION} differs from pinned recovery policy ${OPEMOS_PINNED_NVIDIA_VERSION}."
 fi
 
 KERNEL_TAG="$(sanitize_release_component "$KERNEL_VERSION")"
@@ -273,6 +282,12 @@ install_archive()
     INSTALL_CHANGED=1
 }
 
+install_recovery_guardian()
+{
+    log "Installing the persistent exact-kernel recovery guardian..."
+    "$TMP/support/bootstrap/install_recovery_guardian.sh"
+}
+
 resolve_local()
 {
     local source="$1"
@@ -311,6 +326,7 @@ if [[ "$IN_CODE" == "1" ]]; then
 
     resolve_local "${bundles[0]}"
     install_archive "$LOCAL_ARCHIVE" "$LOCAL_CHECKSUM" 0
+    install_recovery_guardian
     offer_reboot
     exit 0
 fi
@@ -319,6 +335,7 @@ if [[ -n "$LOCAL_SOURCE" ]]; then
     LOCAL_SOURCE="$(realpath "$LOCAL_SOURCE")"
     resolve_local "$LOCAL_SOURCE"
     install_archive "$LOCAL_ARCHIVE" "$LOCAL_CHECKSUM" 0
+    install_recovery_guardian
     offer_reboot
     exit 0
 fi
@@ -330,12 +347,22 @@ curl -fsSL --retry 2 \
     -o "$RELEASES_JSON" ||
     die "Failed to query published releases."
 
-SELECTED="$(
-    python3 "$TMP/support/lib/select_release.py" \
-        "$STEAMOS_VERSION" \
-        "$KERNEL_TAG" \
-        "$RELEASES_JSON"
-)"
+RECOVERY_PLAN_FILE="${OPEMOS_RECOVERY_PLAN_FILE:-}"
+if [[ -n "$RECOVERY_PLAN_FILE" && -f "$RECOVERY_PLAN_FILE" ]]; then
+    IFS=$'\t' read -r SELECTED_STEAMOS SELECTED_NVIDIA SELECTED_KERNEL SELECTED_TAG SELECTED_ASSET PINNED_ARCHIVE_SHA < <(
+        python3 "$TMP/support/lib/recovery_release_plan.py" show --plan "$RECOVERY_PLAN_FILE"
+    )
+    [[ "$SELECTED_KERNEL" == "$KERNEL_TAG" && "$SELECTED_NVIDIA" == "$NVIDIA_VERSION" ]] ||
+        die "The immutable recovery plan does not match the active kernel and NVIDIA policy."
+    SELECTED="$SELECTED_STEAMOS"$'\t'"$SELECTED_NVIDIA"$'\t'"$SELECTED_KERNEL"$'\t'"$SELECTED_TAG"
+else
+    SELECTED="$(
+        python3 "$TMP/support/lib/select_release.py" \
+            "$STEAMOS_VERSION" \
+            "$KERNEL_TAG" \
+            "$RELEASES_JSON"
+    )"
+fi
 
 [[ -n "$SELECTED" ]] ||
     die "No certified project release exists for kernel ${KERNEL_VERSION} on SteamOS ${STEAMOS_VERSION} or an older release in ${STEAMOS_VERSION%.*}.x."
@@ -353,7 +380,13 @@ IFS=$	 read -r \
 [[ "$SELECTED_NVIDIA" == "$NVIDIA_VERSION" ]] ||
     die "Certified release ${SELECTED_TAG} requires NVIDIA userspace ${SELECTED_NVIDIA}, but ${NVIDIA_VERSION} is installed. Run setup_nvidia.sh to align userspace first."
 
-SELECTED_ASSET="nvidia-open-${SELECTED_TAG}-x86_64.tar.gz"
+SELECTED_ASSET="${SELECTED_ASSET:-nvidia-open-${SELECTED_TAG}-x86_64.tar.gz}"
+if [[ -n "$RECOVERY_PLAN_FILE" && ! -f "$RECOVERY_PLAN_FILE" ]]; then
+    python3 "$TMP/support/lib/recovery_release_plan.py" create \
+        --plan "$RECOVERY_PLAN_FILE" --steamos "$SELECTED_STEAMOS" \
+        --nvidia "$SELECTED_NVIDIA" --kernel-tag "$SELECTED_KERNEL" \
+        --release-tag "$SELECTED_TAG" --asset-name "$SELECTED_ASSET" >/dev/null
+fi
 
 if [[ "$SELECTED_STEAMOS" == "$STEAMOS_VERSION" ]]; then
     log "Using exact SteamOS certified release ${SELECTED_TAG}."
@@ -385,8 +418,15 @@ HTTP_SHA="$(curl -sS -L --retry 2 -w '%{http_code}' "${BASE_URL}/${SELECTED_ASSE
     die "Failed to download release checksum."
 [[ "$HTTP_SHA" == "200" ]] || die "Unexpected HTTP ${HTTP_SHA} downloading checksum."
 
+if [[ -n "$RECOVERY_PLAN_FILE" ]]; then
+    python3 "$TMP/support/lib/recovery_release_plan.py" bind-archive \
+        --plan "$RECOVERY_PLAN_FILE" --archive "$ARCHIVE" >/dev/null ||
+        die "Downloaded release differs from the immutable recovery plan."
+fi
+
 INSTALL_FUZZY=0
 [[ "$SELECTED_STEAMOS" != "$STEAMOS_VERSION" ]] && INSTALL_FUZZY=1
 
 install_archive "$ARCHIVE" "$CHECKSUM" "$INSTALL_FUZZY"
+install_recovery_guardian
 offer_reboot

@@ -1,0 +1,12 @@
+[Unit]
+Description=Bounded fallback retry for OPEMOS exact NVIDIA repair
+
+[Timer]
+OnBootSec=5min
+OnUnitInactiveSec=10min
+RandomizedDelaySec=2min
+Persistent=true
+Unit=opemos-nvidia-repair.service
+
+[Install]
+WantedBy=timers.target

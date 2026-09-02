@@ -822,10 +822,33 @@ Desired design:
 
 This remains a major future area, represented by three distinct gates:
 
-* [ ] Determine the reliable SteamOS A/B update lifecycle hook and detect the
-  newly active slot and exact kernel without polling when an event is available.
-* [ ] Resolve/build only an exact-kernel artifact for the new slot, preserve its
-  matching userspace/configuration, and fail closed when no artifact exists.
+* [x] Add a persistent boot-time guardian that detects the newly active slot's
+  running kernel before the display manager without background polling.
+* [x] Add a bounded UI-neutral recovery status/action contract shared by the
+  canonical one-line install and image-builder deployments.
+* [x] Add mutually exclusive console, validated-iGPU, and explicitly authorized
+  experimental Nouveau fallback profiles; never select Nouveau automatically.
+* [x] Bind online repair to the installed support revision and the ordinary
+  exact-kernel published-artifact policy; leave fallback active on failure.
+* [ ] Add an authenticated, explicitly approved on-device exact-kernel source
+  build path for cases where no published artifact exists. A mutable source
+  branch must never be treated as certified merely because compilation passes.
+* [x] Persist exact target-bound delayed repair state outside the replaceable
+  rootfs, wake on NetworkManager connectivity changes, and use a bounded timer
+  fallback without making network availability a boot dependency.
+* [x] Make cancellation disable retries without disabling recovery graphics or
+  mutating a verified slot.
+* [ ] Connect the reviewed authenticated-cache bundle to on-device repair and
+  test exact cached repair with GitHub, Valve, and Arch endpoints unavailable.
+* [ ] Run delayed-network fault injection for absent/flapping connectivity,
+  captive portal, DNS/TLS failure, reboot mid-wait/download, and identity drift.
+* [x] Freeze the selected release identity and first downloaded archive hash for
+  an active recovery transaction so a publication cannot be spliced into it.
+* [ ] Test publication races: an exact release appearing during offline wait,
+  wrong-kernel/version releases, mid-download publication, and a certified
+  equivalent appearing after a locally-built verified repair.
+* [ ] Stage and independently verify the guardian assets and systemd enablement
+  in OPEMOS.EXE-generated rootfs payloads.
 * [ ] Test a 3.8.x kernel upgrade, missing-release behavior, and rollback to the
   previous slot without ever copying old-kernel modules into a new tree.
 

@@ -1,0 +1,12 @@
+[Unit]
+Description=OPEMOS exact-kernel NVIDIA boot guardian
+Before=display-manager.service graphical.target
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=@DEST@/bootstrap/recoveryctl.sh guard --json
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

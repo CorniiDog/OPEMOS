@@ -60,6 +60,23 @@ Install the matching published modules and userspace:
 cd ~ && bash <(curl -fsSL "https://raw.githubusercontent.com/CorniiDog/OPEMOS/main/bootstrap/online_install.sh?x=$(date +%s)")
 ```
 
+The canonical installer also installs a persistent boot guardian. On every
+activated SteamOS slot it verifies all five NVIDIA modules against the running
+kernel and installed userspace before the display manager starts. If an A/B
+update activates a kernel without matching modules, it enters a console-safe
+recovery profile instead of allowing a black graphical boot. Inspect or repair
+it through the UI-neutral JSON contract:
+
+```bash
+sudo /home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/bootstrap/recoveryctl.sh status --json
+sudo /home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/bootstrap/recoveryctl.sh repair-online --json
+```
+
+Automatic fallback disables both NVIDIA and Nouveau. An Intel/AMD boot-VGA
+desktop is accepted only after hardware validation; Nouveau is experimental
+and requires the explicit `--allow-nouveau` option. Fallback is removed only
+after exact NVIDIA module verification succeeds.
+
 The online bootstrap currently downloads from mutable `main`; review the
 [public installer trust limitations](docs/security.md#public-online-installer)
 before using it on a production system. For local review, clone the repository

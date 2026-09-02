@@ -1,0 +1,5 @@
+#!/bin/sh
+case "${2:-}" in
+    up|connectivity-change) systemctl start --no-block opemos-nvidia-repair.service ;;
+esac
+exit 0

@@ -47,6 +47,14 @@ python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/payload_receipt.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/recovery_status.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/update_recovery_grub_args.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/recovery_transaction.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/recovery_release_plan.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/snapshot_install_input.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/prune_backup_generations.py
@@ -146,6 +154,8 @@ printf 'Checking installer consumer compatibility...\n'
 python3 tests/install_contract.py
 printf 'Checking rootfs payload receipt contract...\n'
 python3 tests/payload_receipt.py
+printf 'Checking installed-system recovery contract...\n'
+python3 tests/recovery_status.py
 
 printf 'Checking target-owned execution trust...\n'
 python3 tests/target_execution_trust.py
