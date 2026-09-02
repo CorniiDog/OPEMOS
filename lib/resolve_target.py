@@ -215,7 +215,7 @@ def parse_args():
     parser.add_argument("--architecture", required=True, help="target ELF architecture")
     parser.add_argument("--releases", required=True, type=Path, help="GitHub releases JSON")
     parser.add_argument(
-        "--repository", default="CorniiDog/open-gpu-kernel-modules-steamos-support",
+        "--repository", default="CorniiDog/OPEMOS",
         help="expected GitHub owner/repository",
     )
     return parser.parse_args()

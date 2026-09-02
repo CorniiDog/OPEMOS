@@ -2,8 +2,8 @@
 
 set -euo pipefail
 
-SUPPORT_REPO="https://github.com/CorniiDog/open-gpu-kernel-modules-steamos-support.git"
-RAW_ROOT="https://raw.githubusercontent.com/CorniiDog/open-gpu-kernel-modules-steamos-support"
+SUPPORT_REPO="https://github.com/CorniiDog/OPEMOS.git"
+RAW_ROOT="https://raw.githubusercontent.com/CorniiDog/OPEMOS"
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
     cat <<EOF

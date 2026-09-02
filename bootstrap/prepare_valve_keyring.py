@@ -130,7 +130,7 @@ def main():
         else:
             request = urllib.request.Request(
                 manifest["source"]["url"],
-                headers={"User-Agent": "open-gpu-kernel-modules-steamos-support/1"},
+                headers={"User-Agent": "OPEMOS/1"},
             )
             with urllib.request.urlopen(request, timeout=60) as response:
                 if response.geturl() != manifest["source"]["url"]:

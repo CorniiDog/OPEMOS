@@ -51,7 +51,7 @@ def main():
             raise AssertionError("altered userspace lock was accepted")
     releases = json.loads((ROOT / "tests/fixtures/releases/policy.json").read_text())
     result = resolve_target("3.8.16", "kernel-a", "x86_64", releases,
-                            "CorniiDog/open-gpu-kernel-modules-steamos-support")
+                            "CorniiDog/OPEMOS")
     capability = result["capabilities"]["optionalCudaOmission"]
     assert capability == {"schemaVersion": 1, "profileId": "gaming-no-cuda-v1",
                           "supported": False,
@@ -69,7 +69,7 @@ def main():
     }
     supported = resolve_target(
         "3.8.14", kernel, "x86_64", [release],
-        "CorniiDog/open-gpu-kernel-modules-steamos-support",
+        "CorniiDog/OPEMOS",
     )["capabilities"]["optionalCudaOmission"]
     assert supported["supported"] is True
     assert supported["compatibility"] == "exact"
@@ -81,7 +81,7 @@ def main():
     ]
     unavailable = resolve_target(
         "3.8.14", kernel, "x86_64", [missing],
-        "CorniiDog/open-gpu-kernel-modules-steamos-support",
+        "CorniiDog/OPEMOS",
     )["capabilities"]["optionalCudaOmission"]
     assert unavailable["supported"] is False
     assert unavailable["reason"] == "reviewed_profile_assets_missing"

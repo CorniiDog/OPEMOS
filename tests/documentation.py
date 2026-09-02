@@ -114,6 +114,34 @@ def main() -> None:
     assert len(README.read_text(encoding="utf-8").splitlines()) <= 150, (
         "root README must remain a concise project entry point"
     )
+    readme = README.read_text(encoding="utf-8")
+    assert "[OPEMOS documentation](https://corniidog.github.io/OPEMOS/)" in readme
+    assert "**https://corniidog.github.io/" not in readme
+    assert ".git opemos" in readme and "cd opemos" in readme
+
+    identity_files = [
+        README,
+        DOCS / "_config.yml",
+        *sorted(DOCS.glob("*.md")),
+        ROOT / "bootstrap/compile_online.sh",
+        ROOT / "bootstrap/online_commit.sh",
+        ROOT / "bootstrap/online_dev.sh",
+        ROOT / "bootstrap/online_install.sh",
+        ROOT / "bootstrap/online_setup_nvidia.sh",
+        ROOT / "bootstrap/publish_artifacts.sh",
+        ROOT / "bootstrap/setup_nvidia.sh",
+        ROOT / "lib/common.sh",
+        ROOT / "lib/resolve_target.py",
+        ROOT / "lib/validate_publish_inputs.py",
+    ]
+    for path in identity_files:
+        text = path.read_text(encoding="utf-8")
+        assert "CorniiDog/open-gpu-kernel-modules-steamos-support" not in text, (
+            f"stale pre-rename GitHub repository identity: {path}"
+        )
+        assert "corniidog.github.io/open-gpu-kernel-modules-steamos-support" not in text, (
+            f"stale pre-rename GitHub Pages identity: {path}"
+        )
 
     sources = [README, *sorted(DOCS.glob("*.md"))]
     for source in sources:
@@ -139,7 +167,8 @@ def main() -> None:
         assert re.search(rf"^\s+- {re.escape(page)}\s*$", config, re.MULTILINE), (
             f"documentation navigation omits {page}"
         )
-    assert "baseurl: /open-gpu-kernel-modules-steamos-support" in config
+    assert "baseurl: /OPEMOS" in config
+    assert "repository: CorniiDog/OPEMOS" in config
     assert "title: OPEMOS" in config
     assert "Unofficial community-built" in config
 

@@ -467,7 +467,7 @@ sys.path.insert(0, sys.argv[1])
 from resolve_target import resolve_target
 
 for releases, repository, reason in (
-    (["not-an-object"], "CorniiDog/open-gpu-kernel-modules-steamos-support", "release_metadata_invalid"),
+    (["not-an-object"], "CorniiDog/OPEMOS", "release_metadata_invalid"),
     ([], "invalid/repository/path", "invalid_repository"),
 ):
     result = resolve_target("3.8.16", "kernel-a", "x86_64", releases, repository)

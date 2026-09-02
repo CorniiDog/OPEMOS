@@ -16,9 +16,7 @@ rather than substituting a nearby kernel or unreviewed userspace payload.
 
 ## Documentation
 
-The full documentation is available at:
-
-**https://corniidog.github.io/open-gpu-kernel-modules-steamos-support/**
+Read the **[OPEMOS documentation](https://corniidog.github.io/OPEMOS/)**.
 
 - [Install from a Steam Deck terminal](docs/getting-started.md)
 - [Developer tutorials](docs/developer-guide.md)
@@ -34,13 +32,13 @@ Open Konsole in Desktop Mode. Inspect the selected release without changing
 the system:
 
 ```bash
-cd ~ && bash <(curl -fsSL "https://raw.githubusercontent.com/CorniiDog/open-gpu-kernel-modules-steamos-support/main/bootstrap/online_setup_nvidia.sh?x=$(date +%s)") --resolve-only
+cd ~ && bash <(curl -fsSL "https://raw.githubusercontent.com/CorniiDog/OPEMOS/main/bootstrap/online_setup_nvidia.sh?x=$(date +%s)") --resolve-only
 ```
 
 Install the matching published modules and userspace:
 
 ```bash
-cd ~ && bash <(curl -fsSL "https://raw.githubusercontent.com/CorniiDog/open-gpu-kernel-modules-steamos-support/main/bootstrap/online_install.sh?x=$(date +%s)")
+cd ~ && bash <(curl -fsSL "https://raw.githubusercontent.com/CorniiDog/OPEMOS/main/bootstrap/online_install.sh?x=$(date +%s)")
 ```
 
 The online bootstrap currently downloads from mutable `main`; review the
@@ -49,8 +47,8 @@ before using it on a production system. For local review, clone the repository
 and inspect help before mutation:
 
 ```bash
-git clone https://github.com/CorniiDog/open-gpu-kernel-modules-steamos-support.git
-cd open-gpu-kernel-modules-steamos-support
+git clone https://github.com/CorniiDog/OPEMOS.git opemos
+cd opemos
 ./bootstrap/setup_nvidia.sh --resolve-only
 ./bootstrap/online_install.sh --help
 ```
@@ -58,7 +56,7 @@ cd open-gpu-kernel-modules-steamos-support
 Uninstall:
 
 ```bash
-cd ~/open-gpu-kernel-modules-steamos-support
+cd ~/opemos
 ./bootstrap/uninstall.sh
 ```
 
@@ -77,7 +75,7 @@ Btrfs, mount, chroot, and cancellation coverage:
 ./tests/vm/run.sh
 ```
 
-The support repository owns target detection, builds, validation, installers,
+The OPEMOS repository owns target detection, builds, validation, installers,
 trust policy, and release metadata. The companion
 [`open-gpu-kernel-modules-steamos`](https://github.com/CorniiDog/open-gpu-kernel-modules-steamos)
 repository owns versioned NVIDIA source branches and SteamOS-specific source

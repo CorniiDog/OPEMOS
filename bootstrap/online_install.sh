@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SUPPORT_REPO="${SUPPORT_REPO:-CorniiDog/open-gpu-kernel-modules-steamos-support}"
+SUPPORT_REPO="${SUPPORT_REPO:-CorniiDog/OPEMOS}"
 SUPPORT_BRANCH="${SUPPORT_BRANCH:-main}"
 
 FUZZY=0

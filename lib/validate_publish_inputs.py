@@ -12,7 +12,7 @@ import tempfile
 from pathlib import Path, PurePosixPath
 
 
-CANONICAL_REPOSITORY = "CorniiDog/open-gpu-kernel-modules-steamos-support"
+CANONICAL_REPOSITORY = "CorniiDog/OPEMOS"
 TRUST_LEVELS = {"locally-built-verified", "certified-published"}
 EXPECTED_MODULES = {
     "nvidia.ko", "nvidia-drm.ko", "nvidia-modeset.ko", "nvidia-peermem.ko",

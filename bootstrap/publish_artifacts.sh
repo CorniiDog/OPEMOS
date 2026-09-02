@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SUPPORT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-CANONICAL_REPOSITORY="CorniiDog/open-gpu-kernel-modules-steamos-support"
+CANONICAL_REPOSITORY="CorniiDog/OPEMOS"
 REPOSITORY="$CANONICAL_REPOSITORY"
 ARCHIVE=""
 CHECKSUM=""

@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-SUPPORT_REPO="${SUPPORT_REPO:-CorniiDog/open-gpu-kernel-modules-steamos-support}"
+SUPPORT_REPO="${SUPPORT_REPO:-CorniiDog/OPEMOS}"
 SUPPORT_BRANCH="${SUPPORT_BRANCH:-main}"
 SOURCE_REPO="${SOURCE_REPO:-CorniiDog/open-gpu-kernel-modules-steamos}"
 
@@ -67,8 +67,8 @@ need nvidia-smi
 NVIDIA_VERSION="$(nvidia-smi --query-gpu=driver_version --format=csv,noheader,nounits | head -n1 | tr -d '[:space:]')"
 SOURCE_BRANCH="nvidia/${NVIDIA_VERSION}"
 
-printf '[open-gpu-kernel-modules-steamos-support] NVIDIA: %s\n' "$NVIDIA_VERSION"
-printf '[open-gpu-kernel-modules-steamos-support] Source branch: %s\n' "$SOURCE_BRANCH"
+printf '[OPEMOS] NVIDIA: %s\n' "$NVIDIA_VERSION"
+printf '[OPEMOS] Source branch: %s\n' "$SOURCE_BRANCH"
 
 SUPPORT_REV="$(git ls-remote "https://github.com/${SUPPORT_REPO}.git" "refs/heads/${SUPPORT_BRANCH}" | awk 'NR==1 {print $1}')"
 [[ "$SUPPORT_REV" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "Could not resolve support revision." >&2; exit 1; }
@@ -120,9 +120,9 @@ if [[ "$IN_CODE" == "1" ]]; then
     SOURCE_SUFFIX=""
     [[ -z "$(git -C "$SOURCE_DIR" status --porcelain)" ]] || SOURCE_SUFFIX=" + working tree changes"
 
-    printf "[open-gpu-kernel-modules-steamos-support] Support: %s\n" "${SUPPORT_REV:0:12}"
-    printf "[open-gpu-kernel-modules-steamos-support] Source:  %s%s\n" "${SOURCE_REV:0:12}" "$SOURCE_SUFFIX"
-    printf "[open-gpu-kernel-modules-steamos-support] Mode:    in-code (%s)\n" "$SOURCE_DIR"
+    printf "[OPEMOS] Support: %s\n" "${SUPPORT_REV:0:12}"
+    printf "[OPEMOS] Source:  %s%s\n" "${SOURCE_REV:0:12}" "$SOURCE_SUFFIX"
+    printf "[OPEMOS] Mode:    in-code (%s)\n" "$SOURCE_DIR"
 
     FORWARD_ARGS+=("--force-rebuild")
 
@@ -137,8 +137,8 @@ else
         exit 1
     }
 
-    printf "[open-gpu-kernel-modules-steamos-support] Support: %s\n" "${SUPPORT_REV:0:12}"
-    printf "[open-gpu-kernel-modules-steamos-support] Source:  %s\n" "${SOURCE_REV:0:12}"
+    printf "[OPEMOS] Support: %s\n" "${SUPPORT_REV:0:12}"
+    printf "[OPEMOS] Source:  %s\n" "${SOURCE_REV:0:12}"
 
     git clone \
         --quiet \

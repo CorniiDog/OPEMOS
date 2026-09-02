@@ -88,7 +88,7 @@ assert_fake_state_restored()
         die "SteamOS readonly state was not restored."
 
     mapfile -t remaining_stages < <(
-        find "${HOME}/.cache/${PROJECT_NAME}" -maxdepth 1 -type d \
+        find "${HOME}/.cache/${PROJECT_ID}" -maxdepth 1 -type d \
             \( -name 'install-stage.*' -o -name 'install-extract.*' \) -print \
             2>/dev/null
     )
@@ -96,7 +96,7 @@ assert_fake_state_restored()
         die "Installer left an orphaned stage directory."
 
     mapfile -t foreign_cache_paths < <(
-        find "${HOME}/.cache/${PROJECT_NAME}" -xdev ! -user "$(id -u)" -print \
+        find "${HOME}/.cache/${PROJECT_ID}" -xdev ! -user "$(id -u)" -print \
             2>/dev/null
     )
     (( ${#foreign_cache_paths[@]} == 0 )) ||
@@ -329,7 +329,7 @@ run_successful_lifecycle()
         die "Reinstall after uninstall did not restore project modules."
 
     mapfile -t backup_generations < <(
-        find "${HOME}/.cache/${PROJECT_NAME}/backups/${REAL_KERNEL}" \
+        find "${HOME}/.cache/${PROJECT_ID}/backups/${REAL_KERNEL}" \
             -mindepth 1 -maxdepth 1 -type d -print
     )
     (( ${#backup_generations[@]} == 3 )) ||

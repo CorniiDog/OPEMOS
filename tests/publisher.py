@@ -64,7 +64,7 @@ def fixture(
         },
         "artifact": {"releaseTag": TAG, "archive": ARCHIVE_NAME},
         "support": {
-            "repository": "CorniiDog/open-gpu-kernel-modules-steamos-support",
+            "repository": "CorniiDog/OPEMOS",
             "commit": SUPPORT_COMMIT,
             "dirty": 0,
         },
@@ -85,7 +85,7 @@ def fixture(
         "trust_classification=locally-built-verified",
         f"release_tag={TAG}",
         f"release_asset={ARCHIVE_NAME}",
-        "support_repository=CorniiDog/open-gpu-kernel-modules-steamos-support",
+        "support_repository=CorniiDog/OPEMOS",
         f"support_commit={SUPPORT_COMMIT}",
         "source_repository=CorniiDog/open-gpu-kernel-modules-steamos",
         f"source_commit={SOURCE_COMMIT}",
@@ -175,8 +175,8 @@ def main():
             "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$GH_LOG\"\n"
             "case \"$1 $2\" in\n"
             "  'auth status') exit 0;;\n"
-            "  'api repos/CorniiDog/open-gpu-kernel-modules-steamos-support') echo true; exit 0;;\n"
-            "  'api repos/CorniiDog/open-gpu-kernel-modules-steamos-support/commits/'*) echo \"${GH_TAG_COMMIT:-}\"; exit 0;;\n"
+            "  'api repos/CorniiDog/OPEMOS') echo true; exit 0;;\n"
+            "  'api repos/CorniiDog/OPEMOS/commits/'*) echo \"${GH_TAG_COMMIT:-}\"; exit 0;;\n"
             "  'release view') [ \"${GH_RELEASE_EXISTS:-0}\" = 1 ]; exit $?;;\n"
             "esac\nexit 0\n",
             encoding="utf-8",

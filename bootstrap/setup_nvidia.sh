@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SUPPORT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 source "${SUPPORT_ROOT}/lib/common.sh"
 
-SUPPORT_REPO="${SUPPORT_REPO:-CorniiDog/open-gpu-kernel-modules-steamos-support}"
+SUPPORT_REPO="${SUPPORT_REPO:-CorniiDog/OPEMOS}"
 
 DEVELOPMENT_SPEC=""
 UPSTREAM_SPEC=""

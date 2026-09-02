@@ -38,7 +38,7 @@ The resolution-only path reports the selected SteamOS, kernel, NVIDIA version,
 release, and trust state without installing userspace or modules:
 
 ```bash
-cd ~ && bash <(curl -fsSL "https://raw.githubusercontent.com/CorniiDog/open-gpu-kernel-modules-steamos-support/main/bootstrap/online_setup_nvidia.sh?x=$(date +%s)") --resolve-only
+cd ~ && bash <(curl -fsSL "https://raw.githubusercontent.com/CorniiDog/OPEMOS/main/bootstrap/online_setup_nvidia.sh?x=$(date +%s)") --resolve-only
 ```
 
 `no_compatible_artifact` is a safe result. It means an exact artifact has not
@@ -47,7 +47,7 @@ been published; it is not permission to use a closest kernel.
 ## Install a published build
 
 ```bash
-cd ~ && bash <(curl -fsSL "https://raw.githubusercontent.com/CorniiDog/open-gpu-kernel-modules-steamos-support/main/bootstrap/online_install.sh?x=$(date +%s)")
+cd ~ && bash <(curl -fsSL "https://raw.githubusercontent.com/CorniiDog/OPEMOS/main/bootstrap/online_install.sh?x=$(date +%s)")
 ```
 
 The orchestrator selects matching userspace, validates the release artifact,
@@ -65,8 +65,8 @@ This path lets you inspect the exact scripts before running them:
 
 ```bash
 cd ~
-git clone https://github.com/CorniiDog/open-gpu-kernel-modules-steamos-support.git
-cd open-gpu-kernel-modules-steamos-support
+git clone https://github.com/CorniiDog/OPEMOS.git opemos
+cd opemos
 ./bootstrap/setup_nvidia.sh --resolve-only
 ./bootstrap/online_install.sh --help
 ./bootstrap/online_install.sh
@@ -132,6 +132,9 @@ and SteamOS read-only state. A failed rollback remains a failure; do not treat
 partial cleanup as success.
 
 ## Where files are stored
+
+OPEMOS retains its original internal directory identifier so upgrades and
+uninstalls can find existing state.
 
 Large source trees, build output, backups, and containers stay on `/home`:
 

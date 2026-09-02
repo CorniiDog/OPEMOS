@@ -32,7 +32,7 @@ The builder must:
 - independently inspect the exported image before using an `-nvidia.img`
   suffix.
 
-The support backend must:
+OPEMOS must:
 
 - resolve or build for the exact target;
 - authenticate modules, userspace, signatures, locks, and provenance;

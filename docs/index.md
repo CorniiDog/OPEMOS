@@ -26,7 +26,7 @@ supported by Valve or NVIDIA.
 4. [Command and JSON contracts](contracts.md)
 5. [Trust, safety, and recovery](security.md)
 6. [Complete technical reference](technical-reference.md)
-7. [Project roadmap](https://github.com/CorniiDog/open-gpu-kernel-modules-steamos-support/blob/main/TODO.md)
+7. [Project roadmap](https://github.com/CorniiDog/OPEMOS/blob/main/TODO.md)
 
 ## Choose your path
 
@@ -34,7 +34,7 @@ supported by Valve or NVIDIA.
 | --- | --- |
 | Inspect or install from a Steam Deck terminal | [Getting started](getting-started.md) |
 | Build an exact missing kernel artifact | [Developer guide: offline target build](developer-guide.md#build-for-an-offline-target) |
-| Integrate the support backend into an image builder | [Image-builder integration](image-builder.md) |
+| Integrate OPEMOS into an image builder | [Image-builder integration](image-builder.md) |
 | Consume resolver, progress, or result JSON | [Contracts](contracts.md) |
 | Publish or revise an artifact | [Developer guide: releases](developer-guide.md#publish-a-release) |
 | Understand what is authenticated and what is not | [Security model](security.md) |
@@ -43,7 +43,7 @@ supported by Valve or NVIDIA.
 
 | Component | Owns |
 | --- | --- |
-| This support repository | Target resolution, headers, builds, validation, userspace locks, installation, rollback, provenance, and publishing |
+| OPEMOS | Target resolution, headers, builds, validation, userspace locks, installation, rollback, provenance, and publishing |
 | `open-gpu-kernel-modules-steamos` | Versioned `nvidia/<version>` source branches and SteamOS-specific source patches |
 | SteamOS NVIDIA Image Builder | Recovery-image inspection, A/B selection, appliance lifecycle, disposable overlays, progress UI, and final-image validation |
 | NVIDIA upstream | OS-independent driver source and Linux kernel interface baseline |

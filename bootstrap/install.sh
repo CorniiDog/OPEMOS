@@ -61,7 +61,7 @@ if [[ -n "$CHECKSUM" ]]; then
         die "Archive checksum verification failed."
 fi
 
-mkdir -p "${HOME}/.cache/${PROJECT_NAME}"
+mkdir -p "${HOME}/.cache/${PROJECT_ID}"
 TMP="$(project_mktemp_dir install-extract)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -140,7 +140,7 @@ acquire_lifecycle_lock
 
 TARGET_DIR="$(project_system_path "/usr/lib/modules/${CURRENT_KERNEL}/updates/open-gpu-kernel-modules-steamos")"
 STATE_ROOT="$(project_system_path "/var/lib/open-gpu-kernel-modules-steamos-support")"
-CACHE_ROOT="${HOME}/.cache/${PROJECT_NAME}"
+CACHE_ROOT="${HOME}/.cache/${PROJECT_ID}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP_ROOT="${CACHE_ROOT}/backups/${CURRENT_KERNEL}"
 mkdir -p "$BACKUP_ROOT"
@@ -230,7 +230,7 @@ if [[ -d "$TARGET_DIR" ]]; then
     sudo chown -R "$USER":"$(id -gn)" "$BACKUP_DIR"
 fi
 
-mkdir -p "${HOME}/.cache/${PROJECT_NAME}"
+mkdir -p "${HOME}/.cache/${PROJECT_ID}"
 STAGE="$(project_mktemp_dir install-stage)"
 
 for module in "${MODULES[@]}"; do

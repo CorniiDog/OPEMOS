@@ -18,14 +18,14 @@ description: Build, test, audit, repack, and publish exact SteamOS NVIDIA artifa
 
 ## Set up and test
 
-Clone both repositories when developing SteamOS source changes. This support
-repository owns orchestration and contracts; the source repository owns the
+Clone both repositories when developing SteamOS source changes. OPEMOS owns
+orchestration and contracts; the source repository owns the
 actual NVIDIA branches.
 
 ```bash
-git clone https://github.com/CorniiDog/open-gpu-kernel-modules-steamos-support.git
+git clone https://github.com/CorniiDog/OPEMOS.git opemos
 git clone https://github.com/CorniiDog/open-gpu-kernel-modules-steamos.git
-cd open-gpu-kernel-modules-steamos-support
+cd opemos
 ./tests/check.sh
 ```
 

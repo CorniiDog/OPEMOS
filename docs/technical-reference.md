@@ -20,7 +20,7 @@ task-oriented introduction, start with the [documentation home](index.md).
 - [Local checks](#local-checks)
 - [Non-sudo reinstall baseline](#non-sudo-reinstall-baseline)
 
-## SteamOS NVIDIA Open Kernel Modules
+## OPEMOS
 
 Build, install, and maintain NVIDIA open kernel modules matched to a specific
 SteamOS release, Neptune kernel, and NVIDIA userspace version.
@@ -36,11 +36,11 @@ Two project repositories and NVIDIA upstream have deliberately separate jobs:
 
 | Repository | Responsibility |
 | --- | --- |
-| `CorniiDog/open-gpu-kernel-modules-steamos-support` | SteamOS detection, NVIDIA userspace setup, contained builds, archive validation, installation, uninstall, release selection, and online entry points |
+| [OPEMOS](https://github.com/CorniiDog/OPEMOS) | SteamOS detection, NVIDIA userspace setup, contained builds, archive validation, installation, uninstall, release selection, and online entry points |
 | `CorniiDog/open-gpu-kernel-modules-steamos` | Project-owned NVIDIA source branches and individual SteamOS compatibility patches |
 | `NVIDIA/open-gpu-kernel-modules` | Pristine upstream source and tags used as control baselines |
 
-The support repository owns build and release metadata. The source repository
+OPEMOS owns build and release metadata. The source repository
 owns patch history. Project releases must identify the exact source commit used
 to build their modules.
 
@@ -63,13 +63,13 @@ keeps NVIDIA userspace matched exactly to the selected project modules.
 The normal online installer installs the matching release:
 
 ```bash
-cd ~ && bash <(curl -fsSL "https://raw.githubusercontent.com/CorniiDog/open-gpu-kernel-modules-steamos-support/main/bootstrap/online_install.sh?x=$(date +%s)")
+cd ~ && bash <(curl -fsSL "https://raw.githubusercontent.com/CorniiDog/OPEMOS/main/bootstrap/online_install.sh?x=$(date +%s)")
 ```
 
 ### Patched-module development
 
 ```bash
-cd ~ && bash <(curl -fsSL "https://raw.githubusercontent.com/CorniiDog/open-gpu-kernel-modules-steamos-support/main/bootstrap/online_setup_nvidia.sh?x=$(date +%s)") --development 580 --resolve-only
+cd ~ && bash <(curl -fsSL "https://raw.githubusercontent.com/CorniiDog/OPEMOS/main/bootstrap/online_setup_nvidia.sh?x=$(date +%s)") --development 580 --resolve-only
 ```
 
 `--development` selects matching NVIDIA userspace for project source work. It
@@ -80,13 +80,13 @@ Install the selected userspace, then create or refresh the matching source
 branch from the exact NVIDIA upstream tag in one command:
 
 ```bash
-cd ~ && bash <(curl -fsSL "https://raw.githubusercontent.com/CorniiDog/open-gpu-kernel-modules-steamos-support/main/bootstrap/online_setup_nvidia.sh?x=$(date +%s)") --development 580 --yes && bash <(curl -fsSL "https://raw.githubusercontent.com/CorniiDog/open-gpu-kernel-modules-steamos-support/main/bootstrap/online_dev.sh?x=$(date +%s)")
+cd ~ && bash <(curl -fsSL "https://raw.githubusercontent.com/CorniiDog/OPEMOS/main/bootstrap/online_setup_nvidia.sh?x=$(date +%s)") --development 580 --yes && bash <(curl -fsSL "https://raw.githubusercontent.com/CorniiDog/OPEMOS/main/bootstrap/online_dev.sh?x=$(date +%s)")
 ```
 
 ### Pristine upstream control
 
 ```bash
-cd ~ && bash <(curl -fsSL "https://raw.githubusercontent.com/CorniiDog/open-gpu-kernel-modules-steamos-support/main/bootstrap/online_setup_nvidia.sh?x=$(date +%s)") --use-upstream 580 --resolve-only
+cd ~ && bash <(curl -fsSL "https://raw.githubusercontent.com/CorniiDog/OPEMOS/main/bootstrap/online_setup_nvidia.sh?x=$(date +%s)") --use-upstream 580 --resolve-only
 ```
 
 `--use-upstream` selects matching userspace and, without `--resolve-only`,
@@ -99,7 +99,7 @@ Install the selected userspace and build and install the pristine upstream
 modules in one command:
 
 ```bash
-cd ~ && bash <(curl -fsSL "https://raw.githubusercontent.com/CorniiDog/open-gpu-kernel-modules-steamos-support/main/bootstrap/online_setup_nvidia.sh?x=$(date +%s)") --use-upstream 580 --yes --offer-reboot
+cd ~ && bash <(curl -fsSL "https://raw.githubusercontent.com/CorniiDog/OPEMOS/main/bootstrap/online_setup_nvidia.sh?x=$(date +%s)") --use-upstream 580 --yes --offer-reboot
 ```
 
 To build the pristine archive without changing installed modules:
@@ -214,7 +214,7 @@ Inspect a non-mutating machine-readable plan first:
 ```
 
 Live publication is fixed to
-`CorniiDog/open-gpu-kernel-modules-steamos-support`, verifies `gh`
+`CorniiDog/OPEMOS`, verifies `gh`
 authentication and push permission, and updates only the derived exact release.
 Add `--create-only` to fail if that release already exists. A noncanonical
 repository requires the conspicuous `--development-repository OWNER/REPO`
@@ -810,6 +810,11 @@ belong under the user cache on `/home`:
 ~/.cache/open-gpu-kernel-modules-steamos-support/
 ```
 
+The pre-OPEMOS identifier in cache, state, lock, and module-directory paths is
+intentional. Those paths are a stable on-disk compatibility contract, not the
+project's display name; renaming them would strand existing installation state
+and rollback data.
+
 Offline-target build sessions hold a per-session advisory lock. At the next
 build, recognized `target-build.*` directories older than 24 hours are removed
 only when that lock can be acquired; active, recent, symlinked, and unknown
@@ -859,7 +864,7 @@ mutation using the reviewed NVIDIA modules and userspace closure. Remaining
 release gates include fresh-stock installation, Valve repair/A-B propagation,
 independent exported-image inspection, and physical NVIDIA hardware boot.
 
-See the [project TODO](https://github.com/CorniiDog/open-gpu-kernel-modules-steamos-support/blob/main/TODO.md)
+See the [project TODO](https://github.com/CorniiDog/OPEMOS/blob/main/TODO.md)
 for the detailed checklist and test status.
 
 ## Local checks

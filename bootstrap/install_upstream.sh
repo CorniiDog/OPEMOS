@@ -75,7 +75,7 @@ CURRENT_NVIDIA="$(get_nvidia_version)"
 [[ "$CURRENT_NVIDIA" == "$NVIDIA_VERSION" ]] ||
     die "Installed NVIDIA userspace is ${CURRENT_NVIDIA}; expected ${NVIDIA_VERSION}."
 
-SOURCE_ROOT="${HOME}/.cache/${PROJECT_NAME}/upstream"
+SOURCE_ROOT="${HOME}/.cache/${PROJECT_ID}/upstream"
 SOURCE_DIR="${SOURCE_ROOT}/${NVIDIA_VERSION}"
 
 mkdir -p "$SOURCE_ROOT"
@@ -134,12 +134,12 @@ mkdir -p "$STATE_DIR"
 
 STATE_BACKUP=""
 if [[ -f "$STATE_FILE" ]]; then
-    mkdir -p "${HOME}/.cache/${PROJECT_NAME}"
+    mkdir -p "${HOME}/.cache/${PROJECT_ID}"
     STATE_BACKUP="$(project_mktemp_file upstream-state)"
     cp "$STATE_FILE" "$STATE_BACKUP"
 fi
 
-mkdir -p "${HOME}/.cache/${PROJECT_NAME}"
+mkdir -p "${HOME}/.cache/${PROJECT_ID}"
 WORK_DIR="$(project_mktemp_dir upstream-install)"
 
 cleanup()
@@ -232,7 +232,7 @@ tar -C "$PACKAGE_DIR" -czf "$ARCHIVE" modules BUILD-INFO.txt
 sha256sum "$ARCHIVE" > "$CHECKSUM"
 
 if [[ "$BUILD_ONLY" == "1" ]]; then
-    OUTPUT_DIR="${HOME}/.cache/${PROJECT_NAME}/upstream-builds"
+    OUTPUT_DIR="${HOME}/.cache/${PROJECT_ID}/upstream-builds"
     mkdir -p "$OUTPUT_DIR"
 
     OUTPUT_ARCHIVE="${OUTPUT_DIR}/$(basename "$ARCHIVE")"

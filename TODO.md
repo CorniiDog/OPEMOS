@@ -106,7 +106,7 @@ criteria without duplicating that queue.
 
 * [x] Keep the support/build/install tooling in:
 
-  * `CorniiDog/open-gpu-kernel-modules-steamos-support`
+  * `CorniiDog/OPEMOS`
 * [x] Keep NVIDIA source history/patch branches in:
 
   * `CorniiDog/open-gpu-kernel-modules-steamos`

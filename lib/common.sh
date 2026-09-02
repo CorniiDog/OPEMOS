@@ -2,9 +2,10 @@
 
 set -euo pipefail
 
-PROJECT_NAME="open-gpu-kernel-modules-steamos-support"
+PROJECT_ID="open-gpu-kernel-modules-steamos-support"
+PROJECT_NAME="OPEMOS"
 
-SUPPORT_REPO="${SUPPORT_REPO:-CorniiDog/open-gpu-kernel-modules-steamos-support}"
+SUPPORT_REPO="${SUPPORT_REPO:-CorniiDog/OPEMOS}"
 SUPPORT_BRANCH="${SUPPORT_BRANCH:-main}"
 
 NVIDIA_BUILD_IMAGE="${NVIDIA_BUILD_IMAGE:-registry.fedoraproject.org/fedora:42}"
@@ -14,7 +15,7 @@ SOURCE_REPO_URL="https://github.com/${SOURCE_REPO}.git"
 UPSTREAM_URL="https://github.com/NVIDIA/open-gpu-kernel-modules.git"
 
 DEFAULT_SOURCE_DIR="${HOME}/open-gpu-kernel-modules-steamos"
-STATE_DIR="${XDG_STATE_HOME:-${HOME}/.local/state}/${PROJECT_NAME}"
+STATE_DIR="${XDG_STATE_HOME:-${HOME}/.local/state}/${PROJECT_ID}"
 STATE_FILE="${STATE_DIR}/dev-state"
 
 log()
@@ -225,7 +226,7 @@ valve_repository_names_from_html()
 
 project_cache_root()
 {
-    printf '%s\n' "${HOME}/.cache/${PROJECT_NAME}"
+    printf '%s\n' "${HOME}/.cache/${PROJECT_ID}"
 }
 
 project_mktemp_dir()
@@ -276,7 +277,7 @@ acquire_lifecycle_lock()
     need_cmd flock
 
     local lock_file
-    lock_file="$(project_system_path "/run/lock/${PROJECT_NAME}.lock")"
+    lock_file="$(project_system_path "/run/lock/${PROJECT_ID}.lock")"
 
     # Preserve one inode so concurrent lifecycle operations cannot lock
     # different files after a pathname replacement.

@@ -61,7 +61,7 @@ sudo -v
 acquire_lifecycle_lock
 
 STAMP="$(date +%Y%m%d-%H%M%S)"
-CACHE_ROOT="${HOME}/.cache/${PROJECT_NAME}"
+CACHE_ROOT="${HOME}/.cache/${PROJECT_ID}"
 BACKUP_ROOT="${CACHE_ROOT}/backups/${CURRENT_KERNEL}"
 mkdir -p "$BACKUP_ROOT"
 BACKUP_DIR="$(mktemp -d "${BACKUP_ROOT}/uninstall-${STAMP}.XXXXXX")"

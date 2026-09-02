@@ -1278,7 +1278,7 @@ PHASE=state_write
 guard_target_mount_identities
 emit_progress_indeterminate installation_state
 [[ -z "$COMPRESSION_PROFILE" ]] || require_active_compression_policy
-STATE_ROOT="$ROOT/var/lib/$PROJECT_NAME/offline-install"
+STATE_ROOT="$ROOT/var/lib/$PROJECT_ID/offline-install"
 install -d -m 0755 "$STATE_ROOT"
 install -m 0644 "$MUTATION_WORK/BUILD-INFO.txt" "$STATE_ROOT/BUILD-INFO.txt"
 install -m 0644 "$PROVENANCE" "$STATE_ROOT/PROVENANCE.json"
