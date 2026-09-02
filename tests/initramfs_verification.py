@@ -14,8 +14,11 @@ sys.path.insert(0, str(ROOT / "lib"))
 from write_install_result import load_initramfs_verification
 VERIFIER = ROOT / "lib/verify_initramfs.py"
 KERNEL = "6.16.12-valve-fixture"
-MODULES = ("nvidia.ko", "nvidia-drm.ko", "nvidia-modeset.ko",
-           "nvidia-peermem.ko", "nvidia-uvm.ko")
+REQUIRED_MODULES = (
+    "nvidia.ko", "nvidia-modeset.ko", "nvidia-uvm.ko", "nvidia-drm.ko",
+)
+ROOTFS_ONLY_MODULE = "nvidia-peermem.ko"
+IMAGE_NAMES = ("initramfs-linux.img", "initramfs-linux-fallback.img")
 CONFIG = "etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf"
 
 
@@ -24,21 +27,26 @@ def sha(path):
 
 
 def run(root, expected=None):
-    image = root / "initramfs-linux.img"
     command = [str(VERIFIER), "--kernel", KERNEL,
                "--execution-manifest", str(root / "execution.json"),
-               "--config", str(root / CONFIG), "--image", str(image),
-               "--listing", str(root / "listing"), "--image-sha256", expected or sha(image),
-               "--output", str(root / "result.json")]
+               "--config", str(root / CONFIG), "--output", str(root / "result.json")]
+    for index, name in enumerate(IMAGE_NAMES):
+        image = root / name
+        digest = expected if index == 0 and expected is not None else sha(image)
+        command.extend(("--image", str(image), "--listing",
+                        str(root / f"listing-{index}"), "--image-sha256", digest))
     return subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
 
 def fixture(root):
-    image = root / "initramfs-linux.img"
-    image.write_bytes(b"deterministic initramfs fixture\n")
-    listing = [f"usr/lib/modules/{KERNEL}/{module}.zst" for module in MODULES]
+    for name in IMAGE_NAMES:
+        (root / name).write_bytes(f"deterministic {name} fixture\n".encode())
+    listing = [
+        f"usr/lib/modules/{KERNEL}/{module}.zst" for module in REQUIRED_MODULES
+    ]
     listing.extend((CONFIG, "usr/bin/busybox"))
-    (root / "listing").write_text("\n".join(listing) + "\n")
+    for index in range(len(IMAGE_NAMES)):
+        (root / f"listing-{index}").write_text("\n".join(listing) + "\n")
     config = root / CONFIG
     config.parent.mkdir(parents=True)
     config.write_text("options nvidia-drm modeset=1\n")
@@ -69,15 +77,22 @@ def main():
         completed = run(root)
         assert completed.returncode == 0, completed.stderr
         result = json.loads((root / "result.json").read_text())
-        assert result["status"] == "verified" and len(result["images"]) == 1
-        assert set(result["images"][0]["modules"]) == set(MODULES)
+        assert result["status"] == "verified" and len(result["images"]) == 2
+        assert result["requiredModules"] == list(REQUIRED_MODULES)
+        assert result["rootfsOnlyModules"] == [ROOTFS_ONLY_MODULE]
+        for image in result["images"]:
+            assert set(image["modules"]) == set(REQUIRED_MODULES)
         assert load_initramfs_verification(root / "result.json") == result
 
-    rejected(lambda root: (root / "listing").write_text(
-        (root / "listing").read_text() + CONFIG + "\n"))
-    rejected(lambda root: (root / "listing").write_text("../escape\n"))
-    rejected(lambda root: (root / "listing").write_text(
-        (root / "listing").read_text().replace(f"usr/lib/modules/{KERNEL}/nvidia.ko.zst\n", "")))
+    rejected(lambda root: (root / "listing-0").write_text(
+        (root / "listing-0").read_text() + CONFIG + "\n"))
+    rejected(lambda root: (root / "listing-0").write_text("../escape\n"))
+    rejected(lambda root: (root / "listing-0").write_text(
+        (root / "listing-0").read_text().replace(
+            f"usr/lib/modules/{KERNEL}/nvidia.ko.zst\n", "")))
+    rejected(lambda root: (root / "listing-1").write_text(
+        (root / "listing-1").read_text()
+        + f"usr/lib/modules/{KERNEL}/{ROOTFS_ONLY_MODULE}.zst\n"))
     rejected(lambda root: (root / CONFIG).write_text("options nvidia NVreg=hostile\n"))
 
     def duplicate_manifest(root):
@@ -94,12 +109,12 @@ def main():
     with tempfile.TemporaryDirectory(prefix="initramfs-verification-drift-") as temporary:
         root = Path(temporary)
         fixture(root)
-        before = sha(root / "initramfs-linux.img")
-        (root / "initramfs-linux.img").write_bytes(b"replacement\n")
+        before = sha(root / IMAGE_NAMES[0])
+        (root / IMAGE_NAMES[0]).write_bytes(b"replacement\n")
         assert run(root, before).returncode != 0
 
     def excessive_listing(root):
-        with (root / "listing").open("wb") as stream:
+        with (root / "listing-0").open("wb") as stream:
             stream.truncate(8 * 1024 * 1024 + 1)
     rejected(excessive_listing)
 

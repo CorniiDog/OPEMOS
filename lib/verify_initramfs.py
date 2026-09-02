@@ -18,10 +18,10 @@ MAX_LISTING_RECORDS = 200000
 MAX_MANIFEST_BYTES = 64 * 1024 * 1024
 KERNEL = re.compile(r"[A-Za-z0-9._+~-]{1,255}")
 SHA256 = re.compile(r"[0-9a-f]{64}")
-MODULES = {
-    "nvidia.ko", "nvidia-drm.ko", "nvidia-modeset.ko",
-    "nvidia-peermem.ko", "nvidia-uvm.ko",
-}
+REQUIRED_MODULES = (
+    "nvidia.ko", "nvidia-modeset.ko", "nvidia-uvm.ko", "nvidia-drm.ko",
+)
+ROOTFS_ONLY_MODULES = ("nvidia-peermem.ko",)
 COMPRESSIONS = ("", ".gz", ".xz", ".zst", ".lz4", ".lzo")
 CONFIG_PATH = "etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf"
 
@@ -58,11 +58,9 @@ def arguments():
     if len(args.image) > 32:
         parser.error("too many initramfs images")
     if not args.module:
-        args.module = sorted(MODULES)
-    if (len(args.module) != 5 or len(set(args.module)) != 5
-            or any(re.fullmatch(r"[A-Za-z0-9_.+-]{1,255}\.ko", name) is None
-                   for name in args.module)):
-        parser.error("exactly five safe unique module names are required")
+        args.module = list(REQUIRED_MODULES)
+    if tuple(args.module) != REQUIRED_MODULES:
+        parser.error("the exact ordered early-boot NVIDIA module set is required")
     return args
 
 
@@ -202,8 +200,8 @@ def main():
             fail("initramfs image changed after listing")
         listing = normalized_listing(listing_path)
         found = {}
-        for module in sorted(args.module):
-            prefix = f"usr/lib/modules/{args.kernel}/"
+        prefix = f"usr/lib/modules/{args.kernel}/"
+        for module in args.module:
             candidates = sorted(
                 path for path in listing
                 if path.startswith(prefix)
@@ -212,6 +210,14 @@ def main():
             if len(candidates) != 1:
                 fail(f"initramfs does not contain exactly one {module}")
             found[module] = candidates[0]
+        for module in ROOTFS_ONLY_MODULES:
+            if any(
+                    path.startswith(prefix)
+                    and Path(path).name in {
+                        module + suffix for suffix in COMPRESSIONS
+                    }
+                    for path in listing):
+                fail(f"initramfs unexpectedly contains rootfs-only module {module}")
         if listing.count(CONFIG_PATH) != 1:
             fail("initramfs lacks exactly one managed NVIDIA modprobe configuration")
         images.append({
@@ -222,6 +228,8 @@ def main():
         })
     document = {
         "schemaVersion": 1, "status": "verified", "kernelVersion": args.kernel,
+        "requiredModules": list(REQUIRED_MODULES),
+        "rootfsOnlyModules": list(ROOTFS_ONLY_MODULES),
         "tools": tools,
         "config": {"path": "/" + CONFIG_PATH, "sizeBytes": len(config),
                    "sha256": hashlib.sha256(config).hexdigest()},

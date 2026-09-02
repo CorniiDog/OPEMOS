@@ -153,12 +153,15 @@ Successful installation requires these nested records:
 | `moduleVerification` | Five names, representation, decompressed payload hash, mode 0644, UID/GID 0, architecture, NVIDIA version, exact vermagic |
 | `userspaceVerification` | Every locked package/version/hash, owned payload, links, libraries, GSP firmware, Holo records and database consistency |
 | `initramfsWorkspace` | Private mounted workspace, capacity, inode policy, mode 1777, and cleanup |
-| `initramfsVerification` | Exact generated image and required NVIDIA modules/configuration |
+| `initramfsVerification` | Exact generated images/configuration and the explicit early-boot set: `nvidia`, `nvidia_modeset`, `nvidia_uvm`, and `nvidia_drm` |
 | `cleanup` | Runtime mount count/release, compression restoration, no trusted partial state |
 
 Schema 1 permits bounded additive fields for forward compatibility. Consumers
 must still require every mandatory success field and reject duplicate keys,
 oversized records, invalid types, or contradictory status/reason pairs.
+The five-module filesystem contract remains separate: `nvidia-peermem` must be
+installed and verified on the root filesystem, but is intentionally recorded as
+rootfs-only and rejected from the initramfs until an audited target requires it.
 
 ## Trust values
 

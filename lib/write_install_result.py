@@ -34,6 +34,10 @@ EXPECTED_MODULES = {
     "nvidia.ko", "nvidia-drm.ko", "nvidia-modeset.ko",
     "nvidia-peermem.ko", "nvidia-uvm.ko",
 }
+INITRAMFS_REQUIRED_MODULES = (
+    "nvidia.ko", "nvidia-modeset.ko", "nvidia-uvm.ko", "nvidia-drm.ko",
+)
+INITRAMFS_ROOTFS_ONLY_MODULES = ("nvidia-peermem.ko",)
 MODULE_MISMATCH_FIELDS = (
     "presence", "representation", "payloadSha256", "mode", "uid", "gid",
     "decompression",
@@ -341,9 +345,13 @@ def load_initramfs_verification(path):
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
         raise SystemExit("Initramfs verification metadata is unreadable or excessive.")
     if (not isinstance(document, dict) or set(document) != {
-            "schemaVersion", "status", "kernelVersion", "tools", "config", "images"}
+            "schemaVersion", "status", "kernelVersion", "requiredModules",
+            "rootfsOnlyModules", "tools", "config", "images"}
             or document.get("schemaVersion") != 1 or document.get("status") != "verified"
-            or not KERNEL.fullmatch(document.get("kernelVersion", ""))):
+            or not KERNEL.fullmatch(document.get("kernelVersion", ""))
+            or document.get("requiredModules") != list(INITRAMFS_REQUIRED_MODULES)
+            or document.get("rootfsOnlyModules")
+            != list(INITRAMFS_ROOTFS_ONLY_MODULES)):
         raise SystemExit("Initramfs verification metadata is malformed.")
     tools = document["tools"]
     if not isinstance(tools, dict) or set(tools) != {"mkinitcpio", "lsinitcpio"}:
@@ -388,7 +396,7 @@ def load_initramfs_verification(path):
                 or image.get("configPath")
                 != "etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf"
                 or not isinstance(image.get("modules"), dict)
-                or set(image["modules"]) != EXPECTED_MODULES):
+                or set(image["modules"]) != set(INITRAMFS_REQUIRED_MODULES)):
             raise SystemExit("Initramfs image verification metadata is malformed.")
         filenames.add(image["filename"])
         module_values = list(image["modules"].values())

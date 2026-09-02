@@ -1180,6 +1180,14 @@ run_mutation_command python3 "$SUPPORT_ROOT/lib/verify_installed_modules.py" \
     --output "$MODULE_VERIFICATION_JSON" --progress-attempt "$PROGRESS_ATTEMPT_VALUE"
 
 install -d -m 0755 "$ROOT/etc/modprobe.d" "$ROOT/etc/mkinitcpio.conf.d"
+INITRAMFS_REQUIRED_MODULES=(
+    nvidia.ko nvidia-modeset.ko nvidia-uvm.ko nvidia-drm.ko
+)
+INITRAMFS_MKINITCPIO_MODULES=()
+for initramfs_module in "${INITRAMFS_REQUIRED_MODULES[@]}"; do
+    initramfs_module="${initramfs_module%.ko}"
+    INITRAMFS_MKINITCPIO_MODULES+=("${initramfs_module//-/_}")
+done
 printf '%s\n' \
     "# Managed by ${PROJECT_NAME}" \
     'blacklist nouveau' \
@@ -1189,7 +1197,7 @@ printf '%s\n' \
     > "$ROOT/etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf"
 printf '%s\n' \
     "# Managed by ${PROJECT_NAME}" \
-    'MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm)' \
+    "MODULES=(${INITRAMFS_MKINITCPIO_MODULES[*]})" \
     > "$ROOT/etc/mkinitcpio.conf.d/90-open-gpu-kernel-modules-steamos.conf"
 run_mutation_command python3 "$SUPPORT_ROOT/lib/snapshot_target_execution.py" \
     --root "$ROOT" --output "$POST_TRANSACTION_EXECUTION_MANIFEST" \
@@ -1233,6 +1241,9 @@ INITRAMFS_VERIFY_ARGS=(
     --config "$ROOT/etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf"
     --output "$INITRAMFS_VERIFICATION_JSON"
 )
+for initramfs_module in "${INITRAMFS_REQUIRED_MODULES[@]}"; do
+    INITRAMFS_VERIFY_ARGS+=(--module "$initramfs_module")
+done
 shopt -s nullglob
 INITRAMFS_IMAGES=("$ROOT"/boot/initramfs-*.img)
 shopt -u nullglob

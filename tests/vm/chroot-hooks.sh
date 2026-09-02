@@ -7,6 +7,7 @@ BACKUP="$WORK_ROOT/backup"
 KERNEL=6.16.12-valve-fixture
 READY="$WORK_ROOT/hook.ready"
 MODULES=(nvidia nvidia-drm nvidia-modeset nvidia-peermem nvidia-uvm)
+INITRAMFS_MODULES=(nvidia nvidia-modeset nvidia-uvm nvidia-drm)
 
 cleanup()
 {
@@ -51,7 +52,10 @@ cat > "$TARGET/usr/bin/mkinitcpio-fixture" <<'EOF'
 set -euo pipefail
 kernel="${1:?kernel is required}"
 mkdir -p /run/initramfs/usr/lib/modules/"$kernel" /run/initramfs/etc/modprobe.d
-cp /usr/lib/modules/"$kernel"/*.ko.zst /run/initramfs/usr/lib/modules/"$kernel"/
+for module in nvidia nvidia-modeset nvidia-uvm nvidia-drm; do
+    cp "/usr/lib/modules/$kernel/$module.ko.zst" \
+        "/run/initramfs/usr/lib/modules/$kernel/"
+done
 cp /etc/modprobe.d/nvidia.conf /run/initramfs/etc/modprobe.d/
 if [[ "${INJECT_HOOK_FAILURE:-0}" == 1 ]]; then
     printf partial > /boot/initramfs-linux.img
@@ -67,6 +71,7 @@ fi
 (cd /run/initramfs && find . -exec touch -h -d @0 {} + &&
     find . -print0 | sort -z | cpio --reproducible --null -o -H newc 2>/dev/null) |
     gzip -n > /boot/initramfs-linux.img
+cp /boot/initramfs-linux.img /boot/initramfs-linux-fallback.img
 EOF
 chmod 0755 "$TARGET/usr/bin/mkinitcpio-fixture"
 
@@ -149,11 +154,15 @@ rm -f "$TARGET/run/hook.ready"
 [[ "$(state_hash)" == "$baseline" ]]
 
 run_transaction 1048576
-archive_listing="$(gzip -dc "$TARGET/boot/initramfs-linux.img" | cpio -it 2>/dev/null | sed 's|^\./||')"
-for module in "${MODULES[@]}"; do
-    grep -qx "usr/lib/modules/$KERNEL/$module.ko.zst" <<<"$archive_listing"
+for image in initramfs-linux.img initramfs-linux-fallback.img; do
+    archive_listing="$(gzip -dc "$TARGET/boot/$image" | cpio -it 2>/dev/null | sed 's|^\./||')"
+    for module in "${INITRAMFS_MODULES[@]}"; do
+        grep -qx "usr/lib/modules/$KERNEL/$module.ko.zst" <<<"$archive_listing"
+    done
+    ! grep -qx "usr/lib/modules/$KERNEL/nvidia-peermem.ko.zst" <<<"$archive_listing"
+    grep -qx 'etc/modprobe.d/nvidia.conf' <<<"$archive_listing"
 done
-grep -qx 'etc/modprobe.d/nvidia.conf' <<<"$archive_listing"
+[[ -f "$TARGET/usr/lib/modules/$KERNEL/nvidia-peermem.ko.zst" ]]
 [[ "$(<"$TARGET/var/lib/nvidia-transaction")" == installed ]]
 success_hash="$(state_hash)"
 run_transaction 1048576

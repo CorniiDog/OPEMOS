@@ -181,7 +181,8 @@ with:
 - exact `moduleVerification` for all five decompressed payloads;
 - exact `userspaceVerification`, package database consistency, libraries,
   links, and GSP firmware;
-- exact `initramfsVerification` for the selected kernel;
+- exact `initramfsVerification` for the selected kernel, including the explicit
+  four-module early-boot set and rootfs-only `nvidia-peermem` classification;
 - successful GRUB argument mutation;
 - `mountsReleased: true` and `compressionPolicyRestored: true`;
 - no stale runtime mounts or installer workspace;

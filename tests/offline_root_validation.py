@@ -32,6 +32,12 @@ MODULES = (
     "nvidia-peermem.ko",
     "nvidia-uvm.ko",
 )
+INITRAMFS_REQUIRED_MODULES = (
+    "nvidia.ko",
+    "nvidia-modeset.ko",
+    "nvidia-uvm.ko",
+    "nvidia-drm.ko",
+)
 
 
 def add_bytes(archive, name, content, mode=0o644):
@@ -531,7 +537,7 @@ eval target=\${$#}; grep -F -q "$target" "$MOCK_MOUNT_STATE" 2>/dev/null
     (binaries / "chroot").write_text(
         "#!/bin/sh\nif [ \"$2\" = /usr/bin/lsinitcpio ]; then\n"
         "  if [ \"${MOCK_BAD_INITRAMFS_LISTING:-0}\" != 0 ]; then printf 'etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf\\n'; exit 0; fi\n"
-        "  for module in nvidia nvidia-drm nvidia-modeset nvidia-peermem nvidia-uvm; do printf 'usr/lib/modules/%s/%s.ko.zst\\n' \"$MOCK_KERNEL\" \"$module\"; done\n"
+        "  for module in nvidia nvidia-modeset nvidia-uvm nvidia-drm; do printf 'usr/lib/modules/%s/%s.ko.zst\\n' \"$MOCK_KERNEL\" \"$module\"; done\n"
         "  printf 'etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf\\n'\n  exit 0\nfi\n"
         "printf active > \"$MOCK_CHROOT_STATE\"\nsleep \"${MOCK_CHROOT_DELAY:-0}\"\n[ \"${MOCK_FAIL_CHROOT:-0}\" = 0 ] || exit 1\nfor runtime in dev proc sys var/tmp; do grep -F -x -q \"$1/$runtime\" \"$MOCK_MOUNT_STATE\" || exit 97; done\nworkspace=\"$1/var/tmp/explicit-mkinitcpio.$$\"\n: > \"$workspace\" || exit 98\nrm -f \"$workspace\"\nprintf '%s\\n' mkinitcpio >> \"$MOCK_TRANSACTION_LOG\"\nmkdir -p \"$1/boot\"; echo initramfs > \"$1/boot/initramfs-fixture.img\"\n[ \"${MOCK_DRIFT_COMPRESSION:-0}\" = 0 ] || : > \"$MOCK_COMPRESSION_STATE\"\n",
         encoding="utf-8",
@@ -2375,8 +2381,16 @@ def main():
         assert successful["initramfsWorkspace"]["mode"] == "1777"
         assert successful["initramfsVerification"]["status"] == "verified"
         assert successful["initramfsVerification"]["kernelVersion"] == KERNEL
+        assert successful["initramfsVerification"]["requiredModules"] == list(
+            INITRAMFS_REQUIRED_MODULES
+        )
+        assert successful["initramfsVerification"]["rootfsOnlyModules"] == [
+            "nvidia-peermem.ko"
+        ]
         assert len(successful["initramfsVerification"]["images"]) == 1
-        assert set(successful["initramfsVerification"]["images"][0]["modules"]) == set(MODULES)
+        assert set(successful["initramfsVerification"]["images"][0]["modules"]) == set(
+            INITRAMFS_REQUIRED_MODULES
+        )
         assert successful["validation"]["keyring"]["name"] == "approved.gpg"
         assert successful["validation"]["provenanceSha256"] == valid["provenanceSha256"]
         assert successful["validation"]["userspaceLock"] == {

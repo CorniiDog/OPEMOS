@@ -607,8 +607,13 @@ including pacman-hook failure and cancellation.
 Success also requires bounded `initramfsVerification`. The installer hashes each
 generated `initramfs-*.img` before a time/byte-capped target `lsinitcpio -l`
 capture, then rechecks the unchanged image while producing exact image and
-ordered-listing hashes. Every image must contain exactly one copy of all five
-NVIDIA modules and the managed modprobe configuration. The result binds those
+ordered-listing hashes. Every image must contain exactly one copy of the
+declared early-boot modules (`nvidia`, `nvidia_modeset`, `nvidia_uvm`, and
+`nvidia_drm`) and the managed modprobe configuration. `nvidia-peermem` remains
+mandatory in the independently verified rootfs module set but must be absent
+from these initramfs images. The result exposes both `requiredModules` and
+`rootfsOnlyModules` instead of deriving early-boot contents from all installed
+modules. The result binds those
 records to the snapshotted mkinitcpio/lsinitcpio identities and configuration
 hash; malformed, duplicate security-relevant, oversized, linked, partial, or
 drifted inputs fail closed before installation state is committed.

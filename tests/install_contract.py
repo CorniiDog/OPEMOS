@@ -31,7 +31,19 @@ def main():
             "moduleVerification": {"status": "verified"},
             "userspaceVerification": {"status": "verified"},
             "initramfsWorkspace": {"status": "verified", "phase": "mounted_workspace"},
-            "initramfsVerification": {"status": "verified"},
+            "initramfsVerification": {
+                "status": "verified",
+                "requiredModules": [
+                    "nvidia.ko", "nvidia-modeset.ko", "nvidia-uvm.ko", "nvidia-drm.ko",
+                ],
+                "rootfsOnlyModules": ["nvidia-peermem.ko"],
+                "images": [{"modules": {
+                    "nvidia.ko": "usr/lib/modules/kernel/nvidia.ko.zst",
+                    "nvidia-modeset.ko": "usr/lib/modules/kernel/nvidia-modeset.ko.zst",
+                    "nvidia-uvm.ko": "usr/lib/modules/kernel/nvidia-uvm.ko.zst",
+                    "nvidia-drm.ko": "usr/lib/modules/kernel/nvidia-drm.ko.zst",
+                }}],
+            },
             "futureAdditiveField": {"accepted": True},
         }
         result.write_text(json.dumps(document))
@@ -46,6 +58,15 @@ def main():
         for mutate in (
             lambda value: value["cleanup"].update(runtimeMountsReleased=3),
             lambda value: value.pop("moduleVerification"),
+            lambda value: value["initramfsVerification"]["requiredModules"].append(
+                "nvidia-peermem.ko"
+            ),
+            lambda value: value["initramfsVerification"].update(
+                rootfsOnlyModules=[]
+            ),
+            lambda value: value["initramfsVerification"]["images"][0][
+                "modules"
+            ].pop("nvidia-drm.ko"),
             lambda value: value.update(schemaVersion=2),
         ):
             broken = json.loads(json.dumps(document))

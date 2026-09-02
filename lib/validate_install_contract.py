@@ -12,6 +12,9 @@ MAX_PROGRESS_BYTES = 16 * 1024 * 1024
 MAX_PROGRESS_LINE = 4096
 TOKEN = re.compile(r"[a-z][a-z0-9_]{0,63}")
 PREFIX = "STEAMOS_NVIDIA_PROGRESS "
+INITRAMFS_REQUIRED_MODULES = (
+    "nvidia.ko", "nvidia-modeset.ko", "nvidia-uvm.ko", "nvidia-drm.ko",
+)
 
 
 def unique_object(pairs):
@@ -75,6 +78,16 @@ def validate_result(path):
                 raise ValueError(f"success lacks {field}")
         if document["initramfsWorkspace"].get("phase") != "mounted_workspace":
             raise ValueError("success workspace phase is invalid")
+        initramfs = document["initramfsVerification"]
+        if (initramfs.get("requiredModules") != list(INITRAMFS_REQUIRED_MODULES)
+                or initramfs.get("rootfsOnlyModules") != ["nvidia-peermem.ko"]
+                or not isinstance(initramfs.get("images"), list)
+                or not initramfs["images"]
+                or any(not isinstance(image, dict)
+                       or not isinstance(image.get("modules"), dict)
+                       or set(image["modules"]) != set(INITRAMFS_REQUIRED_MODULES)
+                       for image in initramfs["images"])):
+            raise ValueError("success initramfs module contract is invalid")
     return document
 
 

@@ -33,9 +33,22 @@ install -D -m 0644 /dev/stdin \
     /etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf <<'EOF'
 options nvidia-drm modeset=1 fbdev=1
 EOF
+kernel="$(uname -r)"
+module_root="/usr/lib/modules/$kernel/updates/ope-test"
+install -d -m 0755 "$module_root"
+initramfs_modules=(nvidia.ko nvidia-modeset.ko nvidia-uvm.ko nvidia-drm.ko)
+for module in "${initramfs_modules[@]}"; do
+    printf 'OPEMOS initramfs contract fixture: %s\n' "$module" > "$module_root/$module"
+    chmod 0644 "$module_root/$module"
+done
 cat > /etc/mkinitcpio.conf.d/99-open-gpu-contract.conf <<'EOF'
-FILES=(/etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf)
+FILES=(/etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf
+       /usr/lib/modules/REPLACE_KERNEL/updates/ope-test/nvidia.ko
+       /usr/lib/modules/REPLACE_KERNEL/updates/ope-test/nvidia-modeset.ko
+       /usr/lib/modules/REPLACE_KERNEL/updates/ope-test/nvidia-uvm.ko
+       /usr/lib/modules/REPLACE_KERNEL/updates/ope-test/nvidia-drm.ko)
 EOF
+sed -i "s/REPLACE_KERNEL/$kernel/g" /etc/mkinitcpio.conf.d/99-open-gpu-contract.conf
 mkinitcpio -P
 mapfile -t images < <(find /boot -maxdepth 1 -type f -name 'initramfs-*.img' | sort)
 (( ${#images[@]} > 0 ))
@@ -47,15 +60,9 @@ done | sort -u > "$before"
 grep -q 'usr/lib/modules/' "$before"
 grep -qx 'etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf' "$before"
 
-kernel="$(uname -r)"
 image="${images[0]}"
 listing=/run/initramfs-contract.listing
 lsinitcpio -l "$image" > "$listing"
-mapfile -t module_names < <(
-    grep -E "^usr/lib/modules/$kernel/.+\\.ko(\\.(gz|xz|zst|lz4|lzo))?$" "$listing" |
-        sed -E 's|.*/||; s/\.(gz|xz|zst|lz4|lzo)$//' | sort -u | head -n5
-)
-(( ${#module_names[@]} == 5 ))
 python3 /opt/open-gpu/lib/snapshot_target_execution.py --root / \
     --output /run/initramfs-execution.json
 image_sha256="$(sha256sum "$image" | awk '{print $1}')"
@@ -65,9 +72,9 @@ verification_args=(
     --image "$image" --listing "$listing" --image-sha256 "$image_sha256"
     --output /run/initramfs-verification.json
 )
-for module in "${module_names[@]}"; do verification_args+=(--module "$module"); done
+for module in "${initramfs_modules[@]}"; do verification_args+=(--module "$module"); done
 python3 /opt/open-gpu/lib/verify_initramfs.py "${verification_args[@]}"
-python3 -c 'import json; value=json.load(open("/run/initramfs-verification.json")); assert value["status"] == "verified" and len(value["images"]) == 1'
+python3 -c 'import json; value=json.load(open("/run/initramfs-verification.json")); assert value["status"] == "verified" and value["requiredModules"] == ["nvidia.ko", "nvidia-modeset.ko", "nvidia-uvm.ko", "nvidia-drm.ko"] and value["rootfsOnlyModules"] == ["nvidia-peermem.ko"] and len(value["images"]) == 1'
 initramfs_contract_status=passed
 mkinitcpio_status=passed
 

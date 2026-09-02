@@ -1326,7 +1326,8 @@ signing policy.
   package, owned file/link/library, and matching GSP firmware result.
 * [x] Add mandatory structured `initramfsVerification`; inspect the exact
   generated initramfs and require the intended NVIDIA modules and configuration
-  rather than trusting only mkinitcpio's exit status.
+  rather than trusting only mkinitcpio's exit status. Keep `nvidia-peermem`
+  rootfs-only and return the explicit four-module early-boot contract.
 * [x] Verify the target Holo pacman database after mutation, including package
   records, ownership, dependency state, and database consistency.
 
