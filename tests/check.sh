@@ -86,6 +86,7 @@ then
 fi
 [[ ! -e "$SNAPSHOT_FIXTURE/oversize" ]] || \
     fail "oversized installer input snapshot left partial output"
+python3 tests/install_input_snapshot.py
 rm -rf "$SNAPSHOT_FIXTURE"
 printf 'Checking bounded backup retention...\n'
 python3 tests/backup_retention.py

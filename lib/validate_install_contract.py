@@ -3,7 +3,9 @@
 
 import argparse
 import json
+import os
 import re
+import stat
 from pathlib import Path
 
 
@@ -15,6 +17,13 @@ PREFIX = "STEAMOS_NVIDIA_PROGRESS "
 INITRAMFS_REQUIRED_MODULES = (
     "nvidia.ko", "nvidia-modeset.ko", "nvidia-uvm.ko", "nvidia-drm.ko",
 )
+TRUST_VALUES = {
+    "pending-validation", "development-unverified",
+    "locally-built-verified", "certified-published",
+}
+VERSION = re.compile(r"(?:unknown|[0-9]+\.[0-9]+(?:\.[0-9]+)?)")
+KERNEL = re.compile(r"(?:unknown|[A-Za-z0-9._+~-]{1,255})")
+PLAIN_FILENAME = re.compile(r"[A-Za-z0-9@._+~:-]{1,255}")
 
 
 def unique_object(pairs):
@@ -26,10 +35,62 @@ def unique_object(pairs):
     return result
 
 
+def reject_json_constant(value):
+    raise ValueError(f"non-standard JSON constant: {value}")
+
+
+def read_bounded_regular(path, maximum, allow_empty=False):
+    flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+             | getattr(os, "O_NONBLOCK", 0))
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor = os.open(path, flags)
+    try:
+        before = os.fstat(descriptor)
+        if (not stat.S_ISREG(before.st_mode)
+                or before.st_size > maximum
+                or (not allow_empty and before.st_size == 0)):
+            raise ValueError("input is missing, linked, empty, or excessive")
+        payload = bytearray()
+        while len(payload) <= maximum:
+            chunk = os.read(descriptor, min(64 * 1024, maximum + 1 - len(payload)))
+            if not chunk:
+                break
+            payload.extend(chunk)
+        after = os.fstat(descriptor)
+        path_after = os.stat(path, follow_symlinks=False)
+        if (len(payload) > maximum
+                or (not allow_empty and not payload)
+                or (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino)
+                or (after.st_dev, after.st_ino) != (path_after.st_dev, path_after.st_ino)
+                or before.st_size != after.st_size
+                or before.st_mtime_ns != after.st_mtime_ns
+                or before.st_ctime_ns != after.st_ctime_ns
+                or after.st_size != len(payload)):
+            raise ValueError("input changed while it was being read")
+        return bytes(payload).decode("utf-8")
+    finally:
+        os.close(descriptor)
+
+
 def load_document(path, maximum):
-    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= maximum:
-        raise ValueError("input is missing, linked, empty, or excessive")
-    return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
+    return json.loads(
+        read_bounded_regular(path, maximum),
+        object_pairs_hook=unique_object,
+        parse_constant=reject_json_constant,
+    )
+
+
+def plain_filename(value):
+    return (
+        value is None
+        or (
+            isinstance(value, str)
+            and PLAIN_FILENAME.fullmatch(value) is not None
+            and Path(value).name == value
+            and value not in {".", ".."}
+        )
+    )
 
 
 def validate_result(path):
@@ -46,9 +107,27 @@ def validate_result(path):
             raise ValueError("result token is malformed")
     if not isinstance(document["message"], str) or not 0 < len(document["message"]) <= 2048:
         raise ValueError("result message is malformed")
+    if document.get("trust") not in TRUST_VALUES:
+        raise ValueError("result trust is malformed")
     target = document["target"]
-    if not isinstance(target, dict) or target.get("architecture") != "x86_64":
+    target_required = {
+        "root", "steamosVersion", "kernelVersion", "nvidiaVersion", "architecture",
+    }
+    if (not isinstance(target, dict) or not target_required <= set(target)
+            or target.get("root") != "/target-root"
+            or target.get("architecture") != "x86_64"
+            or not isinstance(target.get("steamosVersion"), str)
+            or VERSION.fullmatch(target["steamosVersion"]) is None
+            or not isinstance(target.get("nvidiaVersion"), str)
+            or VERSION.fullmatch(target["nvidiaVersion"]) is None
+            or not isinstance(target.get("kernelVersion"), str)
+            or KERNEL.fullmatch(target["kernelVersion"]) is None):
         raise ValueError("result target is malformed")
+    inputs = document["inputs"]
+    input_keys = {"archive", "provenance", "nvidiaUtils", "lib32NvidiaUtils"}
+    if (not isinstance(inputs, dict) or set(inputs) != input_keys
+            or any(not plain_filename(value) for value in inputs.values())):
+        raise ValueError("result inputs are malformed")
     cleanup = document["cleanup"]
     cleanup_required = {"mountsReleased", "runtimeMountsExpected",
                         "runtimeMountsReleased", "compressionPolicyRestored"}
@@ -62,6 +141,8 @@ def validate_result(path):
                 or not 0 <= cleanup[field] <= 64):
             raise ValueError("cleanup count is malformed")
     if document["status"] == "success":
+        if document["reason"] != "install_complete" or document["phase"] != "complete":
+            raise ValueError("success terminal state is inconsistent")
         if (not cleanup["mountsReleased"] or not cleanup["compressionPolicyRestored"]
                 or cleanup["runtimeMountsExpected"] != cleanup["runtimeMountsReleased"]):
             raise ValueError("success reports incomplete cleanup")
@@ -88,20 +169,28 @@ def validate_result(path):
                        or set(image["modules"]) != set(INITRAMFS_REQUIRED_MODULES)
                        for image in initramfs["images"])):
             raise ValueError("success initramfs module contract is invalid")
+    elif document["status"] == "validated":
+        if document["reason"] != "validation_complete" or document["phase"] != "validated":
+            raise ValueError("validated terminal state is inconsistent")
+    elif document["status"] == "cancelled" and document["reason"] != "cancelled":
+        raise ValueError("cancelled terminal state is inconsistent")
     return document
 
 
 def validate_progress(path):
-    if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_PROGRESS_BYTES:
-        raise ValueError("progress stream is linked or excessive")
     previous = {}
+    latest_attempt = -1
     count = 0
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
+    for raw_line in read_bounded_regular(
+            path, MAX_PROGRESS_BYTES, allow_empty=True).splitlines():
         if not raw_line.startswith(PREFIX):
             continue
         if len(raw_line.encode()) > MAX_PROGRESS_LINE:
             raise ValueError("progress record is excessive")
-        record = json.loads(raw_line[len(PREFIX):], object_pairs_hook=unique_object)
+        record = json.loads(
+            raw_line[len(PREFIX):], object_pairs_hook=unique_object,
+            parse_constant=reject_json_constant,
+        )
         required = {"schemaVersion", "attempt", "phase", "indeterminate"}
         if not isinstance(record, dict) or not required <= set(record):
             raise ValueError("progress record is incomplete")
@@ -111,12 +200,20 @@ def validate_progress(path):
                 or TOKEN.fullmatch(record["phase"]) is None
                 or not isinstance(record["indeterminate"], bool)):
             raise ValueError("progress envelope is malformed")
+        if record["attempt"] < latest_attempt:
+            raise ValueError("progress attempt regressed")
+        latest_attempt = record["attempt"]
+        if record["indeterminate"] and any(
+                field in record for field in ("completed", "total", "unit")):
+            raise ValueError("indeterminate progress contains determinate fields")
         if not record["indeterminate"]:
             for field in ("completed", "total"):
                 if (not isinstance(record.get(field), int) or isinstance(record.get(field), bool)
                         or not 0 <= record[field] <= 2**63 - 1):
                     raise ValueError("progress count is malformed")
-            if record.get("unit") not in {"bytes", "items"} or record["completed"] > record["total"]:
+            if (record.get("unit") not in {"bytes", "items"}
+                    or record["total"] == 0
+                    or record["completed"] > record["total"]):
                 raise ValueError("progress range is malformed")
             key = (record["attempt"], record["phase"])
             if key in previous:
