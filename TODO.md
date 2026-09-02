@@ -61,6 +61,11 @@ index in the same commit.
   crash-after-switch, power-loss simulation, rollback-loop prevention, and
   safe generation-retention tests. An unavailable or invalid update must leave
   the active generation untouched and must never weaken the boot guardian.
+  The authenticated local generation manager, durable activation markers,
+  rendered-health acknowledgement, bounded launcher, and crash-window rollback
+  tests are implemented. Remaining work is a reviewed production signing key,
+  immutable network/release acquisition, installer delivery, retention limits,
+  and real SteamOS power-loss testing.
 * [ ] Enable **Settings → Pages → Build and deployment → GitHub Actions** in
   the canonical repository, then verify the first documentation deployment and
   published navigation links.

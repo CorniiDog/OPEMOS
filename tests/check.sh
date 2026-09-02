@@ -67,6 +67,10 @@ python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __
     lib/resolve_authenticated_install_bundle.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/prune_authenticated_cache.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/desktop_update_generations.py
+printf 'Checking crash-safe desktop update generations...\n'
+python3 tests/desktop_update_generations.py
 
 printf 'Checking immutable installer input snapshots...\n'
 SNAPSHOT_FIXTURE="$(mktemp -d /tmp/installer-input-snapshot.XXXXXX)"

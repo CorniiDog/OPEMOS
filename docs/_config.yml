@@ -11,6 +11,7 @@ header_pages:
   - getting-started.md
   - developer-guide.md
   - image-builder.md
+  - desktop-companion.md
   - contracts.md
   - security.md
 exclude:

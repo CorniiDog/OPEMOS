@@ -51,3 +51,8 @@ test is required before the artifact is uploaded. This workflow artifact is a
 development build, not an authenticated release or an update channel; install
 it manually only in a disposable test environment until the reviewed
 transactional update contract is implemented.
+
+The crash-safe generation manager, activation states, and launcher contract are
+documented in the [SteamOS desktop companion guide](../docs/desktop-companion.md).
+Production self-update remains disabled until the repository's dedicated signer
+policy and immutable release channel are reviewed and configured.

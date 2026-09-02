@@ -159,6 +159,9 @@ with tempfile.TemporaryDirectory(prefix="opemos-recovery-stage-") as temporary:
     assert (persistent / "support-revision").read_text().strip() == "b" * 40
     assert (persistent / "nvidia-version").read_text().strip() == NVIDIA
     assert (persistent / "lib/open_opemos_contract.py").is_file()
+    assert (persistent / "lib/desktop_update_generations.py").is_file()
+    assert (persistent / "bootstrap/launch_desktop_companion.sh").is_file()
+    assert json.loads((persistent / "trust/desktop-update-signers.json").read_text())["status"] == "unconfigured"
     assert (target / "etc/systemd/system/opemos-nvidia-guardian.service").is_file()
     assert (target / "etc/systemd/system/multi-user.target.wants/opemos-nvidia-guardian.service").is_symlink()
     assert (target / "etc/NetworkManager/dispatcher.d/90-opemos-nvidia-repair").stat().st_mode & 0o111

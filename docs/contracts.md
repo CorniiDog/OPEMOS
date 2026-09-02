@@ -30,6 +30,7 @@ description: API-style command, result, progress, trust, and failure reference.
 | `bootstrap/publish_artifacts.sh` | Maintainer | GitHub release unless `--dry-run` | Publication plan JSON |
 | `bootstrap/repack_artifacts.sh` | Maintainer | Output/release unless `--dry-run` | Repack plan/result JSON |
 | `lib/validate_install_contract.py` | Consumer | No | Contract-validation result |
+| `lib/desktop_update_generations.py` | SteamOS desktop launcher | Generation store and atomic markers | Desktop-update schema 1 JSON |
 
 Every command supports `--help`; that output is the canonical option list.
 

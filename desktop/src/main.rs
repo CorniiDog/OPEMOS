@@ -16,6 +16,8 @@ use serde::Deserialize;
 
 const DEFAULT_RECOVERYCTL: &str =
     "/home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/bootstrap/recoveryctl.sh";
+const DEFAULT_UPDATE_HELPER: &str =
+    "/home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/desktop_update_generations.py";
 const MAX_STATUS_BYTES: usize = 256 * 1024;
 const EXPECTED_MODULES: [&str; 5] = [
     "nvidia",
@@ -246,24 +248,85 @@ enum ViewState {
     Failed(String),
 }
 
+#[derive(Clone)]
+struct ManagedUpdate {
+    store: PathBuf,
+    generation: String,
+}
+
+fn parse_managed_update(
+    store: Option<&str>,
+    generation: Option<&str>,
+) -> Result<Option<ManagedUpdate>, String> {
+    match (store, generation) {
+        (None, None) => Ok(None),
+        (Some(store), Some(generation)) => {
+            let path = PathBuf::from(store);
+            if !path.is_absolute()
+                || generation.len() != 64
+                || !generation
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            {
+                return Err("The managed desktop update identity is invalid.".into());
+            }
+            Ok(Some(ManagedUpdate {
+                store: path,
+                generation: generation.to_owned(),
+            }))
+        }
+        _ => Err("The managed desktop update environment is incomplete.".into()),
+    }
+}
+
+fn managed_update_environment() -> Result<Option<ManagedUpdate>, String> {
+    let store = std::env::var("OPEMOS_UPDATE_STORE").ok();
+    let generation = std::env::var("OPEMOS_UPDATE_GENERATION").ok();
+    parse_managed_update(store.as_deref(), generation.as_deref())
+}
+
+fn acknowledge_managed_update(update: ManagedUpdate) {
+    std::thread::spawn(move || {
+        let status = Command::new("/usr/bin/python3")
+            .arg(DEFAULT_UPDATE_HELPER)
+            .args(["acknowledge", "--store"])
+            .arg(update.store)
+            .args(["--generation", &update.generation])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        if !matches!(status, Ok(value) if value.success()) {
+            eprintln!("opemos-recovery-status: update health acknowledgement failed");
+        }
+    });
+}
+
 struct StatusApp {
     recoveryctl: PathBuf,
     state: ViewState,
     receiver: Option<Receiver<Result<RecoveryStatus, String>>>,
     smoke_test: bool,
-    rendered_frames: u8,
+    ready_frames: u8,
     smoke_outcome: Arc<AtomicI8>,
+    managed_update: Option<ManagedUpdate>,
 }
 
 impl StatusApp {
-    fn new(recoveryctl: PathBuf, smoke_test: bool, smoke_outcome: Arc<AtomicI8>) -> Self {
+    fn new(
+        recoveryctl: PathBuf,
+        smoke_test: bool,
+        smoke_outcome: Arc<AtomicI8>,
+        managed_update: Option<ManagedUpdate>,
+    ) -> Self {
         let mut app = Self {
             recoveryctl,
             state: ViewState::Loading,
             receiver: None,
             smoke_test,
-            rendered_frames: 0,
+            ready_frames: 0,
             smoke_outcome,
+            managed_update,
         };
         app.refresh();
         app
@@ -367,13 +430,22 @@ impl eframe::App for StatusApp {
                     });
             });
 
-        if self.smoke_test {
-            self.rendered_frames = self.rendered_frames.saturating_add(1);
-            if self.rendered_frames >= 3 && self.receiver.is_none() {
-                context.send_viewport_cmd(egui::ViewportCommand::Close);
-            } else {
-                context.request_repaint_after(Duration::from_millis(50));
+        if matches!(&self.state, ViewState::Ready(_)) && self.receiver.is_none() {
+            self.ready_frames = self.ready_frames.saturating_add(1);
+        } else {
+            self.ready_frames = 0;
+        }
+        if self.ready_frames >= 3 {
+            if !self.smoke_test {
+                if let Some(update) = self.managed_update.take() {
+                    acknowledge_managed_update(update);
+                }
             }
+            if self.smoke_test {
+                context.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+        } else if self.smoke_test {
+            context.request_repaint_after(Duration::from_millis(50));
         }
     }
 }
@@ -572,6 +644,10 @@ fn main() -> eframe::Result {
         eprintln!("opemos-recovery-status: {message}");
         std::process::exit(2);
     });
+    let managed_update = managed_update_environment().unwrap_or_else(|message| {
+        eprintln!("opemos-recovery-status: {message}");
+        std::process::exit(2);
+    });
     let smoke_test = options.smoke_test;
     let viewport = egui::ViewportBuilder::default()
         .with_title("OPEMOS System Status")
@@ -591,6 +667,7 @@ fn main() -> eframe::Result {
                 options.recoveryctl,
                 options.smoke_test,
                 app_outcome,
+                managed_update,
             )))
         }),
     )?;
@@ -693,5 +770,17 @@ mod tests {
             mutate(&mut document);
             assert!(parse_status(&serde_json::to_vec(&document).unwrap()).is_err());
         }
+    }
+
+    #[test]
+    fn validates_managed_update_identity_as_an_atomic_pair() {
+        assert!(parse_managed_update(None, None).unwrap().is_none());
+        assert!(parse_managed_update(Some("relative"), Some(&"a".repeat(64))).is_err());
+        assert!(parse_managed_update(Some("/tmp/store"), None).is_err());
+        assert!(parse_managed_update(Some("/tmp/store"), Some(&"A".repeat(64))).is_err());
+        let update = parse_managed_update(Some("/tmp/store"), Some(&"a".repeat(64)))
+            .unwrap()
+            .unwrap();
+        assert_eq!(update.store, PathBuf::from("/tmp/store"));
     }
 }
