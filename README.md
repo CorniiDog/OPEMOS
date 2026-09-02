@@ -240,19 +240,43 @@ maintainer action in the image builder.
 optional CUDA-compute omission. A conforming profile must preserve graphics,
 Vulkan, GLVND/EGL, NVENC/NVDEC, exact-version GSP firmware, required 32-bit
 gaming libraries, recovery rendering, exact package ownership, and provenance.
-Delivery is by reviewed support-repacked packages and an exact reviewed
-userspace lock—the image builder must never delete guessed paths.
+Delivery is by deterministic support-owned package repacking from the exact
+Arch-signed packages and reviewed userspace lock—the image builder never
+deletes guessed paths. The repacker verifies every omitted member's source
+hash, regenerates `.PKGINFO`, `.BUILDINFO`, and `.MTREE`, assigns a distinct
+package release, and requires the exact reviewed output hashes before pacman
+can see the packages. This preserves normal pacman ownership and makes both a
+repeat reduced install and a later complete-package reinstall deterministic.
+
+The first reviewed target is SteamOS 3.8.14, NVIDIA 575.64.05, x86_64, kernel
+`6.16.12-valve24.4-1-neptune-616-gfe145653a794`. It omits 316,170,989 logical
+bytes consisting only of the 64-bit CUDA driver/debugger/NVVM/PTX-JIT/MPS
+components and the 32-bit CUDA driver/PTX-JIT components. It deliberately
+preserves Vulkan shader compilation, GLVND/EGL/OpenGL, NVENC/NVDEC, GSP
+firmware, NGX/DLSS, Xorg/recovery rendering, and the remaining 32-bit gaming
+stack. This option means “omit optional CUDA compute components to save
+space.” It does **not** mean that the ordinary complete NVIDIA driver lacks
+CUDA compatibility; the normal workflow remains unchanged and installs those
+components.
 
 The resolver always returns
 `capabilities.optionalCudaOmission`. It reports `supported: true` only for an
 exact SteamOS/kernel/NVIDIA/architecture record whose canonical profile and
 lock assets occur exactly once in the selected release. Same-series fallback
 never enables the capability. The installer accepts
-`--gaming-payload-profile`; it authenticates the profile and userspace lock
-against the support-owned policy before mutation and includes the decision in
-its validation/result metadata. No reduced package set has been reviewed and
-registered yet, so the current policy intentionally reports `supported: false`
-for every target and the image-builder checkbox must remain disabled.
+`--gaming-payload-profile`; it authenticates the profile, source packages,
+detached Arch signatures, and userspace lock before deriving anything. Both
+`--validate-only` and mutation return `gamingPayload` with the exact target,
+delivery method, omitted/preserved capabilities, source and derived package
+records, and saved-byte count. A missing profile, closest-kernel target,
+changed source, unexpected output hash, or incomplete release asset set fails
+before mutation. Targets other than the exact reviewed record remain disabled.
+During mutation a private repository-free pacman configuration permits the two
+derived local packages only after the validator has authenticated their source
+signatures and reproduced their pinned output hashes. This does not weaken the
+GPG verification of the source or dependency packages. The derivation emits
+bounded `gaming_payload_repack` item progress and is cancelled with the same
+process-group and immutable-staging cleanup as the rest of validation.
 
 ### Offline mounted-root installation
 

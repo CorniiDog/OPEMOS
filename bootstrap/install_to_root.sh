@@ -17,6 +17,7 @@ LIB32_NVIDIA_UTILS_SIGNATURE=""
 PACKAGE_KEYRING=""
 USERSPACE_LOCK=""
 GAMING_PAYLOAD_PROFILE=""
+GAMING_PAYLOAD_OUTPUT_DIR=""
 DEPENDENCY_PACKAGES=()
 DEPENDENCY_SIGNATURES=()
 RESULT_JSON=""
@@ -432,6 +433,8 @@ if [[ -n "$GAMING_PAYLOAD_PROFILE" ]]; then
             "The gaming payload profile could not be snapshotted safely."
         exit 1
     }
+    GAMING_PAYLOAD_OUTPUT_DIR="$INPUT_SNAPSHOT_ROOT/gaming-payload-packages"
+    install -d -m 0700 "$GAMING_PAYLOAD_OUTPUT_DIR"
 fi
 for (( dependency_index=0; dependency_index<${#DEPENDENCY_PACKAGES[@]}; dependency_index++ )); do
     dependency_package="${DEPENDENCY_PACKAGES[$dependency_index]}"
@@ -470,7 +473,10 @@ VALIDATOR_ARGS=(
 [[ -z "$BUNDLE_CACHE_ID" ]] || VALIDATOR_ARGS+=(--input-bundle-id "$BUNDLE_CACHE_ID")
 [[ -z "$PROGRESS_ATTEMPT" ]] || VALIDATOR_ARGS+=(--progress-attempt "$PROGRESS_ATTEMPT")
 [[ -z "$COMPRESSION_PROFILE" ]] || VALIDATOR_ARGS+=(--compression-profile "$COMPRESSION_PROFILE")
-[[ -z "$GAMING_PAYLOAD_PROFILE" ]] || VALIDATOR_ARGS+=(--gaming-payload-profile "$GAMING_PAYLOAD_PROFILE")
+[[ -z "$GAMING_PAYLOAD_PROFILE" ]] || VALIDATOR_ARGS+=(
+    --gaming-payload-profile "$GAMING_PAYLOAD_PROFILE"
+    --gaming-payload-output-dir "$GAMING_PAYLOAD_OUTPUT_DIR"
+)
 for (( dependency_index=0; dependency_index<${#DEPENDENCY_PACKAGES[@]}; dependency_index++ )); do
     VALIDATOR_ARGS+=(
         --dependency-package "${DEPENDENCY_PACKAGES[$dependency_index]}"
@@ -507,6 +513,26 @@ TRUST="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["trust"
 MODULE_PAYLOAD_NOOP="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("compression", {}).get("modulePayloadNoop", False))' "$VALIDATION_JSON")"
 VALIDATION_SHA256="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$VALIDATION_JSON")"
 INITRAMFS_WORKSPACE_JSON="$(mktemp "$INSTALLER_TEMP_ROOT/offline-root-workspace.XXXXXX")"
+if [[ -n "$GAMING_PAYLOAD_PROFILE" ]]; then
+    NVIDIA_UTILS_NAME="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(next(x["filename"] for x in d["gamingPayload"]["packageRecords"] if x["name"]=="nvidia-utils"))' "$VALIDATION_JSON")" || {
+        write_prevalidation_result failed gaming_payload_repack_invalid \
+            "The validated gaming payload lacks its nvidia-utils package."
+        exit 1
+    }
+    LIB32_NVIDIA_UTILS_NAME="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(next(x["filename"] for x in d["gamingPayload"]["packageRecords"] if x["name"]=="lib32-nvidia-utils"))' "$VALIDATION_JSON")" || {
+        write_prevalidation_result failed gaming_payload_repack_invalid \
+            "The validated gaming payload lacks its lib32-nvidia-utils package."
+        exit 1
+    }
+    NVIDIA_UTILS="$GAMING_PAYLOAD_OUTPUT_DIR/$NVIDIA_UTILS_NAME"
+    LIB32_NVIDIA_UTILS="$GAMING_PAYLOAD_OUTPUT_DIR/$LIB32_NVIDIA_UTILS_NAME"
+    [[ -f "$NVIDIA_UTILS" && ! -L "$NVIDIA_UTILS" &&
+       -f "$LIB32_NVIDIA_UTILS" && ! -L "$LIB32_NVIDIA_UTILS" ]] || {
+        write_prevalidation_result failed gaming_payload_repack_invalid \
+            "The validated gaming payload package staging is incomplete."
+        exit 1
+    }
+fi
 
 write_install_result()
 {
@@ -937,14 +963,24 @@ if [[ -n "$COMPRESSION_PROFILE" ]]; then
 fi
 
 emit_progress_indeterminate pacman_policy
-if [[ "$COMPRESSION_PROFILE" == btrfs-zstd3 ]]; then
-    PHASE=pacman_checkspace_policy
+if [[ "$COMPRESSION_PROFILE" == btrfs-zstd3 || -n "$GAMING_PAYLOAD_PROFILE" ]]; then
+    PHASE=gaming_payload_pacman_policy
+    PACMAN_POLICY_ARGS=(--check-space-policy preserve --local-file-policy preserve)
+    if [[ "$COMPRESSION_PROFILE" == btrfs-zstd3 ]]; then
+        PHASE=pacman_checkspace_policy
+        PACMAN_POLICY_ARGS=(--check-space-policy disable-measured --local-file-policy preserve)
+    fi
+    if [[ -n "$GAMING_PAYLOAD_PROFILE" ]]; then
+        PACMAN_POLICY_ARGS[3]=validated-derived
+    fi
     require_validation_document_unchanged ||
-        die "The validated compression admission document changed before mutation."
-    require_measured_pacman_admission ||
-        die "Pacman CheckSpace cannot be bypassed without exact measured Btrfs admission."
-    require_active_compression_policy ||
-        die "Pacman CheckSpace cannot be bypassed because the measured Btrfs policy is inactive."
+        die "The validated installer document changed before pacman policy preparation."
+    if [[ "$COMPRESSION_PROFILE" == btrfs-zstd3 ]]; then
+        require_measured_pacman_admission ||
+            die "Pacman CheckSpace cannot be bypassed without exact measured Btrfs admission."
+        require_active_compression_policy ||
+            die "Pacman CheckSpace cannot be bypassed because the measured Btrfs policy is inactive."
+    fi
     if [[ "${PROJECT_TEST_MODE:-0}" == 1 ]]; then
         PACMAN_CONFIG_SOURCE="${PROJECT_TEST_PACMAN_CONFIG:-}"
         [[ -n "$PACMAN_CONFIG_SOURCE" ]] ||
@@ -952,14 +988,17 @@ if [[ "$COMPRESSION_PROFILE" == btrfs-zstd3 ]]; then
     else
         PACMAN_CONFIG_SOURCE=/etc/pacman.conf
     fi
-    PACMAN_TRANSACTION_CONFIG="$MUTATION_WORK/pacman-measured-admission.conf"
+    PACMAN_TRANSACTION_CONFIG="$MUTATION_WORK/pacman-validated-transaction.conf"
     run_mutation_command python3 "$SUPPORT_ROOT/lib/prepare_pacman_config.py" \
-        --source "$PACMAN_CONFIG_SOURCE" --output "$PACMAN_TRANSACTION_CONFIG" ||
-        die "A confined pacman configuration could not be prepared for measured admission."
+        --source "$PACMAN_CONFIG_SOURCE" --output "$PACMAN_TRANSACTION_CONFIG" \
+        "${PACMAN_POLICY_ARGS[@]}" ||
+        die "A confined pacman configuration could not be prepared for validated inputs."
     require_validation_document_unchanged ||
-        die "The validated compression admission document changed during transaction preparation."
-    require_active_compression_policy ||
-        die "The measured Btrfs policy changed during pacman transaction preparation."
+        die "The validated installer document changed during transaction preparation."
+    if [[ "$COMPRESSION_PROFILE" == btrfs-zstd3 ]]; then
+        require_active_compression_policy ||
+            die "The measured Btrfs policy changed during pacman transaction preparation."
+    fi
 fi
 emit_progress_items pacman_policy 1 1
 
@@ -1216,6 +1255,14 @@ install -m 0644 "$MUTATION_WORK/BUILD-INFO.txt" "$STATE_ROOT/BUILD-INFO.txt"
 install -m 0644 "$PROVENANCE" "$STATE_ROOT/PROVENANCE.json"
 printf '%s\n' "$KERNEL" > "$STATE_ROOT/kernel-version"
 printf '%s\n' "$NVIDIA_VERSION" > "$STATE_ROOT/nvidia-version"
+if [[ -n "$GAMING_PAYLOAD_PROFILE" ]]; then
+    python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(json.dumps(d["gamingPayload"], sort_keys=True, separators=(",", ":")))' \
+        "$VALIDATION_JSON" > "$MUTATION_WORK/gaming-payload.json"
+    install -m 0644 "$MUTATION_WORK/gaming-payload.json" \
+        "$STATE_ROOT/gaming-payload.json"
+else
+    rm -f "$STATE_ROOT/gaming-payload.json"
+fi
 emit_progress_items installation_state 1 1
 
 PHASE=cleanup

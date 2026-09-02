@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "status": "reviewed",
+  "profileId": "gaming-no-cuda-v1",
+  "target": {
+    "steamosVersion": "3.8.14",
+    "kernelVersion": "6.16.12-valve24.4-1-neptune-616-gfe145653a794",
+    "nvidiaVersion": "575.64.05",
+    "architecture": "x86_64"
+  },
+  "delivery": {
+    "strategy": "deterministic-authenticated-source-repack-v1",
+    "packageOwnership": "archive-and-pacman-database-exact",
+    "sourceAuthentication": "arch-detached-signatures-and-reviewed-userspace-lock",
+    "repacker": {"name": "repack_gaming_userspace.py", "schemaVersion": 1, "zstdVersion": "1.5.7", "compression": "zstd-19-t1"}
+  },
+  "omittedCapabilities": ["cuda-compute"],
+  "preservedCapabilities": ["graphics", "vulkan", "glvnd-egl", "nvenc", "nvdec", "gsp-firmware", "gaming-32bit", "recovery-rendering"],
+  "packageOwnership": "archive-and-pacman-database-exact",
+  "provenanceRequired": true,
+  "savedBytes": 316170989,
+  "packages": [
+    {
+      "name": "nvidia-utils",
+      "sourceFilename": "nvidia-utils-575.64.05-2-x86_64.pkg.tar.zst",
+      "sourceSha256": "aebf379dd6708772397447c0a652ae167cfb6be346ddd2cb5cec1c6d99211242",
+      "sourceSignatureFilename": "nvidia-utils-575.64.05-2-x86_64.pkg.tar.zst.sig",
+      "sourceSignatureSha256": "bc8ff4ca92ae7d5e92f03e71944994c1e20b5981c1907cb62f8685281fd83d49",
+      "sourceSignerFingerprint": "05C7775A9E8B977407FE08E69D4C5AA15426DA0A",
+      "outputFilename": "nvidia-utils-575.64.05-2.1-x86_64.pkg.tar.zst",
+      "outputVersion": "575.64.05-2.1",
+      "outputSha256": "592dc7572de06e336331ea9b74765ea9673845c182b74f26e47802ec61199a70",
+      "installedSize": 678066275,
+      "savedBytes": 245618909,
+      "requiredMembers": [
+        "usr/lib/firmware/nvidia/575.64.05/gsp_ga10x.bin",
+        "usr/lib/firmware/nvidia/575.64.05/gsp_tu10x.bin",
+        "usr/lib/libEGL_nvidia.so.575.64.05",
+        "usr/lib/libGLX_nvidia.so.575.64.05",
+        "usr/lib/libnvcuvid.so.575.64.05",
+        "usr/lib/libnvidia-encode.so.575.64.05",
+        "usr/lib/libnvidia-glcore.so.575.64.05",
+        "usr/lib/libnvidia-glvkspirv.so.575.64.05",
+        "usr/lib/libnvidia-gpucomp.so.575.64.05",
+        "usr/lib/nvidia/wine/nvngx.dll",
+        "usr/lib/nvidia/wine/nvngx_dlssg.dll",
+        "usr/lib/xorg/modules/drivers/nvidia_drv.so",
+        "usr/share/vulkan/icd.d/nvidia_icd.json"
+      ],
+      "omittedMembers": [
+        {"path":"usr/bin/nvidia-cuda-mps-control","type":"file","size":66624,"sha256":"4172e1213bf7e28ea627f6a0e45bf1ab2a434afae931e2490ab57c00e55ce9d1"},
+        {"path":"usr/bin/nvidia-cuda-mps-server","type":"file","size":18664,"sha256":"41abafbcf2d53e49086cbd4a4695311cd0f2412220253c80416ec5d76958af02"},
+        {"path":"usr/lib/libcuda.so","type":"symlink","size":12,"sha256":"4089b41a4ce333f2d29032039637b3042f20e3c07aef4edcb99e17f198ffd47e"},
+        {"path":"usr/lib/libcuda.so.1","type":"symlink","size":20,"sha256":"b94f7df8947760f8dc6ece8ebfd6d4f9d63a2cbc448eaeb31aa721a91af93a35"},
+        {"path":"usr/lib/libcuda.so.575.64.05","type":"file","size":92316728,"sha256":"d02f1cc523694931fc58fcdb07c8733a206f68978202da41922d8358d19a7f63"},
+        {"path":"usr/lib/libcudadebugger.so","type":"symlink","size":20,"sha256":"528c838f37145f2d3d88a95fc260600dbb24fbcdee39de4d4026c569d69c2435"},
+        {"path":"usr/lib/libcudadebugger.so.1","type":"symlink","size":28,"sha256":"cc8f2e5d9aeee95e5058786bf697e8ddb42f8ccec349b94577db95028b85d684"},
+        {"path":"usr/lib/libcudadebugger.so.575.64.05","type":"file","size":9742088,"sha256":"b7ba4384c38a78c92b9ecc3afee1bf6526cf3eaded0083b1897df25243903171"},
+        {"path":"usr/lib/libnvidia-nvvm.so","type":"symlink","size":19,"sha256":"fbb61f3740e1bdd65ea1384098e57d615d92a85fbcf3aa6ab80108db61eafe3a"},
+        {"path":"usr/lib/libnvidia-nvvm.so.4","type":"symlink","size":27,"sha256":"e2734a429e06715f050c3c5e0c16322c3e1d6c366d1de03479dd558aa0844c84"},
+        {"path":"usr/lib/libnvidia-nvvm.so.575.64.05","type":"file","size":78079592,"sha256":"9c7c4759d18942f5e2f49606c5a024f4b563ea681e3dfb274bd595468d577bf6"},
+        {"path":"usr/lib/libnvidia-nvvm70.so","type":"symlink","size":21,"sha256":"b29b73fc562a02634e0fad4228ea638ce2502f6b212db62bd76eb0f710701839"},
+        {"path":"usr/lib/libnvidia-nvvm70.so.4","type":"file","size":24829456,"sha256":"64e62bd2f763c575418bb7d660e8715c57d49ef66640a2385896324238896acd"},
+        {"path":"usr/lib/libnvidia-ptxjitcompiler.so","type":"symlink","size":29,"sha256":"b90b821957f5efd9291e18027b6d5bb55a1da734bade2f789dd8003bcdbfcebb"},
+        {"path":"usr/lib/libnvidia-ptxjitcompiler.so.1","type":"symlink","size":37,"sha256":"fbd39f4ed027723ded1d7f4a757e6f318368d71e37d187f4248e8e81a547bb2d"},
+        {"path":"usr/lib/libnvidia-ptxjitcompiler.so.575.64.05","type":"file","size":40562320,"sha256":"6a692f12cb28a679ec68e1ab81070b76c987a6cba63e720044307233050c8a0d"},
+        {"path":"usr/share/man/man1/nvidia-cuda-mps-control.1.gz","type":"file","size":3437,"sha256":"5f8f4412020e02b71287419884c4884aea6c03e264e44143413a223bc23e8e72"}
+      ]
+    },
+    {
+      "name": "lib32-nvidia-utils",
+      "sourceFilename": "lib32-nvidia-utils-575.64.05-1-x86_64.pkg.tar.zst",
+      "sourceSha256": "15ee0eded0f7040a096e609601f66338746dcb71bf667cee6552701e2c8b4728",
+      "sourceSignatureFilename": "lib32-nvidia-utils-575.64.05-1-x86_64.pkg.tar.zst.sig",
+      "sourceSignatureSha256": "3d6a0256c74bcc8c6632421a4f05cb74fd7d641cfa36efb6a4e9b0db86a3889c",
+      "sourceSignerFingerprint": "D2E95FEC015CF1F911AAAB0C3D4C5008BB5C8D29",
+      "outputFilename": "lib32-nvidia-utils-575.64.05-1.1-x86_64.pkg.tar.zst",
+      "outputVersion": "575.64.05-1.1",
+      "outputSha256": "1b00e5388ff6275159bec0a63b712f73cf1e03eee5936fcf3c69f2c49b39edd3",
+      "installedSize": 199043700,
+      "savedBytes": 70552080,
+      "requiredMembers": [
+        "usr/lib32/libEGL_nvidia.so.575.64.05",
+        "usr/lib32/libGLX_nvidia.so.575.64.05",
+        "usr/lib32/libnvcuvid.so.575.64.05",
+        "usr/lib32/libnvidia-encode.so.575.64.05",
+        "usr/lib32/libnvidia-glcore.so.575.64.05",
+        "usr/lib32/libnvidia-glvkspirv.so.575.64.05",
+        "usr/lib32/libnvidia-gpucomp.so.575.64.05"
+      ],
+      "omittedMembers": [
+        {"path":"usr/lib32/libcuda.so","type":"symlink","size":12,"sha256":"4089b41a4ce333f2d29032039637b3042f20e3c07aef4edcb99e17f198ffd47e"},
+        {"path":"usr/lib32/libcuda.so.1","type":"symlink","size":20,"sha256":"b94f7df8947760f8dc6ece8ebfd6d4f9d63a2cbc448eaeb31aa721a91af93a35"},
+        {"path":"usr/lib32/libcuda.so.575.64.05","type":"file","size":25998824,"sha256":"17403f57309d4aa220f117cb4b3c8b35aac59a0a393fa26f39fed8fb6c4696eb"},
+        {"path":"usr/lib32/libnvidia-ptxjitcompiler.so","type":"symlink","size":29,"sha256":"b90b821957f5efd9291e18027b6d5bb55a1da734bade2f789dd8003bcdbfcebb"},
+        {"path":"usr/lib32/libnvidia-ptxjitcompiler.so.1","type":"symlink","size":37,"sha256":"fbd39f4ed027723ded1d7f4a757e6f318368d71e37d187f4248e8e81a547bb2d"},
+        {"path":"usr/lib32/libnvidia-ptxjitcompiler.so.575.64.05","type":"file","size":44553256,"sha256":"0849fc1702948d8532ee092c754a0d553e788d7e15950508b28184b755e03780"}
+      ]
+    }
+  ]
+}

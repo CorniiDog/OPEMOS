@@ -17,6 +17,7 @@ from pathlib import Path, PurePosixPath
 sys.dont_write_bytecode = True
 from update_grub_nvidia_args import REQUIRED as REQUIRED_KERNEL_ARGUMENTS
 from gaming_payload_profiles import ProfileError, validate_profile
+from repack_gaming_userspace import RepackError, materialize as materialize_gaming_payload
 from atomic_output import atomic_write_bytes
 
 EXPECTED_MODULES = {
@@ -156,6 +157,7 @@ def arguments():
     parser.add_argument("--package-keyring", required=True, type=Path)
     parser.add_argument("--userspace-lock", required=True, type=Path)
     parser.add_argument("--gaming-payload-profile", type=Path)
+    parser.add_argument("--gaming-payload-output-dir", type=Path)
     parser.add_argument("--compression-profile", choices=(COMPRESSION_PROFILE,))
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--progress-attempt", type=bounded_progress_attempt, default=0)
@@ -1326,6 +1328,19 @@ def validate(args, progress):
     require_regular_input(args.userspace_lock, "userspace lock", MAX_USERSPACE_LOCK_BYTES)
     if args.gaming_payload_profile:
         require_regular_input(args.gaming_payload_profile, "gaming payload profile", MAX_USERSPACE_LOCK_BYTES)
+        if (args.gaming_payload_output_dir is None
+                or args.gaming_payload_output_dir.is_symlink()
+                or not args.gaming_payload_output_dir.is_dir()
+                or any(args.gaming_payload_output_dir.iterdir())):
+            fail(
+                "gaming_payload_staging_invalid",
+                "gaming payload staging must be an empty private directory",
+            )
+    elif args.gaming_payload_output_dir is not None:
+        fail(
+            "gaming_payload_staging_invalid",
+            "gaming payload staging requires an exact reviewed profile",
+        )
     for package in args.dependency_package:
         require_regular_input(package, "dependency package", MAX_USERSPACE_PACKAGE_BYTES)
     for signature in args.dependency_signature:
@@ -1592,6 +1607,108 @@ def validate(args, progress):
     if not isinstance(expected_lock_packages, list):
         fail("userspace_lock_invalid", "reviewed lock package set is not a list")
     compare_userspace_lock_packages(expected_lock_packages, lock_package_records)
+
+    # The gaming profile authenticates exact deterministic derivatives of the
+    # already signature-verified NVIDIA seed packages.  Repacking happens only
+    # after the complete signed source set matches the normal reviewed lock.
+    # Dependencies remain byte-identical.  Pacman therefore receives complete
+    # packages with exact ownership records; target files are never deleted by
+    # an installer-side filename heuristic.
+    if gaming_payload is not None:
+        try:
+            derived_paths = materialize_gaming_payload(
+                args.gaming_payload_profile,
+                [args.nvidia_utils, args.lib32_nvidia_utils],
+                args.gaming_payload_output_dir,
+                progress=lambda completed, total: progress.emit(
+                    "gaming_payload_repack", unit="items", completed=completed,
+                    total=total, force=True,
+                ),
+            )
+        except RepackError as error:
+            fail("gaming_payload_repack_failed", str(error))
+        derived_by_name = {}
+        profile_records = {
+            record["name"]: record for record in gaming_payload["packageRecords"]
+        }
+        source_by_name = {
+            parsed["lockRecord"]["name"]: parsed
+            for parsed in parsed_packages
+            if parsed["isNvidiaPackage"]
+        }
+        for derived in derived_paths:
+            metadata = package_metadata(derived)
+            name = metadata.get("pkgname", "")
+            profile_record = profile_records.get(name)
+            source = source_by_name.get(name)
+            if profile_record is None or source is None or name in derived_by_name:
+                fail("gaming_payload_repack_invalid", "derived package identity is invalid")
+            members = package_members(derived)
+            for member in members:
+                require_safe_destination(root, member)
+            dependencies = normalized_relations(
+                metadata["depends"], f"derived package {name} dependencies",
+                "gaming_payload_repack_invalid",
+            )
+            provides = normalized_relations(
+                metadata["provides"], f"derived package {name} provides",
+                "gaming_payload_repack_invalid",
+            )
+            installed_size = metadata.get("size", "")
+            source_record = source["lockRecord"]
+            derived_digest = sha256(derived, progress)
+            if (not installed_size.isdigit()
+                    or derived.name != profile_record["filename"]
+                    or derived_digest != profile_record["sha256"]
+                    or metadata.get("pkgver") != profile_record["version"]
+                    or metadata.get("arch") != source_record["architecture"]
+                    or int(installed_size) != profile_record["installedSize"]
+                    or dependencies != source_record["dependencies"]
+                    or provides != source_record["provides"]):
+                fail(
+                    "gaming_payload_repack_invalid",
+                    f"derived package metadata differs from reviewed profile: {name}",
+                )
+            derived_record = dict(source_record)
+            derived_record.update({
+                "filename": derived.name,
+                "version": metadata["pkgver"],
+                "packageSha256": derived_digest,
+                "installedSize": int(installed_size),
+            })
+            derived_by_name[name] = {
+                "lockRecord": derived_record,
+                "expectedName": name,
+                "isNvidiaPackage": True,
+                "members": members,
+                "package": derived,
+            }
+        if set(derived_by_name) != {"nvidia-utils", "lib32-nvidia-utils"}:
+            fail("gaming_payload_repack_invalid", "derived package set is incomplete")
+        dependency_parsed = [
+            parsed for parsed in parsed_packages if not parsed["isNvidiaPackage"]
+        ]
+        parsed_packages = [
+            derived_by_name["nvidia-utils"], derived_by_name["lib32-nvidia-utils"],
+            *dependency_parsed,
+        ]
+        package_inputs = [
+            (derived_by_name["nvidia-utils"]["package"],
+             args.nvidia_utils_signature, "nvidia-utils", True),
+            (derived_by_name["lib32-nvidia-utils"]["package"],
+             args.lib32_nvidia_utils_signature, "lib32-nvidia-utils", True),
+        ] + [
+            (package, signature, None, False)
+            for package, signature in zip(
+                args.dependency_package, args.dependency_signature
+            )
+        ]
+        package_installed_bytes = sum(
+            parsed["lockRecord"]["installedSize"] for parsed in parsed_packages
+        )
+        package_compressed_bytes = sum(
+            package.stat().st_size for package, _, _, _ in package_inputs
+        )
 
     package_records = []
     incoming_packages = {}

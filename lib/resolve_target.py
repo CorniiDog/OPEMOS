@@ -164,6 +164,13 @@ def resolve_target(steamos, kernel, architecture, releases, repository):
                 "schemaVersion": 1, "profileId": "gaming-no-cuda-v1",
                 "supported": True, "compatibility": "exact",
                 "requiredVerification": "support-policy-hash-and-exact-package-lock",
+                "delivery": "deterministic-authenticated-source-repack-v1",
+                "savedBytes": gaming_record["savedBytes"],
+                "omittedCapabilities": ["cuda-compute"],
+                "preservedCapabilities": [
+                    "gaming-32bit", "glvnd-egl", "graphics", "gsp-firmware",
+                    "nvdec", "nvenc", "recovery-rendering", "vulkan",
+                ],
                 "profile": {"name": gaming_record["profileAsset"],
                             "sha256": gaming_record["profileSha256"],
                             "url": f"{base_url}/{gaming_record['profileAsset']}"},

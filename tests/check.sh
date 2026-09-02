@@ -106,6 +106,8 @@ python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/gaming_payload_profiles.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/repack_gaming_userspace.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/repack_module_artifact.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/bsdtar_safety.py
@@ -167,6 +169,7 @@ PY
 
 printf 'Checking reviewed gaming payload profile contract...\n'
 python3 tests/gaming_payload_profiles.py
+python3 tests/gaming_userspace_repack.py
 
 printf 'Checking bounded archive confinement...\n'
 python3 tests/archive_safety.py

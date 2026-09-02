@@ -11,11 +11,9 @@ index in the same commit.
 
 ### Immediate image-builder blockers
 
-* [ ] Build, audit, and publish the first exact-target `gaming-no-cuda-v1`
-  support-repacked package set and reviewed userspace lock. The versioned policy,
-  resolver capability, and installer authentication contract are implemented,
-  but capability remains fail-closed/disabled until real package ownership,
-  preserved graphics/video/recovery behavior, and provenance are verified.
+* [ ] Hardware-test `gaming-no-cuda-v1` and its complete-payload restoration on
+  the exact SteamOS 3.8.14 / 575.64.05 / valve24.4 target before promotion
+  beyond development trust.
 * [ ] Exercise the deterministic `.ko` to `.ko.zst` repacker against a real
   authenticated published release, inspect the dry-run plan, then publish a
   create-only `-modules-zstd-r1` revision without changing the source release.
@@ -1113,8 +1111,11 @@ signing policy.
   installer profile metadata against support-owned policy and lock hashes.
 * [x] Keep capability disabled when no reviewed exact-target package set exists;
   never ask the image builder to remove userspace paths heuristically.
-* [ ] Produce and hardware-test the first reviewed derived package set, then add
-  its exact target/profile/lock hashes to the policy's `supportedTargets` list.
+* [x] Produce the first reviewed deterministic derived package set for the exact
+  SteamOS 3.8.14 / 575.64.05 / valve24.4 target; pin every source signature,
+  omission, output package hash, ownership record, and saved-byte total.
+* [ ] Hardware-test the reduced profile and its complete-payload restoration on
+  the exact target before promoting either path beyond development trust.
 
 ## Cancellation, cleanup, and caching
 

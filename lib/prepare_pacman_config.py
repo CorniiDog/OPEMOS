@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create a confined pacman config that changes only measured CheckSpace policy."""
+"""Create a confined pacman config for already validated offline payloads."""
 
 import argparse
 import re
@@ -14,12 +14,21 @@ SECTION = re.compile(r"^[ \t]*\[([^]\r\n]+)\][ \t]*(?:#.*)?$")
 CHECK_SPACE = re.compile(r"^[ \t]*CheckSpace[ \t]*(?:#.*)?$")
 CHECK_SPACE_PREFIX = re.compile(r"^[ \t]*CheckSpace(?:[ \t=]|$)")
 INCLUDE = re.compile(r"^[ \t]*Include[ \t]*=")
+LOCAL_SIGLEVEL = re.compile(r"^[ \t]*LocalFileSigLevel[ \t]*=")
 
 
 def arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument(
+        "--check-space-policy", choices=("disable-measured", "preserve"),
+        default="disable-measured",
+    )
+    parser.add_argument(
+        "--local-file-policy", choices=("preserve", "validated-derived"),
+        default="preserve",
+    )
     return parser.parse_args()
 
 
@@ -43,6 +52,7 @@ def main():
     in_options = False
     options_sections = 0
     check_space_count = 0
+    local_siglevel_count = 0
     for line in text.splitlines(keepends=True):
         section = SECTION.fullmatch(line.rstrip("\r\n"))
         if section:
@@ -61,9 +71,20 @@ def main():
             fail("option-level Include directives cannot be confined")
         if CHECK_SPACE.fullmatch(line.rstrip("\r\n")):
             check_space_count += 1
-            options.append("# CheckSpace disabled after measured Btrfs admission\n")
+            if args.check_space_policy == "disable-measured":
+                options.append("# CheckSpace disabled after measured Btrfs admission\n")
+            else:
+                options.append(line)
         elif CHECK_SPACE_PREFIX.match(line):
             fail("CheckSpace has an unsupported or ambiguous form")
+        elif LOCAL_SIGLEVEL.match(line):
+            local_siglevel_count += 1
+            if args.local_file_policy == "validated-derived":
+                options.append(
+                    "LocalFileSigLevel = Never # exact derived hashes already validated\n"
+                )
+            else:
+                options.append(line)
         else:
             options.append(line)
 
@@ -71,6 +92,13 @@ def main():
         fail("source must contain exactly one options section")
     if check_space_count != 1:
         fail("source must contain exactly one active CheckSpace directive")
+    if local_siglevel_count > 1:
+        fail("source contains ambiguous LocalFileSigLevel directives")
+    if (args.local_file_policy == "validated-derived"
+            and local_siglevel_count == 0):
+        options.append(
+            "LocalFileSigLevel = Never # exact derived hashes already validated\n"
+        )
     if not options or options[-1][-1:] != "\n":
         options.append("\n")
     try:

@@ -1,1 +1,22 @@
-{"profileId":"gaming-no-cuda-v1","schemaVersion":1,"status":"reviewed","delivery":{"packageOwnership":"archive-and-pacman-database-exact","strategy":"support-owned-repacked-packages"},"omittedCapabilities":["cuda-compute"],"preservedCapabilities":["graphics","vulkan","glvnd-egl","nvenc","nvdec","gsp-firmware","gaming-32bit","recovery-rendering"],"provenanceRequired":true,"supportedTargets":[]}
+{
+  "profileId": "gaming-no-cuda-v1",
+  "schemaVersion": 1,
+  "status": "reviewed",
+  "delivery": {"packageOwnership": "archive-and-pacman-database-exact", "strategy": "support-owned-repacked-packages"},
+  "omittedCapabilities": ["cuda-compute"],
+  "preservedCapabilities": ["graphics", "vulkan", "glvnd-egl", "nvenc", "nvdec", "gsp-firmware", "gaming-32bit", "recovery-rendering"],
+  "provenanceRequired": true,
+  "supportedTargets": [
+    {
+      "steamosVersion": "3.8.14",
+      "kernelVersion": "6.16.12-valve24.4-1-neptune-616-gfe145653a794",
+      "nvidiaVersion": "575.64.05",
+      "architecture": "x86_64",
+      "profileAsset": "gaming-no-cuda-v1-steamos-3.8.14-nvidia-575.64.05-k6.16.12-valve24.4-1-neptune-616-gfe145653a794.json",
+      "profileSha256": "3c41ecf6e6d9215c13c684543228b87a463dbb0ddc52fdf927cd2c84abf18288",
+      "userspaceLockAsset": "steamos-3.8.14-nvidia-575.64.05.json",
+      "userspaceLockSha256": "a73dd0af6afbd4337c045ddc1ac827081b111ffd4a8c6a8f1efcbaf9d97002a7",
+      "savedBytes": 316170989
+    }
+  ]
+}

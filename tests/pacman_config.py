@@ -11,9 +11,10 @@ ROOT = Path(__file__).resolve().parent.parent
 HELPER = ROOT / "lib" / "prepare_pacman_config.py"
 
 
-def run(source, output):
+def run(source, output, *options):
     return subprocess.run(
-        [sys.executable, str(HELPER), "--source", str(source), "--output", str(output)],
+        [sys.executable, str(HELPER), "--source", str(source), "--output", str(output),
+         *options],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
     )
 
@@ -41,6 +42,17 @@ def main():
         assert "LocalFileSigLevel = Required" in result
         assert "[core]" not in result and "mirrorlist" not in result
         assert stat.S_IMODE(output.stat().st_mode) == 0o600
+
+        gaming = root / "gaming.conf"
+        completed = run(
+            source, gaming, "--check-space-policy", "preserve",
+            "--local-file-policy", "validated-derived",
+        )
+        assert completed.returncode == 0, completed.stderr
+        gaming_text = gaming.read_text(encoding="utf-8")
+        assert "\nCheckSpace\n" in gaming_text
+        assert "LocalFileSigLevel = Never" in gaming_text
+        assert "SigLevel = Required DatabaseOptional" in gaming_text
 
         for name, contents in (
             ("missing", "[options]\nSigLevel = Required\n"),
