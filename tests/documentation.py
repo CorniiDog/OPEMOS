@@ -191,6 +191,11 @@ def main() -> None:
     assert "table th {" in stylesheet
     assert "background-color: var(--code-background) !important;" in stylesheet
     assert "background-color: var(--surface-strong) !important;" in stylesheet
+    table_rule = re.search(r"^table \{(?P<body>.*?)^\}", stylesheet, re.MULTILINE | re.DOTALL)
+    assert table_rule is not None
+    assert "display: table;" in table_rule.group("body")
+    assert "display: block;" not in table_rule.group("body")
+    assert "border-collapse: separate;" in table_rule.group("body")
     index = (DOCS / "index.md").read_text(encoding="utf-8")
     assert 'class="opemos-hero"' in index
     assert 'class="opemos-wordmark"' in index
