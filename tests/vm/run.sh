@@ -16,21 +16,28 @@ SEED_ISO="$RUNTIME_DIR/seed.iso"
 SERIAL_LOG="$RUNTIME_DIR/serial.log"
 NO_IMAGE_DOWNLOAD=0
 OFFLINE_CACHE_ONLY=0
+DESKTOP_GUI=0
 
 usage()
 {
-    printf 'Usage: %s [--no-image-download] [--offline-cache-only]\n' "${0##*/}"
+    printf 'Usage: %s [--no-image-download] [--offline-cache-only|--desktop-gui]\n' "${0##*/}"
 }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --no-image-download) NO_IMAGE_DOWNLOAD=1 ;;
         --offline-cache-only) OFFLINE_CACHE_ONLY=1 ;;
+        --desktop-gui) DESKTOP_GUI=1 ;;
         -h|--help) usage; exit 0 ;;
         *) usage >&2; printf 'unknown argument: %s\n' "$1" >&2; exit 2 ;;
     esac
     shift
 done
+
+[[ "$OFFLINE_CACHE_ONLY" == 0 || "$DESKTOP_GUI" == 0 ]] || {
+    printf '%s\n' 'offline-cache-only and desktop-gui modes are mutually exclusive' >&2
+    exit 2
+}
 
 for command_name in curl qemu-img qemu-system-x86_64 sha256sum tar; do
     command -v "$command_name" >/dev/null 2>&1 || {
@@ -81,10 +88,38 @@ if [[ ! -f "$BASE_IMAGE" ]]; then
 fi
 printf '%s  %s\n' "$IMAGE_SHA256" "$BASE_IMAGE" | sha256sum -c -
 
-tar --exclude=.git --exclude=tests/vm/.cache --exclude=tests/vm/.runtime \
+COPYFILE_DISABLE=1 tar --exclude=.git --exclude=desktop/target \
+    --exclude=tests/vm/.cache --exclude=tests/vm/.runtime \
     -C "$PROJECT_ROOT" -czf "$SEED_DIR/repo.tgz" .
 cp "$SCRIPT_DIR/meta-data" "$SEED_DIR/meta-data"
-if [[ "$OFFLINE_CACHE_ONLY" == 1 ]]; then
+if [[ "$DESKTOP_GUI" == 1 ]]; then
+cat > "$SEED_DIR/user-data" <<'EOF'
+#cloud-config
+package_update: false
+packages:
+  - cargo
+  - fontconfig-devel
+  - libX11-devel
+  - libXcursor-devel
+  - libXi-devel
+  - libXrandr-devel
+  - libglvnd-devel
+  - libxkbcommon-x11
+  - mesa-libGL-devel
+  - rust
+  - wayland-devel
+  - xorg-x11-server-Xvfb
+  - xorg-x11-xauth
+runcmd:
+  - [bash, -lc, "mkdir -p /mnt/seed /opt/open-gpu && mount -o ro /dev/sr0 /mnt/seed && tar -xzf /mnt/seed/repo.tgz -C /opt/open-gpu"]
+  - [bash, -lc, "/opt/open-gpu/tests/vm/desktop-gui-guest.sh /opt/open-gpu > /dev/ttyS0 2>&1"]
+final_message: OPEN_GPU_VM_COMPLETE
+power_state:
+  mode: poweroff
+  timeout: 30
+  condition: true
+EOF
+elif [[ "$OFFLINE_CACHE_ONLY" == 1 ]]; then
 cat > "$SEED_DIR/user-data" <<'EOF'
 #cloud-config
 runcmd:
@@ -174,7 +209,9 @@ release_runtime_lock
 trap - EXIT INT TERM
 
 result="$(sed -n '/{"schemaVersion":1,/ { s/^[^{]*//; p; }' "$SERIAL_LOG" | tail -n1 | tr -d '\r' || true)"
-if [[ "$OFFLINE_CACHE_ONLY" == 1 ]]; then
+if [[ "$DESKTOP_GUI" == 1 ]]; then
+    expected_result='{"schemaVersion":1,"status":"passed","desktopGui":"passed"}'
+elif [[ "$OFFLINE_CACHE_ONLY" == 1 ]]; then
     expected_result='{"schemaVersion":1,"status":"passed","offlineAuthenticatedCache":"passed","offlineBundleSelection":"passed","offlineCacheRetention":"passed"}'
 else
     expected_result='{"schemaVersion":1,"status":"passed","transaction":"passed","flock":"passed","mountNamespace":"passed","btrfs":"passed","recoveryAB":"passed","chrootHooks":"passed","mountLifecycle":"passed","consumerContract":"passed","targetExecutionTrust":"passed","initramfsContract":"passed","steamosRecoveryHarness":"passed","offlineAuthenticatedCache":"passed"}'

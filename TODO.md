@@ -49,6 +49,18 @@ index in the same commit.
 
 ### Remaining engineering cleanup
 
+* [ ] Design and implement a fail-closed self-update contract for the native
+  SteamOS companion using versioned A/B application generations. Download into
+  private staging, authenticate an immutable release manifest and every file,
+  enforce target architecture/version policy, fsync the complete generation,
+  and atomically switch a `current` launcher pointer without overwriting the
+  running executable. Retain one independently validated last-known-good
+  generation and automatically roll back unless the new process records a
+  bounded startup health acknowledgement. Add exclusive update locking,
+  interrupted download, ENOSPC, signature/hash mismatch, crash-before-switch,
+  crash-after-switch, power-loss simulation, rollback-loop prevention, and
+  safe generation-retention tests. An unavailable or invalid update must leave
+  the active generation untouched and must never weaken the boot guardian.
 * [ ] Enable **Settings → Pages → Build and deployment → GitHub Actions** in
   the canonical repository, then verify the first documentation deployment and
   published navigation links.
@@ -858,6 +870,15 @@ This remains a major future area, represented by three distinct gates:
   and keyboard/accessibility behavior without moving privileged policy out of
   recoveryctl. This is the installed target-device application, not the
   separate installation-media welcome UI owned by OPEMOS.EXE.
+* [ ] Design a bounded full-screen OPEMOS boot interstitial that temporarily
+  enters a dedicated no-input recovery session instead of Gaming or Desktop
+  Mode, displays authenticated guardian/install progress, and then resumes the
+  originally requested systemd target. It must render without depending on a
+  working NVIDIA stack (prefer validated simpledrm/iGPU or software rendering),
+  never accept arbitrary input or shell content, and fail open to the safe
+  console/boot target under a watchdog timeout. Specify crash/reboot recovery,
+  target-transition idempotency, accessibility, display hotplug, missing DRM,
+  corrupt progress, and power-loss tests before enabling it during boot.
 
 ---
 

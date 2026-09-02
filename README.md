@@ -23,6 +23,7 @@ rather than substituting a nearby kernel or unreviewed userspace payload.
 | I want to… | Use |
 | --- | --- |
 | Build a recovery image through a graphical macOS application | [OPEMOS.EXE](https://github.com/CorniiDog/OPEMOS.EXE) · [Documentation](https://corniidog.github.io/OPEMOS.EXE/) |
+| View installed NVIDIA recovery health in SteamOS Desktop Mode | [OPEMOS native status companion](desktop/README.md) |
 | Inspect, build, validate, publish, or install from a terminal or automation | **OPEMOS CLI** · continue below |
 
 > [!IMPORTANT]

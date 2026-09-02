@@ -17,7 +17,8 @@ for script_file in bootstrap/*.sh lib/*.sh commit_myself.sh tests/*.sh; do
 done
 bash -n tests/vm/run-steamos-recovery.sh tests/vm/inspect-steamos-recovery.sh \
     tests/vm/steamos-recovery-fixture.sh tests/vm/run-offline-cache-matrix.sh \
-    tests/vm/offline-cache-guest.sh
+    tests/vm/offline-cache-guest.sh tests/vm/desktop-gui-guest.sh \
+    tests/fixtures/recoveryctl-healthy.sh
 bash -n tests/fixtures/no-sudo/bin/sudo
 for mock_file in tests/fixtures/transaction/bin/*; do
     bash -n "$mock_file"

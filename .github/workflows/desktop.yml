@@ -1,0 +1,51 @@
+name: SteamOS desktop companion
+
+on:
+  push:
+    paths:
+      - desktop/**
+      - tests/fixtures/recoveryctl-healthy.sh
+      - .github/workflows/desktop.yml
+  pull_request:
+    paths:
+      - desktop/**
+      - tests/fixtures/recoveryctl-healthy.sh
+      - .github/workflows/desktop.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  arch-linux:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - name: Install Arch build and virtual-display dependencies
+        run: >-
+          pacman -Syu --noconfirm cargo rust git libglvnd libx11 libxcursor
+          libxi libxkbcommon-x11 libxrandr mesa wayland xorg-server-xvfb
+          xorg-xauth
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Test locked Rust contract
+        run: cargo test --locked --release --manifest-path desktop/Cargo.toml
+
+      - name: Build release binary
+        run: cargo build --locked --release --manifest-path desktop/Cargo.toml
+
+      - name: Smoke-test the native window under Xvfb
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+        run: >-
+          xvfb-run -a desktop/target/release/opemos-recovery-status
+          --smoke-test --recoveryctl tests/fixtures/recoveryctl-healthy.sh
+
+      - name: Upload SteamOS-compatible executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: opemos-recovery-status-x86_64-arch-linux
+          path: desktop/target/release/opemos-recovery-status
+          if-no-files-found: error

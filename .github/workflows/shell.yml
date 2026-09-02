@@ -35,4 +35,6 @@ jobs:
           shellcheck --severity=error
           bootstrap/*.sh lib/*.sh commit_myself.sh tests/*.sh
           tests/fixtures/no-sudo/bin/sudo
+          tests/fixtures/recoveryctl-healthy.sh
           tests/fixtures/transaction/bin/*
+          tests/vm/desktop-gui-guest.sh
