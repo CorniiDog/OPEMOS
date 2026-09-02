@@ -1,6 +1,10 @@
-# OPEMOS
+<p align="center">
+  <img src="docs/assets/images/opemos-pill.svg" alt="OPEMOS gradient pill" width="112">
+</p>
 
-**Open Packaging for Exact-kernel Modules on SteamOS.**
+<h1 align="center">OPEMOS</h1>
+
+<p align="center"><strong>Open Packaging for Exact-kernel Modules on SteamOS.</strong></p>
 
 OPEMOS is an unofficial toolkit for building, authenticating, packaging, and
 installing NVIDIA open kernel modules matched to an exact SteamOS release,

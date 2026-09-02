@@ -118,6 +118,13 @@ def main() -> None:
     assert "[OPEMOS documentation](https://corniidog.github.io/OPEMOS/)" in readme
     assert "**https://corniidog.github.io/" not in readme
     assert ".git opemos" in readme and "cd opemos" in readme
+    assert 'src="docs/assets/images/opemos-pill.svg"' in readme
+    assert '<h1 align="center">OPEMOS</h1>' in readme
+    pill = DOCS / "assets/images/opemos-pill.svg"
+    pill_text = pill.read_text(encoding="utf-8")
+    assert pill.is_file() and pill.stat().st_size <= 16 * 1024
+    assert "<script" not in pill_text.lower() and "href=" not in pill_text.lower()
+    assert "linearGradient" in pill_text and "#76b900" in pill_text
 
     identity_files = [
         README,

@@ -98,7 +98,10 @@ h6,
 }
 
 .site-title {
+  align-items: center;
+  display: inline-flex;
   font-weight: 700;
+  gap: 0.6rem;
   letter-spacing: 0.01em;
 }
 
@@ -107,9 +110,8 @@ h6,
   border-radius: 999px;
   content: "";
   display: inline-block;
+  flex: 0 0 auto;
   height: 0.5rem;
-  margin-right: 0.6rem;
-  vertical-align: 0.16rem;
   width: 1.9rem;
 }
 
