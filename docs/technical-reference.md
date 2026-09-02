@@ -32,11 +32,12 @@ installation still needs end-to-end validation.
 
 ## Repository responsibilities
 
-Two project repositories and NVIDIA upstream have deliberately separate jobs:
+Three project repositories and NVIDIA upstream have deliberately separate jobs:
 
 | Repository | Responsibility |
 | --- | --- |
 | [OPEMOS](https://github.com/CorniiDog/OPEMOS) | SteamOS detection, NVIDIA userspace setup, contained builds, archive validation, installation, uninstall, release selection, and online entry points |
+| [OPEMOS.EXE](https://github.com/CorniiDog/OPEMOS.EXE) | Graphical recovery-image workflow, managed appliances, safe export, USB workflow, and independent final-image validation |
 | `CorniiDog/open-gpu-kernel-modules-steamos` | Project-owned NVIDIA source branches and individual SteamOS compatibility patches |
 | `NVIDIA/open-gpu-kernel-modules` | Pristine upstream source and tags used as control baselines |
 
@@ -186,7 +187,7 @@ support/source commits and dirty state, and per-module hashes/version/vermagic
 are recorded in `BUILD-INFO.txt`.
 The same data and the validated per-module records are published as a versioned
 `.provenance.json` sidecar and embedded in the archive as `PROVENANCE.json`.
-The final result contract names the sidecar so the image builder can copy it
+The final result contract names the sidecar so OPEMOS.EXE can copy it
 directly into its image manifest without parsing human-readable logs.
 
 ### Canonical artifact publication
@@ -255,7 +256,7 @@ create-only destinations fail closed.
 Remove `--dry-run` to create the four local assets. Add `--publish` to that
 non-dry invocation to publish the revision create-only. The dry-run writes no
 assets and returns a bounded schema-1 JSON plan suitable for a conditional
-maintainer action in the image builder.
+maintainer action in OPEMOS.EXE.
 
 ### Optional gaming payload profile
 
@@ -264,7 +265,7 @@ optional CUDA-compute omission. A conforming profile must preserve graphics,
 Vulkan, GLVND/EGL, NVENC/NVDEC, exact-version GSP firmware, required 32-bit
 gaming libraries, recovery rendering, exact package ownership, and provenance.
 Delivery is by deterministic support-owned package repacking from the exact
-Arch-signed packages and reviewed userspace lock—the image builder never
+Arch-signed packages and reviewed userspace lock—OPEMOS.EXE never
 deletes guessed paths. The repacker verifies every omitted member's source
 hash, regenerates `.PKGINFO`, `.BUILDINFO`, and `.MTREE`, assigns a distinct
 package release, and requires the exact reviewed output hashes before pacman
@@ -334,7 +335,7 @@ Package signatures must resolve to an active package-specific fingerprint in
 `trust/nvidia-userspace-package-signers.json`. Fedora `gpgv` requires a binary
 keyring; an ASCII-armored pacman keyring must be dearmored before use. The
 result records the supplied binary keyring SHA256, both package hashes, complete
-versions/pkgrels, and signer fingerprints so the image builder can additionally
+versions/pkgrels, and signer fingerprints so OPEMOS.EXE can additionally
 pin the exact prepared keyring artifact.
 
 Normal installation requires `--userspace-lock FILE` plus the complete package
@@ -412,7 +413,7 @@ During validation, stderr contains throttled lines beginning with
 `STEAMOS_NVIDIA_PROGRESS ` followed by a schema-1 JSON object. Records contain
 only a bounded numeric attempt, a fixed phase, an indeterminate flag, or numeric
 unit/completed/total fields—never filesystem paths or free-form messages.
-`--progress-attempt 0..1000000` lets the image builder correlate retries. Byte
+`--progress-attempt 0..1000000` lets OPEMOS.EXE correlate retries. Byte
 progress covers hashing; item progress covers the Holo database, modules, and
 userspace packages; archive layout, dependency closure, and storage calculation
 are explicitly indeterminate phases.
@@ -426,7 +427,7 @@ command succeeds; in particular, mkinitcpio output is never converted into a
 fabricated percentage. A failed or cancelled command therefore leaves its phase
 incomplete while cleanup continues to report independently.
 
-Image-builder consumers can run `lib/validate_install_contract.py --result
+OPEMOS.EXE and other consumers can run `lib/validate_install_contract.py --result
 RESULT --progress STDERR_LOG` before accepting either stream. Schema 1 requires
 the stable envelope and all successful verification/cleanup records while
 allowing additive fields for forward compatibility. Duplicate JSON keys,
@@ -525,7 +526,7 @@ success, failure, or cancellation.
 Independent recovery-overlay validation remains required before this path is
 considered release-ready. Terminal result cleanup
 records distinguish `mountsReleased` from `compressionPolicyRestored` so the
-image builder does not mistake a restored mount tree for restored Btrfs policy.
+OPEMOS.EXE does not mistake a restored mount tree for restored Btrfs policy.
 
 The first real Fedora measurement of the reviewed SteamOS 3.8.14/NVIDIA
 575.64.05 six-package set plus the five target-format modules produced

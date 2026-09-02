@@ -121,7 +121,7 @@ unchanged.
 
 ## Mutation and rollback
 
-The image builder mutates only a disposable overlay. The installer holds an
+OPEMOS.EXE mutates only a disposable overlay. The installer holds an
 exclusive per-target lifecycle lock and repeatedly verifies rootfs and EFI
 identity. `/dev`, `/proc`, `/sys`, and a private appliance-backed `/var/tmp`
 workspace remain mounted only for the controlled transaction and initramfs
@@ -140,7 +140,7 @@ repacking. It preserves graphics, Vulkan, GLVND/EGL/OpenGL, NVENC/NVDEC, GSP
 firmware, NGX/DLSS, recovery rendering, required 32-bit gaming libraries,
 package ownership, dependencies, and provenance.
 
-The image builder never deletes guessed filenames. Unsupported targets keep the
+OPEMOS.EXE never deletes guessed filenames. Unsupported targets keep the
 option disabled. Reinstalling the complete authenticated packages restores the
 normal payload safely. “Omit optional CUDA” does not mean the ordinary complete
 NVIDIA driver lacks CUDA compatibility.

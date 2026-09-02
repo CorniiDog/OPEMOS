@@ -15,11 +15,12 @@ description: Documentation for exact-kernel NVIDIA open-module builds and SteamO
   <div class="opemos-actions">
     <a class="opemos-button opemos-button-primary" href="{{ '/getting-started.html' | relative_url }}">Steam Deck guide</a>
     <a class="opemos-button opemos-button-secondary" href="{{ '/developer-guide.html' | relative_url }}">Developer guide</a>
+    <a class="opemos-button opemos-button-secondary" href="https://corniidog.github.io/OPEMOS.EXE/">Open OPEMOS.EXE docs</a>
   </div>
 </section>
 
 OPEMOS is an unofficial community-built toolkit. It also defines the
-machine-readable boundary used by SteamOS NVIDIA Image Builder.
+machine-readable boundary used by OPEMOS.EXE.
 
 > This is active development software. Exact-kernel validation has passed for
 > published development artifacts, but fresh-stock installation and NVIDIA
@@ -33,7 +34,7 @@ supported by Valve or NVIDIA.
 
 1. [Steam Deck terminal tutorial](getting-started.md)
 2. [Developer tutorials](developer-guide.md)
-3. [Image-builder integration](image-builder.md)
+3. [OPEMOS.EXE integration](image-builder.md)
 4. [Command and JSON contracts](contracts.md)
 5. [Trust, safety, and recovery](security.md)
 6. [Complete technical reference](technical-reference.md)
@@ -44,8 +45,9 @@ supported by Valve or NVIDIA.
 | Goal | Start here |
 | --- | --- |
 | Inspect or install from a Steam Deck terminal | [Getting started](getting-started.md) |
+| Build an image with the graphical macOS application | [OPEMOS.EXE documentation](https://corniidog.github.io/OPEMOS.EXE/) |
 | Build an exact missing kernel artifact | [Developer guide: offline target build](developer-guide.md#build-for-an-offline-target) |
-| Integrate OPEMOS into an image builder | [Image-builder integration](image-builder.md) |
+| Integrate OPEMOS with OPEMOS.EXE | [OPEMOS.EXE integration](image-builder.md) |
 | Consume resolver, progress, or result JSON | [Contracts](contracts.md) |
 | Publish or revise an artifact | [Developer guide: releases](developer-guide.md#publish-a-release) |
 | Understand what is authenticated and what is not | [Security model](security.md) |
@@ -56,7 +58,7 @@ supported by Valve or NVIDIA.
 | --- | --- |
 | OPEMOS | Target resolution, headers, builds, validation, userspace locks, installation, rollback, provenance, and publishing |
 | `open-gpu-kernel-modules-steamos` | Versioned `nvidia/<version>` source branches and SteamOS-specific source patches |
-| SteamOS NVIDIA Image Builder | Recovery-image inspection, A/B selection, appliance lifecycle, disposable overlays, progress UI, and final-image validation |
+| [OPEMOS.EXE](https://github.com/CorniiDog/OPEMOS.EXE) | Recovery-image inspection, A/B selection, appliance lifecycle, disposable overlays, progress UI, and final-image validation |
 | NVIDIA upstream | OS-independent driver source and Linux kernel interface baseline |
 
 ## Core rule

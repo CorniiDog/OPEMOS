@@ -1,7 +1,7 @@
 ---
 layout: page
-title: Image-builder integration
-description: Exact contract for resolving, validating, and installing into a disposable SteamOS image overlay.
+title: OPEMOS.EXE integration
+description: Exact OPEMOS contract used by OPEMOS.EXE to resolve, validate, and install into a disposable SteamOS image overlay.
 ---
 
 ## Contents
@@ -17,10 +17,10 @@ description: Exact contract for resolving, validating, and installing into a dis
 
 ## Responsibility boundary
 
-The image builder owns recovery-image layout and appliance lifecycle. This
-repository owns artifact and installation correctness.
+[OPEMOS.EXE](https://github.com/CorniiDog/OPEMOS.EXE) owns recovery-image layout
+and appliance lifecycle. OPEMOS owns artifact and installation correctness.
 
-The builder must:
+OPEMOS.EXE must:
 
 - inspect the recovery image and determine the actual boot slot and exact
   kernel when multiple kernels exist;

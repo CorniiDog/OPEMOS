@@ -4,12 +4,26 @@
 
 <h1 align="center">OPEMOS</h1>
 
-<p align="center"><strong>Open Packaging for Exact-kernel Modules on SteamOS.</strong></p>
+<p align="center"><strong>Command-line packaging and exact-kernel NVIDIA enablement for SteamOS.</strong></p>
 
-OPEMOS is an unofficial toolkit for building, authenticating, packaging, and
-installing NVIDIA open kernel modules matched to an exact SteamOS release,
+<p align="center">
+  <a href="https://github.com/CorniiDog/OPEMOS/actions/workflows/shell.yml"><img src="https://img.shields.io/github/actions/workflow/status/CorniiDog/OPEMOS/shell.yml?branch=main&amp;style=for-the-badge&amp;logo=gnubash&amp;logoColor=white&amp;label=checks&amp;labelColor=192c3c" alt="OPEMOS checks status"></a>
+  <a href="https://github.com/CorniiDog/OPEMOS/actions/workflows/pages.yml"><img src="https://img.shields.io/github/actions/workflow/status/CorniiDog/OPEMOS/pages.yml?branch=main&amp;style=for-the-badge&amp;logo=githubpages&amp;logoColor=white&amp;label=docs&amp;labelColor=192c3c" alt="OPEMOS documentation status"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-1a9fff?style=for-the-badge&amp;labelColor=192c3c" alt="MIT license"></a>
+</p>
+
+OPEMOS—**Open Packaging for Exact-kernel Modules on SteamOS**—is the unofficial
+command-line and automation toolkit for building, authenticating, packaging,
+and installing NVIDIA open kernel modules matched to an exact SteamOS release,
 Neptune kernel, architecture, and NVIDIA userspace version. It fails closed
 rather than substituting a nearby kernel or unreviewed userspace payload.
+
+## Choose an interface
+
+| I want to… | Use |
+| --- | --- |
+| Build a recovery image through a graphical macOS application | [OPEMOS.EXE](https://github.com/CorniiDog/OPEMOS.EXE) · [Documentation](https://corniidog.github.io/OPEMOS.EXE/) |
+| Inspect, build, validate, publish, or install from a terminal or automation | **OPEMOS CLI** · continue below |
 
 > [!IMPORTANT]
 > This project is under active development. Published artifacts are
@@ -18,13 +32,14 @@ rather than substituting a nearby kernel or unreviewed userspace payload.
 > shown by the resolver; do not treat `locally-built-verified` as
 > `certified-published`.
 
-## Documentation
+## Start here
 
 Read the **[OPEMOS documentation](https://corniidog.github.io/OPEMOS/)**.
 
 - [Install from a Steam Deck terminal](docs/getting-started.md)
 - [Developer tutorials](docs/developer-guide.md)
-- [Image-builder integration](docs/image-builder.md)
+- [OPEMOS.EXE integration](docs/image-builder.md)
+- [OPEMOS.EXE graphical application](https://corniidog.github.io/OPEMOS.EXE/)
 - [Command and JSON contracts](docs/contracts.md)
 - [Trust, safety, and recovery model](docs/security.md)
 - [Complete technical reference](docs/technical-reference.md)
@@ -79,11 +94,13 @@ Btrfs, mount, chroot, and cancellation coverage:
 ./tests/vm/run.sh
 ```
 
-The OPEMOS repository owns target detection, builds, validation, installers,
-trust policy, and release metadata. The companion
-[`open-gpu-kernel-modules-steamos`](https://github.com/CorniiDog/open-gpu-kernel-modules-steamos)
-repository owns versioned NVIDIA source branches and SteamOS-specific source
-patches.
+## Repository boundaries
+
+| Repository | Responsibility |
+| --- | --- |
+| [`OPEMOS`](https://github.com/CorniiDog/OPEMOS) | CLI workflows, exact artifact resolution, builds, userspace locks, offline installation, provenance, and publication |
+| [`OPEMOS.EXE`](https://github.com/CorniiDog/OPEMOS.EXE) | Desktop UI, recovery-image inspection, appliance lifecycle, safe image export, and independent final-image validation |
+| [`open-gpu-kernel-modules-steamos`](https://github.com/CorniiDog/open-gpu-kernel-modules-steamos) | Versioned NVIDIA source branches and SteamOS-specific patches |
 
 ## Safety properties
 

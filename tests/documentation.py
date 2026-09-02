@@ -120,6 +120,9 @@ def main() -> None:
     assert ".git opemos" in readme and "cd opemos" in readme
     assert 'src="docs/assets/images/opemos-pill.svg"' in readme
     assert '<h1 align="center">OPEMOS</h1>' in readme
+    assert "https://github.com/CorniiDog/OPEMOS.EXE" in readme
+    assert "https://corniidog.github.io/OPEMOS.EXE/" in readme
+    assert "actions/workflows/shell.yml" in readme
     pill = DOCS / "assets/images/opemos-pill.svg"
     pill_text = pill.read_text(encoding="utf-8")
     assert pill.is_file() and pill.stat().st_size <= 16 * 1024
@@ -234,6 +237,7 @@ def main() -> None:
     footer = (DOCS / "_includes/footer.html").read_text(encoding="utf-8")
     assert "not affiliated with, endorsed by" in footer
     assert "Valve Corporation" in footer and "NVIDIA Corporation" in footer
+    assert "https://github.com/CorniiDog/OPEMOS.EXE" in footer
 
     workflow = (ROOT / ".github/workflows/pages.yml").read_text(encoding="utf-8")
     for action in (
