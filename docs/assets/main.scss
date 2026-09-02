@@ -287,12 +287,12 @@ table {
   width: 100%;
 }
 
-th,
-td {
+table th,
+table td {
   border-color: var(--border);
 }
 
-th {
+table th {
   background-color: var(--surface-strong);
   color: var(--text-primary);
 }
@@ -303,7 +303,8 @@ table tr:nth-child(even) {
 
 pre,
 code,
-.highlight {
+.highlight,
+.highlighter-rouge .highlight {
   background-color: var(--code-background);
   border-color: var(--border);
   color: var(--code-text);
@@ -313,21 +314,25 @@ code {
   overflow-wrap: anywhere;
 }
 
-pre code {
+pre > code,
+.highlighter-rouge pre > code {
   background: transparent;
   border: 0;
+  color: inherit;
 }
 
+// Minima assigns colors to many individual Rouge token classes. Reset every
+// token first so an unlisted class cannot retain a low-contrast theme color.
 .highlight span {
-  background-color: transparent;
-  color: var(--code-text);
+  background-color: transparent !important;
+  color: var(--code-text) !important;
 }
 
 .highlight .c,
 .highlight .cm,
 .highlight .c1,
 .highlight .cs {
-  color: var(--syntax-comment);
+  color: var(--syntax-comment) !important;
 }
 
 .highlight .k,
@@ -337,7 +342,7 @@ pre code {
 .highlight .kp,
 .highlight .kr,
 .highlight .kt {
-  color: var(--syntax-keyword);
+  color: var(--syntax-keyword) !important;
 }
 
 .highlight .s,
@@ -349,7 +354,7 @@ pre code {
 .highlight .mf,
 .highlight .mh,
 .highlight .mo {
-  color: var(--syntax-string);
+  color: var(--syntax-string) !important;
 }
 
 .highlight .na,
@@ -357,12 +362,12 @@ pre code {
 .highlight .nc,
 .highlight .nf,
 .highlight .nt {
-  color: var(--syntax-name);
+  color: var(--syntax-name) !important;
 }
 
 .highlight .err,
 .highlight .gr {
-  color: var(--syntax-error);
+  color: var(--syntax-error) !important;
 }
 
 .trademark-notice {

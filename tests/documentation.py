@@ -177,6 +177,8 @@ def main() -> None:
     assert ".site-header::before," in stylesheet
     assert ".site-footer::before" in stylesheet
     assert ".opemos-hero" in stylesheet and ".opemos-wordmark" in stylesheet
+    assert ".highlighter-rouge .highlight {" in stylesheet
+    assert "table th {" in stylesheet
     index = (DOCS / "index.md").read_text(encoding="utf-8")
     assert 'class="opemos-hero"' in index
     assert 'class="opemos-wordmark"' in index
@@ -184,6 +186,7 @@ def main() -> None:
         "page-background": css_colors(stylesheet, "page-background"),
         "text-primary": css_colors(stylesheet, "text-primary"),
         "text-muted": css_colors(stylesheet, "text-muted"),
+        "surface-strong": css_colors(stylesheet, "surface-strong"),
         "steam-blue": css_colors(stylesheet, "steam-blue"),
         "nvidia-green-accessible": css_colors(
             stylesheet, "nvidia-green-accessible"
@@ -215,6 +218,9 @@ def main() -> None:
             assert contrast_ratio(palettes[role][index], code_background) >= 4.5, (
                 f"{role} lacks WCAG AA code contrast in palette {index}"
             )
+        assert contrast_ratio(
+            palettes["text-primary"][index], palettes["surface-strong"][index]
+        ) >= 4.5, f"table heading lacks WCAG AA contrast in palette {index}"
 
     footer = (DOCS / "_includes/footer.html").read_text(encoding="utf-8")
     assert "not affiliated with, endorsed by" in footer
