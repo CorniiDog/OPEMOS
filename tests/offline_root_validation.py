@@ -729,7 +729,15 @@ def run_installer(paths, binaries, result, success, preserve_lock=False, **envir
     result.with_suffix(result.suffix + ".stderr").write_text(completed.stderr, encoding="utf-8")
     if (completed.returncode == 0) != success:
         raise AssertionError(f"installer result did not match expectation: {completed.stderr}")
-    assert not mount_state.read_text(encoding="utf-8").strip()
+    remaining_mounts = mount_state.read_text(encoding="utf-8").strip()
+    if remaining_mounts:
+        unmount_log = mount_state.with_suffix(".umount")
+        raise AssertionError(
+            "installer left simulated mounts after cleanup: "
+            f"result={result.name!r}, remaining={remaining_mounts.splitlines()!r}, "
+            f"unmounts={unmount_log.read_text(encoding='utf-8').splitlines() if unmount_log.exists() else []!r}, "
+            f"stderr_tail={completed.stderr.splitlines()[-20:]!r}"
+        )
     assert mount_state.with_suffix(".compression").read_text().strip() == initial_compression
     assert set(test_temp_root.glob("offline-root-mutation.*")) == before_mutation_work
     assert set(test_temp_root.glob("offline-root-inputs.*")) == before_input_snapshots
