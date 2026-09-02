@@ -93,6 +93,15 @@ def plain_filename(value):
     )
 
 
+def bounded_message(value):
+    return (
+        isinstance(value, str)
+        and 0 < len(value) <= 2048
+        and "\x00" not in value
+        and all(character in "\n\t" or ord(character) >= 32 for character in value)
+    )
+
+
 def validate_result(path):
     document = load_document(path, MAX_RESULT_BYTES)
     required = {"schemaVersion", "status", "reason", "message", "phase", "trust",
@@ -105,7 +114,7 @@ def validate_result(path):
     for field in ("reason", "phase"):
         if not isinstance(document[field], str) or TOKEN.fullmatch(document[field]) is None:
             raise ValueError("result token is malformed")
-    if not isinstance(document["message"], str) or not 0 < len(document["message"]) <= 2048:
+    if not bounded_message(document["message"]):
         raise ValueError("result message is malformed")
     if document.get("trust") not in TRUST_VALUES:
         raise ValueError("result trust is malformed")
@@ -143,6 +152,13 @@ def validate_result(path):
     if document["status"] == "success":
         if document["reason"] != "install_complete" or document["phase"] != "complete":
             raise ValueError("success terminal state is inconsistent")
+        if (document["trust"] == "pending-validation"
+                or "unknown" in {
+                    target["steamosVersion"], target["kernelVersion"],
+                    target["nvidiaVersion"],
+                }
+                or any(value is None for value in inputs.values())):
+            raise ValueError("success lacks exact target or input identity")
         if (not cleanup["mountsReleased"] or not cleanup["compressionPolicyRestored"]
                 or cleanup["runtimeMountsExpected"] != cleanup["runtimeMountsReleased"]):
             raise ValueError("success reports incomplete cleanup")
@@ -172,6 +188,13 @@ def validate_result(path):
     elif document["status"] == "validated":
         if document["reason"] != "validation_complete" or document["phase"] != "validated":
             raise ValueError("validated terminal state is inconsistent")
+        if (document["trust"] == "pending-validation"
+                or "unknown" in {
+                    target["steamosVersion"], target["kernelVersion"],
+                    target["nvidiaVersion"],
+                }
+                or any(value is None for value in inputs.values())):
+            raise ValueError("validated result lacks exact target or input identity")
     elif document["status"] == "cancelled" and document["reason"] != "cancelled":
         raise ValueError("cancelled terminal state is inconsistent")
     return document

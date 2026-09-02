@@ -111,6 +111,10 @@ def main():
             lambda value: value["target"].update(root="/host/path"),
             lambda value: value["inputs"].update(archive="../archive.tar.gz"),
             lambda value: value.update(reason="wrong_success_reason"),
+            lambda value: value.update(message="unsafe\x00message"),
+            lambda value: value.update(trust="pending-validation"),
+            lambda value: value["target"].update(kernelVersion="unknown"),
+            lambda value: value["inputs"].update(provenance=None),
         ):
             broken = json.loads(json.dumps(document))
             mutate(broken)

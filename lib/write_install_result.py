@@ -946,9 +946,11 @@ def main():
     if args.root != "/target-root":
         raise SystemExit("Installation results must use the logical /target-root identity.")
     if args.status == "success" or args.status == "validated":
-        if not KERNEL.fullmatch(args.kernel):
+        if args.kernel == "unknown" or not KERNEL.fullmatch(args.kernel):
             raise SystemExit("Installation result kernel identity is invalid.")
-        if not VERSION.fullmatch(args.steamos) or not VERSION.fullmatch(args.nvidia):
+        if (args.steamos == "unknown" or args.nvidia == "unknown"
+                or not VERSION.fullmatch(args.steamos)
+                or not VERSION.fullmatch(args.nvidia)):
             raise SystemExit("Installation result version identity is invalid.")
     else:
         args.kernel = args.kernel if KERNEL.fullmatch(args.kernel) else "invalid"
@@ -956,6 +958,12 @@ def main():
         args.nvidia = args.nvidia if VERSION.fullmatch(args.nvidia) else "unknown"
     if args.trust not in TRUST_VALUES:
         raise SystemExit("Installation result trust classification is invalid.")
+    if args.status in {"success", "validated"} and (
+            args.trust == "pending-validation"
+            or any(not value for value in artifact_names)):
+        raise SystemExit(
+            "Successful validation and installation results require exact trusted inputs."
+        )
     if (not 0 <= args.runtime_mounts_expected <= 4
             or not 0 <= args.runtime_mounts_released <= args.runtime_mounts_expected):
         raise SystemExit("Installation result runtime mount counts are invalid.")
