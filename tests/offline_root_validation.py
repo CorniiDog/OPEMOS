@@ -2401,6 +2401,46 @@ def main():
         assert set(successful["initramfsVerification"]["images"][0]["modules"]) == set(
             INITRAMFS_REQUIRED_MODULES
         )
+        receipt = successful["payloadReceipt"]
+        assert receipt["status"] == "verified"
+        assert receipt["reason"] == "payload_receipt_verified"
+        assert receipt["target"] == {
+            "steamosVersion": "3.8.16", "kernelVersion": KERNEL,
+            "nvidiaVersion": NVIDIA, "architecture": "x86_64",
+        }
+        assert [record["role"] for record in receipt["records"]] == [
+            "buildInfo", "provenance", "validation", "moduleVerification",
+            "userspaceVerification", "initramfsVerification",
+        ]
+        receipt_root = (
+            paths["target"]
+            / "usr/lib/open-gpu-kernel-modules-steamos-support/offline-install"
+        )
+        assert (receipt_root / "receipt.json").is_file()
+        propagated_verification = temporary / "propagated-receipt.json"
+        propagated = subprocess.run([
+            sys.executable, str(ROOT / "lib/payload_receipt.py"), "verify",
+            "--root", str(paths["target"]),
+            "--output", str(propagated_verification),
+        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        assert propagated.returncode == 0, propagated.stderr
+        assert json.loads(propagated_verification.read_text())["receiptId"] == (
+            receipt["receiptId"]
+        )
+        cloned_root = temporary / "repair-device-cloned-root"
+        cloned_receipt_root = (
+            cloned_root
+            / "usr/lib/open-gpu-kernel-modules-steamos-support/offline-install"
+        )
+        cloned_receipt_root.parent.mkdir(parents=True)
+        shutil.copytree(receipt_root, cloned_receipt_root)
+        cloned_verification = temporary / "cloned-receipt.json"
+        cloned = subprocess.run([
+            sys.executable, str(ROOT / "lib/payload_receipt.py"), "verify",
+            "--root", str(cloned_root), "--output", str(cloned_verification),
+        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        assert cloned.returncode == 0, cloned.stderr
+        assert json.loads(cloned_verification.read_text())["receiptId"] == receipt["receiptId"]
         assert successful["validation"]["keyring"]["name"] == "approved.gpg"
         assert successful["validation"]["provenanceSha256"] == valid["provenanceSha256"]
         assert successful["validation"]["userspaceLock"] == {
@@ -2463,6 +2503,8 @@ def main():
         }
         second = run_installer(paths, binaries, temporary / "install-again.json", True)
         assert second["status"] == "success"
+        assert re.fullmatch(r"[0-9a-f]{64}", second["payloadReceipt"]["receiptId"])
+        assert second["payloadReceipt"]["target"] == receipt["target"]
         assert second["moduleVerification"]["status"] == "verified"
         assert {
             record["representation"]

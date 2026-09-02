@@ -846,6 +846,22 @@ Installed state is recorded under:
 /var/lib/open-gpu-kernel-modules-steamos-support/
 ```
 
+The offline image installer additionally commits a payload receipt under the
+root filesystem:
+
+```text
+/usr/lib/open-gpu-kernel-modules-steamos-support/offline-install/receipt.json
+```
+
+It binds the exact target identity to hashes of build information, provenance,
+input validation, five-module verification, userspace verification, and
+initramfs verification. Evidence files are written first and the manifest is
+atomically replaced last, so interruption cannot create a trusted partial
+receipt. This location is separate from recovery `/var`, which Valve may not
+propagate. OPEMOS.EXE must still verify the receipt and payload on the newly
+installed disk; receipt presence alone is not install or hardware
+certification.
+
 Transaction backups are retained under the user cache on `/home`. Install and
 uninstall cleanup paths restore the previous module directory, refresh module
 dependencies, rebuild initramfs when available, and restore SteamOS read-only

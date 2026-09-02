@@ -94,6 +94,26 @@ def main():
                 "reason": "initramfs_workspace_available",
                 "phase": "mounted_workspace", "condition": "available", "mode": "1777",
             },
+            "payloadReceipt": {
+                "schemaVersion": 1, "status": "verified",
+                "reason": "payload_receipt_verified", "target": {
+                    "steamosVersion": "3.8.14",
+                    "kernelVersion": "6.16.12-valve24.4-1-neptune-616-gabc",
+                    "nvidiaVersion": "575.64.05", "architecture": "x86_64",
+                },
+                "receiptId": "8" * 64,
+                "rootfsRelativePath": (
+                    "usr/lib/open-gpu-kernel-modules-steamos-support/"
+                    "offline-install/receipt.json"
+                ),
+                "records": [{
+                    "role": role, "filename": f"{role}.json",
+                    "sizeBytes": 1, "sha256": str(index) * 64,
+                } for index, role in enumerate((
+                    "buildInfo", "provenance", "validation", "moduleVerification",
+                    "userspaceVerification", "initramfsVerification",
+                ), 1)],
+            },
             "initramfsVerification": {
                 "schemaVersion": 1, "status": "verified",
                 "kernelVersion": "6.16.12-valve24.4-1-neptune-616-gabc",
@@ -136,6 +156,11 @@ def main():
         for mutate in (
             lambda value: value["cleanup"].update(runtimeMountsReleased=3),
             lambda value: value.pop("moduleVerification"),
+            lambda value: value.pop("payloadReceipt"),
+            lambda value: value["payloadReceipt"].update(receiptId="invalid"),
+            lambda value: value["payloadReceipt"]["target"].update(
+                kernelVersion="wrong-kernel"
+            ),
             lambda value: value["moduleVerification"].update(modules=[]),
             lambda value: value["userspaceVerification"].update(packages=[]),
             lambda value: value["userspaceVerification"]["pacmanDatabase"].update(

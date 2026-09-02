@@ -1190,6 +1190,8 @@ def validate(args, progress):
         "etc/mkinitcpio.conf.d/90-open-gpu-kernel-modules-steamos.conf",
         "usr",
         "usr/lib",
+        "usr/lib/open-gpu-kernel-modules-steamos-support",
+        "usr/lib/open-gpu-kernel-modules-steamos-support/offline-install",
         "usr/lib/firmware",
         "usr/lib/modules",
         f"usr/lib/modules/{args.kernel}",

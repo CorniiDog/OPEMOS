@@ -557,6 +557,8 @@ write_install_result()
         set -- "$@" --initramfs-workspace "$INITRAMFS_WORKSPACE_JSON"
     [[ -z "${INITRAMFS_VERIFICATION_JSON:-}" || ! -s "$INITRAMFS_VERIFICATION_JSON" ]] ||
         set -- "$@" --initramfs-verification "$INITRAMFS_VERIFICATION_JSON"
+    [[ -z "${PAYLOAD_RECEIPT_JSON:-}" || ! -s "$PAYLOAD_RECEIPT_JSON" ]] ||
+        set -- "$@" --payload-receipt "$PAYLOAD_RECEIPT_JSON"
     if [[ "$result_status" == failed && "$result_reason" == target_execution_trust &&
           -n "${TARGET_EXECUTION_FAILURE_JSON:-}" &&
           -s "$TARGET_EXECUTION_FAILURE_JSON" ]]; then
@@ -660,6 +662,7 @@ MUTATION_WORK="$(mktemp -d "$INSTALLER_TEMP_ROOT/offline-root-mutation.XXXXXX")"
 MODULE_VERIFICATION_JSON="$MUTATION_WORK/module-verification.json"
 USERSPACE_VERIFICATION_JSON="$MUTATION_WORK/userspace-verification.json"
 INITRAMFS_VERIFICATION_JSON="$MUTATION_WORK/initramfs-verification.json"
+PAYLOAD_RECEIPT_JSON="$MUTATION_WORK/payload-receipt.json"
 PACMAN_TRANSACTION_RESULT="$MUTATION_WORK/pacman-transaction.json"
 TARGET_EXECUTION_MANIFEST="$MUTATION_WORK/target-execution.json"
 POST_TRANSACTION_EXECUTION_MANIFEST="$MUTATION_WORK/post-transaction-execution.json"
@@ -1278,6 +1281,16 @@ PHASE=state_write
 guard_target_mount_identities
 emit_progress_indeterminate installation_state
 [[ -z "$COMPRESSION_PROFILE" ]] || require_active_compression_policy
+run_mutation_command python3 "$SUPPORT_ROOT/lib/payload_receipt.py" commit \
+    --root "$ROOT" --build-info "$MUTATION_WORK/BUILD-INFO.txt" \
+    --provenance "$PROVENANCE" --validation "$VALIDATION_JSON" \
+    --module-verification "$MODULE_VERIFICATION_JSON" \
+    --userspace-verification "$USERSPACE_VERIFICATION_JSON" \
+    --initramfs-verification "$INITRAMFS_VERIFICATION_JSON" \
+    --output "$PAYLOAD_RECEIPT_JSON" || {
+    PHASE=payload_receipt
+    die "The rootfs payload receipt could not be committed and verified."
+}
 STATE_ROOT="$ROOT/var/lib/$PROJECT_ID/offline-install"
 install -d -m 0755 "$STATE_ROOT"
 install -m 0644 "$MUTATION_WORK/BUILD-INFO.txt" "$STATE_ROOT/BUILD-INFO.txt"

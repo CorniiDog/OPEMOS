@@ -154,6 +154,7 @@ Successful installation requires these nested records:
 | `userspaceVerification` | Every locked package/version/hash, owned payload, links, libraries, GSP firmware, Holo records and database consistency |
 | `initramfsWorkspace` | Private mounted workspace, capacity, inode policy, mode 1777, and cleanup |
 | `initramfsVerification` | Exact generated images/configuration and the explicit early-boot set: `nvidia`, `nvidia_modeset`, `nvidia_uvm`, and `nvidia_drm` |
+| `payloadReceipt` | Rootfs-resident, hash-bound validation/module/userspace/initramfs evidence committed only after payload verification |
 | `cleanup` | Runtime mount count/release, compression restoration, no trusted partial state |
 
 Schema 1 permits bounded additive fields for forward compatibility. Consumers

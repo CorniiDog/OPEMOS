@@ -173,6 +173,15 @@ python3 lib/validate_install_contract.py \
   --progress /shared/installer-stderr.log
 ```
 
+The installer also commits a payload receipt at
+`usr/lib/open-gpu-kernel-modules-steamos-support/offline-install/receipt.json`
+inside the mutated root filesystem. Unlike legacy state under `/var`, this
+receipt is deliberately rootfs-resident so a clone-based Valve installation
+can carry it with the payload. After `repair_device.sh`, the image builder must
+mount the installed target read-only, run `lib/payload_receipt.py verify`, and
+require the exact same `receiptId`. A matching receipt proves evidence
+propagation, not hardware boot or Valve A/B certification.
+
 ## Final-image acceptance
 
 Do not trust only an installer exit code. Require a schema-1 `success` result
@@ -183,6 +192,8 @@ with:
   links, and GSP firmware;
 - exact `initramfsVerification` for the selected kernel, including the explicit
   four-module early-boot set and rootfs-only `nvidia-peermem` classification;
+- the exact rootfs `payloadReceipt` identity for later Valve-installer
+  propagation checks;
 - successful GRUB argument mutation;
 - `mountsReleased: true` and `compressionPolicyRestored: true`;
 - no stale runtime mounts or installer workspace;

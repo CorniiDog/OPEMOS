@@ -13,6 +13,7 @@ MAX_MODULE_VERIFICATION_BYTES = 1024 * 1024
 MAX_USERSPACE_VERIFICATION_BYTES = 256 * 1024
 MAX_WORKSPACE_VERIFICATION_BYTES = 16 * 1024
 MAX_INITRAMFS_VERIFICATION_BYTES = 256 * 1024
+MAX_PAYLOAD_RECEIPT_BYTES = 64 * 1024
 MAX_TARGET_EXECUTION_FAILURE_BYTES = 16 * 1024
 TOKEN = re.compile(r"[a-z][a-z0-9_]{0,63}")
 KERNEL = re.compile(r"(?:unknown|[A-Za-z0-9._+~-]{1,255})")
@@ -86,6 +87,7 @@ def parse_args():
     parser.add_argument("--userspace-verification", type=Path)
     parser.add_argument("--initramfs-workspace", type=Path)
     parser.add_argument("--initramfs-verification", type=Path)
+    parser.add_argument("--payload-receipt", type=Path)
     parser.add_argument("--target-execution-failure", type=Path)
     parser.add_argument("--runtime-mounts-expected", type=int, default=0)
     parser.add_argument("--runtime-mounts-released", type=int, default=0)
@@ -504,6 +506,51 @@ def load_userspace_verification(path):
                 or not Path(relative).name.startswith("gsp")
                 or not Path(relative).name.endswith(".bin")):
             raise SystemExit("Userspace GSP firmware verification is malformed.")
+    return document
+
+
+def load_payload_receipt(path):
+    try:
+        if (path.is_symlink() or not path.is_file()
+                or not 0 < path.stat().st_size <= MAX_PAYLOAD_RECEIPT_BYTES):
+            raise OSError
+        document = json.loads(
+            path.read_text(encoding="utf-8"), object_pairs_hook=unique_object
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+        raise SystemExit("Payload receipt verification is unreadable or excessive.")
+    roles = [
+        "buildInfo", "provenance", "validation", "moduleVerification",
+        "userspaceVerification", "initramfsVerification",
+    ]
+    records = document.get("records") if isinstance(document, dict) else None
+    if (not isinstance(document, dict)
+            or document.get("schemaVersion") != 1
+            or document.get("status") != "verified"
+            or document.get("reason") != "payload_receipt_verified"
+            or not isinstance(document.get("receiptId"), str)
+            or HEX_SHA256.fullmatch(document["receiptId"]) is None
+            or document.get("rootfsRelativePath")
+            != "usr/lib/open-gpu-kernel-modules-steamos-support/offline-install/receipt.json"
+            or not isinstance(document.get("target"), dict)
+            or not isinstance(records, list)
+            or len(records) != len(roles)
+            or [record.get("role") for record in records
+               if isinstance(record, dict)] != roles):
+        raise SystemExit("Payload receipt verification is malformed.")
+    filenames = set()
+    for record in records:
+        if (not isinstance(record, dict)
+                or set(record) != {"role", "filename", "sizeBytes", "sha256"}
+                or not plain_name(record.get("filename", ""))
+                or record["filename"] in filenames
+                or not isinstance(record.get("sizeBytes"), int)
+                or isinstance(record["sizeBytes"], bool)
+                or not 0 < record["sizeBytes"] <= 16 * 1024 * 1024
+                or not isinstance(record.get("sha256"), str)
+                or HEX_SHA256.fullmatch(record["sha256"]) is None):
+            raise SystemExit("Payload receipt verification records are malformed.")
+        filenames.add(record["filename"])
     return document
 
 
@@ -1122,6 +1169,20 @@ def main():
         document["initramfsVerification"] = initramfs_verification
     elif args.status == "success":
         raise SystemExit("A successful installation requires exact initramfs verification metadata.")
+    if args.payload_receipt:
+        payload_receipt = load_payload_receipt(args.payload_receipt)
+        receipt_target = payload_receipt["target"]
+        if (args.status != "success"
+                or receipt_target.get("steamosVersion") != args.steamos
+                or receipt_target.get("kernelVersion") != args.kernel
+                or receipt_target.get("nvidiaVersion") != args.nvidia
+                or receipt_target.get("architecture") != "x86_64"):
+            raise SystemExit("Payload receipt verification does not match the result.")
+        document["payloadReceipt"] = payload_receipt
+    elif args.status == "success":
+        raise SystemExit(
+            "A successful installation requires a verified rootfs payload receipt."
+        )
     if args.target_execution_failure:
         if (args.status != "failed" or args.reason != "target_execution_trust"
                 or args.phase != "target_execution_trust"):

@@ -36,6 +36,9 @@ index in the same commit.
 * [ ] Independently validate recovery-image propagation through Valve's
   `repair_device.sh`, A/B slot behavior, hardware boot, and rollback before
   promoting `nvidia-mutation-valid` to `install-ready`.
+  The support installer now commits an exact hash-bound receipt inside rootfs,
+  separate from recovery `var-A`, so the image builder can require the same
+  `receiptId` on the installed disk before independent payload verification.
 
 ### Release and hardware gates
 
