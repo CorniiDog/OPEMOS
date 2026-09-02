@@ -304,21 +304,77 @@ def compare_userspace_lock_packages(expected_records, actual_records):
         )
 
 
-def sha256(path, progress=None):
+def sha256(path):
     digest = hashlib.sha256()
-    total = path.stat().st_size
-    completed = 0
-    if progress:
-        progress.emit("hashing", unit="bytes", completed=0, total=total, force=True)
     with path.open("rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
-            completed += len(chunk)
-            if progress:
-                progress.emit("hashing", unit="bytes", completed=completed, total=total)
-    if progress:
-        progress.emit("hashing", unit="bytes", completed=completed, total=total, force=True)
     return digest.hexdigest()
+
+
+class AggregateInputHasher:
+    """Hash immutable installer inputs as one monotonic progress operation."""
+
+    def __init__(self, paths, progress):
+        try:
+            self.inputs = [(path, path.stat().st_size) for path in paths]
+        except OSError:
+            fail("input_changed", "an authenticated input changed before hashing")
+        self.progress = progress
+        self.digests = {}
+        self.total = sum(size for _, size in self.inputs)
+        self.completed = 0
+
+    def hash_all(self):
+        # A valid installation always has non-empty package and module inputs,
+        # so the schema's required positive total is guaranteed here.
+        if self.total <= 0:
+            fail("input_missing", "authenticated installer inputs are empty")
+        self.progress.emit(
+            "hashing", unit="bytes", completed=0, total=self.total, force=True
+        )
+        for path, expected_size in self.inputs:
+            digest = hashlib.sha256()
+            consumed = 0
+            try:
+                with path.open("rb") as stream:
+                    while consumed < expected_size:
+                        chunk = stream.read(min(1024 * 1024, expected_size - consumed))
+                        if not chunk:
+                            fail(
+                                "input_changed",
+                                "an authenticated input changed while hashing",
+                            )
+                        digest.update(chunk)
+                        consumed += len(chunk)
+                        self.completed += len(chunk)
+                        self.progress.emit(
+                            "hashing", unit="bytes", completed=self.completed,
+                            total=self.total,
+                        )
+                    if stream.read(1):
+                        fail(
+                            "input_changed",
+                            "an authenticated input changed while hashing",
+                        )
+                current_size = path.stat().st_size
+            except OSError:
+                fail("input_changed", "an authenticated input changed while hashing")
+            if current_size != expected_size:
+                fail("input_changed", "an authenticated input changed while hashing")
+            self.digests[path] = digest.hexdigest()
+        if self.completed != self.total:
+            fail("input_changed", "authenticated input sizes changed while hashing")
+        self.progress.emit(
+            "hashing", unit="bytes", completed=self.completed,
+            total=self.total, force=True,
+        )
+
+    def digest(self, path):
+        try:
+            return self.digests[path]
+        except KeyError:
+            fail("validation_internal_error", "an input was absent from the hashing plan")
 
 
 def safe_member(name):
@@ -1348,16 +1404,34 @@ def validate(args, progress):
     for signature in args.dependency_signature:
         require_regular_input(signature, "dependency signature", MAX_SIGNATURE_BYTES)
 
+    authenticated_inputs = [
+        args.archive,
+        args.checksum,
+        args.provenance,
+        args.nvidia_utils,
+        args.nvidia_utils_signature,
+        args.lib32_nvidia_utils,
+        args.lib32_nvidia_utils_signature,
+        *args.dependency_package,
+        *args.dependency_signature,
+        args.package_keyring,
+        args.userspace_lock,
+    ]
+    if args.gaming_payload_profile:
+        authenticated_inputs.append(args.gaming_payload_profile)
+    input_hashes = AggregateInputHasher(authenticated_inputs, progress)
+    input_hashes.hash_all()
+
     expected = args.checksum.read_text(encoding="utf-8").split()
     if (len(expected) != 2
             or not re.fullmatch(r"[0-9a-fA-F]{64}", expected[0])
             or expected[1].lstrip("*") != args.archive.name):
         fail("archive_checksum_invalid", "checksum sidecar is invalid")
-    archive_sha = sha256(args.archive, progress)
+    archive_sha = input_hashes.digest(args.archive)
     if archive_sha != expected[0].lower():
         fail("archive_checksum_mismatch", "archive checksum does not match")
     provenance_bytes = args.provenance.read_bytes()
-    provenance_sha = hashlib.sha256(provenance_bytes).hexdigest()
+    provenance_sha = input_hashes.digest(args.provenance)
     try:
         provenance = json.loads(provenance_bytes)
     except json.JSONDecodeError:
@@ -1455,7 +1529,7 @@ def validate(args, progress):
             if version != nvidia or vermagic.split(maxsplit=1)[0] != args.kernel:
                 fail("module_metadata_mismatch", f"{module.name} does not match target")
             normalized_module_name = module.name.removesuffix(".zst")
-            records.append((normalized_module_name, sha256(module, progress)))
+            records.append((normalized_module_name, sha256(module)))
             module_payload_hashes[normalized_module_name] = module_payload_sha256(module)
             module_installed_bytes += compressed_module_bytes(module)
             progress.emit(
@@ -1537,8 +1611,8 @@ def validate(args, progress):
                 f"{package_name} lacks a valid declared installed size",
             )
         installed_size = int(installed_size)
-        package_digest = sha256(package, progress)
-        signature_digest = sha256(signature, progress)
+        package_digest = input_hashes.digest(package)
+        signature_digest = input_hashes.digest(signature)
         package_installed_bytes += installed_size
         package_compressed_bytes += package.stat().st_size
         lock_record = {
@@ -1603,7 +1677,7 @@ def validate(args, progress):
     if not isinstance(lock_keyring, dict):
         fail("userspace_lock_invalid", "reviewed userspace lock keyring is malformed")
     if (lock_keyring.get("filename") != args.package_keyring.name
-            or lock_keyring.get("sha256") != sha256(args.package_keyring, progress)):
+            or lock_keyring.get("sha256") != input_hashes.digest(args.package_keyring)):
         fail("userspace_lock_mismatch", "minimal reviewed keyring does not match userspace lock")
     expected_lock_packages = userspace_lock.get("packages")
     if not isinstance(expected_lock_packages, list):
@@ -1658,7 +1732,7 @@ def validate(args, progress):
             )
             installed_size = metadata.get("size", "")
             source_record = source["lockRecord"]
-            derived_digest = sha256(derived, progress)
+            derived_digest = sha256(derived)
             if (not installed_size.isdigit()
                     or derived.name != profile_record["filename"]
                     or derived_digest != profile_record["sha256"]
@@ -2010,7 +2084,7 @@ def validate(args, progress):
         "provenanceSha256": provenance_sha,
         "userspaceLock": {
             "name": args.userspace_lock.name,
-            "sha256": sha256(args.userspace_lock, progress),
+            "sha256": input_hashes.digest(args.userspace_lock),
         },
         "gamingPayload": gaming_payload or {
             "schemaVersion": 1, "status": "not-requested",
@@ -2031,7 +2105,7 @@ def validate(args, progress):
         },
         "keyring": {
             "name": args.package_keyring.name,
-            "sha256": sha256(args.package_keyring, progress),
+            "sha256": input_hashes.digest(args.package_keyring),
         },
         "packages": package_records,
         "modules": [

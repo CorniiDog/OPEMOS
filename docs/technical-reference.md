@@ -414,9 +414,11 @@ During validation, stderr contains throttled lines beginning with
 only a bounded numeric attempt, a fixed phase, an indeterminate flag, or numeric
 unit/completed/total fields—never filesystem paths or free-form messages.
 `--progress-attempt 0..1000000` lets OPEMOS.EXE correlate retries. Byte
-progress covers hashing; item progress covers the Holo database, modules, and
-userspace packages; archive layout, dependency closure, and storage calculation
-are explicitly indeterminate phases.
+progress covers one monotonic aggregate of all immutable installer inputs. Its
+fixed total is their combined byte size and it never resets between files. Item
+progress covers the Holo database, modules, and userspace packages; archive
+layout, dependency closure, and storage calculation are explicitly
+indeterminate phases.
 
 Mutation uses the same schema and attempt. It reports pacman-policy preparation,
 the four runtime mounts, the exact incoming package count, all five

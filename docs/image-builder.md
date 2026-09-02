@@ -159,6 +159,8 @@ Read stderr line by line. Only records beginning with
 diagnostic text.
 
 - Byte-count phases may drive determinate progress.
+- Treat `hashing` as one monotonic aggregate across all immutable installer
+  inputs; its total remains fixed for the attempt and does not identify files.
 - Package, module, and mount phases use real item counts.
 - Pacman policy, GRUB, `depmod`, and initramfs can be indeterminate.
 - Never fabricate a percentage for an opaque command.

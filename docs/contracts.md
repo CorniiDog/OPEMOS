@@ -135,6 +135,10 @@ Rules:
 - `attempt` is an integer from 0 through 1,000,000.
 - Phase names are fixed internal tokens.
 - Determinate counts never decrease or change total/unit within an attempt.
+- `hashing` is one aggregate byte sequence per attempt. Its fixed total is the
+  sum of every immutable archive, checksum, provenance, package, detached
+  signature, keyring, userspace-lock, and optional gaming-profile input; it
+  never restarts for an individual file.
 - Records never contain paths, credentials, arbitrary messages, or subprocess
   output.
 - Stderr lines without the prefix are not part of this API.

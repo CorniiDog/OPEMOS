@@ -39,6 +39,9 @@ INITRAMFS_REQUIRED_MODULES = (
     "nvidia-drm.ko",
 )
 
+sys.path.insert(0, str(ROOT / "lib"))
+from validate_install_contract import validate_progress  # noqa: E402
+
 
 def add_bytes(archive, name, content, mode=0o644):
     member = tarfile.TarInfo(name)
@@ -701,6 +704,20 @@ def assert_item_progress(records, phase, total, *, complete=True):
         assert completions[-1] == total
 
 
+def assert_aggregate_hash_progress(records, expected_total):
+    hashing = [
+        record for record in records
+        if record["phase"] == "hashing" and not record["indeterminate"]
+    ]
+    assert hashing
+    assert all(record["unit"] == "bytes" for record in hashing)
+    assert {record["total"] for record in hashing} == {expected_total}
+    completions = [record["completed"] for record in hashing]
+    assert completions[0] == 0
+    assert completions == sorted(completions)
+    assert completions[-1] == expected_total
+
+
 def assert_indeterminate_then_complete(records, phase):
     phase_records = [record for record in records if record["phase"] == phase]
     assert phase_records and phase_records[0]["indeterminate"] is True, phase
@@ -1024,8 +1041,29 @@ def main():
             assert "supersecret" not in json.dumps(cli_document)
         binaries = make_mocks(temporary)
         paths = make_fixture(temporary)
+        # Exercise one aggregate over differently sized package, detached
+        # signature, keyring, metadata, and module-archive inputs.
+        paths["nvidia_sig"].write_bytes(b"nvidia-signature\n")
+        paths["lib32_sig"].write_bytes(b"lib32-signature-with-a-different-size\n")
+        paths["keyring"].write_bytes(b"reviewed-keyring-fixture-with-distinct-size\n")
         run(paths, binaries, temporary / "valid.json", True)
         valid = json.loads((temporary / "valid.json").read_text())
+        authenticated_inputs = [
+            paths[name] for name in (
+                "archive", "checksum", "provenance", "nvidia", "nvidia_sig",
+                "lib32", "lib32_sig", "keyring", "userspace_lock",
+            )
+        ]
+        assert len({path.stat().st_size for path in authenticated_inputs}) >= 5
+        progress_path = temporary / "valid.json.stderr"
+        progress_records = parse_progress_records(
+            progress_path.read_text(encoding="utf-8")
+        )
+        assert_aggregate_hash_progress(
+            progress_records,
+            sum(path.stat().st_size for path in authenticated_inputs),
+        )
+        assert validate_progress(progress_path) == len(progress_records)
         duplicate_validation = json.loads(json.dumps(valid))
         duplicate_validation["packages"].append(
             dict(duplicate_validation["packages"][0])
