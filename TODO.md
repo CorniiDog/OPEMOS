@@ -1,6 +1,6 @@
 Below is the consolidated project checklist based on our work so far. I’m treating the current repository state and the latest tests as authoritative where they supersede earlier failures.
 
-# SteamOS NVIDIA Open Kernel Module Support — Master Checklist
+# OPEMOS — Master Checklist
 
 ## Not yet resolved
 

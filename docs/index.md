@@ -4,10 +4,11 @@ title: Overview
 description: Documentation for exact-kernel NVIDIA open-module builds and SteamOS image installation.
 ---
 
-This unofficial community project builds, validates, publishes, and installs NVIDIA open kernel
-modules for an **exact** SteamOS release, Neptune kernel, architecture, and
-NVIDIA userspace version. It also defines the machine-readable boundary used by
-SteamOS NVIDIA Image Builder.
+**OPEMOS** is the short project name for this unofficial community-built NVIDIA
+open-module toolkit. It builds, validates, publishes, and installs modules for
+an **exact** SteamOS release, Neptune kernel, architecture, and NVIDIA userspace
+version. It also defines the machine-readable boundary used by SteamOS NVIDIA
+Image Builder.
 
 > This is active development software. Exact-kernel validation has passed for
 > published development artifacts, but fresh-stock installation and NVIDIA

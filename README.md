@@ -1,7 +1,9 @@
-# SteamOS NVIDIA Open Kernel Module Support
+# OPEMOS
 
-Build and install NVIDIA open kernel modules matched to an exact SteamOS
-release, Neptune kernel, architecture, and NVIDIA userspace version.
+**Open NVIDIA module tooling for SteamOS.**
+
+OPEMOS builds and installs NVIDIA open kernel modules matched to an exact
+SteamOS release, Neptune kernel, architecture, and NVIDIA userspace version.
 
 > [!IMPORTANT]
 > This project is under active development. Published artifacts are
