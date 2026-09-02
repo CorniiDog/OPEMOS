@@ -125,11 +125,15 @@ def inspect(root):
         nonlocal total
         try:
             relative = path.relative_to(root).as_posix()
+        except ValueError:
+            fail("execution input path is outside the target",
+                 "input_escape")
+        try:
             logical_metadata = path.lstat()
-        except (OSError, ValueError):
+        except OSError:
             if required:
                 fail("required execution input is absent",
-                     "required_input_missing")
+                     "required_input_missing", relative)
             return
         if relative in recorded:
             return
