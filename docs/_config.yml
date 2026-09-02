@@ -1,5 +1,5 @@
 title: OPEMOS
-description: Unofficial community-built exact-kernel NVIDIA open-module tooling for SteamOS and recovery-image builders.
+description: Unofficial community-built packaging, verification, and offline installation of exact-kernel NVIDIA open modules for SteamOS.
 url: https://corniidog.github.io
 baseurl: /open-gpu-kernel-modules-steamos-support
 repository: CorniiDog/open-gpu-kernel-modules-steamos-support

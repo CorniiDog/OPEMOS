@@ -1,9 +1,11 @@
 # OPEMOS
 
-**Open NVIDIA module tooling for SteamOS.**
+**Open Packaging for Exact-kernel Modules on SteamOS.**
 
-OPEMOS builds and installs NVIDIA open kernel modules matched to an exact
-SteamOS release, Neptune kernel, architecture, and NVIDIA userspace version.
+OPEMOS is an unofficial toolkit for building, authenticating, packaging, and
+installing NVIDIA open kernel modules matched to an exact SteamOS release,
+Neptune kernel, architecture, and NVIDIA userspace version. It fails closed
+rather than substituting a nearby kernel or unreviewed userspace payload.
 
 > [!IMPORTANT]
 > This project is under active development. Published artifacts are
