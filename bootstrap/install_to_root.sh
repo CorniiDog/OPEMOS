@@ -682,8 +682,8 @@ INITRAMFS_WORKSPACE_REQUIRED_INODES=4096
 require_target_mount_identities()
 {
     if [[ "${PROJECT_TEST_MODE:-0}" == 1 ]]; then
-        [[ "${MOCK_MOUNT_IDENTITY_DRIFT:-0}" == 0 ]]
-        return
+        [[ "${MOCK_MOUNT_IDENTITY_DRIFT:-0}" == 0 ]] || return 1
+        return 0
     fi
     local current_root current_efi
     mountpoint -q "$ROOT" && ! mountpoint -q "$ROOT/boot" &&

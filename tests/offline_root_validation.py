@@ -1162,7 +1162,9 @@ def main():
                 False,
                 **(case_environment or {}),
             )
-            assert workspace_result["reason"] == "initramfs_workspace_unavailable"
+            assert workspace_result["reason"] == (
+                "initramfs_workspace_unavailable"
+            ), workspace_result
             assert workspace_result["initramfsWorkspace"]["condition"] == condition
             assert workspace_result["cleanup"]["mountsReleased"] is True
             preflight_failure = label in {
