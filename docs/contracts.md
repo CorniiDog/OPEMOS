@@ -249,3 +249,21 @@ A later certified equivalent does not invalidate a restored
 `locally-built-verified` system and is considered only by an explicit future
 maintenance transaction. Wrong-kernel or changed-NVIDIA publications remain
 ineligible under the ordinary resolver policy.
+
+### Open OPEMOS frontend boundary
+
+`open_opemos_contract.py` converts a validated recovery status document into a
+bounded schema-1 view model named **Open OPEMOS**. It supplies stable labels for
+fallback, offline wait, retry, download, exact-kernel rebuild, install,
+verification, restoration, and cancellation. Every button maps to an enumerated
+`recoveryctl.sh` argument vector. The frontend may theme these states and
+request SteamOS Desktop Mode, but it must not gain a general command runner.
+
+In particular, the frontend must never accept a device pathname, regex-rewrite
+a disk name into a script, run a caller-provided shell fragment, disable
+fallback directly, or infer a kernel/artifact. Privileged operations remain
+fixed `recoveryctl.sh` commands with validated enumerated profiles and identity
+documents. `restore-graphics` is enabled only after exact module verification.
+The versioned native desktop frontend and its virtual-display tests are owned
+by the dedicated desktop application layer; this contract remains independent
+of a specific GUI toolkit.

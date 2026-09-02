@@ -25,6 +25,19 @@ REVISION="$(git -C "$SUPPORT_ROOT" rev-parse HEAD)"
 # list. A service stored solely in the current /usr would disappear precisely
 # when the guardian is needed.
 DEST=/home/.steamos/open-gpu-kernel-modules-steamos-support/recovery
+python3 "$SUPPORT_ROOT/lib/validate_recovery_install_path.py" --root / \
+    --path "${DEST#/}/support-revision" --path "${DEST#/}/nvidia-version" \
+    --path "${DEST#/}/bootstrap/recoveryctl.sh" \
+    --path "${DEST#/}/lib/recovery_status.py" \
+    --path "${DEST#/}/lib/open_opemos_contract.py" \
+    --path var/lib/open-gpu-kernel-modules-steamos-support/recovery/state.json \
+    --path etc/systemd/system/opemos-nvidia-guardian.service \
+    --path etc/systemd/system/opemos-nvidia-repair.service \
+    --path etc/systemd/system/opemos-nvidia-repair.timer \
+    --path etc/NetworkManager/dispatcher.d/90-opemos-nvidia-repair \
+    --path etc/atomic-update.conf.d/90-opemos-nvidia-guardian.conf \
+    --expected-symlink etc/systemd/system/multi-user.target.wants/opemos-nvidia-guardian.service=../opemos-nvidia-guardian.service \
+    --expected-symlink etc/systemd/system/timers.target.wants/opemos-nvidia-repair.timer=../opemos-nvidia-repair.timer
 RO_WAS_ENABLED=0
 cleanup()
 {
@@ -45,6 +58,8 @@ sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/recovery_status.py" "$DE
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/update_recovery_grub_args.py" "$DEST/lib/update_recovery_grub_args.py"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/recovery_transaction.py" "$DEST/lib/recovery_transaction.py"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/recovery_release_plan.py" "$DEST/lib/recovery_release_plan.py"
+sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/open_opemos_contract.py" "$DEST/lib/open_opemos_contract.py"
+sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/validate_recovery_install_path.py" "$DEST/lib/validate_recovery_install_path.py"
 printf '%s\n' "$REVISION" | sudo tee "$DEST/support-revision" >/dev/null
 sudo chown root:root "$DEST/support-revision"
 sudo chmod 0644 "$DEST/support-revision"

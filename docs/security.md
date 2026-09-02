@@ -159,6 +159,13 @@ configuration paths are registered through SteamOS's supported
 putting the service only in `/usr` would lose it when an update replaces the
 inactive rootfs.
 
+Guardian installation validates every existing destination and ancestor before
+root mutation. Symlink ancestors, non-regular destinations, writable or
+unexpected-owner paths, and systemd enablement links with unexpected targets
+are rejected. Offline staging requires its caller to provide the exact support
+commit explicitly; it never derives a trusted identity from an arbitrary local
+checkout or rewrites a detected device name into executable shell code.
+
 `repair-online` is bound to the exact support commit installed by the original
 transaction. It uses the normal published-release resolver and still requires
 the exact running kernel and matching userspace. If no authenticated exact

@@ -851,6 +851,13 @@ This remains a major future area, represented by three distinct gates:
   in OPEMOS.EXE-generated rootfs payloads.
 * [ ] Test a 3.8.x kernel upgrade, missing-release behavior, and rollback to the
   previous slot without ever copying old-kernel modules into a new tree.
+* [x] Define the versioned Open OPEMOS view model with fixed, enumerated
+  recoveryctl actions and no arbitrary shell or device-path input.
+* [ ] Finish the themed native Open OPEMOS frontend, Desktop Mode transition,
+  persistent signed/package delivery through the canonical one-line installer,
+  and keyboard/accessibility behavior without moving privileged policy out of
+  recoveryctl. This is the installed target-device application, not the
+  separate installation-media welcome UI owned by OPEMOS.EXE.
 
 ---
 

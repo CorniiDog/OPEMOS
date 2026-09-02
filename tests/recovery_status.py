@@ -14,6 +14,8 @@ GRUB = ROOT / "lib/update_recovery_grub_args.py"
 TRANSACTION = ROOT / "lib/recovery_transaction.py"
 PLAN = ROOT / "lib/recovery_release_plan.py"
 STAGE = ROOT / "bootstrap/install_recovery_guardian_to_root.sh"
+OPEN_CONTRACT = ROOT / "lib/open_opemos_contract.py"
+PATH_VALIDATOR = ROOT / "lib/validate_recovery_install_path.py"
 KERNEL = "6.16.12-valve24.5-1-neptune-616-test"
 NVIDIA = "575.64.05"
 
@@ -156,8 +158,60 @@ with tempfile.TemporaryDirectory(prefix="opemos-recovery-stage-") as temporary:
     persistent = target / "home/.steamos/open-gpu-kernel-modules-steamos-support/recovery"
     assert (persistent / "support-revision").read_text().strip() == "b" * 40
     assert (persistent / "nvidia-version").read_text().strip() == NVIDIA
+    assert (persistent / "lib/open_opemos_contract.py").is_file()
     assert (target / "etc/systemd/system/opemos-nvidia-guardian.service").is_file()
     assert (target / "etc/systemd/system/multi-user.target.wants/opemos-nvidia-guardian.service").is_symlink()
     assert (target / "etc/NetworkManager/dispatcher.d/90-opemos-nvidia-repair").stat().st_mode & 0o111
+
+with tempfile.TemporaryDirectory(prefix="open-opemos-contract-") as temporary:
+    status_path = Path(temporary) / "status.json"
+    status_path.write_text(json.dumps({
+        "schemaVersion": 1, "status": "fallback-active",
+        "moduleVerification": {"status": "failed"},
+        "fallback": {"active": True, "profile": "console"},
+        "transaction": {"active": True, "phase": "offline_waiting"},
+    }))
+    result = subprocess.run(["python3", str(OPEN_CONTRACT), "--status", str(status_path)],
+                            text=True, stdout=subprocess.PIPE, check=True)
+    view = json.loads(result.stdout)
+    assert view["title"] == "Open OPEMOS"
+    assert view["phaseLabel"] == "Waiting for a trusted network"
+    assert view["privilegeBoundary"] == "recoveryctl-fixed-actions-only"
+    action_ids = {action["id"] for action in view["actions"]}
+    assert action_ids == {"refresh", "repair", "cancel", "restore-graphics", "igpu", "nouveau"}
+    assert all(not any("/dev/" in argument or ";" in argument
+                       for argument in action["command"])
+               for action in view["actions"])
+
+with tempfile.TemporaryDirectory(prefix="opemos-path-confinement-") as temporary:
+    root = Path(temporary) / "root"
+    root.mkdir()
+    (root / "home").mkdir()
+    outside = Path(temporary) / "outside"
+    outside.mkdir()
+    (root / "home/.steamos").symlink_to(outside, target_is_directory=True)
+    rejected = subprocess.run([
+        "python3", str(PATH_VALIDATOR), "--root", str(root), "--test-owner",
+        "--path", "home/.steamos/opemos/recoveryctl.sh",
+    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert rejected.returncode != 0
+
+with tempfile.TemporaryDirectory(prefix="opemos-link-confinement-") as temporary:
+    root = Path(temporary) / "root"
+    wants = root / "etc/systemd/system/multi-user.target.wants"
+    wants.mkdir(parents=True)
+    link = wants / "opemos.service"
+    link.symlink_to("../opemos.service")
+    command = [
+        "python3", str(PATH_VALIDATOR), "--root", str(root), "--test-owner",
+        "--path", "etc/systemd/system/opemos.service",
+        "--expected-symlink",
+        "etc/systemd/system/multi-user.target.wants/opemos.service=../opemos.service",
+    ]
+    subprocess.run(command, check=True)
+    link.unlink()
+    link.symlink_to("/tmp/untrusted.service")
+    assert subprocess.run(command, stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE).returncode != 0
 
 print("Installed-system recovery contract checks passed.")
