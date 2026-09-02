@@ -567,8 +567,15 @@ scratch directory at target `/var/tmp`. The target directory must be confined,
 nonsymlinked, root-owned, and mode 1777. Validation reports a missing directory
 as `preparation-required` without mutating the image; mutation creates only that
 missing directory with mode 1777 before establishing runtime mounts. Existing
-unsafe objects or permissions remain fail-closed. The backing filesystem must have at least the
-validated initramfs reserve and 4096 available inodes. All four mounts remain
+unsafe objects or permissions remain fail-closed. The backing filesystem must
+have at least the validated initramfs reserve and 4096 available inodes.
+Filesystems that report a finite inode count use the conservative `statvfs`
+value. Filesystems such as Btrfs that report all inode counters as zero must pass
+a bounded, cleaned 4,096-file allocation probe; zero is never interpreted
+directly as either exhaustion or unlimited capacity. The bind destination itself
+receives no inode credit and remains non-mutating during validation. Structured
+workspace results record `finite-statvfs`, `dynamic-probed`, or
+`not-applicable-bind-target` as the inode-capacity basis. All four mounts remain
 through pacman hooks and the explicit `mkinitcpio` run. The final result records
 their expected/released counts plus bounded workspace condition and capacity
 metadata. Reverse-order recursive cleanup is required on every terminal path,

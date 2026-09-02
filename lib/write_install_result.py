@@ -243,7 +243,7 @@ def load_initramfs_workspace(path):
     }
     optional = {
         "message", "availableBytes", "availableInodes", "mode",
-        "expectedMode", "actualMode",
+        "expectedMode", "actualMode", "inodeCapacityMode",
     }
     if (not isinstance(document, dict)
             or not common <= set(document)
@@ -263,6 +263,13 @@ def load_initramfs_workspace(path):
                 "insufficient_bytes", "insufficient_inodes",
             }):
         raise SystemExit("Initramfs workspace metadata is malformed.")
+    inode_capacity_mode = document.get("inodeCapacityMode")
+    if (inode_capacity_mode is not None
+            and inode_capacity_mode not in {
+                "finite-statvfs", "dynamic-probed",
+                "dynamic-probe-failed", "not-applicable-bind-target",
+            }):
+        raise SystemExit("Initramfs workspace inode metadata is malformed.")
     for field in ("requiredBytes", "requiredInodes", "availableBytes", "availableInodes"):
         value = document.get(field)
         if value is not None and (
@@ -282,9 +289,28 @@ def load_initramfs_workspace(path):
             document["reason"] == "initramfs_workspace_target_available"
             and document["phase"] == "target_directory"
         )
+        finite_capacity = inode_capacity_mode == "finite-statvfs"
+        dynamic_capacity = inode_capacity_mode == "dynamic-probed"
+        bind_target_capacity = inode_capacity_mode == "not-applicable-bind-target"
         if (not verified_shape
                 or document["condition"] != "available"
                 or document.get("mode") != "1777"
+                or inode_capacity_mode is None
+                or not (finite_capacity or dynamic_capacity
+                        or bind_target_capacity)
+                or (finite_capacity and (
+                    document.get("availableInodes") is None
+                    or document["availableInodes"] < document["requiredInodes"]
+                ))
+                or (dynamic_capacity and (
+                    document.get("availableInodes") is not None
+                    or document["reason"] != "initramfs_workspace_available"
+                ))
+                or (bind_target_capacity and (
+                    document.get("availableInodes") is not None
+                    or document["reason"]
+                    != "initramfs_workspace_target_available"
+                ))
                 or "message" in document):
             raise SystemExit("Verified initramfs workspace metadata is inconsistent.")
     elif document["status"] == "preparation-required":

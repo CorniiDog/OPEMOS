@@ -2,9 +2,11 @@
 """Validate the private appliance-backed /var/tmp workspace contract."""
 
 import argparse
+import errno
 import json
 import os
 import stat
+import tempfile
 from pathlib import Path
 
 from atomic_output import atomic_write_bytes
@@ -12,6 +14,7 @@ from atomic_output import atomic_write_bytes
 
 MAX_BYTES = 2**63 - 1
 MAX_INODES = 2**63 - 1
+MAX_REQUIRED_INODES = 65536
 
 
 class WorkspaceFailure(Exception):
@@ -33,12 +36,20 @@ def bounded_nonnegative(value):
     return parsed
 
 
+def bounded_inode_requirement(value):
+    parsed = bounded_nonnegative(value)
+    if parsed > MAX_REQUIRED_INODES:
+        raise argparse.ArgumentTypeError("inode requirement exceeds its probe limit")
+    return parsed
+
+
 def arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", required=True, type=Path)
     parser.add_argument("--backing", type=Path)
     parser.add_argument("--required-bytes", required=True, type=bounded_nonnegative)
-    parser.add_argument("--required-inodes", required=True, type=bounded_nonnegative)
+    parser.add_argument("--required-inodes", required=True,
+                        type=bounded_inode_requirement)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--mounted", action="store_true")
     parser.add_argument("--target-only", action="store_true")
@@ -154,7 +165,74 @@ def confined_target(root, *, create_missing=False):
     return current, target_metadata
 
 
-def available_capacity(path, *, target=False):
+def probe_dynamic_inode_capacity(path, required_inodes):
+    probe = None
+    descriptor = None
+    created = 0
+    failure = None
+    try:
+        probe = Path(tempfile.mkdtemp(prefix=".inode-capacity-", dir=path))
+        descriptor = os.open(
+            probe,
+            os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0),
+        )
+        for index in range(required_inodes):
+            file_descriptor = os.open(
+                f"inode-{index}",
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                | getattr(os, "O_NOFOLLOW", 0),
+                0o600,
+                dir_fd=descriptor,
+            )
+            created += 1
+            os.close(file_descriptor)
+    except OSError as error:
+        if error.errno in {errno.ENOSPC, getattr(errno, "EDQUOT", -1)}:
+            failure = WorkspaceFailure(
+                "backing_capacity", "insufficient_inodes",
+                "The initramfs workspace could not allocate its required inodes.",
+                availableInodes=None, inodeCapacityMode="dynamic-probe-failed",
+            )
+        elif error.errno in {errno.EACCES, errno.EPERM, errno.EROFS}:
+            failure = WorkspaceFailure(
+                "backing_capacity", "permissions",
+                "The initramfs workspace inode-capacity probe was not writable.",
+                availableInodes=None, inodeCapacityMode="dynamic-probe-failed",
+            )
+        else:
+            failure = WorkspaceFailure(
+                "backing_capacity", "invalid_type",
+                "The initramfs workspace inode-capacity probe failed.",
+                availableInodes=None, inodeCapacityMode="dynamic-probe-failed",
+            )
+    finally:
+        cleanup_failed = False
+        if descriptor is not None:
+            for index in range(created):
+                try:
+                    os.unlink(f"inode-{index}", dir_fd=descriptor)
+                except OSError:
+                    cleanup_failed = True
+            try:
+                os.close(descriptor)
+            except OSError:
+                cleanup_failed = True
+        if probe is not None:
+            try:
+                probe.rmdir()
+            except OSError:
+                cleanup_failed = True
+        if cleanup_failed:
+            failure = WorkspaceFailure(
+                "backing_capacity", "invalid_type",
+                "The initramfs workspace inode-capacity probe could not be cleaned.",
+                availableInodes=None, inodeCapacityMode="dynamic-probe-failed",
+            )
+    if failure is not None:
+        raise failure
+
+
+def available_capacity(path, *, target=False, required_inodes=0):
     try:
         filesystem = os.statvfs(path)
     except OSError as error:
@@ -164,20 +242,35 @@ def available_capacity(path, *, target=False):
         ) from error
     available_bytes = filesystem.f_bavail * filesystem.f_frsize
     available_inodes = filesystem.f_favail
+    dynamic_inodes = (
+        filesystem.f_files == 0
+        and filesystem.f_ffree == 0
+        and filesystem.f_favail == 0
+    )
     if os.environ.get("PROJECT_TEST_MODE") == "1":
         prefix = "PROJECT_TEST_TARGET_WORKSPACE" if target else "PROJECT_TEST_WORKSPACE"
         available_bytes = int(
             os.environ.get(f"{prefix}_AVAILABLE_BYTES", available_bytes)
         )
-        available_inodes = int(
-            os.environ.get(f"{prefix}_AVAILABLE_INODES", available_inodes)
-        )
-    if not 0 <= available_bytes <= MAX_BYTES or not 0 <= available_inodes <= MAX_INODES:
+        inode_override = os.environ.get(f"{prefix}_AVAILABLE_INODES")
+        if inode_override is not None:
+            available_inodes = int(inode_override)
+            dynamic_inodes = False
+        if os.environ.get(f"{prefix}_DYNAMIC_INODES") == "1":
+            available_inodes = 0
+            dynamic_inodes = True
+    if (not 0 <= available_bytes <= MAX_BYTES
+            or not 0 <= available_inodes <= MAX_INODES):
         raise WorkspaceFailure(
             "backing_capacity", "invalid_type",
             "The initramfs workspace capacity is invalid.",
         )
-    return available_bytes, available_inodes
+    if dynamic_inodes:
+        if target:
+            return available_bytes, None, "not-applicable-bind-target"
+        probe_dynamic_inode_capacity(path, required_inodes)
+        return available_bytes, None, "dynamic-probed"
+    return available_bytes, available_inodes, "finite-statvfs"
 
 
 def main():
@@ -193,12 +286,13 @@ def main():
         )
         if args.target_only:
             capacity_path = target if target_metadata is not None else target.parent
-            available_bytes, available_inodes = available_capacity(
-                capacity_path, target=True
+            available_bytes, available_inodes, inode_capacity_mode = available_capacity(
+                capacity_path, target=True, required_inodes=args.required_inodes
             )
             base.update({
                 "availableBytes": available_bytes,
                 "availableInodes": available_inodes,
+                "inodeCapacityMode": inode_capacity_mode,
             })
             if available_bytes < args.required_bytes:
                 raise WorkspaceFailure(
@@ -206,7 +300,8 @@ def main():
                     "The target initramfs workspace lacks sufficient bytes.",
                     availableBytes=available_bytes,
                 )
-            if available_inodes < args.required_inodes:
+            if (available_inodes is not None
+                    and available_inodes < args.required_inodes):
                 raise WorkspaceFailure(
                     "target_capacity", "insufficient_inodes",
                     "The target initramfs workspace lacks sufficient inodes.",
@@ -242,10 +337,14 @@ def main():
         backing_metadata = directory_metadata(
             args.backing, "backing_directory", expected_mode=0o1777
         )
-        available_bytes, available_inodes = available_capacity(args.backing)
+        capacity_path = target if args.mounted else args.backing
+        available_bytes, available_inodes, inode_capacity_mode = available_capacity(
+            capacity_path, required_inodes=args.required_inodes
+        )
         base.update({
             "availableBytes": available_bytes,
             "availableInodes": available_inodes,
+            "inodeCapacityMode": inode_capacity_mode,
         })
         if available_bytes < args.required_bytes:
             raise WorkspaceFailure(
@@ -253,7 +352,8 @@ def main():
                 "The initramfs workspace lacks sufficient bytes.",
                 availableBytes=available_bytes,
             )
-        if available_inodes < args.required_inodes:
+        if (available_inodes is not None
+                and available_inodes < args.required_inodes):
             raise WorkspaceFailure(
                 "backing_capacity", "insufficient_inodes",
                 "The initramfs workspace lacks sufficient inodes.",

@@ -142,6 +142,9 @@ python3 tests/install_contract.py
 printf 'Checking target-owned execution trust...\n'
 python3 tests/target_execution_trust.py
 
+printf 'Checking initramfs workspace admission...\n'
+python3 tests/initramfs_workspace.py
+
 printf 'Checking exact initramfs verification...\n'
 python3 tests/initramfs_verification.py
 python3 tests/bounded_capture.py

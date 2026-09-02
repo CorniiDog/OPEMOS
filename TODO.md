@@ -1244,7 +1244,9 @@ signing policy.
   it through explicit mkinitcpio, require confined mode-1777 target semantics
   plus bounded byte/inode capacity, report typed workspace failures, record all
   four runtime mounts in progress/results, and detect post-transaction hook
-  failure independently from pacman's exit status.
+  failure independently from pacman's exit status. Treat an all-zero dynamic
+  inode report as unknown rather than exhausted: require a bounded 4,096-file
+  allocation-and-cleanup probe and record its capacity basis.
 * [x] Inspect the mounted `var-A` `/var/tmp` during validate-only, report a
   missing mountpoint as preparation-required without mutation, safely create
   only that missing root-owned mode-1777 directory before pacman hooks, and

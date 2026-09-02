@@ -1095,6 +1095,25 @@ def main():
         )
         assert missing_repeated["initramfsWorkspace"]["status"] == "verified"
 
+        dynamic_root = temporary / "workspace-dynamic-inodes"
+        dynamic_root.mkdir()
+        dynamic_paths = make_fixture(dynamic_root)
+        dynamic_result = run_installer(
+            dynamic_paths,
+            binaries,
+            temporary / "workspace-dynamic-inodes.json",
+            True,
+            PROJECT_TEST_WORKSPACE_DYNAMIC_INODES="1",
+        )
+        assert dynamic_result["initramfsWorkspace"]["status"] == "verified"
+        assert dynamic_result["initramfsWorkspace"]["inodeCapacityMode"] == (
+            "dynamic-probed"
+        )
+        assert dynamic_result["initramfsWorkspace"]["availableInodes"] is None
+        assert not list((binaries.parent / "appliance-var-tmp").glob(
+            "offline-root-initramfs.*"
+        ))
+
         workspace_cases = (
             ("symlink", "invalid_type", None),
             ("permissions", "permissions", None),
