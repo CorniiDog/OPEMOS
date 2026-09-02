@@ -1084,7 +1084,11 @@ def main():
             )
         if (workspace["status"] == "failed"
                 and (args.status != "failed"
-                     or args.reason != "initramfs_workspace_unavailable")):
+                     or not (
+                         args.reason == "initramfs_workspace_unavailable"
+                         or (args.reason == "mutation_cleanup_failed"
+                             and args.phase == "cleanup")
+                     ))):
             raise SystemExit("Failed workspace metadata does not match result status.")
         if (workspace["status"] == "preparation-required"
                 and args.status != "validated"):

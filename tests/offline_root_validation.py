@@ -519,6 +519,7 @@ case " $* " in
     exit 0
     ;;
 esac
+[ "${MOCK_FINDMNT_HIDE_RUNTIME:-0}" = 0 ] || exit 1
 eval target=\${$#}; grep -F -q "$target" "$MOCK_MOUNT_STATE" 2>/dev/null
 """,
         encoding="utf-8",
@@ -1134,6 +1135,9 @@ def main():
             }),
             ("bytes", "insufficient_bytes", {
                 "PROJECT_TEST_WORKSPACE_AVAILABLE_BYTES": "1",
+                # A stale discovery view must not strand mounts that the
+                # installer itself recorded after successful bind operations.
+                "MOCK_FINDMNT_HIDE_RUNTIME": "1",
             }),
             ("inodes", "insufficient_inodes", {
                 "PROJECT_TEST_WORKSPACE_AVAILABLE_BYTES": str(2**40),
@@ -1174,6 +1178,45 @@ def main():
             assert not pacman_log.exists() or " -U " not in (
                 " " + pacman_log.read_text(encoding="utf-8") + " "
             )
+
+        # Cleanup can supersede the original workspace failure as the
+        # top-level reason.  Preserve the bounded workspace diagnostic rather
+        # than allowing result serialization itself to fail and erase both
+        # causes.
+        cleanup_workspace = temporary / "cleanup-workspace.json"
+        cleanup_workspace.write_text(json.dumps(
+            json.loads((temporary / "workspace-bytes.json").read_text(
+                encoding="utf-8"
+            ))["initramfsWorkspace"]
+        ), encoding="utf-8")
+        cleanup_result = temporary / "cleanup-workspace-result.json"
+        cleanup_write = subprocess.run([
+            sys.executable, str(RESULT_WRITER),
+            "--output", str(cleanup_result),
+            "--status", "failed",
+            "--reason", "mutation_cleanup_failed",
+            "--message", "Offline-root cleanup was incomplete.",
+            "--phase", "cleanup",
+            "--root", "/target-root",
+            "--kernel", KERNEL,
+            "--initramfs-workspace", str(cleanup_workspace),
+        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        assert cleanup_write.returncode == 0, cleanup_write.stderr
+        cleanup_document = json.loads(cleanup_result.read_text(encoding="utf-8"))
+        assert cleanup_document["reason"] == "mutation_cleanup_failed"
+        assert cleanup_document["initramfsWorkspace"]["condition"] == (
+            "insufficient_bytes"
+        )
+        invalid_cleanup_command = list(cleanup_write.args)
+        invalid_cleanup_command[
+            invalid_cleanup_command.index("cleanup")
+        ] = "module_install"
+        invalid_cleanup_write = subprocess.run(
+            invalid_cleanup_command,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        assert invalid_cleanup_write.returncode != 0
+        assert "does not match result status" in invalid_cleanup_write.stderr
 
         hook_root = temporary / "post-hook-failure"
         hook_root.mkdir()

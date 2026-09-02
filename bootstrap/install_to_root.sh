@@ -866,9 +866,13 @@ run_mutation_command()
 unmount_tree()
 {
     local target="$1"
-    if findmnt -rn -R "$target" >/dev/null 2>&1; then
-        umount -R "$target" || return 1
-    fi
+    # Every entry in MOUNTS was recorded only after its mount command
+    # succeeded.  Always attempt the corresponding recursive unmount instead
+    # of allowing a failed/stale discovery probe to strand a known mount.
+    # A target that disappeared concurrently is acceptable only when the
+    # authoritative postcondition confirms that no mount remains there.
+    umount -R "$target" >/dev/null 2>&1 ||
+        ! findmnt -rn -R "$target" >/dev/null 2>&1 || return 1
     ! findmnt -rn -R "$target" >/dev/null 2>&1
 }
 
@@ -879,23 +883,20 @@ cleanup_mutation()
     local released_mounts=0 total_mounts=${#MOUNTS[@]}
     trap - EXIT INT TERM
     emit_progress_items mount_cleanup 0 "$total_mounts"
-    if (( total_mounts == 0 )) || require_target_mount_identities; then
-        for (( index=${#MOUNTS[@]}-1; index>=0; index-- )); do
-            if ! require_target_mount_identities; then
-                mounts_released=false
-                target_identity_safe=false
-                break
-            fi
-            if unmount_tree "${MOUNTS[$index]}"; then
-                released_mounts=$((released_mounts + 1))
-                emit_progress_items mount_cleanup "$released_mounts" "$total_mounts"
-            else
-                mounts_released=false
-            fi
-        done
-    else
+    if (( total_mounts > 0 )) || [[ "$COMPRESSION_POLICY_ACTIVE" == 1 ]]; then
+        require_target_mount_identities || target_identity_safe=false
+    fi
+    for (( index=${#MOUNTS[@]}-1; index>=0; index-- )); do
+        if unmount_tree "${MOUNTS[$index]}"; then
+            released_mounts=$((released_mounts + 1))
+            emit_progress_items mount_cleanup "$released_mounts" "$total_mounts"
+        else
+            mounts_released=false
+        fi
+        require_target_mount_identities || target_identity_safe=false
+    done
+    if (( released_mounts != total_mounts )); then
         mounts_released=false
-        target_identity_safe=false
     fi
     RUNTIME_MOUNTS_RELEASED=$released_mounts
     if [[ "$target_identity_safe" == true ]]; then
