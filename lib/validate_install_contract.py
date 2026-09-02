@@ -24,6 +24,12 @@ TRUST_VALUES = {
 VERSION = re.compile(r"(?:unknown|[0-9]+\.[0-9]+(?:\.[0-9]+)?)")
 KERNEL = re.compile(r"(?:unknown|[A-Za-z0-9._+~-]{1,255})")
 PLAIN_FILENAME = re.compile(r"[A-Za-z0-9@._+~:-]{1,255}")
+PACKAGE_IDENTITY = re.compile(r"[A-Za-z0-9@._+:-]{1,256}")
+HEX_SHA256 = re.compile(r"[0-9a-f]{64}")
+EXPECTED_MODULES = {
+    "nvidia.ko", "nvidia-drm.ko", "nvidia-modeset.ko",
+    "nvidia-peermem.ko", "nvidia-uvm.ko",
+}
 
 
 def unique_object(pairs):
@@ -102,6 +108,155 @@ def bounded_message(value):
     )
 
 
+def validate_success_proofs(document, target):
+    validation = document.get("validation")
+    validated_packages = validation.get("packages") if isinstance(validation, dict) else None
+    if not isinstance(validated_packages, list) or not 2 <= len(validated_packages) <= 64:
+        raise ValueError("success validation package set is malformed")
+    expected_packages = {}
+    for record in validated_packages:
+        if (not isinstance(record, dict)
+                or not {"name", "fullVersion", "sha256"} <= set(record)
+                or not isinstance(record["name"], str)
+                or PACKAGE_IDENTITY.fullmatch(record["name"]) is None
+                or record["name"] in expected_packages
+                or not isinstance(record["fullVersion"], str)
+                or PACKAGE_IDENTITY.fullmatch(record["fullVersion"]) is None
+                or not isinstance(record["sha256"], str)
+                or HEX_SHA256.fullmatch(record["sha256"]) is None):
+            raise ValueError("success validation package set is malformed")
+        expected_packages[record["name"]] = (record["fullVersion"], record["sha256"])
+
+    modules = document["moduleVerification"]
+    module_records = modules.get("modules") if isinstance(modules, dict) else None
+    if (modules.get("schemaVersion") != 1
+            or modules.get("reason") != "installed_modules_verified"
+            or not isinstance(module_records, list)
+            or len(module_records) != len(EXPECTED_MODULES)):
+        raise ValueError("success module verification is malformed")
+    seen_modules = set()
+    for record in module_records:
+        if not isinstance(record, dict):
+            raise ValueError("success module verification is malformed")
+        name = record.get("moduleName")
+        representation = record.get("representation")
+        expected_hash = record.get("expectedPayloadSha256")
+        actual_hash = record.get("actualPayloadSha256")
+        relative = record.get("targetRelativePath")
+        compressed_size = record.get("compressedSizeBytes")
+        if (not isinstance(name, str)
+                or name not in EXPECTED_MODULES or name in seen_modules
+                or representation not in {".ko", ".ko.zst"}
+                or not isinstance(relative, str)
+                or Path(relative).is_absolute() or ".." in Path(relative).parts
+                or not relative.startswith(
+                    f"usr/lib/modules/{target['kernelVersion']}/updates/"
+                )
+                or Path(relative).name != name + (".zst" if representation == ".ko.zst" else "")
+                or not isinstance(expected_hash, str)
+                or HEX_SHA256.fullmatch(expected_hash) is None
+                or actual_hash != expected_hash
+                or record.get("expectedMode") != "0644"
+                or record.get("actualMode") != "0644"
+                or record.get("expectedUid") != 0 or record.get("actualUid") != 0
+                or record.get("expectedGid") != 0 or record.get("actualGid") != 0
+                or record.get("invalidFields") != []
+                or record.get("decompressionStatus") != (
+                    "verified" if representation == ".ko.zst" else "not-required"
+                )
+                or not isinstance(compressed_size, int)
+                or isinstance(compressed_size, bool)
+                or not 0 < compressed_size <= 1024 * 1024 * 1024):
+            raise ValueError("success module verification is malformed")
+        seen_modules.add(name)
+    if seen_modules != EXPECTED_MODULES:
+        raise ValueError("success module verification is incomplete")
+
+    userspace = document["userspaceVerification"]
+    package_records = userspace.get("packages") if isinstance(userspace, dict) else None
+    if (userspace.get("schemaVersion") != 1
+            or userspace.get("reason") != "installed_userspace_verified"
+            or not isinstance(package_records, list)
+            or len(package_records) != len(expected_packages)):
+        raise ValueError("success userspace verification is malformed")
+    actual_packages = {}
+    for record in package_records:
+        if not isinstance(record, dict):
+            raise ValueError("success userspace verification is malformed")
+        name = record.get("packageName")
+        if (not isinstance(name, str)
+                or PACKAGE_IDENTITY.fullmatch(name) is None
+                or name in actual_packages
+                or any(record.get(field) is not True for field in (
+                    "packageQueryVerified", "pacmanIntegrityVerified", "payloadVerified"
+                ))
+                or any(not isinstance(record.get(field), int)
+                       or isinstance(record.get(field), bool)
+                       or not 0 <= record[field] <= 250_000
+                       for field in (
+                           "directories", "regularFiles", "symlinks", "hardlinks",
+                           "sharedLibraries",
+                       ))):
+            raise ValueError("success userspace verification is malformed")
+        actual_packages[name] = (record.get("version"), record.get("packageSha256"))
+    database = userspace.get("pacmanDatabase")
+    firmware = userspace.get("gspFirmware")
+    if (actual_packages != expected_packages
+            or not isinstance(database, dict)
+            or database.get("path") != "/usr/lib/holo/pacmandb"
+            or database.get("status") != "verified"
+            or database.get("consistencyVerified") is not True
+            or database.get("verifiedPackageCount") != len(expected_packages)
+            or not isinstance(firmware, dict)
+            or firmware.get("status") != "verified"
+            or firmware.get("version") != target["nvidiaVersion"]
+            or not isinstance(firmware.get("targetRelativeFiles"), list)
+            or not firmware["targetRelativeFiles"]
+            or any(not isinstance(relative, str)
+                   or not relative.startswith(
+                       f"usr/lib/firmware/nvidia/{target['nvidiaVersion']}/"
+                   )
+                   or Path(relative).is_absolute()
+                   or ".." in Path(relative).parts
+                   for relative in firmware["targetRelativeFiles"])):
+        raise ValueError("success userspace verification is inconsistent")
+
+    workspace = document["initramfsWorkspace"]
+    if (workspace.get("schemaVersion") != 1
+            or workspace.get("reason") != "initramfs_workspace_available"
+            or workspace.get("phase") != "mounted_workspace"
+            or workspace.get("condition") != "available"
+            or workspace.get("mode") != "1777"):
+        raise ValueError("success workspace verification is malformed")
+
+    initramfs = document["initramfsVerification"]
+    if (initramfs.get("schemaVersion") != 1
+            or initramfs.get("kernelVersion") != target["kernelVersion"]):
+        raise ValueError("success initramfs verification identity is malformed")
+    tools = initramfs.get("tools")
+    if not isinstance(tools, dict) or set(tools) != {"mkinitcpio", "lsinitcpio"}:
+        raise ValueError("success initramfs tool verification is malformed")
+    for name, record in tools.items():
+        if (not isinstance(record, dict)
+                or record.get("path") != f"/usr/bin/{name}"
+                or not isinstance(record.get("sizeBytes"), int)
+                or isinstance(record["sizeBytes"], bool)
+                or not 0 < record["sizeBytes"] <= 8 * 1024 * 1024
+                or not isinstance(record.get("sha256"), str)
+                or HEX_SHA256.fullmatch(record["sha256"]) is None):
+            raise ValueError("success initramfs tool verification is malformed")
+    config = initramfs.get("config")
+    if (not isinstance(config, dict)
+            or config.get("path")
+            != "/etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf"
+            or not isinstance(config.get("sizeBytes"), int)
+            or isinstance(config["sizeBytes"], bool)
+            or not 0 < config["sizeBytes"] <= 1024 * 1024
+            or not isinstance(config.get("sha256"), str)
+            or HEX_SHA256.fullmatch(config["sha256"]) is None):
+        raise ValueError("success initramfs configuration verification is malformed")
+
+
 def validate_result(path):
     document = load_document(path, MAX_RESULT_BYTES)
     required = {"schemaVersion", "status", "reason", "message", "phase", "trust",
@@ -134,8 +289,8 @@ def validate_result(path):
         raise ValueError("result target is malformed")
     inputs = document["inputs"]
     input_keys = {"archive", "provenance", "nvidiaUtils", "lib32NvidiaUtils"}
-    if (not isinstance(inputs, dict) or set(inputs) != input_keys
-            or any(not plain_filename(value) for value in inputs.values())):
+    if (not isinstance(inputs, dict) or not input_keys <= set(inputs)
+            or any(not plain_filename(inputs[field]) for field in input_keys)):
         raise ValueError("result inputs are malformed")
     cleanup = document["cleanup"]
     cleanup_required = {"mountsReleased", "runtimeMountsExpected",
@@ -157,7 +312,7 @@ def validate_result(path):
                     target["steamosVersion"], target["kernelVersion"],
                     target["nvidiaVersion"],
                 }
-                or any(value is None for value in inputs.values())):
+                or any(inputs[field] is None for field in input_keys)):
             raise ValueError("success lacks exact target or input identity")
         if (not cleanup["mountsReleased"] or not cleanup["compressionPolicyRestored"]
                 or cleanup["runtimeMountsExpected"] != cleanup["runtimeMountsReleased"]):
@@ -173,6 +328,7 @@ def validate_result(path):
             value = document.get(field)
             if not isinstance(value, dict) or value.get("status") != status:
                 raise ValueError(f"success lacks {field}")
+        validate_success_proofs(document, target)
         if document["initramfsWorkspace"].get("phase") != "mounted_workspace":
             raise ValueError("success workspace phase is invalid")
         initramfs = document["initramfsVerification"]
@@ -181,6 +337,19 @@ def validate_result(path):
                 or not isinstance(initramfs.get("images"), list)
                 or not initramfs["images"]
                 or any(not isinstance(image, dict)
+                       or not plain_filename(image.get("filename"))
+                       or image.get("filename") is None
+                       or not isinstance(image.get("sizeBytes"), int)
+                       or isinstance(image["sizeBytes"], bool)
+                       or not 0 < image["sizeBytes"] <= 2 * 1024 * 1024 * 1024
+                       or not isinstance(image.get("entries"), int)
+                       or isinstance(image["entries"], bool)
+                       or not 1 <= image["entries"] <= 200_000
+                       or any(not isinstance(image.get(field), str)
+                              or HEX_SHA256.fullmatch(image[field]) is None
+                              for field in ("sha256", "listingSha256"))
+                       or image.get("configPath")
+                       != "etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf"
                        or not isinstance(image.get("modules"), dict)
                        or set(image["modules"]) != set(INITRAMFS_REQUIRED_MODULES)
                        for image in initramfs["images"])):
@@ -193,7 +362,7 @@ def validate_result(path):
                     target["steamosVersion"], target["kernelVersion"],
                     target["nvidiaVersion"],
                 }
-                or any(value is None for value in inputs.values())):
+                or any(inputs[field] is None for field in input_keys)):
             raise ValueError("validated result lacks exact target or input identity")
     elif document["status"] == "cancelled" and document["reason"] != "cancelled":
         raise ValueError("cancelled terminal state is inconsistent")
@@ -259,7 +428,7 @@ def main():
     try:
         result = validate_result(options.result)
         records = validate_progress(options.progress)
-    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as error:
+    except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError) as error:
         raise SystemExit(f"installer contract rejected: {error}")
     print(json.dumps({"schemaVersion": 1, "status": "verified",
                       "terminalStatus": result["status"], "progressRecords": records},

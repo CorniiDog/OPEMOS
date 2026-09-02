@@ -38,20 +38,84 @@ def main():
                 "archive": "modules.tar.gz", "provenance": "provenance.json",
                 "nvidiaUtils": "nvidia-utils.pkg.tar.zst",
                 "lib32NvidiaUtils": "lib32-nvidia-utils.pkg.tar.zst",
+                "futureAdditiveInput": {"accepted": True},
             },
             "cleanup": {"mountsReleased": True, "runtimeMountsExpected": 4,
                         "runtimeMountsReleased": 4, "compressionPolicyRestored": True},
-            "validation": {"status": "verified"},
-            "moduleVerification": {"status": "verified"},
-            "userspaceVerification": {"status": "verified"},
-            "initramfsWorkspace": {"status": "verified", "phase": "mounted_workspace"},
+            "validation": {"status": "verified", "packages": [
+                {"name": "nvidia-utils", "fullVersion": "575.64.05-2", "sha256": "1" * 64},
+                {"name": "lib32-nvidia-utils", "fullVersion": "575.64.05-1", "sha256": "2" * 64},
+            ]},
+            "moduleVerification": {
+                "schemaVersion": 1, "status": "verified",
+                "reason": "installed_modules_verified",
+                "modules": [{
+                    "moduleName": name, "representation": ".ko.zst",
+                    "targetRelativePath": (
+                        "usr/lib/modules/6.16.12-valve24.4-1-neptune-616-gabc/"
+                        f"updates/open-gpu-kernel-modules-steamos/{name}.zst"
+                    ),
+                    "expectedPayloadSha256": str(index) * 64,
+                    "actualPayloadSha256": str(index) * 64,
+                    "expectedMode": "0644", "actualMode": "0644",
+                    "expectedUid": 0, "actualUid": 0,
+                    "expectedGid": 0, "actualGid": 0,
+                    "compressedSizeBytes": 1,
+                    "invalidFields": [], "decompressionStatus": "verified",
+                } for index, name in enumerate(sorted({
+                    "nvidia.ko", "nvidia-drm.ko", "nvidia-modeset.ko",
+                    "nvidia-peermem.ko", "nvidia-uvm.ko",
+                }), 1)],
+            },
+            "userspaceVerification": {
+                "schemaVersion": 1, "status": "verified",
+                "reason": "installed_userspace_verified",
+                "packages": [{
+                    "packageName": "nvidia-utils", "version": "575.64.05-2",
+                    "packageSha256": "1" * 64, "packageQueryVerified": True,
+                    "pacmanIntegrityVerified": True, "payloadVerified": True,
+                    "directories": 1, "regularFiles": 1, "symlinks": 0,
+                    "hardlinks": 0, "sharedLibraries": 1,
+                }, {
+                    "packageName": "lib32-nvidia-utils", "version": "575.64.05-1",
+                    "packageSha256": "2" * 64, "packageQueryVerified": True,
+                    "pacmanIntegrityVerified": True, "payloadVerified": True,
+                    "directories": 1, "regularFiles": 1, "symlinks": 0,
+                    "hardlinks": 0, "sharedLibraries": 1,
+                }],
+                "pacmanDatabase": {"path": "/usr/lib/holo/pacmandb",
+                                   "status": "verified", "consistencyVerified": True,
+                                   "verifiedPackageCount": 2},
+                "gspFirmware": {"status": "verified", "version": "575.64.05",
+                                "targetRelativeFiles": ["usr/lib/firmware/nvidia/575.64.05/gsp.bin"]},
+            },
+            "initramfsWorkspace": {
+                "schemaVersion": 1, "status": "verified",
+                "reason": "initramfs_workspace_available",
+                "phase": "mounted_workspace", "condition": "available", "mode": "1777",
+            },
             "initramfsVerification": {
-                "status": "verified",
+                "schemaVersion": 1, "status": "verified",
+                "kernelVersion": "6.16.12-valve24.4-1-neptune-616-gabc",
+                "tools": {
+                    "mkinitcpio": {"path": "/usr/bin/mkinitcpio", "sizeBytes": 1,
+                                   "sha256": "3" * 64},
+                    "lsinitcpio": {"path": "/usr/bin/lsinitcpio", "sizeBytes": 1,
+                                   "sha256": "4" * 64},
+                },
+                "config": {
+                    "path": "/etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf",
+                    "sizeBytes": 1, "sha256": "5" * 64,
+                },
                 "requiredModules": [
                     "nvidia.ko", "nvidia-modeset.ko", "nvidia-uvm.ko", "nvidia-drm.ko",
                 ],
                 "rootfsOnlyModules": ["nvidia-peermem.ko"],
-                "images": [{"modules": {
+                "images": [{
+                    "filename": "initramfs-linux-neptune.img", "sizeBytes": 1,
+                    "sha256": "6" * 64, "listingSha256": "7" * 64, "entries": 1,
+                    "configPath": "etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf",
+                    "modules": {
                     "nvidia.ko": "usr/lib/modules/kernel/nvidia.ko.zst",
                     "nvidia-modeset.ko": "usr/lib/modules/kernel/nvidia-modeset.ko.zst",
                     "nvidia-uvm.ko": "usr/lib/modules/kernel/nvidia-uvm.ko.zst",
@@ -72,6 +136,26 @@ def main():
         for mutate in (
             lambda value: value["cleanup"].update(runtimeMountsReleased=3),
             lambda value: value.pop("moduleVerification"),
+            lambda value: value["moduleVerification"].update(modules=[]),
+            lambda value: value["userspaceVerification"].update(packages=[]),
+            lambda value: value["userspaceVerification"]["pacmanDatabase"].update(
+                consistencyVerified=False
+            ),
+            lambda value: value["moduleVerification"]["modules"][0].update(
+                moduleName=[]
+            ),
+            lambda value: value["moduleVerification"]["modules"][0].update(
+                actualPayloadSha256="f" * 64
+            ),
+            lambda value: value["moduleVerification"]["modules"][0].update(
+                targetRelativePath="../nvidia.ko.zst"
+            ),
+            lambda value: value["userspaceVerification"]["packages"][0].update(
+                packageName=[]
+            ),
+            lambda value: value["userspaceVerification"]["packages"][0].update(
+                version="575.64.05-99"
+            ),
             lambda value: value["initramfsVerification"]["requiredModules"].append(
                 "nvidia-peermem.ko"
             ),
@@ -81,6 +165,15 @@ def main():
             lambda value: value["initramfsVerification"]["images"][0][
                 "modules"
             ].pop("nvidia-drm.ko"),
+            lambda value: value["initramfsVerification"].update(
+                kernelVersion="wrong-kernel"
+            ),
+            lambda value: value["initramfsVerification"]["tools"].pop(
+                "mkinitcpio"
+            ),
+            lambda value: value["initramfsVerification"]["images"][0].update(
+                sha256="not-a-hash"
+            ),
             lambda value: value.update(schemaVersion=2),
         ):
             broken = json.loads(json.dumps(document))
