@@ -34,6 +34,24 @@ COMMAND_PATH = re.compile(
 )
 
 
+def relative_luminance(value: str) -> float:
+    channels = [int(value[index:index + 2], 16) / 255 for index in (1, 3, 5)]
+    linear = [channel / 12.92 if channel <= 0.04045
+              else ((channel + 0.055) / 1.055) ** 2.4 for channel in channels]
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+
+def contrast_ratio(first: str, second: str) -> float:
+    brighter, darker = sorted(
+        (relative_luminance(first), relative_luminance(second)), reverse=True
+    )
+    return (brighter + 0.05) / (darker + 0.05)
+
+
+def css_colors(stylesheet: str, variable: str) -> list[str]:
+    return re.findall(rf"--{re.escape(variable)}:\s*(#[0-9a-fA-F]{{6}});", stylesheet)
+
+
 def front_matter(text: str, path: Path) -> dict[str, str]:
     lines = text.splitlines()
     assert lines and lines[0] == "---", f"missing front matter: {path}"
@@ -124,6 +142,46 @@ def main() -> None:
     assert "baseurl: /open-gpu-kernel-modules-steamos-support" in config
     assert "title: OPEMOS" in config
     assert "Unofficial community-built" in config
+
+    stylesheet = (DOCS / "assets/main.scss").read_text(encoding="utf-8")
+    assert "--brand-gradient:" in stylesheet
+    assert ".site-header::before," in stylesheet
+    assert ".site-footer::before" in stylesheet
+    palettes = {
+        "page-background": css_colors(stylesheet, "page-background"),
+        "text-primary": css_colors(stylesheet, "text-primary"),
+        "text-muted": css_colors(stylesheet, "text-muted"),
+        "steam-blue": css_colors(stylesheet, "steam-blue"),
+        "nvidia-green-accessible": css_colors(
+            stylesheet, "nvidia-green-accessible"
+        ),
+        "code-background": css_colors(stylesheet, "code-background"),
+        "code-text": css_colors(stylesheet, "code-text"),
+        "syntax-comment": css_colors(stylesheet, "syntax-comment"),
+        "syntax-keyword": css_colors(stylesheet, "syntax-keyword"),
+        "syntax-string": css_colors(stylesheet, "syntax-string"),
+        "syntax-name": css_colors(stylesheet, "syntax-name"),
+        "syntax-error": css_colors(stylesheet, "syntax-error"),
+    }
+    assert all(len(colors) == 2 for colors in palettes.values()), (
+        "light and dark theme colors must use the shared palette"
+    )
+    for index in range(2):
+        background = palettes["page-background"][index]
+        for role in (
+            "text-primary", "text-muted", "steam-blue", "nvidia-green-accessible"
+        ):
+            assert contrast_ratio(palettes[role][index], background) >= 4.5, (
+                f"{role} lacks WCAG AA contrast in palette {index}"
+            )
+        code_background = palettes["code-background"][index]
+        for role in (
+            "code-text", "syntax-comment", "syntax-keyword", "syntax-string",
+            "syntax-name", "syntax-error",
+        ):
+            assert contrast_ratio(palettes[role][index], code_background) >= 4.5, (
+                f"{role} lacks WCAG AA code contrast in palette {index}"
+            )
 
     footer = (DOCS / "_includes/footer.html").read_text(encoding="utf-8")
     assert "not affiliated with, endorsed by" in footer

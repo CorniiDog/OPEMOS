@@ -4,41 +4,125 @@
 @import "minima";
 
 :root {
-  --steam-blue: #1679b8;
+  color-scheme: light;
+  --steam-blue: #0875b5;
   --steam-blue-bright: #1a9fff;
-  --steam-deep: #171d25;
   --nvidia-green: #76b900;
-  --nvidia-green-dark: #4f7f00;
+  --nvidia-green-accessible: #426b00;
+  --page-background: #ffffff;
+  --surface: #f3f6f9;
+  --surface-strong: #e7edf3;
+  --text-primary: #1d2730;
+  --text-muted: #526271;
+  --border: #bdc9d4;
+  --code-background: #eef2f6;
+  --code-text: #263849;
+  --syntax-comment: #526271;
+  --syntax-keyword: #426b00;
+  --syntax-string: #805500;
+  --syntax-name: #075f91;
+  --syntax-error: #a12626;
+  --brand-gradient: linear-gradient(
+    90deg,
+    var(--steam-blue-bright) 0%,
+    var(--steam-blue) 48%,
+    var(--nvidia-green) 100%
+  );
 }
 
-.site-header {
-  border-top: 5px solid transparent;
-  border-image: linear-gradient(90deg, var(--steam-blue-bright) 0 55%, var(--nvidia-green) 55% 100%) 1;
+html,
+body {
+  background-color: var(--page-background);
+  color: var(--text-primary);
 }
 
-.site-title::before {
-  background: linear-gradient(90deg, var(--steam-blue-bright) 0 50%, var(--nvidia-green) 50% 100%);
-  border-radius: 999px;
-  content: "";
-  display: inline-block;
-  height: 0.45rem;
-  margin-right: 0.55rem;
-  vertical-align: 0.16rem;
-  width: 1.65rem;
+body {
+  line-height: 1.65;
 }
 
 .wrapper {
   max-width: 1080px;
 }
 
+.site-header,
+.site-footer {
+  background-color: var(--page-background);
+  border-color: var(--border);
+  position: relative;
+}
+
+.site-header {
+  border-top: 0;
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--border) 70%, transparent);
+  padding-top: 5px;
+}
+
+.site-header::before,
+.site-footer::before {
+  background: var(--brand-gradient);
+  content: "";
+  height: 5px;
+  left: 0;
+  position: absolute;
+  right: 0;
+  top: 0;
+}
+
+.site-footer {
+  border-top: 0;
+  margin-top: 2rem;
+  padding-top: calc(30px + 5px);
+}
+
+.site-title,
+.site-title:visited,
+.site-nav .page-link,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.footer-heading,
+.post-link,
+.post-link:visited {
+  color: var(--text-primary);
+}
+
+.site-title {
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.site-title::before {
+  background: var(--brand-gradient);
+  border-radius: 999px;
+  content: "";
+  display: inline-block;
+  height: 0.5rem;
+  margin-right: 0.6rem;
+  vertical-align: 0.16rem;
+  width: 1.9rem;
+}
+
 a,
 a:visited {
   color: var(--steam-blue);
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.16em;
 }
 
 a:hover,
 a:focus {
-  color: var(--nvidia-green-dark);
+  color: var(--nvidia-green-accessible);
+}
+
+a:focus-visible,
+button:focus-visible,
+summary:focus-visible {
+  border-radius: 2px;
+  outline: 3px solid color-mix(in srgb, var(--steam-blue-bright) 65%, transparent);
+  outline-offset: 3px;
 }
 
 .site-nav .page-link:hover,
@@ -47,77 +131,156 @@ a:focus {
   text-decoration-thickness: 2px;
 }
 
+.post-meta,
+.footer-col-wrapper,
+.trademark-notice {
+  color: var(--text-muted);
+}
+
+blockquote {
+  background: var(--surface);
+  border-left-color: var(--nvidia-green);
+  color: var(--text-muted);
+  padding-bottom: 0.75rem;
+  padding-top: 0.75rem;
+}
+
+hr {
+  border-color: var(--border);
+}
+
 table {
+  border-color: var(--border);
+  color: var(--text-primary);
   display: block;
   overflow-x: auto;
   width: 100%;
+}
+
+th,
+td {
+  border-color: var(--border);
+}
+
+th {
+  background-color: var(--surface-strong);
+  color: var(--text-primary);
+}
+
+table tr:nth-child(even) {
+  background-color: var(--surface);
+}
+
+pre,
+code,
+.highlight {
+  background-color: var(--code-background);
+  border-color: var(--border);
+  color: var(--code-text);
 }
 
 code {
   overflow-wrap: anywhere;
 }
 
-blockquote {
-  border-left-color: var(--nvidia-green);
+pre code {
+  background: transparent;
+  border: 0;
 }
 
-.site-footer {
-  border-top: 3px solid transparent;
-  border-image: linear-gradient(90deg, var(--steam-blue-bright), var(--nvidia-green)) 1;
+.highlight span {
+  background-color: transparent;
+  color: var(--code-text);
+}
+
+.highlight .c,
+.highlight .cm,
+.highlight .c1,
+.highlight .cs {
+  color: var(--syntax-comment);
+}
+
+.highlight .k,
+.highlight .kc,
+.highlight .kd,
+.highlight .kn,
+.highlight .kp,
+.highlight .kr,
+.highlight .kt {
+  color: var(--syntax-keyword);
+}
+
+.highlight .s,
+.highlight .s1,
+.highlight .s2,
+.highlight .se,
+.highlight .sh,
+.highlight .mi,
+.highlight .mf,
+.highlight .mh,
+.highlight .mo {
+  color: var(--syntax-string);
+}
+
+.highlight .na,
+.highlight .nb,
+.highlight .nc,
+.highlight .nf,
+.highlight .nt {
+  color: var(--syntax-name);
+}
+
+.highlight .err,
+.highlight .gr {
+  color: var(--syntax-error);
 }
 
 .trademark-notice {
-  color: #5b6570;
-  font-size: 0.85rem;
-  line-height: 1.5;
+  font-size: 0.88rem;
+  line-height: 1.55;
   max-width: 52rem;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--steam-blue-bright) 28%, transparent);
+}
+
+@media screen and (max-width: 600px) {
+  .site-nav {
+    background-color: var(--page-background);
+    border-color: var(--border);
+  }
+
+  .site-nav .menu-icon > svg path {
+    fill: var(--text-primary);
+  }
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
+    --page-background: #121922;
+    --surface: #1b2733;
+    --surface-strong: #263746;
+    --text-primary: #edf2f6;
+    --text-muted: #b9c5cf;
+    --border: #506274;
+    --code-background: #0d141c;
+    --code-text: #e4ebf1;
+    --steam-blue: #72c9f5;
+    --nvidia-green-accessible: #a6dc63;
+    --syntax-comment: #b4c0ca;
+    --syntax-keyword: #a6dc63;
+    --syntax-string: #f3c969;
+    --syntax-name: #7dd3fc;
+    --syntax-error: #ff8a8a;
   }
+}
 
-  body,
-  .site-header,
-  .site-footer {
-    background-color: var(--steam-deep);
-    color: #d6d7d8;
-  }
-
-  .site-title,
-  .site-title:visited,
-  .site-nav .page-link {
-    color: #f1f3f4;
-  }
-
-  a,
-  a:visited {
-    color: #66c0f4;
-  }
-
-  a:hover,
-  a:focus {
-    color: #9bdc45;
-  }
-
-  pre,
-  code,
-  .highlight {
-    background-color: #10151c;
-    border-color: #344454;
-  }
-
-  table tr:nth-child(even) {
-    background-color: #202a35;
-  }
-
-  th,
-  td {
-    border-color: #344454;
-  }
-
-  .trademark-notice {
-    color: #aeb8c2;
+@media (forced-colors: active) {
+  .site-header::before,
+  .site-footer::before,
+  .site-title::before {
+    background: CanvasText;
   }
 }
