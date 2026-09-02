@@ -176,6 +176,10 @@ def main() -> None:
     assert "--brand-gradient:" in stylesheet
     assert ".site-header::before," in stylesheet
     assert ".site-footer::before" in stylesheet
+    assert ".opemos-hero" in stylesheet and ".opemos-wordmark" in stylesheet
+    index = (DOCS / "index.md").read_text(encoding="utf-8")
+    assert 'class="opemos-hero"' in index
+    assert 'class="opemos-wordmark"' in index
     palettes = {
         "page-background": css_colors(stylesheet, "page-background"),
         "text-primary": css_colors(stylesheet, "text-primary"),

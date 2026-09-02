@@ -1,13 +1,24 @@
 ---
-layout: home
-title: Overview
+layout: default
+title: OPEMOS
 description: Documentation for exact-kernel NVIDIA open-module builds and SteamOS image installation.
 ---
 
-**OPEMOS** stands for **Open Packaging for Exact-kernel Modules on SteamOS**.
-It is an unofficial community-built NVIDIA open-module toolkit that builds,
-authenticates, publishes, and installs modules for an **exact** SteamOS release,
-Neptune kernel, architecture, and NVIDIA userspace version. It also defines the
+<section class="opemos-hero" aria-labelledby="opemos-hero-title">
+  <div class="opemos-wordmark"><span aria-hidden="true"></span>OPEMOS</div>
+  <p class="opemos-kicker">Open Packaging for Exact-kernel Modules on SteamOS</p>
+  <h1 id="opemos-hero-title">Exact NVIDIA modules.<br>Built for the kernel you actually have.</h1>
+  <p class="opemos-summary">
+    Build, authenticate, publish, and install NVIDIA open kernel modules for an
+    exact SteamOS release, Neptune kernel, architecture, and userspace version.
+  </p>
+  <div class="opemos-actions">
+    <a class="opemos-button opemos-button-primary" href="{{ '/getting-started.html' | relative_url }}">Steam Deck guide</a>
+    <a class="opemos-button opemos-button-secondary" href="{{ '/developer-guide.html' | relative_url }}">Developer guide</a>
+  </div>
+</section>
+
+OPEMOS is an unofficial community-built toolkit. It also defines the
 machine-readable boundary used by SteamOS NVIDIA Image Builder.
 
 > This is active development software. Exact-kernel validation has passed for
