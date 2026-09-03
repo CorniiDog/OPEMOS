@@ -90,6 +90,11 @@ index in the same commit.
   attempt resets, regressions, additive fields/phases, hostile JSON, and line/
   stream limits. Keep host operation/session binding and all visual progress
   presentation in OPEMOS.EXE.
+* [x] Publish the complete additive installer-validation schema-1 proof and a
+  deterministic bounded fixture matrix. Preserve direct/authenticated-bundle
+  source identity through the terminal result and enforce closed records for
+  cryptographic identities, packages, dependencies, modules, and reviewed
+  gaming payloads.
 * [ ] Publish the remaining validation, verification-record, receipt, and
   gaming-payload schemas from OPEMOS. The additive installer-result schema 1
   envelope and mandatory success proofs are now published. Generate or

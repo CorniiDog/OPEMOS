@@ -2480,6 +2480,7 @@ def main():
         assert cloned.returncode == 0, cloned.stderr
         assert json.loads(cloned_verification.read_text())["receiptId"] == receipt["receiptId"]
         assert successful["validation"]["keyring"]["name"] == "approved.gpg"
+        assert successful["validation"]["inputSource"] == valid["inputSource"]
         assert successful["validation"]["provenanceSha256"] == valid["provenanceSha256"]
         assert successful["validation"]["userspaceLock"] == {
             "name": paths["userspace_lock"].name,

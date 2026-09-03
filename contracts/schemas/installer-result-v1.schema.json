@@ -313,43 +313,6 @@
       "required": ["schemaVersion", "status", "reason", "pacmanDatabase", "packages", "gspFirmware"],
       "type": "object"
     },
-    "validationModule": {
-      "properties": {
-        "name": {"$ref": "#/$defs/moduleName"},
-        "payloadSha256": {"$ref": "#/$defs/hash"}
-      },
-      "required": ["name", "payloadSha256"],
-      "type": "object"
-    },
-    "validationPackage": {
-      "properties": {
-        "fullVersion": {"$ref": "#/$defs/packageToken"},
-        "name": {"$ref": "#/$defs/packageToken"},
-        "sha256": {"$ref": "#/$defs/hash"}
-      },
-      "required": ["name", "fullVersion", "sha256"],
-      "type": "object"
-    },
-    "validationProof": {
-      "properties": {
-        "modules": {
-          "items": {"$ref": "#/$defs/validationModule"},
-          "maxItems": 5,
-          "minItems": 5,
-          "type": "array",
-          "uniqueItems": true
-        },
-        "packages": {
-          "items": {"$ref": "#/$defs/validationPackage"},
-          "maxItems": 64,
-          "minItems": 2,
-          "type": "array",
-          "uniqueItems": true
-        }
-      },
-      "required": ["packages", "modules"],
-      "type": "object"
-    },
     "version": {
       "maxLength": 64,
       "pattern": "^(?:unknown|[0-9]+\\.[0-9]+(?:\\.[0-9]+)?)$",
@@ -386,7 +349,7 @@
           "phase": {"const": "complete"},
           "reason": {"const": "install_complete"},
           "userspaceVerification": {"$ref": "#/$defs/userspaceVerification"},
-          "validation": {"$ref": "#/$defs/validationProof"}
+          "validation": {"$ref": "installer-validation-v1.schema.json"}
         },
         "required": [
           "validation",
@@ -439,7 +402,7 @@
       "enum": ["pending-validation", "development-unverified", "locally-built-verified", "certified-published"]
     },
     "userspaceVerification": {"type": "object"},
-    "validation": {"type": "object"}
+    "validation": {"$ref": "installer-validation-v1.schema.json"}
   },
   "required": ["schemaVersion", "status", "reason", "message", "phase", "trust", "target", "inputs", "cleanup"],
   "title": "OPEMOS offline installer result v1",

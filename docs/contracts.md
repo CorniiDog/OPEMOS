@@ -221,6 +221,29 @@ and reaps its subprocess group; OPEMOS.EXE owns binding received bytes to the
 correct host operation and discarding out-of-session data. Frontends also own
 labels, progress weights, animation, layout, and accessibility.
 
+## Validation proof
+
+[`installer-validation-v1.schema.json`](https://github.com/CorniiDog/OPEMOS/blob/main/contracts/schemas/installer-validation-v1.schema.json)
+defines the complete verified `validation` object embedded in validation-only
+and successful installation results. It preserves whether inputs arrived
+directly or from one exact authenticated cache bundle, including that bundle's
+SHA-256 identity. Archive/provenance hashes, reviewed lock and keyring,
+packages, dependency closure, five module hashes, Holo database identity,
+`/boot` and `/efi` policy, storage admission, compression evidence, and the
+gaming-payload selection are mandatory.
+
+Top-level validation, input-source, boot, storage, and compression objects are
+additive. Closed cryptographic identity, package, dependency, module, and
+reviewed gaming-profile records reject unknown fields because an ignored field
+could otherwise create two interpretations of the authenticated identity.
+Cross-field equality, uniqueness, accounting, and measured-Btrfs invariants are
+enforced by `write_install_result.py`; JSON Schema alone is not the mutation
+authority.
+
+`generate_installer_validation_fixtures.py` publishes the deterministic
+cross-frontend acceptance matrix. Its expected subset freezes acceptance, not
+human-readable wording.
+
 Important phases include hashing, Holo database, archive layout, dependency
 closure, storage calculation, compression measurement, pacman policy, runtime
 mounts, userspace install/verification, module install/verification, GRUB,

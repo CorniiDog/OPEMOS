@@ -39,6 +39,12 @@ INITRAMFS_REQUIRED_MODULES = (
     "nvidia.ko", "nvidia-modeset.ko", "nvidia-uvm.ko", "nvidia-drm.ko",
 )
 INITRAMFS_ROOTFS_ONLY_MODULES = ("nvidia-peermem.ko",)
+ROOT_METADATA_RESERVE_BYTES = 64 * 1024 * 1024
+VAR_RESERVE_BYTES = 16 * 1024 * 1024
+REQUIRED_KERNEL_ARGUMENTS = (
+    "rd.driver.blacklist=nouveau", "modprobe.blacklist=nouveau",
+    "nvidia-drm.modeset=1", "nvidia-drm.fbdev=1",
+)
 MODULE_MISMATCH_FIELDS = (
     "presence", "representation", "payloadSha256", "mode", "uid", "gid",
     "decompression",
@@ -586,12 +592,22 @@ def load_target_execution_failure(path):
 
 def validate_verified_metadata(validation):
     required = {
-        "archiveSha256", "provenanceSha256", "userspaceLock",
+        "inputSource", "archiveSha256", "provenanceSha256", "userspaceLock",
         "pacmanDatabase", "boot", "keyring", "packages", "modules", "storage",
         "packageDependencyClosure", "compression", "gamingPayload",
     }
     if not required <= validation.keys():
         raise SystemExit("Verified installation metadata is incomplete.")
+    input_source = validation["inputSource"]
+    if (not isinstance(input_source, dict)
+            or not {"mode", "bundleCacheId"} <= set(input_source)
+            or input_source.get("mode") not in {"direct", "authenticated-bundle"}
+            or (input_source["mode"] == "direct"
+                and input_source.get("bundleCacheId") is not None)
+            or (input_source["mode"] == "authenticated-bundle"
+                and (not isinstance(input_source.get("bundleCacheId"), str)
+                     or HEX_SHA256.fullmatch(input_source["bundleCacheId"]) is None))):
+        raise SystemExit("Verified installation input-source metadata is invalid.")
     for field in ("archiveSha256", "provenanceSha256"):
         if not isinstance(validation[field], str) or not HEX_SHA256.fullmatch(
             validation[field]
@@ -652,6 +668,37 @@ def validate_verified_metadata(validation):
             or isinstance(database["packageCount"], bool)
             or not 1 <= database["packageCount"] <= 250_000):
         raise SystemExit("Verified installation pacman database metadata is invalid.")
+    boot = validation["boot"]
+    if (not isinstance(boot, dict)
+            or not {"rootfsBootPath", "efiMountPath", "grubConfiguration",
+                    "requiredKernelArguments"} <= set(boot)
+            or boot.get("rootfsBootPath") != "/boot"
+            or boot.get("efiMountPath") != "/efi"
+            or boot.get("grubConfiguration") != "/efi/EFI/steamos/grub.cfg"
+            or boot.get("requiredKernelArguments") != list(REQUIRED_KERNEL_ARGUMENTS)):
+        raise SystemExit("Verified installation boot policy is invalid.")
+    closure = validation["packageDependencyClosure"]
+    if (not isinstance(closure, list) or not 2 <= len(closure) <= 4096
+            or any(not isinstance(record, dict)
+                   or set(record) != {"name", "version", "source"}
+                   or not isinstance(record.get("name"), str)
+                   or re.fullmatch(r"[A-Za-z0-9@._+:-]{1,256}", record["name"])
+                   is None
+                   or not isinstance(record.get("version"), str)
+                   or re.fullmatch(r"[A-Za-z0-9@._+:-]{1,256}", record["version"])
+                   is None
+                   or record.get("source") not in {"incoming", "installed"}
+                   for record in closure)
+            or len({record["name"] for record in closure}) != len(closure)):
+        raise SystemExit("Verified installation dependency closure is invalid.")
+    incoming_closure = {
+        record["name"]: record["version"]
+        for record in closure if record["source"] == "incoming"
+    }
+    if incoming_closure != {
+        package["name"]: package["fullVersion"] for package in packages
+    }:
+        raise SystemExit("Verified installation dependency closure is inconsistent.")
     modules = validation["modules"]
     if (not isinstance(modules, list) or len(modules) != len(EXPECTED_MODULES)
             or any(not isinstance(module, dict)
@@ -754,11 +801,41 @@ def validate_verified_metadata(validation):
         "packageInstalledBytes", "packageCompressedBytes", "packageReplacedBytes",
         "moduleInstalledBytes", "moduleReplacedBytes", "initramfsReserveBytes",
     }
+    compression_required = {
+        "filesystem", "enabled", "options", "invalidOptions",
+        "writeIncompatibleOptions", "admissionBasis",
+        "compressionSavingsCreditedBytes", "declaredPackageBytes",
+        "packageArchiveBytes", "packageArchiveSavingsBytes",
+        "declaredSizesLikelyConservative", "assessment",
+        "pacmanCheckSpaceBypassAuthorized", "pacmanCheckSpacePolicy",
+    }
     if (not isinstance(storage, dict) or not base_storage <= storage.keys()
             or any(not isinstance(storage[field], int) or isinstance(storage[field], bool)
-                   or storage[field] < 0 for field in base_storage)
-            or not isinstance(compression, dict)):
+                   or not 0 <= storage[field] <= 2**63 - 1 for field in base_storage)
+            or storage["varRequiredBytes"] != VAR_RESERVE_BYTES
+            or not isinstance(compression, dict)
+            or not compression_required <= compression.keys()):
         raise SystemExit("Verified installation storage metadata is invalid.")
+    for field in (
+        "compressionSavingsCreditedBytes", "declaredPackageBytes",
+        "packageArchiveBytes", "packageArchiveSavingsBytes",
+    ):
+        if (not isinstance(compression[field], int)
+                or isinstance(compression[field], bool)
+                or not 0 <= compression[field] <= 2**63 - 1):
+            raise SystemExit("Verified filesystem compression context is invalid.")
+    if (compression["declaredPackageBytes"] != storage["packageInstalledBytes"]
+            or compression["packageArchiveBytes"] != storage["packageCompressedBytes"]
+            or compression["packageArchiveSavingsBytes"] != max(
+                0, compression["declaredPackageBytes"]
+                - compression["packageArchiveBytes"]
+            )
+            or not isinstance(compression["declaredSizesLikelyConservative"], bool)
+            or compression["assessment"] not in {
+                "informational-package-archive-proxy-not-admission-credit",
+                "measured-profile-admission-ready",
+            }):
+        raise SystemExit("Verified filesystem compression context is inconsistent.")
     for option_field in ("options", "invalidOptions", "writeIncompatibleOptions"):
         options = compression.get(option_field)
         if (not isinstance(options, list) or len(options) > 8
@@ -845,7 +922,8 @@ def validate_verified_metadata(validation):
                 is None
                 or not measured_storage <= storage.keys()
                 or any(not isinstance(storage[field], int)
-                       or isinstance(storage[field], bool) or storage[field] < 0
+                       or isinstance(storage[field], bool)
+                       or not 0 <= storage[field] <= 2**63 - 1
                        for field in measured_storage)
                 or measurement.get("status") != "measured"
                 or measurement.get("schemaVersion") != 1
@@ -931,6 +1009,8 @@ def validate_verified_metadata(validation):
                     storage["initramfsReserveBytes"]
                     + storage["compressionSafetyReserveBytes"]
                 )
+                or storage["compressionSafetyReserveBytes"]
+                != ROOT_METADATA_RESERVE_BYTES
                 or storage["rootMeasuredRequiredBytes"] != (
                     storage["measuredPayloadAllocatedBytes"]
                     - storage["replacementCreditBytes"]
@@ -954,6 +1034,17 @@ def validate_verified_metadata(validation):
             raise SystemExit("Verified Btrfs measurement metadata is inconsistent.")
     elif (compression.get("admissionBasis") != "logical-uncompressed-conservative"
           or compression.get("compressionSavingsCreditedBytes") != 0
+          or compression.get("declaredSizesLikelyConservative") is not (
+              compression["enabled"]
+              and compression["packageArchiveBytes"]
+              < compression["declaredPackageBytes"]
+          )
+          or storage["rootRequiredBytes"] != (
+              max(0, storage["packageInstalledBytes"] - storage["packageReplacedBytes"])
+              + max(0, storage["moduleInstalledBytes"] - storage["moduleReplacedBytes"])
+              + storage["initramfsReserveBytes"]
+              + ROOT_METADATA_RESERVE_BYTES
+          )
           or compression.get("pacmanCheckSpaceBypassAuthorized") is not False
           or compression.get("pacmanCheckSpacePolicy") != "preserve"):
         raise SystemExit("Verified conservative compression metadata is inconsistent.")
@@ -1086,6 +1177,7 @@ def main():
         if validation.get("status") == "verified":
             validate_verified_metadata(validation)
             document["validation"] = {
+                "inputSource": validation["inputSource"],
                 "archiveSha256": validation["archiveSha256"],
                 "provenanceSha256": validation["provenanceSha256"],
                 "userspaceLock": validation["userspaceLock"],

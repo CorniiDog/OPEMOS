@@ -210,6 +210,7 @@ def validate_installer_result_compatibility_fixtures(generator):
             "missing-module-verification", "missing-userspace-verification",
             "missing-workspace-verification", "missing-initramfs-verification",
             "missing-payload-receipt", "target-proof-mismatch",
+            "module-payload-binding-mismatch",
             "unsafe-input-identity", "cleanup-incomplete", "malformed-json",
             "duplicate-json-key",
         }
@@ -322,6 +323,94 @@ def validate_installer_progress_compatibility_fixtures(generator):
             raise AssertionError("linked installer-progress fixture was accepted")
 
 
+def validate_installer_validation_compatibility_fixtures(generator):
+    outputs = []
+    for _ in range(2):
+        completed = subprocess.run(
+            [sys.executable, str(generator)], cwd="/", check=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        assert completed.stderr == b""
+        assert 1 <= len(completed.stdout) <= 512 * 1024
+        outputs.append(completed.stdout)
+    assert outputs[0] == outputs[1]
+    assert outputs[0].endswith(b"\n")
+    matrix = json.loads(
+        outputs[0], object_pairs_hook=resolver_module.unique_object,
+        parse_constant=resolver_module.reject_json_constant,
+    )
+    assert set(matrix) == {
+        "schemaVersion", "kind", "validationSchemaVersion", "unfrozenFields",
+        "cases",
+    }
+    assert matrix["schemaVersion"] == 1
+    assert matrix["kind"] == "opemos-installer-validation-compatibility-fixtures"
+    assert matrix["validationSchemaVersion"] == 1
+    assert matrix["unfrozenFields"] == ["message"]
+    cases = matrix["cases"]
+    assert isinstance(cases, list) and 1 <= len(cases) <= 64
+    base_cases = {
+        fixture["name"]: fixture["document"]
+        for fixture in cases if "document" in fixture
+    }
+    names = []
+    for fixture in cases:
+        assert isinstance(fixture, dict)
+        assert set(fixture) in (
+            {"name", "expected", "document"},
+            {"name", "expected", "documentRecipe"},
+            {"name", "expected", "rawDocument"},
+        )
+        name = fixture["name"]
+        names.append(name)
+        assert isinstance(name, str)
+        assert re.fullmatch(r"[a-z][a-z0-9-]{0,63}", name)
+        assert fixture["expected"] in ({"accepted": True}, {"accepted": False})
+        if "document" in fixture:
+            candidate = copy.deepcopy(fixture["document"])
+        elif "documentRecipe" in fixture:
+            recipe = fixture["documentRecipe"]
+            assert recipe == {
+                "kind": "extend-dependency-closure",
+                "baseCase": "valid-direct-input",
+                "additionalRecords": 4091,
+            }
+            candidate = copy.deepcopy(base_cases[recipe["baseCase"]])
+            candidate["packageDependencyClosure"].extend(
+                {"name": f"installed-{index}", "version": "1-1", "source": "installed"}
+                for index in range(recipe["additionalRecords"])
+            )
+            assert len(candidate["packageDependencyClosure"]) == 4097
+        else:
+            try:
+                candidate = resolver_module.strict_json(fixture["rawDocument"].encode())
+            except (UnicodeError, json.JSONDecodeError, ValueError):
+                accepted = False
+            else:
+                accepted = True
+            assert accepted is fixture["expected"]["accepted"], name
+            continue
+        try:
+            validate_verified_metadata(candidate)
+        except SystemExit:
+            accepted = False
+        else:
+            accepted = True
+        assert accepted is fixture["expected"]["accepted"], name
+    assert len(names) == len(set(names))
+    assert set(names) == {
+        "valid-direct-input", "valid-authenticated-bundle-input",
+        "safe-additive-fields", "missing-input-source",
+        "missing-archive-identity", "missing-boot-policy", "missing-storage",
+        "input-source-identity-mismatch", "invalid-archive-hash",
+        "unsafe-lock-filename", "boot-policy-mismatch",
+        "dependency-version-mismatch", "duplicate-package-identity",
+        "compression-storage-mismatch", "root-metadata-reserve-mismatch",
+        "var-reserve-mismatch", "dependency-closure-limit",
+        "malformed-json", "duplicate-json-key", "non-finite-json",
+    }
+
+
 def validate_resolver_fixture(document):
     assert document["schemaVersion"] == 2
     assert document["status"] in {
@@ -381,6 +470,11 @@ def main():
     result_schema = json.loads(
         (schema_root / "installer-result-v1.schema.json").read_text(encoding="utf-8")
     )
+    validation_schema = json.loads(
+        (schema_root / "installer-validation-v1.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
     assert resolver_schema["$schema"].endswith("2020-12/schema")
     assert resolver_schema["properties"]["schemaVersion"]["const"] == 2
     assert resolver_schema["unevaluatedProperties"] is True
@@ -401,6 +495,26 @@ def main():
         "modules"
     ]["minItems"] == 5
     assert result_schema["unevaluatedProperties"] is True
+    assert validation_schema["$schema"].endswith("2020-12/schema")
+    assert validation_schema["properties"]["inputSource"]["required"] == [
+        "mode", "bundleCacheId"
+    ]
+    assert set(validation_schema["required"]) == {
+        "inputSource", "archiveSha256", "provenanceSha256", "userspaceLock",
+        "pacmanDatabase", "boot", "keyring", "packages", "modules", "storage",
+        "packageDependencyClosure", "compression", "gamingPayload",
+    }
+    assert validation_schema["properties"]["packages"]["maxItems"] == 64
+    assert validation_schema["properties"]["packageDependencyClosure"][
+        "maxItems"
+    ] == 4096
+    assert validation_schema["unevaluatedProperties"] is True
+    assert result_schema["properties"]["validation"]["$ref"] == (
+        "installer-validation-v1.schema.json"
+    )
+    assert result_schema["allOf"][0]["then"]["properties"]["validation"][
+        "$ref"
+    ] == "installer-validation-v1.schema.json"
 
     validate_resolver_compatibility_fixtures(
         ROOT / "contracts/fixtures/resolver-compatibility-v2.json"
@@ -410,6 +524,9 @@ def main():
     )
     validate_installer_progress_compatibility_fixtures(
         ROOT / "lib/generate_installer_progress_fixtures.py"
+    )
+    validate_installer_validation_compatibility_fixtures(
+        ROOT / "lib/generate_installer_validation_fixtures.py"
     )
 
     tag = "steamos-3.8.14-nvidia-575.64.05-k6.16.12-valve24.4-x86"

@@ -17,6 +17,13 @@ reimplement compatibility, package-selection, signer, or mutation policy.
   five-module, userspace, initramfs-workspace, initramfs, receipt, and cleanup
   proof records. Cross-record identity and hash equality remain enforced by
   `lib/validate_install_contract.py`.
+- `schemas/installer-validation-v1.schema.json` describes the complete verified
+  validation proof nested in validation-only and successful mutation results.
+  It includes authenticated input-source identity, package/dependency and
+  module sets, boot policy, storage admission, compression measurement, and
+  optional reviewed gaming-payload metadata. Security-critical package,
+  keyring, dependency, module, and reviewed-profile records remain closed;
+  explicitly additive containers permit bounded future fields.
 
 Unknown additive fields are permitted. Removing a required field, changing its
 meaning, or tightening a previously valid value requires a new schema version.
@@ -49,6 +56,14 @@ data delivered after that operation has terminated are consumer session-
 binding responsibilities, so they are not represented as progress-schema
 accept/reject cases. Human-facing labels, weighting, animation, and percentage
 composition are likewise frontend presentation rather than Core semantics.
+
+`lib/generate_installer_validation_fixtures.py` deterministically emits the
+bounded installer-validation schema-1 matrix. Accepted cases cover direct and
+authenticated-bundle inputs plus safe additive fields. Rejection cases cover
+missing identities and policy records, inconsistent input-source identities,
+unsafe filenames, boot/dependency/storage mismatches, duplicate package
+identities, bounded closure overflow, and hostile JSON. Human messages are not
+part of its frozen expectations.
 
 When resolution returns `no_compatible_artifact` with reason
 `no_compatible_release`, `nextAction` explicitly authorizes only the existing

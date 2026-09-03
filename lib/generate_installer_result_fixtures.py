@@ -78,7 +78,9 @@ def validation_proof():
     package_installed = sum(package["installedSize"] for package in packages)
     module_installed = 25_000_000
     initramfs_reserve = 160_000_000
+    root_metadata_reserve = 64 * 1024 * 1024
     return {
+        "inputSource": {"mode": "direct", "bundleCacheId": None},
         "archiveSha256": "a" * 64,
         "provenanceSha256": "b" * 64,
         "userspaceLock": {"name": "userspace-lock-v1.json", "sha256": "c" * 64},
@@ -87,7 +89,10 @@ def validation_proof():
             "rootfsBootPath": "/boot",
             "efiMountPath": "/efi",
             "grubConfiguration": "/efi/EFI/steamos/grub.cfg",
-            "requiredKernelArguments": ["nvidia-drm.modeset=1", "nvidia-drm.fbdev=1"],
+            "requiredKernelArguments": [
+                "rd.driver.blacklist=nouveau", "modprobe.blacklist=nouveau",
+                "nvidia-drm.modeset=1", "nvidia-drm.fbdev=1",
+            ],
         },
         "keyring": {"name": "approved-package-signers.gpg", "sha256": "d" * 64},
         "packages": packages,
@@ -107,15 +112,19 @@ def validation_proof():
             "declaredPackageBytes": package_installed,
             "packageArchiveBytes": 8_000_000,
             "packageArchiveSavingsBytes": package_installed - 8_000_000,
-            "declaredSizesLikelyConservative": True,
-            "assessment": "logical-conservative-admission",
+            "declaredSizesLikelyConservative": False,
+            "assessment": "informational-package-archive-proxy-not-admission-credit",
             "pacmanCheckSpaceBypassAuthorized": False,
             "pacmanCheckSpacePolicy": "preserve",
         },
         "storage": {
             "rootAvailableBytes": 1_000_000_000,
-            "rootRequiredBytes": package_installed + module_installed + initramfs_reserve,
-            "varAvailableBytes": 200_000_000, "varRequiredBytes": 16_000_000,
+            "rootRequiredBytes": (
+                package_installed + module_installed + initramfs_reserve
+                + root_metadata_reserve
+            ),
+            "varAvailableBytes": 200_000_000,
+            "varRequiredBytes": 16 * 1024 * 1024,
             "efiAvailableBytes": 100_000_000, "efiRequiredBytes": 2_000_000,
             "packageInstalledBytes": package_installed,
             "packageCompressedBytes": 8_000_000, "packageReplacedBytes": 0,
@@ -284,6 +293,9 @@ def matrix():
     target_mismatch = copy.deepcopy(success)
     target_mismatch["payloadReceipt"]["target"]["kernelVersion"] = "wrong-kernel"
     cases.append(case("target-proof-mismatch", target_mismatch, False))
+    module_mismatch = copy.deepcopy(success)
+    module_mismatch["validation"]["modules"][0]["payloadSha256"] = "f" * 64
+    cases.append(case("module-payload-binding-mismatch", module_mismatch, False))
     input_mismatch = copy.deepcopy(success)
     input_mismatch["inputs"]["archive"] = "../modules.tar.gz"
     cases.append(case("unsafe-input-identity", input_mismatch, False))

@@ -1,0 +1,452 @@
+{
+  "$id": "https://corniidog.github.io/OPEMOS/contracts/installer-validation-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "hash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "nonNegativeBytes": {
+      "maximum": 9223372036854775807,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "packageToken": {
+      "maxLength": 256,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9@._+:-]+$",
+      "type": "string"
+    },
+    "plainFilename": {
+      "maxLength": 255,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9@._+~:-]+$",
+      "type": "string"
+    },
+    "pinnedIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {"$ref": "#/$defs/plainFilename"},
+        "sha256": {"$ref": "#/$defs/hash"}
+      },
+      "required": ["name", "sha256"],
+      "type": "object"
+    },
+    "relation": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "package": {
+      "additionalProperties": false,
+      "properties": {
+        "architecture": {"enum": ["x86_64", "any"]},
+        "dependencies": {
+          "items": {"$ref": "#/$defs/relation"},
+          "maxItems": 64,
+          "type": "array"
+        },
+        "filename": {"$ref": "#/$defs/plainFilename"},
+        "fullVersion": {"$ref": "#/$defs/packageToken"},
+        "installedSize": {
+          "maximum": 17179869184,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {"$ref": "#/$defs/packageToken"},
+        "pkgrel": {"$ref": "#/$defs/packageToken"},
+        "pkgver": {"$ref": "#/$defs/packageToken"},
+        "provides": {
+          "items": {"$ref": "#/$defs/relation"},
+          "maxItems": 64,
+          "type": "array"
+        },
+        "role": {"enum": ["nvidia-userspace", "dependency"]},
+        "sha256": {"$ref": "#/$defs/hash"},
+        "signatureFilename": {"$ref": "#/$defs/plainFilename"},
+        "signatureSha256": {"$ref": "#/$defs/hash"},
+        "signer": {
+          "pattern": "^(?:[0-9A-F]{40}|[0-9A-F]{64})$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name", "role", "filename", "signatureFilename", "fullVersion",
+        "pkgver", "pkgrel", "architecture", "signer", "sha256",
+        "signatureSha256", "installedSize", "dependencies", "provides"
+      ],
+      "type": "object"
+    },
+    "dependency": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {"$ref": "#/$defs/packageToken"},
+        "source": {"enum": ["incoming", "installed"]},
+        "version": {"$ref": "#/$defs/packageToken"}
+      },
+      "required": ["name", "version", "source"],
+      "type": "object"
+    },
+    "module": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "enum": [
+            "nvidia-drm.ko", "nvidia-modeset.ko", "nvidia-peermem.ko",
+            "nvidia-uvm.ko", "nvidia.ko"
+          ]
+        },
+        "payloadSha256": {"$ref": "#/$defs/hash"}
+      },
+      "required": ["name", "payloadSha256"],
+      "type": "object"
+    },
+    "storage": {
+      "properties": {
+        "compressionFilesystemOverheadBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "compressionPayloadAllocatedBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "compressionReserveBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "compressionSafetyReserveBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "efiAvailableBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "efiRequiredBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "initramfsReserveBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "measuredPayloadAllocatedBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "moduleInstalledBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "moduleNoopCreditBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "moduleReplacedBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "packageCompressedBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "packageInstalledBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "packageNoopCreditBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "packageReplacedBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "replacementCandidateLogicalBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "replacementCreditBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "rootAvailableBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "rootConservativeRequiredBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "rootFinalMarginBytes": {
+          "maximum": 9223372036854775807,
+          "minimum": -9223372036854775808,
+          "type": "integer"
+        },
+        "rootLogicalRequiredBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "rootMeasuredRequiredBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "rootRequiredBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "rootShortfallBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "varAvailableBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "varRequiredBytes": {"const": 16777216}
+      },
+      "required": [
+        "rootAvailableBytes", "rootRequiredBytes", "varAvailableBytes",
+        "varRequiredBytes", "efiAvailableBytes", "efiRequiredBytes",
+        "packageInstalledBytes", "packageCompressedBytes", "packageReplacedBytes",
+        "moduleInstalledBytes", "moduleReplacedBytes", "initramfsReserveBytes"
+      ],
+      "type": "object",
+      "unevaluatedProperties": true
+    },
+    "compression": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {"requestedProfile": {"const": "btrfs-zstd3"}},
+            "required": ["requestedProfile"]
+          },
+          "then": {
+            "required": [
+              "requestedProfile", "writePolicy", "measurement",
+              "measuredPayloadSavingsBytes", "admissionAuthorized",
+              "mutationProfileImplemented", "compressionRatio",
+              "allPayloadDestinationsOnRootFilesystem",
+              "filesystemMountExclusive", "replacementCreditPolicy",
+              "modulePayloadNoop"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "admissionAuthorized": {"type": "boolean"},
+        "admissionBasis": {"maxLength": 128, "minLength": 1, "type": "string"},
+        "allPayloadDestinationsOnRootFilesystem": {"type": "boolean"},
+        "assessment": {
+          "enum": [
+            "informational-package-archive-proxy-not-admission-credit",
+            "measured-profile-admission-ready"
+          ]
+        },
+        "compressionRatio": {"pattern": "^[0-9]+\\.[0-9]{6}$", "type": "string"},
+        "compressionSavingsCreditedBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "declaredPackageBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "declaredSizesLikelyConservative": {"type": "boolean"},
+        "enabled": {"type": "boolean"},
+        "filesystem": {"maxLength": 32, "minLength": 1, "pattern": "^[a-z0-9._+-]+$", "type": "string"},
+        "filesystemMountExclusive": {"type": "boolean"},
+        "invalidOptions": {"$ref": "#/$defs/mountOptions"},
+        "measuredPayloadSavingsBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "measurement": {"$ref": "#/$defs/measurement"},
+        "modulePayloadNoop": {"type": "boolean"},
+        "mutationProfileImplemented": {"type": "boolean"},
+        "options": {"$ref": "#/$defs/mountOptions"},
+        "packageArchiveBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "packageArchiveSavingsBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "pacmanCheckSpaceBypassAuthorized": {"type": "boolean"},
+        "pacmanCheckSpacePolicy": {"enum": ["preserve", "temporary-config-disable-after-live-revalidation"]},
+        "replacementCreditPolicy": {"maxLength": 64, "minLength": 1, "type": "string"},
+        "requestedProfile": {"enum": ["btrfs-zstd3"]},
+        "writeIncompatibleOptions": {"$ref": "#/$defs/mountOptions"},
+        "writePolicy": {"enum": ["compress-force=zstd:3"]}
+      },
+      "required": [
+        "filesystem", "enabled", "options", "invalidOptions",
+        "writeIncompatibleOptions", "admissionBasis",
+        "compressionSavingsCreditedBytes", "declaredPackageBytes",
+        "packageArchiveBytes", "packageArchiveSavingsBytes",
+        "declaredSizesLikelyConservative", "assessment",
+        "pacmanCheckSpaceBypassAuthorized", "pacmanCheckSpacePolicy"
+      ],
+      "type": "object",
+      "unevaluatedProperties": true
+    },
+    "measurement": {
+      "additionalProperties": false,
+      "properties": {
+        "dataAllocatedBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "declaredPayloadBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "filesystemOverheadBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "measurementMethod": {"const": "scratch-btrfs-filesystem-usage-used-delta"},
+        "metadataAllocatedBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "moduleAllocatedBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "packageMeasurements": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "allocatedBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+              "filename": {"$ref": "#/$defs/plainFilename"}
+            },
+            "required": ["filename", "allocatedBytes"],
+            "type": "object"
+          },
+          "maxItems": 64,
+          "minItems": 2,
+          "type": "array"
+        },
+        "payloadAllocatedBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "profile": {"const": "btrfs-zstd3"},
+        "schemaVersion": {"const": 1},
+        "scratchFilesystemBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "status": {"const": "measured"},
+        "systemAllocatedBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "writePolicy": {"const": "compress-force=zstd:3"}
+      },
+      "required": [
+        "schemaVersion", "status", "profile", "writePolicy",
+        "measurementMethod", "declaredPayloadBytes", "scratchFilesystemBytes",
+        "payloadAllocatedBytes", "dataAllocatedBytes", "metadataAllocatedBytes",
+        "systemAllocatedBytes", "filesystemOverheadBytes", "packageMeasurements",
+        "moduleAllocatedBytes"
+      ],
+      "type": "object"
+    },
+    "mountOptions": {
+      "items": {
+        "maxLength": 64,
+        "minLength": 1,
+        "pattern": "^[a-z0-9=:+_-]+$",
+        "type": "string"
+      },
+      "maxItems": 8,
+      "type": "array"
+    },
+    "gamingDelivery": {
+      "additionalProperties": false,
+      "properties": {
+        "packageOwnership": {"const": "archive-and-pacman-database-exact"},
+        "repacker": {
+          "additionalProperties": false,
+          "properties": {
+            "compression": {"const": "zstd-19-t1"},
+            "name": {"const": "repack_gaming_userspace.py"},
+            "schemaVersion": {"const": 1},
+            "zstdVersion": {"const": "1.5.7"}
+          },
+          "required": ["name", "schemaVersion", "zstdVersion", "compression"],
+          "type": "object"
+        },
+        "sourceAuthentication": {"const": "arch-detached-signatures-and-reviewed-userspace-lock"},
+        "strategy": {"const": "deterministic-authenticated-source-repack-v1"}
+      },
+      "required": ["strategy", "packageOwnership", "sourceAuthentication", "repacker"],
+      "type": "object"
+    },
+    "gamingPackage": {
+      "additionalProperties": false,
+      "properties": {
+        "filename": {"$ref": "#/$defs/plainFilename"},
+        "installedSize": {"$ref": "#/$defs/nonNegativeBytes"},
+        "name": {"enum": ["nvidia-utils", "lib32-nvidia-utils"]},
+        "savedBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+        "sha256": {"$ref": "#/$defs/hash"},
+        "sourceFilename": {"$ref": "#/$defs/plainFilename"},
+        "sourceSha256": {"$ref": "#/$defs/hash"},
+        "sourceSignatureFilename": {"$ref": "#/$defs/plainFilename"},
+        "sourceSignatureSha256": {"$ref": "#/$defs/hash"},
+        "sourceSignerFingerprint": {
+          "pattern": "^(?:[0-9A-F]{40}|[0-9A-F]{64})$",
+          "type": "string"
+        },
+        "version": {"$ref": "#/$defs/packageToken"}
+      },
+      "required": [
+        "name", "sourceFilename", "sourceSignatureFilename", "sourceSha256",
+        "sourceSignatureSha256", "sourceSignerFingerprint", "filename",
+        "version", "sha256", "installedSize", "savedBytes"
+      ],
+      "type": "object"
+    },
+    "target": {
+      "additionalProperties": false,
+      "properties": {
+        "architecture": {"const": "x86_64"},
+        "kernelVersion": {"maxLength": 255, "minLength": 1, "pattern": "^[A-Za-z0-9._+~-]+$", "type": "string"},
+        "nvidiaVersion": {"pattern": "^[0-9]+\\.[0-9]+(?:\\.[0-9]+)?$", "type": "string"},
+        "steamosVersion": {"pattern": "^[0-9]+\\.[0-9]+(?:\\.[0-9]+)?$", "type": "string"}
+      },
+      "required": ["steamosVersion", "kernelVersion", "nvidiaVersion", "architecture"],
+      "type": "object"
+    },
+    "gamingPayload": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "profileId": {"const": "gaming-no-cuda-v1"},
+            "schemaVersion": {"const": 1},
+            "status": {"const": "not-requested"}
+          },
+          "required": ["schemaVersion", "status", "profileId"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "delivery": {"$ref": "#/$defs/gamingDelivery"},
+            "omittedCapabilities": {
+              "const": ["cuda-compute"]
+            },
+            "packageOwnership": {"const": "archive-and-pacman-database-exact"},
+            "packageRecords": {
+              "items": {"$ref": "#/$defs/gamingPackage"},
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array",
+              "uniqueItems": true
+            },
+            "policySha256": {"$ref": "#/$defs/hash"},
+            "preservedCapabilities": {
+              "items": {
+                "enum": [
+                  "graphics", "vulkan", "glvnd-egl", "nvenc", "nvdec",
+                  "gsp-firmware", "gaming-32bit", "recovery-rendering"
+                ]
+              },
+              "maxItems": 8,
+              "minItems": 8,
+              "type": "array",
+              "uniqueItems": true
+            },
+            "profileId": {"const": "gaming-no-cuda-v1"},
+            "savedBytes": {"$ref": "#/$defs/nonNegativeBytes"},
+            "schemaVersion": {"const": 1},
+            "sha256": {"$ref": "#/$defs/hash"},
+            "status": {"const": "reviewed"},
+            "target": {"$ref": "#/$defs/target"}
+          },
+          "required": [
+            "schemaVersion", "status", "profileId", "sha256", "policySha256",
+            "target", "delivery", "omittedCapabilities", "preservedCapabilities",
+            "packageOwnership", "savedBytes", "packageRecords"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "description": "Additive verified installer validation proof. Cross-field package, dependency, storage, compression, boot-policy, and gaming-profile invariants remain enforced by lib/write_install_result.py.",
+  "properties": {
+    "archiveSha256": {"$ref": "#/$defs/hash"},
+    "boot": {
+      "properties": {
+        "efiMountPath": {"const": "/efi"},
+        "grubConfiguration": {"const": "/efi/EFI/steamos/grub.cfg"},
+        "requiredKernelArguments": {
+          "const": [
+            "rd.driver.blacklist=nouveau", "modprobe.blacklist=nouveau",
+            "nvidia-drm.modeset=1", "nvidia-drm.fbdev=1"
+          ]
+        },
+        "rootfsBootPath": {"const": "/boot"}
+      },
+      "required": ["rootfsBootPath", "efiMountPath", "grubConfiguration", "requiredKernelArguments"],
+      "type": "object",
+      "unevaluatedProperties": true
+    },
+    "compression": {"$ref": "#/$defs/compression"},
+    "gamingPayload": {"$ref": "#/$defs/gamingPayload"},
+    "inputSource": {
+      "allOf": [
+        {
+          "if": {"properties": {"mode": {"const": "direct"}}},
+          "then": {"properties": {"bundleCacheId": {"type": "null"}}},
+          "else": {"properties": {"bundleCacheId": {"$ref": "#/$defs/hash"}}}
+        }
+      ],
+      "properties": {
+        "bundleCacheId": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/hash"}]},
+        "mode": {"enum": ["direct", "authenticated-bundle"]}
+      },
+      "required": ["mode", "bundleCacheId"],
+      "type": "object",
+      "unevaluatedProperties": true
+    },
+    "keyring": {"$ref": "#/$defs/pinnedIdentity"},
+    "modules": {
+      "items": {"$ref": "#/$defs/module"},
+      "maxItems": 5,
+      "minItems": 5,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "packageDependencyClosure": {
+      "items": {"$ref": "#/$defs/dependency"},
+      "maxItems": 4096,
+      "minItems": 2,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "packages": {
+      "items": {"$ref": "#/$defs/package"},
+      "maxItems": 64,
+      "minItems": 2,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "pacmanDatabase": {
+      "additionalProperties": false,
+      "properties": {
+        "packageCount": {"maximum": 250000, "minimum": 1, "type": "integer"},
+        "path": {"const": "/usr/lib/holo/pacmandb"}
+      },
+      "required": ["path", "packageCount"],
+      "type": "object"
+    },
+    "provenanceSha256": {"$ref": "#/$defs/hash"},
+    "storage": {"$ref": "#/$defs/storage"},
+    "userspaceLock": {"$ref": "#/$defs/pinnedIdentity"}
+  },
+  "required": [
+    "inputSource", "archiveSha256", "provenanceSha256", "userspaceLock",
+    "pacmanDatabase", "boot", "keyring", "packages", "modules", "storage",
+    "packageDependencyClosure", "compression", "gamingPayload"
+  ],
+  "title": "OPEMOS installer validation proof v1",
+  "type": "object",
+  "unevaluatedProperties": true
+}
