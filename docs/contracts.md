@@ -151,6 +151,10 @@ The additive machine-readable envelope is
 The schema defines record shape and mandatory success proofs;
 `lib/validate_install_contract.py` additionally enforces cross-record target,
 package, and module-payload equality.
+Cross-frontend consumers can generate the canonical compatibility matrix with
+`python3 lib/generate_installer_result_fixtures.py`. Its output is canonical,
+strict JSON bounded to 512 KiB; human-readable `message` values are explicitly
+unfrozen. The generator itself is authenticated as part of the Core bundle.
 
 Lock mismatches return sorted, bounded fields:
 

@@ -24,6 +24,12 @@ from installer_bundle_manifest import (  # noqa: E402
     validate_manifest,
     write_create_only,
 )
+from validate_install_contract import (  # noqa: E402
+    MAX_RESULT_BYTES,
+    load_document as load_install_result,
+    validate_result,
+)
+from write_install_result import validate_verified_metadata  # noqa: E402
 import resolve_target as resolver_module  # noqa: E402
 from resolve_target import resolve_target  # noqa: E402
 
@@ -124,6 +130,97 @@ def validate_resolver_compatibility_fixtures(path):
             raise AssertionError("linked fixture document was accepted")
 
 
+def validate_installer_result_compatibility_fixtures(generator):
+    outputs = []
+    for _ in range(2):
+        completed = subprocess.run(
+            [sys.executable, str(generator)], cwd="/", check=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        assert completed.stderr == b""
+        assert 1 <= len(completed.stdout) <= 512 * 1024
+        outputs.append(completed.stdout)
+    assert outputs[0] == outputs[1]
+    assert outputs[0].endswith(b"\n")
+    document = json.loads(
+        outputs[0], object_pairs_hook=resolver_module.unique_object,
+        parse_constant=resolver_module.reject_json_constant,
+    )
+    assert set(document) == {
+        "schemaVersion", "kind", "resultSchemaVersion", "unfrozenFields", "cases"
+    }
+    assert document["schemaVersion"] == 1
+    assert document["kind"] == "opemos-installer-result-compatibility-fixtures"
+    assert document["resultSchemaVersion"] == 1
+    assert document["unfrozenFields"] == ["message"]
+    cases = document["cases"]
+    assert isinstance(cases, list) and 1 <= len(cases) <= 64
+    names = []
+    with tempfile.TemporaryDirectory(prefix="opemos-result-fixtures-") as temporary:
+        result_path = Path(temporary) / "result.json"
+        for fixture in cases:
+            assert isinstance(fixture, dict)
+            assert set(fixture) in (
+                {"name", "expected", "document"},
+                {"name", "expected", "rawDocument"},
+            )
+            name = fixture["name"]
+            names.append(name)
+            assert isinstance(name, str)
+            assert re.fullmatch(r"[a-z][a-z0-9-]{0,63}", name)
+            expected = fixture["expected"]
+            assert set(expected) in ({"accepted"}, {"accepted", "status"})
+            assert isinstance(expected["accepted"], bool)
+            if "document" in fixture:
+                payload = json.dumps(
+                    fixture["document"], sort_keys=True, separators=(",", ":")
+                ) + "\n"
+            else:
+                assert expected == {"accepted": False}
+                payload = fixture["rawDocument"]
+            assert 1 <= len(payload.encode()) <= MAX_RESULT_BYTES
+            result_path.write_text(payload, encoding="utf-8")
+            try:
+                parsed = validate_result(result_path)
+            except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError):
+                accepted = False
+            else:
+                accepted = True
+                assert parsed["schemaVersion"] == document["resultSchemaVersion"]
+                assert parsed["status"] == expected["status"]
+                validation = parsed.get("validation")
+                assert isinstance(validation, dict)
+                validate_verified_metadata(validation)
+                assert set(validation) >= {
+                    "archiveSha256", "provenanceSha256", "userspaceLock",
+                    "pacmanDatabase", "boot", "keyring", "packages", "modules",
+                    "storage", "packageDependencyClosure", "compression",
+                    "gamingPayload",
+                }
+                workspace = parsed.get("initramfsWorkspace")
+                assert isinstance(workspace, dict)
+                assert {"requiredBytes", "requiredInodes", "availableBytes",
+                        "availableInodes", "inodeCapacityMode", "mode"} <= set(workspace)
+            assert accepted is expected["accepted"], name
+        assert len(names) == len(set(names))
+        assert set(names) == {
+            "validated-success", "mutation-success", "safe-additive-fields",
+            "missing-module-verification", "missing-userspace-verification",
+            "missing-workspace-verification", "missing-initramfs-verification",
+            "missing-payload-receipt", "target-proof-mismatch",
+            "unsafe-input-identity", "cleanup-incomplete", "malformed-json",
+            "duplicate-json-key",
+        }
+        linked = Path(temporary) / "linked-result.json"
+        linked.symlink_to(result_path)
+        try:
+            load_install_result(linked, MAX_RESULT_BYTES)
+        except (OSError, ValueError):
+            pass
+        else:
+            raise AssertionError("linked installer-result fixture was accepted")
+
+
 def validate_resolver_fixture(document):
     assert document["schemaVersion"] == 2
     assert document["status"] in {
@@ -206,6 +303,9 @@ def main():
 
     validate_resolver_compatibility_fixtures(
         ROOT / "contracts/fixtures/resolver-compatibility-v2.json"
+    )
+    validate_installer_result_compatibility_fixtures(
+        ROOT / "lib/generate_installer_result_fixtures.py"
     )
 
     tag = "steamos-3.8.14-nvidia-575.64.05-k6.16.12-valve24.4-x86"

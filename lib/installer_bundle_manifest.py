@@ -62,6 +62,7 @@ FILES = (
     ("lib/snapshot_target_execution.py", "installer-helper", "0755"),
     ("lib/verify_initramfs.py", "installer-helper", "0755"),
     ("lib/validate_install_contract.py", "contract-validator", "0755"),
+    ("lib/generate_installer_result_fixtures.py", "contract-fixture-generator", "0755"),
     ("lib/payload_receipt.py", "installer-helper", "0644"),
     ("lib/resolve_target.py", "resolver", "0755"),
     ("lib/select_release.py", "resolver", "0755"),

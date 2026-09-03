@@ -27,6 +27,13 @@ case and compare the stable `expected` subset while requiring each listed
 `absentFields` member to be absent. Human-readable messages are intentionally
 outside the frozen subset.
 
+`lib/generate_installer_result_fixtures.py` deterministically emits the
+bounded installer-result schema-1 matrix. It covers validation-only and full
+mutation success, mandatory-proof omissions, target/input identity failures,
+incomplete cleanup, malformed and duplicate-key JSON, and safe additive
+fields. The matrix declares `message` unfrozen and compares only terminal
+acceptance/status plus the authoritative validator's structural rules.
+
 When resolution returns `no_compatible_artifact` with reason
 `no_compatible_release`, `nextAction` explicitly authorizes only the existing
 exact-kernel `bootstrap/build_for_target.sh` contract and includes a

@@ -80,6 +80,11 @@ index in the same commit.
   malformed targets/publications, incomplete or duplicate assets, unreviewed
   exact targets, and the reviewed exact-target build action. Include it in the
   canonical Core bundle and execute every case in Core consumer tests.
+* [x] Publish a deterministic bounded installer-result schema-1 compatibility
+  matrix covering validation and mutation success, mandatory proof omissions,
+  target/input identity failures, cleanup failure, hostile JSON, and additive
+  fields. Include its generator in the Core bundle and run every case through
+  the authoritative consumer validator.
 * [ ] Publish the remaining validation, verification-record, receipt, and
   gaming-payload schemas from OPEMOS. The additive installer-result schema 1
   envelope and mandatory success proofs are now published. Generate or
