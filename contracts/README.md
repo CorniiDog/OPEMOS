@@ -72,6 +72,11 @@ publisher evidence, and installed-device lifecycle.
   flat transport receipt OPEMOS.EXE stages into a managed appliance. The
   receipt is never trust evidence; Core reauthenticates the signed generation
   and exact payload set before producing installer inputs.
+- `schemas/source-intent-v1.schema.json` and
+  `schemas/source-authorization-v1.schema.json` separate the user's exact
+  source request from Core's bounded authorization decision. Automatic never
+  authorizes development sources; explicit upstream use remains unpublishable
+  development trust.
 - `schemas/device-generation-result-v1.schema.json` describes bounded results
   and durable state from the inactive installed-device generation lifecycle.
 - `schemas/device-generation-health-v1.schema.json` describes the closed,

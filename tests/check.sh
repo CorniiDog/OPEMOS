@@ -101,6 +101,10 @@ python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/generate_development_appliance_generation.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/source_intent_contract.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/generate_source_intent_fixtures.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/interstitial_progress.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/validate_interstitial_binary.py
@@ -131,6 +135,8 @@ printf 'Checking snapshot-bound verifier evidence...\n'
 python3 tests/userspace_lock_verifier_evidence.py
 printf 'Checking development appliance generation consumption...\n'
 python3 tests/appliance_generation_consumer.py
+printf 'Checking explicit source-intent authorization...\n'
+python3 tests/source_intent_contract.py
 printf 'Checking inactive installed-device generation lifecycle...\n'
 python3 tests/device_generation_lifecycle.py
 printf 'Checking installed-device transport containment...\n'

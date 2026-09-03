@@ -8,6 +8,7 @@ description: API-style command, result, progress, trust, and failure reference.
 
 - [Entry points](#entry-points)
 - [Resolver contract](#resolver-contract)
+- [Source intent authorization](#source-intent-authorization)
 - [Installed-device lock generations](#installed-device-lock-generations)
 - [Build result](#build-result)
 - [Installer contract](#installer-contract)
@@ -37,6 +38,7 @@ description: API-style command, result, progress, trust, and failure reference.
 | `lib/desktop_update_generations.py` | SteamOS desktop launcher | Generation store and atomic markers | Desktop-update schema 1 JSON |
 | `bootstrap/generationctl.sh` | Installed Core/CLI | Private reviewed-lock generation store | Device-generation schema 1 JSON |
 | `lib/consume_appliance_generation.py` | Managed x86_64 appliance | Create-only private installer-input staging | Development generation preparation JSON |
+| `lib/source_intent_contract.py` | Image builder/CLI | No | Source-authorization schema 1 JSON |
 
 Every command supports `--help`; that output is the canonical option list.
 
@@ -83,6 +85,24 @@ It covers malformed targets, malformed and duplicate release metadata,
 incomplete and duplicate canonical assets, an unreviewed target, and the exact
 reviewed build authorization. Core executes all cases during its local suite;
 consumers use the same bundle-authenticated bytes for parity tests.
+
+## Source intent authorization
+
+`source-intent-v1.schema.json` records exactly one requested mode: automatic,
+an exact published artifact, a reviewed exact-target local build, an exact
+reviewed project source, or explicit upstream development. Core's
+`source_intent_contract.py` consumes that intent together with the bounded
+release metadata and its own reviewed build policy, then returns
+`source-authorization-v1.schema.json`.
+
+Automatic may select only the normal resolver's published artifact or reviewed
+exact-target action. Exact publication and project requests must match their
+requested immutable identity. Upstream development requires an explicit
+acknowledgement, the canonical NVIDIA repository, exact version tag and commit;
+it returns `development-unverified` with publication forbidden. Rejection
+never falls back to a different mode. The deterministic fixture generator
+defines malformed, unsupported, unreviewed and successful outcomes without
+freezing human text.
 
 ## Installer consumer bundle
 

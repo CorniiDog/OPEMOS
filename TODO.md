@@ -20,7 +20,7 @@ index in the same commit.
   publication credentials/policy, rotation/revocation and state-loss recovery.
   Until then, production generation discovery and appliance consumption remain
   disabled; the synthetic development generation is not installable payload.
-* [ ] Define and fixture the minimal Core source-intent authorization contract
+* [x] Define and fixture the minimal Core source-intent authorization contract
   for Automatic, exact published, reviewed exact-target build, reviewed project
   source and explicit upstream-development requests so OPEMOS.EXE can remove
   its remaining source-selection policy without guessing or fallback.

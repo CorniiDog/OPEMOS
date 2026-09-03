@@ -1,0 +1,53 @@
+{
+  "$id": "https://corniidog.github.io/OPEMOS/contracts/source-authorization-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Core authorization outcome for an exact source intent. Authorized actions remain bounded by their nested resolver/build contracts.",
+  "properties": {
+    "action": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {"const": "use_published_artifact"},
+            "resolverResult": {"$ref": "resolver-result-v2.schema.json"},
+            "resolverResultSha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+            "schemaVersion": {"const": 1}
+          },
+          "required": ["schemaVersion", "kind", "resolverResultSha256", "resolverResult"],
+          "type": "object"
+        },
+        {"$ref": "resolver-result-v2.schema.json#/properties/nextAction"},
+        {
+          "additionalProperties": false,
+          "properties": {
+            "entrypoint": {"const": "bootstrap/build_for_target.sh"},
+            "executionArchitecture": {"const": "x86_64"},
+            "kernelPolicy": {"const": "exact"},
+            "kind": {"const": "build_upstream_development"},
+            "publicationPermitted": {"const": false},
+            "schemaVersion": {"const": 1},
+            "source": {"allOf": [{"$ref": "source-intent-v1.schema.json#/$defs/source"}], "properties": {"ref": {"pattern": "^refs/tags/[0-9]+(?:\\.[0-9]+){1,2}$"}, "repository": {"const": "NVIDIA/open-gpu-kernel-modules"}}},
+            "target": {"additionalProperties": false, "properties": {"architecture": {"const": "x86_64"}, "kernelVersion": {"maxLength": 255, "pattern": "^[A-Za-z0-9._+~-]+$", "type": "string"}, "nvidiaVersion": {"$ref": "source-intent-v1.schema.json#/$defs/version"}, "steamosVersion": {"pattern": "^[0-9]+(?:\\.[0-9]+){2}$", "type": "string"}}, "required": ["steamosVersion", "kernelVersion", "nvidiaVersion", "architecture"], "type": "object"},
+            "trust": {"const": "development-unverified"}
+          },
+          "required": ["schemaVersion", "kind", "entrypoint", "executionArchitecture", "kernelPolicy", "trust", "publicationPermitted", "target", "source"],
+          "type": "object"
+        }
+      ]
+    },
+    "intentSha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "kind": {"const": "opemos-source-authorization"},
+    "reason": {"enum": ["automatic_no_authorized_action", "exact_target_build_authorized", "explicit_development_acknowledgement_required", "published_artifact_authorized", "requested_publication_unavailable", "resolver_failed", "reviewed_build_plan_unavailable", "reviewed_project_source_authorized", "reviewed_project_source_mismatch", "source_intent_invalid", "unsupported_development_source", "upstream_development_authorized"]},
+    "schemaVersion": {"const": 1},
+    "status": {"enum": ["authorized", "rejected"]},
+    "target": {"oneOf": [{"$ref": "source-intent-v1.schema.json#/$defs/target"}, {"type": "null"}]}
+  },
+  "required": ["schemaVersion", "kind", "status", "reason", "intentSha256", "target"],
+  "allOf": [
+    {"if": {"properties": {"status": {"const": "authorized"}}}, "then": {"required": ["action"]}},
+    {"if": {"properties": {"status": {"const": "rejected"}}}, "then": {"not": {"required": ["action"]}}}
+  ],
+  "title": "OPEMOS source authorization v1",
+  "type": "object"
+}
