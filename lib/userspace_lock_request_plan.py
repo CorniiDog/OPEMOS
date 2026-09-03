@@ -63,13 +63,15 @@ def parse_generation(payload, maximum, label):
         fail(str(error))
 
 
-def request_record(request_kind, asset_role, filename, url, payload):
+def request_record(request_kind, asset_role, filename, url, expected_size,
+                   expected_sha256):
     try:
         url_size = len(url.encode("ascii"))
     except (AttributeError, UnicodeError):
         fail("request URL is not canonical ASCII")
     parsed = urlsplit(url)
-    if (not isinstance(payload, bytes) or not payload
+    if (type(expected_size) is not int or expected_size < 1
+            or not isinstance(expected_sha256, str)
             or url_size > MAX_URL_BYTES or parsed.scheme != "https"
             or parsed.query or parsed.fragment or parsed.username is not None
             or parsed.password is not None):
@@ -80,14 +82,13 @@ def request_record(request_kind, asset_role, filename, url, payload):
         "filename": filename,
         "path": parsed.path,
         "url": url,
-        "expectedSize": len(payload),
-        "expectedSha256": sha256(payload),
+        "expectedSize": expected_size,
+        "expectedSha256": expected_sha256,
     }
 
 
 def build_request_plan(policy_payload, discovery_payload, discovery_signature,
-                       manifest_payload, manifest_signature, verified_evidence,
-                       payloads):
+                       manifest_payload, manifest_signature, verified_evidence):
     try:
         policy = parse_policy(policy_payload)
     except BootstrapContractError as error:
@@ -138,13 +139,6 @@ def build_request_plan(policy_payload, discovery_payload, discovery_signature,
             or evidence["primarySigningFingerprint"]
             != policy["authority"]["primarySigningFingerprint"]):
         fail("verifier evidence authority differs from bootstrap policy")
-    if not isinstance(payloads, dict) or set(payloads) != {
-            record["filename"] for record in manifest["files"]}:
-        fail("generation payload set differs from authenticated manifest")
-    for filename, payload in payloads.items():
-        if not isinstance(filename, str) or not isinstance(payload, bytes):
-            fail("generation payload input is invalid")
-
     origin = channel["origin"]
     discovery_url = origin + channel["discoveryPath"]
     discovery_parent = channel["discoveryPath"].rsplit("/", 1)[0]
@@ -158,31 +152,30 @@ def build_request_plan(policy_payload, discovery_payload, discovery_signature,
     requests = [
         request_record(
             "metadata", "discovery", channel["discoveryFilename"],
-            discovery_url, discovery_payload,
+            discovery_url, len(discovery_payload), sha256(discovery_payload),
         ),
         request_record(
             "metadata", "discovery-signature",
             channel["discoverySignatureFilename"], discovery_signature_url,
-            discovery_signature,
+            len(discovery_signature), sha256(discovery_signature),
         ),
         request_record(
             "metadata", "generation-manifest", generation["manifestFilename"],
-            release_root + generation["manifestFilename"], manifest_payload,
+            release_root + generation["manifestFilename"], len(manifest_payload),
+            sha256(manifest_payload),
         ),
         request_record(
             "metadata", "generation-manifest-signature",
             generation["signatureFilename"],
-            release_root + generation["signatureFilename"], manifest_signature,
+            release_root + generation["signatureFilename"],
+            len(manifest_signature), sha256(manifest_signature),
         ),
     ]
     by_name = {record["filename"]: record for record in manifest["files"]}
     for record in manifest["files"]:
-        payload = payloads[record["filename"]]
-        if len(payload) != record["size"] or sha256(payload) != record["sha256"]:
-            fail("generation payload differs from authenticated manifest")
         requests.append(request_record(
             "payload", record["role"], record["filename"],
-            release_root + record["filename"], payload,
+            release_root + record["filename"], record["size"], record["sha256"],
         ))
     if len(by_name) != len(manifest["files"]):
         fail("generation payload names are ambiguous")

@@ -45,6 +45,7 @@ def parser():
     value.add_argument("--control-fd", required=True, type=int)
     value.add_argument("--transport", required=True)
     value.add_argument("--destination", required=True)
+    value.add_argument("--request-plan")
     return value
 
 
@@ -59,8 +60,11 @@ def main():
     try:
         os.set_blocking(arguments.control_fd, False)
         selector.register(arguments.control_fd, selectors.EVENT_READ)
+        command = [arguments.transport, "--destination", arguments.destination]
+        if arguments.request_plan:
+            command.extend(["--request-plan", arguments.request_plan])
         process = subprocess.Popen(
-            [arguments.transport, "--destination", arguments.destination],
+            command,
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL, close_fds=True, start_new_session=True,
         )

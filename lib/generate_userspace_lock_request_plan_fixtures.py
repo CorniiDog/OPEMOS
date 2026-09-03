@@ -98,7 +98,6 @@ def arguments(inputs):
         canonical(inputs["manifest"]),
         inputs["manifestSignature"].encode(),
         evidence_for(inputs),
-        {name: payload.encode() for name, payload in inputs["payloads"].items()},
     )
 
 
@@ -169,24 +168,6 @@ def matrix():
         changed(base, lambda value: value["evidenceRecord"].update(
             status="authenticated", policySha256="f" * 64
         )), plan=base_plan,
-    ))
-    cases.append(fixture(
-        "missing-payload",
-        changed(base, lambda value: value["payloads"].pop(
-            sorted(value["payloads"])[0]
-        )), inputs_accepted=False,
-    ))
-    cases.append(fixture(
-        "unexpected-payload",
-        changed(base, lambda value: value["payloads"].update(
-            unexpected=b"unexpected\n".decode()
-        )), inputs_accepted=False,
-    ))
-    cases.append(fixture(
-        "payload-hash-mismatch",
-        changed(base, lambda value: value["payloads"].__setitem__(
-            sorted(value["payloads"])[0], "different\n"
-        )), inputs_accepted=False,
     ))
     cases.append(fixture(
         "release-tag-sequence-mismatch",

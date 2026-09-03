@@ -198,6 +198,15 @@ the explicit development-test override. Cached generations preserve the
 canonical signed discovery and sequence-specific manifest filenames. Missed-
 generation catch-up accepts bounded document-only lineage directories; it does
 not require downloading intermediate payloads.
+
+Its inactive development `update` path now consumes the same bootstrap,
+verifier-capability, and immutable-request-plan contracts. Core derives separate
+discovery, manifest, and payload request sets and gives an injected transport
+only exact URLs and identities. Missing, extra, substituted, or plan-modifying
+output is rejected before publication to the device download cache. The
+installed policy, keyring, and checkpoint are identity-checked between phases;
+partial and hostile output is removed with bounded descriptor-relative cleanup.
+This remains test-only and does not configure production networking or trust.
 Device state is committed through alternating revisioned markers. Restart
 reconciliation removes bounded abandoned marker temporaries, migrates the
 legacy single marker, and fails closed if immutable cache contents prove that a

@@ -62,7 +62,6 @@ def arguments(inputs):
         canonical(inputs["manifest"]),
         inputs["manifestSignature"].encode(),
         evidence,
-        {name: payload.encode() for name, payload in inputs["payloads"].items()},
     )
 
 

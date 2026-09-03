@@ -124,20 +124,28 @@ Implemented inactive commands are:
 
 For development and contract testing only, `update` and `update-or-repair`
 accept `--transport PROGRAM` plus an exact SteamOS/kernel/NVIDIA/architecture
-target. Core snapshots the single-link executable, runs the private copy with
-only `PATH` and C-locale variables, passes `--destination DIRECTORY`, discards
-all transport output, and enforces a five-minute ceiling. Exit 69 means the
-source is unavailable and exit 73 means staging storage is full; every other
-nonzero exit is a generic transport failure. The destination must become the
-same closed source tree accepted by `activate`.
+target. Core snapshots the single-link executable and invokes its private copy
+once for each bounded acquisition phase with `--destination DIRECTORY` and
+`--request-plan FILE`. Core alone derives that immutable plan from the installed
+bootstrap policy and, after signature verification, the authenticated discovery
+and manifest snapshots. The transport receives exact URLs and identities; it
+does not select a release, redirect, filename, or hash. It runs with only `PATH`
+and C-locale variables under a five-minute ceiling. Exit 69 means the source is
+unavailable and exit 73 means staging storage is full; every other nonzero exit
+is a generic transport failure.
 
-Successful acquisition authenticates the descriptor, manifest, both detached
-signatures, authority, exact target, lineage, and every payload size/hash before
-create-only publication under `downloads/<manifest-sha256>`. It does not change
-active, last-known-good, health-pending, or high-water state. Partial staging is
-removed on failure, timeout, and catchable cancellation; abandoned confined
-staging is removed by the next locked lifecycle operation. A separate Core
-watchdog owns the isolated transport process group and monitors a close-on-exec
+Each phase must return exactly the requested single-link files. Core rejects
+missing, extra, substituted, oversized, or renamed output and rechecks the
+installed policy, keyring, and checkpoint identities between phases and before
+publication. Successful acquisition authenticates the descriptor, manifest,
+both detached signatures, authority, exact target, lineage, and every payload
+size/hash before create-only publication under
+`downloads/<manifest-sha256>`. It does not change active, last-known-good,
+health-pending, or high-water state. Partial and hostile staging is removed
+without following links on failure, timeout, and catchable cancellation;
+abandoned confined staging is removed by the next locked lifecycle operation.
+A separate Core watchdog owns the isolated transport process group and monitors
+a close-on-exec
 control pipe held only by the lifecycle process. If that owner is terminated by
 SIGKILL, pipe EOF makes the watchdog terminate and reap the transport group;
 the next locked operation removes its uncommitted staging tree. A transport may

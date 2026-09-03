@@ -340,9 +340,24 @@ generations.
 Production defaults require root-owned policy, keyring, and checkpoint files
 under `/etc/opemos`; none is shipped yet. Therefore `update` and
 `update-or-repair` fail with `device_generation_network_inactive`. The current
-local activation surface exists for contract and lifecycle testing only. It
-does not enable device networking, replace the legacy embedded lock, or reuse
-the desktop binary updater.
+development-only acquisition surface exists for contract and lifecycle testing
+only. It snapshots an injected executable, but never delegates release or URL
+selection to it. Core derives three bounded request plans: the canonical
+discovery pair from installed bootstrap policy, the immutable manifest pair
+from authenticated discovery, and the payload set from authenticated manifest.
+Each invocation receives only that exact plan, must return the exact closed
+file set, and cannot change the plan while running. Missing, extra, renamed,
+oversized, or hash-substituted output is rejected before download-cache
+publication. Core rechecks the installed policy, keyring, and checkpoint
+identities between phases. It does not enable device networking, replace the
+legacy embedded lock, or reuse the desktop binary updater.
+
+Transport phase cleanup is descriptor-relative, bounded, and does not follow
+untrusted symlinks. Catchable cancellation terminates the watchdog/process
+group and removes partial output; an uncatchable lifecycle SIGKILL is contained
+by the owner-liveness pipe and the next locked operation reconciles abandoned
+staging. Production endpoint and signer configuration remain intentionally
+absent.
 
 `lib/device_generation_contract.py` is authoritative for the closed lifecycle
 result, durable-state, and health-evidence semantics.

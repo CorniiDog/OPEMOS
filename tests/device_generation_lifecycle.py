@@ -22,6 +22,8 @@ from generate_userspace_lock_generation_fixtures import (  # noqa: E402
     documents,
     refresh,
 )
+from generate_userspace_lock_bootstrap_fixtures import policy as bootstrap_policy  # noqa: E402
+from userspace_lock_bootstrap_contract import CHECKPOINT_KIND  # noqa: E402
 
 
 TOOL = LIB / "device_generation_lifecycle.py"
@@ -128,14 +130,23 @@ def create_lineage_source(root, full_source):
         write(root / name, (full_source / name).read_bytes())
 
 
-def create_transport(path, source=None, exit_code=0, pause=False):
+def create_transport(path, source=None, exit_code=0, pause=False,
+                     request_log=None):
     actions = []
+    if request_log is not None:
+        actions.append(
+            "with pathlib.Path(%r).open('a', encoding='utf-8') as output:\n"
+            "    output.write(json.dumps(plan, sort_keys=True) + '\\n')"
+            % str(request_log)
+        )
     if source is not None:
         actions.append(
-            "for item in pathlib.Path(%r).iterdir():\n"
-            "    target = destination / item.name\n"
-            "    shutil.copytree(item, target) if item.is_dir() else "
-            "shutil.copy2(item, target)" % str(source)
+            "source = pathlib.Path(%r)\n"
+            "for record in plan['requests']:\n"
+            "    item = source / record['filename']\n"
+            "    if not item.is_file():\n"
+            "        item = source / 'payload' / record['filename']\n"
+            "    shutil.copy2(item, destination / record['filename'])" % str(source)
         )
     else:
         actions.append("(destination / 'partial').write_bytes(b'partial\\n')")
@@ -144,10 +155,13 @@ def create_transport(path, source=None, exit_code=0, pause=False):
     actions.append(f"raise SystemExit({exit_code})")
     payload = (
         f"#!{sys.executable}\n"
-        "import pathlib, shutil, sys, time\n"
-        "if len(sys.argv) != 3 or sys.argv[1] != '--destination':\n"
+        "import json, pathlib, shutil, sys, time\n"
+        "if len(sys.argv) != 5 or sys.argv[1] != '--destination' "
+        "or sys.argv[3] != '--request-plan':\n"
         "    raise SystemExit(64)\n"
         "destination = pathlib.Path(sys.argv[2])\n"
+        "request_plan = sys.argv[4]\n"
+        "plan = json.loads(pathlib.Path(request_plan).read_text())\n"
         + "\n".join(actions) + "\n"
     ).encode()
     write(path, payload, 0o700)
@@ -161,6 +175,47 @@ def create_containment_transport(path, pid_file):
         f"pathlib.Path({str(pid_file)!r}).write_text("
         "f'{os.getpid()} {child.pid}\\n')\n"
         "time.sleep(30)\n"
+    ).encode()
+    write(path, payload, 0o700)
+
+
+def create_adversarial_transport(path, source, mode, trust_path=None):
+    payload = (
+        f"#!{sys.executable}\n"
+        "import json, os, pathlib, shutil, sys\n"
+        "destination = pathlib.Path(sys.argv[2])\n"
+        "plan = json.loads(pathlib.Path(sys.argv[4]).read_text())\n"
+        f"source = pathlib.Path({str(source)!r})\n"
+        f"mode = {mode!r}\n"
+        "records = list(plan['requests'])\n"
+        "if mode == 'missing' and plan['phase'] == 'payload':\n"
+        "    records.pop()\n"
+        "for record in records:\n"
+        "    item = source / record['filename']\n"
+        "    if not item.is_file():\n"
+        "        item = source / 'payload' / record['filename']\n"
+        "    shutil.copy2(item, destination / record['filename'])\n"
+        "if mode == 'substitute' and plan['phase'] == 'payload':\n"
+        "    (destination / records[0]['filename']).write_bytes(b'substitute\\n')\n"
+        "if mode in {'extra', 'forged-evidence'} and plan['phase'] == 'payload':\n"
+        "    name = 'extra' if mode == 'extra' else 'verifier-evidence.json'\n"
+        "    (destination / name).write_bytes(b'forged\\n')\n"
+        "if mode == 'unsafe-entries' and plan['phase'] == 'payload':\n"
+        "    (destination / 'untrusted-link').symlink_to('/etc/passwd')\n"
+        "    os.mkfifo(destination / 'untrusted-fifo')\n"
+        "    nested = destination / 'untrusted-directory'\n"
+        "    nested.mkdir()\n"
+        "    (nested / 'untrusted-file').write_bytes(b'untrusted\\n')\n"
+        "if mode == 'replace-plan' and plan['phase'] == 'bootstrap':\n"
+        "    plan_path = pathlib.Path(sys.argv[4])\n"
+        "    plan_path.chmod(0o600)\n"
+        "    plan_path.write_bytes(b'{}\\n')\n"
+        + (
+            "if mode in {'replace-keyring', 'replace-policy'} "
+            "and plan['phase'] == 'manifest':\n"
+            f"    pathlib.Path({str(trust_path)!r}).write_bytes(b'replaced\\n')\n"
+            if trust_path is not None else ""
+        )
     ).encode()
     write(path, payload, 0o700)
 
@@ -245,7 +300,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix="opemos-device-generations-") as name:
         root = Path(name).resolve()
         store = root / "device-store"
-        keyring = root / "test-keyring.gpg"
+        keyring = root / "opemos-userspace-lock-generations.gpg"
         policy = root / "policy.json"
         checkpoint = root / "checkpoint.json"
         verifier = root / "gpgv"
@@ -256,31 +311,27 @@ def main():
             f"printf '%s\\n' '[GNUPG:] VALIDSIG {FINGERPRINT} "
             f"2026-09-03 0 0 4 0 1 10 00 {FINGERPRINT}'\n"
         ).encode(), 0o700)
-        policy_document = {
-            "schemaVersion": 1,
-            "status": "active",
-            "policyId": "opemos-userspace-lock-generations",
-            "policySchemaVersion": 1,
-            "keyringFilename": keyring.name,
-            "keyringSha256": digest(keyring.read_bytes()),
-            "signingKeyFingerprint": FINGERPRINT,
-        }
+        policy_document = bootstrap_policy()
+        policy_document["authority"]["keyringSha256"] = digest(
+            keyring.read_bytes()
+        )
         write(policy, canonical(policy_document))
         authority = {
             "policyId": policy_document["policyId"],
             "policySchemaVersion": policy_document["policySchemaVersion"],
             "policySha256": digest(policy.read_bytes()),
-            "keyringFilename": policy_document["keyringFilename"],
-            "keyringSha256": policy_document["keyringSha256"],
+            "keyringFilename": policy_document["authority"]["keyringFilename"],
+            "keyringSha256": policy_document["authority"]["keyringSha256"],
             "signingKeyFingerprint": FINGERPRINT,
         }
         generation_7 = root / "generation-7"
         hash_7 = create_source(generation_7, 7, "1" * 64, authority, signature)
         write(checkpoint, canonical({
             "schemaVersion": 1,
+            "kind": CHECKPOINT_KIND,
             "policySha256": authority["policySha256"],
-            "sequence": 7,
-            "manifestSha256": hash_7,
+            "minimumSequence": 7,
+            "minimumManifestSha256": hash_7,
         }))
         environment = {
             **os.environ,
@@ -405,7 +456,8 @@ def main():
         (generation_10 / "unexpected").unlink()
 
         transport = root / "generation-transport"
-        create_transport(transport, generation_10)
+        request_log = root / "transport-requests.jsonl"
+        create_transport(transport, generation_10, request_log=request_log)
         downloaded = invoke(
             environment, store, policy, keyring, checkpoint, "update",
             ["--transport", str(transport), *TARGET_ARGUMENTS],
@@ -415,12 +467,75 @@ def main():
         assert downloaded["state"]["active"]["manifestSha256"] == hash_9
         downloaded_generation = store / "downloads" / hash_10
         assert downloaded_generation.is_dir()
+        request_plans = [
+            json.loads(line) for line in request_log.read_text().splitlines()
+        ]
+        assert [plan["phase"] for plan in request_plans] == [
+            "bootstrap", "manifest", "payload",
+        ]
+        assert all(plan["redirects"] is False for plan in request_plans)
+        assert all(
+            record["url"].startswith("https://updates.example.invalid/")
+            for plan in request_plans for record in plan["requests"]
+        )
+        assert all(
+            ("/opemos/releases/generations/"
+             "opemos-userspace-lock-generation-v1-s10/") in record["url"]
+            for record in request_plans[1]["requests"]
+            + request_plans[2]["requests"]
+        )
         repeated_download = invoke(
             environment, store, policy, keyring, checkpoint,
             "update-or-repair", ["--transport", str(transport), *TARGET_ARGUMENTS],
         )
         assert repeated_download["generationCreated"] is False
         assert repeated_download["state"]["active"]["manifestSha256"] == hash_9
+
+        for mode in (
+                "missing", "extra", "substitute", "forged-evidence",
+                "replace-plan", "unsafe-entries"):
+            hostile_transport = root / f"{mode}-transport"
+            create_adversarial_transport(
+                hostile_transport, generation_10, mode
+            )
+            hostile = invoke(
+                environment, store, policy, keyring, checkpoint, "update",
+                ["--transport", str(hostile_transport), *TARGET_ARGUMENTS],
+                success=False,
+            )
+            expected_reason = "device_generation_transport_failed" \
+                if mode == "replace-plan" \
+                else "device_generation_transport_output_invalid"
+            assert hostile["reason"] == expected_reason
+            assert not list((store / "downloads").glob(".acquire-*"))
+
+        keyring_payload = keyring.read_bytes()
+        stale_transport = root / "stale-keyring-transport"
+        create_adversarial_transport(
+            stale_transport, generation_10, "replace-keyring", keyring
+        )
+        stale = invoke(
+            environment, store, policy, keyring, checkpoint, "update",
+            ["--transport", str(stale_transport), *TARGET_ARGUMENTS],
+            success=False,
+        )
+        assert stale["reason"] == "device_generation_input_changed"
+        write(keyring, keyring_payload)
+        assert not list((store / "downloads").glob(".acquire-*"))
+
+        policy_payload = policy.read_bytes()
+        stale_policy_transport = root / "stale-policy-transport"
+        create_adversarial_transport(
+            stale_policy_transport, generation_10, "replace-policy", policy
+        )
+        stale_policy = invoke(
+            environment, store, policy, keyring, checkpoint, "update",
+            ["--transport", str(stale_policy_transport), *TARGET_ARGUMENTS],
+            success=False,
+        )
+        assert stale_policy["reason"] == "device_generation_input_changed"
+        write(policy, policy_payload)
+        assert not list((store / "downloads").glob(".acquire-*"))
 
         partial_transport = root / "partial-transport"
         create_transport(partial_transport, exit_code=69)
@@ -732,7 +847,7 @@ def main():
             success=False,
         )
         assert rejected_download["reason"] == (
-            "device_generation_authentication_failed"
+            "device_generation_transport_output_invalid"
         )
         assert not list((store / "downloads").glob(".acquire-*"))
 

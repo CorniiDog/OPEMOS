@@ -17,6 +17,7 @@ import tempfile
 import time
 from contextlib import contextmanager
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from device_generation_contract import (
     DeviceGenerationContractError,
@@ -24,6 +25,11 @@ from device_generation_contract import (
     validate_identity as validate_generation_identity,
     validate_result,
     validate_state as validate_state_document,
+)
+from userspace_lock_bootstrap_contract import (
+    BootstrapContractError,
+    parse_checkpoint,
+    parse_policy,
 )
 from userspace_lock_generation_contract import (
     DISCOVERY_MAX_BYTES,
@@ -44,6 +50,15 @@ from userspace_lock_generation_contract import (
     validate_openpgp_status,
     validate_pair,
 )
+from userspace_lock_request_plan import (
+    MAX_PLAN_BYTES,
+    RequestPlanError,
+    build_request_plan,
+)
+from userspace_lock_verifier_evidence import (
+    VerifierEvidenceError,
+    verify_generation_snapshots,
+)
 
 
 DEFAULT_STORE = Path("/var/lib/opemos/userspace-lock-generations")
@@ -61,13 +76,6 @@ MAX_GENERATIONS = 4
 MAX_STORE_ENTRIES = 32
 HASH = re.compile(r"[0-9a-f]{64}")
 FINGERPRINT = re.compile(r"(?:[0-9A-F]{40}|[0-9A-F]{64})")
-POLICY_FIELDS = {
-    "schemaVersion", "status", "policyId", "policySchemaVersion",
-    "keyringFilename", "keyringSha256", "signingKeyFingerprint",
-}
-CHECKPOINT_FIELDS = {
-    "schemaVersion", "policySha256", "sequence", "manifestSha256",
-}
 STATE_MARKER_FIELDS = {"schemaVersion", "revision", "stateSha256", "state"}
 STATE_MARKERS = ("state-a.json", "state-b.json")
 PENDING_ACTIVATION = "pending-activation.json"
@@ -137,6 +145,26 @@ def require_directory_guards(guards):
     for path, mode, label, expected in guards:
         if directory_guard(path, mode, label) != expected:
             fail("device_generation_input_changed", f"{label} identity changed")
+
+
+def trust_file_guard(path, label):
+    try:
+        info = path.lstat()
+    except OSError:
+        fail("device_generation_input_changed", f"{label} is unavailable")
+    if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+            or path.is_symlink()):
+        fail("device_generation_input_changed", f"{label} is unsafe")
+    return (
+        info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns,
+        info.st_ctime_ns, info.st_uid, stat.S_IMODE(info.st_mode),
+    )
+
+
+def require_trust_guards(policy):
+    for path, label, expected in policy["guards"]:
+        if trust_file_guard(path, label) != expected:
+            fail("device_generation_input_changed", f"{label} changed")
 
 
 def snapshot_regular(path, maximum, label,
@@ -388,6 +416,99 @@ def remove_confined_generation_tree(root):
         os.fsync(parent_descriptor)
     except OSError:
         fail("device_generation_cleanup_failed", "generation cleanup failed")
+    finally:
+        if root_descriptor is not None:
+            os.close(root_descriptor)
+        if parent_descriptor is not None:
+            os.close(parent_descriptor)
+
+
+def remove_confined_transport_phase(root):
+    """Remove bounded untrusted transport output without following links."""
+    if re.fullmatch(r"\.transport-phase-[A-Za-z0-9_-]{1,64}", root.name) is None:
+        fail("device_generation_store_invalid", "transport cleanup target is unsafe")
+    parent_descriptor = root_descriptor = None
+    try:
+        parent_descriptor = os.open(
+            root.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+        )
+        root_descriptor = os.open(
+            root.name, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+            | getattr(os, "O_NOFOLLOW", 0), dir_fd=parent_descriptor,
+        )
+        opened = os.fstat(root_descriptor)
+        current = os.stat(root.name, dir_fd=parent_descriptor, follow_symlinks=False)
+        if (not stat.S_ISDIR(opened.st_mode) or opened.st_uid != os.geteuid()
+                or (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino)):
+            fail("device_generation_store_invalid", "transport cleanup target changed")
+        os.fchmod(root_descriptor, 0o700)
+        names = os.listdir(root_descriptor)
+        node_count = len(names) + 1
+        logical_bytes = 0
+        if node_count > MAX_CACHE_TREE_NODES:
+            fail("device_generation_store_excessive", "transport output has too many nodes")
+        for name in names:
+            info = os.stat(name, dir_fd=root_descriptor, follow_symlinks=False)
+            if stat.S_ISDIR(info.st_mode):
+                child_descriptor = os.open(
+                    name, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+                    | getattr(os, "O_NOFOLLOW", 0), dir_fd=root_descriptor,
+                )
+                try:
+                    child = os.fstat(child_descriptor)
+                    if ((child.st_dev, child.st_ino) != (info.st_dev, info.st_ino)
+                            or child.st_uid != os.geteuid()):
+                        fail(
+                            "device_generation_store_invalid",
+                            "transport cleanup directory changed",
+                        )
+                    os.fchmod(child_descriptor, 0o700)
+                    child_names = os.listdir(child_descriptor)
+                    node_count += len(child_names)
+                    if node_count > MAX_CACHE_TREE_NODES:
+                        fail(
+                            "device_generation_store_excessive",
+                            "transport output has too many nodes",
+                        )
+                    for child_name in child_names:
+                        child_info = os.stat(
+                            child_name, dir_fd=child_descriptor,
+                            follow_symlinks=False,
+                        )
+                        if stat.S_ISDIR(child_info.st_mode):
+                            fail(
+                                "device_generation_store_invalid",
+                                "transport output is too deep",
+                            )
+                        if stat.S_ISREG(child_info.st_mode):
+                            logical_bytes += child_info.st_size
+                        if logical_bytes > MAX_CACHE_TREE_BYTES:
+                            fail(
+                                "device_generation_store_excessive",
+                                "transport output is too large",
+                            )
+                        os.unlink(child_name, dir_fd=child_descriptor)
+                    os.fsync(child_descriptor)
+                finally:
+                    os.close(child_descriptor)
+                os.rmdir(name, dir_fd=root_descriptor)
+            else:
+                if stat.S_ISREG(info.st_mode):
+                    logical_bytes += info.st_size
+                if logical_bytes > MAX_CACHE_TREE_BYTES:
+                    fail(
+                        "device_generation_store_excessive",
+                        "transport output is too large",
+                    )
+                os.unlink(name, dir_fd=root_descriptor)
+        os.fsync(root_descriptor)
+        os.close(root_descriptor)
+        root_descriptor = None
+        os.rmdir(root.name, dir_fd=parent_descriptor)
+        os.fsync(parent_descriptor)
+    except OSError:
+        fail("device_generation_cleanup_failed", "transport cleanup failed")
     finally:
         if root_descriptor is not None:
             os.close(root_descriptor)
@@ -854,46 +975,42 @@ def active_policy(arguments):
         "device_generation_authentication_failed",
     )
     try:
-        policy = strict_json(policy_payload, MAX_POLICY_BYTES, "trust policy")
-    except GenerationContractError as error:
+        bootstrap_policy = parse_policy(policy_payload)
+        checkpoint_document = parse_checkpoint(checkpoint_payload, policy_payload)
+    except BootstrapContractError as error:
         fail("device_generation_authentication_failed", str(error))
-    if (not isinstance(policy, dict) or set(policy) != POLICY_FIELDS
-            or policy.get("schemaVersion") != 1 or policy.get("status") != "active"
-            or policy.get("policyId") != "opemos-userspace-lock-generations"
-            or policy.get("policySchemaVersion") != 1
-            or policy.get("keyringFilename") != keyring_path.name
-            or not isinstance(policy.get("keyringSha256"), str)
-            or HASH.fullmatch(policy["keyringSha256"]) is None
-            or policy["keyringSha256"] != sha256(keyring_payload)
-            or not isinstance(policy.get("signingKeyFingerprint"), str)
-            or FINGERPRINT.fullmatch(policy["signingKeyFingerprint"]) is None):
+    policy_authority = bootstrap_policy["authority"]
+    if (policy_authority["keyringFilename"] != keyring_path.name
+            or policy_authority["keyringSha256"] != sha256(keyring_payload)):
         fail("device_generation_authentication_failed", "trust policy is unsupported")
-    try:
-        checkpoint_document = strict_json(
-            checkpoint_payload, MAX_POLICY_BYTES, "bootstrap checkpoint"
-        )
-    except GenerationContractError as error:
-        fail("device_generation_authentication_failed", str(error))
-    if (not isinstance(checkpoint_document, dict)
-            or set(checkpoint_document) != CHECKPOINT_FIELDS
-            or checkpoint_document.get("schemaVersion") != 1
-            or checkpoint_document.get("policySha256") != sha256(policy_payload)
-            or type(checkpoint_document.get("sequence")) is not int
-            or not 1 <= checkpoint_document["sequence"] <= MAX_SEQUENCE
-            or not isinstance(checkpoint_document.get("manifestSha256"), str)
-            or HASH.fullmatch(checkpoint_document["manifestSha256"]) is None):
-        fail("device_generation_authentication_failed", "bootstrap checkpoint is unsupported")
+    policy = {
+        "keyringSha256": policy_authority["keyringSha256"],
+        "signingKeyFingerprint": policy_authority[
+            "primarySigningFingerprint"
+        ],
+        "bootstrap": bootstrap_policy,
+        "payload": policy_payload,
+        "guards": tuple(
+            (path, label, trust_file_guard(path, label)) for path, label in (
+                (policy_path, "generation trust policy"),
+                (keyring_path, "generation keyring"),
+                (checkpoint_path, "generation bootstrap checkpoint"),
+            )
+        ),
+    }
     authority = {
-        "policyId": policy["policyId"],
-        "policySchemaVersion": policy["policySchemaVersion"],
+        "policyId": bootstrap_policy["policyId"],
+        "policySchemaVersion": bootstrap_policy["policySchemaVersion"],
         "policySha256": sha256(policy_payload),
-        "keyringFilename": policy["keyringFilename"],
-        "keyringSha256": policy["keyringSha256"],
-        "signingKeyFingerprint": policy["signingKeyFingerprint"],
+        "keyringFilename": policy_authority["keyringFilename"],
+        "keyringSha256": policy_authority["keyringSha256"],
+        "signingKeyFingerprint": policy_authority[
+            "primarySigningFingerprint"
+        ],
     }
     checkpoint = {
-        "sequence": checkpoint_document["sequence"],
-        "manifestSha256": checkpoint_document["manifestSha256"],
+        "sequence": checkpoint_document["minimumSequence"],
+        "manifestSha256": checkpoint_document["minimumManifestSha256"],
     }
     return policy, authority, keyring_payload, checkpoint
 
@@ -978,9 +1095,10 @@ def verify_signature(document, signature, keyring, fingerprint):
     if process.returncode:
         fail("device_generation_authentication_failed", "signature is invalid")
     try:
-        validate_openpgp_status(bytes(output), fingerprint)
+        verified = validate_openpgp_status(bytes(output), fingerprint)
     except GenerationContractError as error:
         fail("device_generation_authentication_failed", str(error))
+    return {"exitStatus": process.returncode, "status": bytes(output), **verified}
 
 
 def load_authenticated_pair(source, keyring, signer, cached=False, lineage=False):
@@ -1502,7 +1620,7 @@ def terminate_transport_watchdog(process):
     process.wait()
 
 
-def run_injected_transport(arguments, destination):
+def run_injected_transport(arguments, destination, request_plan=None):
     if not development_override() or not arguments.transport:
         fail(
             "device_generation_network_inactive",
@@ -1526,13 +1644,25 @@ def run_injected_transport(arguments, destination):
     )
     executable = destination / ".transport"
     write_exclusive(executable, executable_payload, 0o700)
+    request_path = destination / ".request-plan.json"
+    request_payload = None
+    if request_plan is not None:
+        request_payload = canonical(request_plan)
+        if len(request_payload) > MAX_PLAN_BYTES:
+            fail("device_generation_transport_failed", "transport request plan is excessive")
+        write_exclusive(request_path, request_payload, 0o400)
     watchdog = Path(__file__).with_name("device_generation_transport_watchdog.py")
     control_read = control_write = None
     try:
         control_read, control_write = os.pipe()
+        command = [
+            sys.executable, str(watchdog), "--control-fd", str(control_read),
+            "--transport", str(executable), "--destination", str(destination),
+        ]
+        if request_payload is not None:
+            command.extend(["--request-plan", str(request_path)])
         process = subprocess.Popen(
-            [sys.executable, str(watchdog), "--control-fd", str(control_read),
-             "--transport", str(executable), "--destination", str(destination)],
+            command,
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL, start_new_session=True,
             env={"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"},
@@ -1559,6 +1689,18 @@ def run_injected_transport(arguments, destination):
         if control_write is not None:
             os.close(control_write)
         executable.unlink(missing_ok=True)
+        if request_payload is not None:
+            preserved = snapshot_regular(
+                request_path, MAX_PLAN_BYTES, "transport request plan",
+                "device_generation_transport_failed",
+                "device_generation_transport_failed", os.geteuid(), 0o400,
+            )
+            if preserved != request_payload:
+                fail(
+                    "device_generation_transport_failed",
+                    "transport request plan changed during acquisition",
+                )
+            request_path.unlink(missing_ok=True)
         fsync_directory(destination)
     if process.returncode == 69:
         fail("device_generation_transport_unavailable", "generation source is unavailable")
@@ -1566,6 +1708,171 @@ def run_injected_transport(arguments, destination):
         fail("device_generation_space_insufficient", "download staging storage is full")
     if process.returncode:
         fail("device_generation_transport_failed", "generation transport failed")
+
+
+def transport_request_plan(phase, requests):
+    if (phase not in {"bootstrap", "manifest", "payload"}
+            or not isinstance(requests, list)
+            or not 1 <= len(requests) <= MAX_FILES):
+        fail("device_generation_transport_failed", "transport request set is invalid")
+    return {
+        "schemaVersion": 1,
+        "kind": "opemos-device-generation-transport-request",
+        "phase": phase,
+        "redirects": False,
+        "requests": requests,
+    }
+
+
+def transport_record(role, filename, url, maximum_size, expected_size=None,
+                     expected_sha256=None):
+    parsed = urlsplit(url)
+    if (parsed.scheme != "https" or not parsed.netloc or parsed.query
+            or parsed.fragment or not parsed.path.startswith("/")):
+        fail("device_generation_transport_failed", "transport URL is invalid")
+    record = {
+        "assetRole": role,
+        "filename": filename,
+        "path": parsed.path,
+        "url": url,
+        "maximumSize": maximum_size,
+    }
+    if expected_size is not None:
+        record.update({
+            "expectedSize": expected_size,
+            "expectedSha256": expected_sha256,
+        })
+    return record
+
+
+def fetch_transport_phase(arguments, acquisition, plan):
+    phase = Path(tempfile.mkdtemp(prefix=".transport-phase-", dir=acquisition))
+    try:
+        run_injected_transport(arguments, phase, plan)
+        expected = {record["filename"]: record for record in plan["requests"]}
+        entries = list(phase.iterdir())
+        if ({entry.name for entry in entries} != set(expected)
+                or len(entries) != len(expected)):
+            fail(
+                "device_generation_transport_output_invalid",
+                "transport output set differs from the Core request plan",
+            )
+        payloads = {}
+        for name in sorted(expected):
+            record = expected[name]
+            payload = snapshot_regular(
+                phase / name, record["maximumSize"], "transport output",
+                "device_generation_transport_output_invalid",
+                "device_generation_transport_output_invalid", os.geteuid(),
+            )
+            if ("expectedSize" in record
+                    and (len(payload) != record["expectedSize"]
+                         or sha256(payload) != record["expectedSha256"])):
+                fail(
+                    "device_generation_transport_output_invalid",
+                    "transport output differs from its authenticated identity",
+                )
+            payloads[name] = payload
+        return payloads
+    finally:
+        if phase.exists():
+            remove_confined_transport_phase(phase)
+
+
+def acquire_planned_pair(arguments, acquisition, policy, authority, keyring):
+    bootstrap = policy["bootstrap"]
+    channel = bootstrap["channel"]
+    origin = channel["origin"]
+    discovery_path = channel["discoveryPath"]
+    parent = discovery_path.rsplit("/", 1)[0]
+    bootstrap_plan = transport_request_plan("bootstrap", [
+        transport_record(
+            "discovery", channel["discoveryFilename"],
+            origin + discovery_path, DISCOVERY_MAX_BYTES,
+        ),
+        transport_record(
+            "discovery-signature", channel["discoverySignatureFilename"],
+            origin + parent + "/" + channel["discoverySignatureFilename"],
+            MAX_SIGNATURE_BYTES,
+        ),
+    ])
+    metadata = fetch_transport_phase(arguments, acquisition, bootstrap_plan)
+    require_trust_guards(policy)
+    discovery_payload = metadata[channel["discoveryFilename"]]
+    discovery_signature = metadata[channel["discoverySignatureFilename"]]
+    verify_signature(
+        discovery_payload, discovery_signature, keyring,
+        policy["signingKeyFingerprint"],
+    )
+    try:
+        discovery = strict_json(
+            discovery_payload, DISCOVERY_MAX_BYTES, "discovery descriptor"
+        )
+        validate_discovery(discovery)
+    except GenerationContractError as error:
+        fail("device_generation_contract_invalid", str(error))
+    if discovery["authority"] != authority:
+        fail(
+            "device_generation_not_authorized",
+            "generation discovery authority differs from bootstrap policy",
+        )
+    generation = discovery["generation"]
+    release_root = (
+        origin + channel["immutableReleasePathPrefix"]
+        + generation["releaseTag"] + "/"
+    )
+    manifest_plan = transport_request_plan("manifest", [
+        transport_record(
+            "generation-manifest", generation["manifestFilename"],
+            release_root + generation["manifestFilename"], MANIFEST_MAX_BYTES,
+            generation["manifestSize"], generation["manifestSha256"],
+        ),
+        transport_record(
+            "generation-manifest-signature", generation["signatureFilename"],
+            release_root + generation["signatureFilename"], MAX_SIGNATURE_BYTES,
+            generation["signatureSize"], generation["signatureSha256"],
+        ),
+    ])
+    manifest_outputs = fetch_transport_phase(arguments, acquisition, manifest_plan)
+    require_trust_guards(policy)
+    manifest_payload = manifest_outputs[generation["manifestFilename"]]
+    manifest_signature = manifest_outputs[generation["signatureFilename"]]
+
+    def verifier(payload, signature, selected_keyring, _role):
+        result = verify_signature(
+            payload, signature, selected_keyring,
+            policy["signingKeyFingerprint"],
+        )
+        return {"exitStatus": result["exitStatus"], "status": result["status"]}
+
+    try:
+        evidence = verify_generation_snapshots(
+            policy["payload"], keyring, discovery_payload, discovery_signature,
+            manifest_payload, manifest_signature, verifier,
+        )
+        plan = build_request_plan(
+            policy["payload"], discovery_payload, discovery_signature,
+            manifest_payload, manifest_signature, evidence,
+        )
+    except (VerifierEvidenceError, RequestPlanError) as error:
+        fail("device_generation_authentication_failed", str(error))
+    payload_requests = [
+        {**record, "maximumSize": record["expectedSize"]}
+        for record in plan["requests"] if record["requestKind"] == "payload"
+    ]
+    payload_plan = transport_request_plan("payload", payload_requests)
+    payloads = fetch_transport_phase(arguments, acquisition, payload_plan)
+    require_trust_guards(policy)
+    write_exclusive(acquisition / channel["discoveryFilename"], discovery_payload)
+    write_exclusive(
+        acquisition / channel["discoverySignatureFilename"], discovery_signature
+    )
+    write_exclusive(acquisition / generation["manifestFilename"], manifest_payload)
+    write_exclusive(acquisition / generation["signatureFilename"], manifest_signature)
+    (acquisition / "payload").mkdir(mode=0o700)
+    for name, payload in payloads.items():
+        write_exclusive(acquisition / "payload" / name, payload)
+    return plan
 
 
 def acquire(arguments):
@@ -1585,7 +1892,9 @@ def acquire(arguments):
         cleanup_staging(downloads)
         acquisition = Path(tempfile.mkdtemp(prefix=".acquire-", dir=downloads))
         try:
-            run_injected_transport(arguments, acquisition)
+            acquire_planned_pair(
+                arguments, acquisition, policy, authority, keyring
+            )
             pair = load_authenticated_pair(
                 acquisition, keyring, policy["signingKeyFingerprint"]
             )
@@ -1620,6 +1929,7 @@ def acquire(arguments):
                     "device_generation_space_insufficient",
                     "download cache storage is full",
                 )
+            require_trust_guards(policy)
             _generation, created = publish_generation(
                 downloads, pair, payload_root, payload_records, policy, authority
             )
@@ -1828,7 +2138,8 @@ def rollback(arguments):
         pair = load_authenticated_pair(
             generation, keyring, policy["signingKeyFingerprint"], cached=True
         )
-        if pair["discovery"]["authority"]["policySha256"] != sha256(canonical(policy)):
+        if (pair["discovery"]["authority"]["policySha256"]
+                != sha256(policy["payload"])):
             fail("device_generation_authentication_failed", "rollback authority changed")
         state = {
             **state,

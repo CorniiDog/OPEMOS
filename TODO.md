@@ -1484,24 +1484,29 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   generation through confined marker-first deletion. Cover state ENOSPC,
   SIGTERM, and SIGKILL on both sides of the durable state commit.
 * [x] Add an inactive installed-device acquisition substrate for `update` and
-  `update-or-repair`. A development-only injected transport runs with a
-  sanitized environment and bounded lifetime into private store-local staging;
-  Core then authenticates the exact discovery, manifest, signatures, target,
-  lineage, and payload before create-only publication to a separate download
-  cache. Cover outage, timeout, ENOSPC, cancellation, partial/stale staging
-  cleanup, repeat download, and the invariant that acquisition never activates
-  a generation. Production transport remains unconfigured and fail-closed.
+  `update-or-repair`. Core derives phased immutable request plans from installed
+  bootstrap policy and authenticated discovery/manifest snapshots; a
+  development-only injected transport receives exact URLs and identities but
+  cannot select either. Core rejects missing, extra, renamed, oversized, or
+  substituted output, rechecks policy/keyring/checkpoint identity between
+  phases, and publishes only an exact authenticated generation to the separate
+  download cache. Cover forged audit JSON, plan replacement, stale trust files,
+  outage, timeout, ENOSPC, cancellation, hostile/partial staging cleanup,
+  repeat download, and the invariant that acquisition never activates a
+  generation. Production transport remains unconfigured and fail-closed.
 * [x] Contain injected transport descendants with a separate Core watchdog and
   close-on-exec owner-liveness pipe. Parent SIGKILL closes the pipe; the
   watchdog terminates and reaps the isolated transport process group before
   stale output can be consumed. Cover portable pipe-loss/descendant teardown,
   normal exit propagation, catchable cancellation, and a conditional Linux
   lifecycle-parent SIGKILL integration case with restart cleanup.
-* [ ] Specify a stable canonical discovery location without placing URLs or
-  redirects inside the signed descriptor. OPEMOS.EXE owns host transport and
-  its cache; installed Core/CLI owns device transport and its separate cache.
-  Both consume the same Core-owned identities, schemas, fixtures, and trust
-  root without importing one another's updater implementation.
+* [x] Specify the stable canonical discovery location in the separately
+  authenticated bootstrap policy, without placing URLs or redirects inside the
+  signed descriptor. Core's immutable request planner now consumes that policy
+  in the inactive installed-device acquisition path. OPEMOS.EXE owns host
+  transport/cache; installed Core/CLI owns device transport/cache. Both consume
+  the same identities, schemas, fixtures, and trust root without importing one
+  another's updater implementation.
 * [ ] Add the reviewed installed-device transport and stable discovery location
   to `update` and one-line safe `update-or-repair`; integrate the active
   reviewed lock with exact-target repair while keeping networking outside
