@@ -8,13 +8,20 @@ import sys
 
 from userspace_lock_generation_contract import (
     DISCOVERY_MAX_BYTES,
+    DISCOVERY_FILENAME,
+    DISCOVERY_SIGNATURE_FILENAME,
+    DISCOVERY_SIGNATURE_SCHEME,
+    GENERATION_DIRECTORY_MODE,
+    GENERATION_FILE_MODE,
     MANIFEST_MAX_BYTES,
     MAX_FILE_BYTES,
     MAX_FILES,
     MAX_GENERATION_BYTES,
+    MAX_GENERATION_STORAGE_BYTES,
     MAX_LINEAGE_GENERATIONS,
     MAX_SEQUENCE,
     MAX_TARGETS,
+    OPENPGP_HASH_ALGORITHM_IDS,
     canonical,
 )
 
@@ -695,9 +702,19 @@ def main():
         },
         "expectedTarget": exact_target(),
         "consumerHandoff": {
+            "discoveryFilename": DISCOVERY_FILENAME,
+            "discoverySignatureFilename": DISCOVERY_SIGNATURE_FILENAME,
+            "discoverySignatureScheme": DISCOVERY_SIGNATURE_SCHEME,
+            "allowedOpenPgpHashAlgorithmIds": list(
+                OPENPGP_HASH_ALGORITHM_IDS
+            ),
+            "authoritySource": "installed-policy-keyring-checkpoint",
             "generationIdSource": "generation.manifestSha256",
             "manifestSha256Source": "generation.manifestSha256",
             "sequenceSource": "sequence",
+            "payloadFileMode": GENERATION_FILE_MODE,
+            "cacheDirectoryMode": GENERATION_DIRECTORY_MODE,
+            "executablePayloadAllowed": False,
             "durableIdentityFields": ["sequence", "manifestSha256"],
             "highWaterInvariant": "maximum-activated-sequence-never-decreases",
             "rollbackInvariant": "active-may-return-to-lkg-high-water-unchanged",
@@ -761,6 +778,7 @@ def main():
             "maxFiles": MAX_FILES,
             "maxFileBytes": MAX_FILE_BYTES,
             "maxGenerationBytes": MAX_GENERATION_BYTES,
+            "maxGenerationStorageBytes": MAX_GENERATION_STORAGE_BYTES,
             "maxLineageGenerations": MAX_LINEAGE_GENERATIONS,
         },
         "cases": cases,

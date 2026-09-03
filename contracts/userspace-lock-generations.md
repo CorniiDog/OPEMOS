@@ -29,10 +29,24 @@ Core discovery location:
 - `opemos-userspace-lock-discovery-v1.json`
 - `opemos-userspace-lock-discovery-v1.json.sig`
 
+Those basenames are protocol constants, including when a consumer persists
+offline lineage. The signature is an OpenPGP v4 detached document signature
+(`openpgp-detached-v1`). Consumers require exactly one valid signature from the
+installed policy fingerprint and accept only OpenPGP hash algorithm identifiers
+8, 9, or 10 (SHA-256, SHA-384, or SHA-512). The pinned signer identity constrains
+the public-key algorithm. A weak digest, ambiguous `VALIDSIG` set, malformed
+status, or signature by another trusted-keyring member fails closed.
+
 The descriptor contains no URL. Redirect and endpoint policy belongs to each
 consumer's networking layer. Consumers first snapshot both bounded files, then
 verify the detached signature with the locally installed reviewed data keyring
 and signer policy before parsing or acting on descriptor metadata.
+The descriptor cannot contain the hash of its own detached signature without a
+circular identity. Its publication evidence is therefore the canonical
+descriptor bytes plus canonical detached-signature asset, authenticated against
+the separately installed policy/keyring/checkpoint. Production publication
+evidence and trust anchors are deliberately unconfigured while this channel is
+inactive.
 
 The schema-1 descriptor is a closed canonical JSON object with exactly these
 top-level fields:
@@ -99,6 +113,17 @@ policies, optional reviewed payload profiles, and required provenance. The
 manifest cannot authorize executable Core/runtime replacement. Every selected
 lock must bind its complete package set to manifest file records with no missing
 or extra inputs.
+
+Manifest file records describe immutable data and intentionally have no mode
+field. Consumers normalize every stored regular payload/document to mode `0400`
+and every immutable generation/payload directory to mode `0500`; executable
+payloads are forbidden. Source transport modes are neither trusted nor identity.
+`MAX_GENERATION_BYTES` is the sum of `files[].size` only. A consumer admitting a
+complete cache generation uses the larger logical envelope
+`MAX_GENERATION_STORAGE_BYTES`: payload plus maximum discovery, manifest, two
+detached signatures, and bounded local trust record. Filesystem allocation,
+directory metadata, temporary staging, and the safety reserve remain additional
+consumer-local admission requirements rather than signed payload identity.
 
 ## Acceptance and activation invariants
 

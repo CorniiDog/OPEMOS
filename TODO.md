@@ -1412,6 +1412,13 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   canonical JSON, durable active/last-known-good identities, rollback-stable
   high-water state, and hostile inputs without configuring a production
   signer, bootstrap checkpoint, or network path.
+* [x] Freeze the schema-1 consumer interpretation for externally authenticated
+  discovery: canonical discovery/signature basenames, OpenPGP v4 detached
+  signatures with SHA-256/384/512, separately installed authority/checkpoint,
+  data-only mode normalization (`0400` files and `0500` directories), and a
+  complete logical storage-envelope ceiling distinct from payload bytes and
+  filesystem safety reserve. Publish these constants in the semantic module
+  and compatibility handoff without changing the closed wire documents.
 * [ ] Create a dedicated reviewed data-generation signer policy and binary
   verification keyring. Do not reuse Arch, Valve, NVIDIA, commit-signing, or
   desktop-binary update keys.

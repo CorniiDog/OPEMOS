@@ -15,12 +15,21 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
 from userspace_lock_generation_contract import (  # noqa: E402
     DISCOVERY_MAX_BYTES,
+    DISCOVERY_FILENAME,
+    DISCOVERY_SIGNATURE_FILENAME,
+    DISCOVERY_SIGNATURE_SCHEME,
+    GENERATION_DIRECTORY_MODE,
+    GENERATION_FILE_MODE,
     MANIFEST_MAX_BYTES,
     MAX_FILE_BYTES,
     MAX_FILES,
     MAX_GENERATION_BYTES,
+    MAX_GENERATION_STORAGE_BYTES,
     MAX_LINEAGE_GENERATIONS,
+    MAX_SIGNATURE_BYTES,
     MAX_TARGETS,
+    MAX_TRUST_RECORD_BYTES,
+    OPENPGP_HASH_ALGORITHM_IDS,
     GenerationContractError,
     canonical,
     load_discovery,
@@ -114,9 +123,17 @@ def main():
     )
     assert matrix["status"] == "inactive-design-contract"
     assert matrix["consumerHandoff"] == {
+        "discoveryFilename": DISCOVERY_FILENAME,
+        "discoverySignatureFilename": DISCOVERY_SIGNATURE_FILENAME,
+        "discoverySignatureScheme": DISCOVERY_SIGNATURE_SCHEME,
+        "allowedOpenPgpHashAlgorithmIds": list(OPENPGP_HASH_ALGORITHM_IDS),
+        "authoritySource": "installed-policy-keyring-checkpoint",
         "generationIdSource": "generation.manifestSha256",
         "manifestSha256Source": "generation.manifestSha256",
         "sequenceSource": "sequence",
+        "payloadFileMode": GENERATION_FILE_MODE,
+        "cacheDirectoryMode": GENERATION_DIRECTORY_MODE,
+        "executablePayloadAllowed": False,
         "durableIdentityFields": ["sequence", "manifestSha256"],
         "highWaterInvariant": "maximum-activated-sequence-never-decreases",
         "rollbackInvariant": "active-may-return-to-lkg-high-water-unchanged",
@@ -142,8 +159,13 @@ def main():
         "maxFiles": MAX_FILES,
         "maxFileBytes": MAX_FILE_BYTES,
         "maxGenerationBytes": MAX_GENERATION_BYTES,
+        "maxGenerationStorageBytes": MAX_GENERATION_STORAGE_BYTES,
         "maxLineageGenerations": MAX_LINEAGE_GENERATIONS,
     }
+    assert MAX_GENERATION_STORAGE_BYTES == (
+        MAX_GENERATION_BYTES + DISCOVERY_MAX_BYTES + MANIFEST_MAX_BYTES
+        + 2 * MAX_SIGNATURE_BYTES + MAX_TRUST_RECORD_BYTES
+    )
     cases = matrix["cases"]
     assert isinstance(cases, list) and 1 <= len(cases) <= 80
     base_cases = {

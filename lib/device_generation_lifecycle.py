@@ -27,13 +27,16 @@ from device_generation_contract import (
 )
 from userspace_lock_generation_contract import (
     DISCOVERY_MAX_BYTES,
+    DISCOVERY_FILENAME,
     MANIFEST_MAX_BYTES,
     MAX_FILE_BYTES,
     MAX_FILES,
     MAX_GENERATION_BYTES,
+    MAX_GENERATION_STORAGE_BYTES,
     MAX_LINEAGE_GENERATIONS,
     MAX_SEQUENCE,
     GenerationContractError,
+    OPENPGP_HASH_ALGORITHM_IDS,
     canonical,
     strict_json,
     validate_activation,
@@ -56,7 +59,6 @@ MAX_TRANSPORT_BYTES = 16 * 1024 * 1024
 MAX_TRANSPORT_SECONDS = 300
 MAX_GENERATIONS = 4
 MAX_STORE_ENTRIES = 32
-DISCOVERY_FILENAME = "opemos-userspace-lock-discovery-v1.json"
 HASH = re.compile(r"[0-9a-f]{64}")
 FINGERPRINT = re.compile(r"(?:[0-9A-F]{40}|[0-9A-F]{64})")
 POLICY_FIELDS = {
@@ -78,8 +80,7 @@ STATE_TEMP_PREFIXES = tuple(
 MAX_STORE_ROOT_ENTRIES = 16
 MAX_CACHE_TREE_NODES = MAX_FILES + 16
 MAX_CACHE_TREE_BYTES = (
-    MAX_GENERATION_BYTES + DISCOVERY_MAX_BYTES + MANIFEST_MAX_BYTES
-    + 2 * MAX_SIGNATURE_BYTES + MAX_STATE_BYTES + MAX_TRANSPORT_BYTES
+    MAX_GENERATION_STORAGE_BYTES + MAX_STATE_BYTES + MAX_TRANSPORT_BYTES
 )
 CACHE_SPACE_RESERVE_BYTES = 64 * 1024 * 1024
 CACHE_INODE_RESERVE = 128
@@ -959,12 +960,23 @@ def verify_signature(document, signature, keyring, fingerprint):
         status_text = output.decode("ascii")
     except UnicodeError:
         fail("device_generation_authentication_failed", "signature status is malformed")
-    signers = []
+    signatures = []
     for line in status_text.splitlines():
         fields = line.split()
-        if len(fields) >= 3 and fields[:2] == ["[GNUPG:]", "VALIDSIG"]:
-            signers.append(fields[2].upper())
-    if signers != [fingerprint]:
+        if fields[:2] != ["[GNUPG:]", "VALIDSIG"]:
+            continue
+        if (len(fields) not in {11, 12}
+                or fields[6] != "4"
+                or not fields[8].isdigit()
+                or not fields[9].isdigit()
+                or int(fields[9]) not in OPENPGP_HASH_ALGORITHM_IDS
+                or fields[10] != "00"):
+            fail(
+                "device_generation_authentication_failed",
+                "signature algorithm or status is unsupported",
+            )
+        signatures.append(fields[2].upper())
+    if signatures != [fingerprint]:
         fail("device_generation_authentication_failed", "signature signer is unauthorized")
 
 

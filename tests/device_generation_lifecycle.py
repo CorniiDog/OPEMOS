@@ -241,7 +241,8 @@ def main():
         write(keyring, b"test-keyring\n")
         write(verifier, (
             "#!/bin/sh\n"
-            f"printf '%s\\n' '[GNUPG:] VALIDSIG {FINGERPRINT}'\n"
+            f"printf '%s\\n' '[GNUPG:] VALIDSIG {FINGERPRINT} "
+            f"2026-09-03 0 0 4 0 1 10 00 {FINGERPRINT}'\n"
         ).encode(), 0o700)
         policy_document = {
             "schemaVersion": 1,
@@ -722,6 +723,23 @@ def main():
             "device_generation_authentication_failed"
         )
         assert not list((store / "downloads").glob(".acquire-*"))
+
+        weak_hash_verifier = root / "weak-hash-gpgv"
+        write(weak_hash_verifier, (
+            "#!/bin/sh\n"
+            f"printf '%s\\n' '[GNUPG:] VALIDSIG {FINGERPRINT} "
+            f"2026-09-03 0 0 4 0 1 2 00 {FINGERPRINT}'\n"
+        ).encode(), 0o700)
+        weak_signature = activate(
+            {
+                **environment,
+                "OPEMOS_GENERATION_TEST_GPGV": str(weak_hash_verifier),
+            },
+            store, policy, keyring, checkpoint, generation_10, success=False,
+        )
+        assert weak_signature["reason"] == (
+            "device_generation_authentication_failed"
+        )
 
         noisy_verifier = root / "noisy-gpgv"
         write(noisy_verifier, (
