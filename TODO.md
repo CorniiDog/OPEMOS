@@ -49,6 +49,30 @@ index in the same commit.
 
 ### Remaining engineering cleanup
 
+* [ ] Make `lib/resolve_target.py` the sole release-compatibility policy
+  implementation. Publish its versioned schema and fixtures, then have
+  OPEMOS.EXE invoke and validate that result instead of independently parsing
+  tags, selecting same-series fallbacks, or constructing canonical asset names.
+* [ ] Make reviewed OPEMOS userspace locks the sole normal-build package source.
+  OPEMOS.EXE must download only the exact filenames returned by the support
+  contract; remove its production dynamic Arch newest-package and dependency
+  selection after the locked path is fully integrated. Keep dependency
+  discovery only in the support-owned maintainer audit workflow.
+* [ ] Publish one deterministic OPEMOS installer-bundle manifest containing the
+  support commit and every required path, role, mode, size, and SHA-256.
+  Replace OPEMOS.EXE's manually duplicated support-file inventory with a pin to
+  the exact support commit plus this manifest hash, while retaining complete
+  download verification and path confinement in the builder.
+* [ ] Publish canonical resolver, progress, validation, installation,
+  verification, receipt, and gaming-payload schemas from OPEMOS. Generate or
+  fixture-test the OPEMOS.EXE Rust consumers against them, retaining
+  builder-owned session binding, bounds, cleanup checks, transfer validation,
+  and independent final-image inspection rather than duplicating support policy.
+* [ ] Define a bounded adapter from installer `STEAMOS_NVIDIA_PROGRESS` records
+  to the shared overall/current-operation presentation model. OPEMOS.EXE owns
+  macOS labels, weighting, controls, and loading UI; the SteamOS interstitial
+  owns its direct-DRM rendering; neither frontend may depend on the other.
+
 * [ ] Hardware-validate the implemented no-input DRM/KMS boot interstitial on
   real SteamOS with simpledrm and intended iGPU paths, internal/external display
   handoff, hotplug, renderer crash/SIGKILL, power loss, watchdog expiry, and
@@ -134,6 +158,35 @@ criteria without duplicating that queue.
 ---
 
 ## 1. Core project architecture
+
+### Core and frontend dependency boundary
+
+* [x] Treat OPEMOS Core as the one lower-level policy and contract provider:
+  exact-target resolution, trust, userspace locks, installation, verification,
+  recovery state, progress records, and structured results belong here.
+* [x] Treat the OPEMOS CLI, native SteamOS desktop companion, and no-input
+  SteamOS DRM/KMS interstitial as sibling clients of OPEMOS Core. Packaging
+  these clients in one support bundle is aggregation, not a dependency from the
+  core back into a frontend.
+* [x] Treat OPEMOS.EXE as a separate macOS frontend and image orchestrator that
+  consumes one exact authenticated OPEMOS bundle. OPEMOS must never import,
+  invoke, build against, or require OPEMOS.EXE at runtime.
+* [x] Keep presentation with the client that runs it: OPEMOS.EXE owns macOS
+  menus, dialogs, image-build loading UI, cancellation, and export workflows;
+  the desktop companion owns interactive SteamOS status/recovery UI; the
+  interstitial owns temporary no-input SteamOS boot/update presentation; the
+  CLI owns terminal presentation.
+* [x] Share bounded contracts, phase identities, status semantics, design
+  tokens, and canonical branding assets without sharing platform event loops,
+  Tauri/DOM code, DRM/KMS code, macOS APIs, or executable dependencies between
+  frontends.
+* [x] Enforce a directed dependency graph with no frontend-to-frontend edge:
+  `OPEMOS Core <- CLI`, `OPEMOS Core <- Desktop`,
+  `OPEMOS Core <- Interstitial`, and `OPEMOS Core <- OPEMOS.EXE`.
+* [x] For a live SteamOS workflow, keep the client thin and invoke a
+  support-owned live-install/recovery contract. Any generally reusable logic
+  currently embedded in OPEMOS.EXE must move down into OPEMOS Core; macOS VM,
+  image, `diskutil`, Finder, USB, and Tauri behavior remains in OPEMOS.EXE.
 
 * [x] Keep the support/build/install tooling in:
 
@@ -1023,14 +1076,21 @@ offline installer contract.
 
 The support repository owns exact Valve header acquisition/authentication,
 NVIDIA source selection, exact-target compilation, module validation, archive
-format, machine-readable results, provenance, Fedora transaction tests, build
-cleanup, and eventual certified-artifact publication.
+format, reviewed userspace locks and trust, package-level payload profiles,
+offline installation, target `depmod` and initramfs generation, structured
+post-install verification, recovery/device clients, machine-readable results,
+provenance, Fedora transaction tests, build cleanup, and eventual
+certified-artifact publication.
 
 The image builder owns recovery-image inspection, active boot-kernel selection,
 Valve A/B and installer-layout handling, appliance lifecycle, progress and
-cancellation UX, artifact caching, offline image injection, matching NVIDIA
-userspace/GSP firmware, offline `depmod`, target initramfs work, final-image
-validation, and preservation of the original input.
+cancellation UX, authenticated host acquisition and appliance transfer,
+exclusive writable-overlay ownership, invoking the pinned support contract,
+independent final-image validation, safe export/USB workflows, and preservation
+of the original input. It must not independently decide release compatibility,
+userspace dependency closure, signer policy, or installer mutation semantics.
+OPEMOS owns authenticated cache/bundle semantics; OPEMOS.EXE owns where and how
+those authenticated objects are acquired, retained, and handed to appliances.
 
 The patched NVIDIA source repository owns versioned `nvidia/<version>` branches,
 SteamOS-specific patches, and an unambiguous driver-version-to-source-commit
