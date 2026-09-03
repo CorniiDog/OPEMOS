@@ -215,8 +215,8 @@ implementation summary and must not redefine that read-only governance file.
   Core alone authorizes the exact source action or fails closed. Neither side
   may silently substitute a different branch, commit, or mode.
 * [x] Keep recovery-image A/B discovery, pairing, and overlay mounts in
-  OPEMOS.EXE while Core owns installed-system guardian, receipt, slot-transition,
-  and rollback policy after SteamOS boots.
+  OPEMOS.EXE; SteamOS owns base OS slot transitions; and Core owns NVIDIA
+  guardian, receipt, repair, verification, and payload rollback afterward.
 * [x] OPEMOS Core owns rollback inside a mounted target transaction: packages,
   modules, GRUB, initramfs, receipts, temporary mounts, and target state.
   OPEMOS.EXE owns the outer rollback boundary: disposable overlay retention or

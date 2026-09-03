@@ -76,9 +76,10 @@ Networking is divided into three independent scopes:
   authenticated staged inputs; an exact-target build may receive only the
   explicitly authorized egress its Core build contract requires. Core never
   configures the host network.
-- **Installed-device networking:** Core-owned device clients and update/recovery
-  contracts own networking after SteamOS boots. Credentials and device network
-  state remain on the installed device and never appear in progress, result,
+- **Installed-device networking:** SteamOS and the user own connectivity,
+  credentials, and device network configuration. Core-owned update/recovery
+  clients own only their authenticated, bounded requests after SteamOS boots.
+  Credentials and device network state never appear in progress, result,
   receipt, or diagnostic contracts.
 
 Success in one network scope neither establishes trust nor grants network
@@ -102,11 +103,11 @@ Recovery-image A/B orchestration belongs to OPEMOS.EXE. It inspects the image,
 determines the relevant recovery rootfs/var/EFI pairing, mounts only the
 selected disposable overlay, and preserves the original image.
 
-Installed-system A/B policy belongs to Core-owned recovery and guardian
-contracts. After installation, those contracts govern NVIDIA state, receipts,
-validation, rollback, and SteamOS slot transitions on the device. Image-time
-slot selection does not define installed-system update policy, and installed-
-system policy never repartitions or reinterprets the source recovery image.
+SteamOS owns the base operating-system slot transition. Core-owned recovery and
+guardian contracts own NVIDIA state, receipts, validation, repair, and payload
+rollback in response to that transition. Image-time slot selection does not
+define installed-system update policy, and Core policy never selects the base
+OS slot, repartitions storage, or reinterprets the source recovery image.
 
 ## Sole UI exception
 

@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_SHA256 = "d6084c18fb9dbf4076ffc800f499d265078bf4a74ef3386e04199a86904cdb42"
+EXPECTED_SHA256 = "890c5a0fdaff8f328fc5497cebd51191c6191eaa940f509969f3c25dacc8d736"
 
 
 def main():

@@ -61,8 +61,9 @@ Host, appliance, and installed-device networking are separate authority scopes.
 OPEMOS.EXE owns host acquisition and VM network attachment. Core declares
 bounded appliance requirements; installation defaults to authenticated staged
 inputs without external egress, while an authorized exact-target build may use
-only its declared egress. Core-owned device clients govern networking after
-SteamOS boots without exposing credentials through structured contracts.
+only its declared egress. SteamOS and the user own installed-device
+connectivity and credentials; Core clients own only their authenticated,
+bounded requests and never expose credentials through structured contracts.
 
 OPEMOS.EXE records the user's requested source intent. Core separately
 authorizes an exact bounded action or fails closed; neither side silently
@@ -74,9 +75,10 @@ disposable overlay and may discard it after any Core or independent-validation
 failure; it never asks Core to restore the original source image.
 
 OPEMOS.EXE also owns recovery-image A/B discovery, rootfs/var/EFI pairing, and
-overlay mounting. Core owns installed-system A/B guardian, receipt, transition,
-and rollback policy after boot. Neither responsibility grants the other side
-permission to repartition or reinterpret its storage boundary.
+overlay mounting. SteamOS owns the base OS slot transition; Core owns NVIDIA
+guardian, receipt, repair, verification, and payload rollback in response.
+Neither responsibility grants another side permission to choose the base OS
+slot, repartition storage, or reinterpret its storage boundary.
 
 There are two intentionally separate experiences:
 
