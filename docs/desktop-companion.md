@@ -55,7 +55,9 @@ desktop update contract. A candidate requires:
 The manager snapshots every input, verifies the signature over the exact private
 snapshot, writes a private staging generation, fsyncs its files and directories,
 and publishes it under the manifest SHA-256. It never overwrites an existing
-generation.
+generation. Each generation includes canonical trust metadata binding the
+manifest and signature hashes, signer fingerprint, reviewed keyring hash, and
+policy hash; all bindings are recomputed whenever the generation is used.
 
 ```text
 desktop_update_generations.py stage \
@@ -66,12 +68,19 @@ desktop_update_generations.py acknowledge \
   --store STORE --generation SHA256
 desktop_update_generations.py recover --store STORE
 desktop_update_generations.py resolve --store STORE
+desktop_update_generations.py launch --store STORE
 ```
 
 Only one lifecycle operation may hold the store lock. The store, generation
 directories, marker files, and immutable payload modes are revalidated on every
 operation. Symlinks, changed payloads, unsafe permissions, unknown signers, and
 wrong architectures fail before activation.
+
+Schema-1 failures use stable reasons including
+`desktop_update_authentication_failed`, `desktop_update_busy`,
+`desktop_update_state_conflict`, `desktop_update_version_not_newer`,
+`desktop_update_health_timeout`, and `desktop_update_launch_failed`. Human
+messages remain bounded and do not contain signature material or file contents.
 
 ## Activation and rollback
 
@@ -87,9 +96,13 @@ previous generation. The order is intentionally safe at each power-loss point:
 4. Crash during rollback: observe the restored pointer and remove stale pending
    state without reactivating the failed generation.
 
-`bootstrap/launch_desktop_companion.sh` resolves and revalidates the active
-generation immediately before launch. It exports an exact generation identity
-so the rendered application can issue its bounded health acknowledgement.
+`bootstrap/launch_desktop_companion.sh` delegates launch to the generation
+manager. On Linux, the manager opens the exact authenticated ELF with
+`O_NOFOLLOW`, rechecks its size, mode, ELF identity, and hash through that file
+descriptor, copies and rehashes it into a write-sealed `memfd`, and executes the
+sealed `/proc/self/fd` identity rather than reopening a mutable pathname. It
+exports the exact generation identity so the rendered application can issue its
+bounded health acknowledgement.
 
 ## Current trust gate
 

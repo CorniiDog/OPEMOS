@@ -3,8 +3,10 @@
 
 import fcntl
 import hashlib
+import importlib.util
 import json
 import os
+import platform
 import stat
 import subprocess
 import sys
@@ -16,6 +18,10 @@ ROOT = Path(__file__).resolve().parents[1]
 TOOL = ROOT / "lib/desktop_update_generations.py"
 SIGNER = "A" * 40
 REVISION = "b" * 40
+
+SPEC = importlib.util.spec_from_file_location("desktop_update_generations", TOOL)
+UPDATE_MODULE = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(UPDATE_MODULE)
 
 
 def canonical(document):
@@ -134,6 +140,17 @@ def main():
         generation = store / "generations" / first_id
         assert stat.S_IMODE(generation.stat().st_mode) == 0o555
         assert stat.S_IMODE((generation / "opemos-recovery-status").stat().st_mode) == 0o555
+        trust_record = json.loads((generation / "trust.json").read_text())
+        assert trust_record["manifestSha256"] == first_id
+        assert trust_record["signerFingerprint"] == SIGNER
+        descriptor = UPDATE_MODULE.open_generation_executable(
+            generation, json.loads((generation / "manifest.json").read_text())
+        )
+        try:
+            assert not os.get_inheritable(descriptor)
+            assert os.read(descriptor, 4) == b"\x7fELF"
+        finally:
+            os.close(descriptor)
 
         # Bootstrap, acknowledge, update, and acknowledge the new generation.
         invoke(environment, "activate", "--store", store, "--generation", first_id,
@@ -186,7 +203,10 @@ def main():
         # Cryptographic, signer, payload, manifest, architecture, and mode failures.
         bad_env = {**environment, "MOCK_GPGV_FAIL": "1"}
         bad_candidate = update_files(root, "0.7.0", "bad-candidate")
-        stage(bad_env, root / "bad-signature-store", bad_candidate, success=False)
+        _, bad_signature = stage(
+            bad_env, root / "bad-signature-store", bad_candidate, success=False
+        )
+        assert bad_signature["reason"] == "desktop_update_authentication_failed"
         wrong_signer = {**environment, "MOCK_SIGNER": "C" * 40}
         stage(wrong_signer, root / "bad-signer-store", bad_candidate, success=False)
         corrupt = list(update_files(root, "0.8.0", "corrupt"))
@@ -218,10 +238,23 @@ def main():
         invoke(environment, "activate", "--store", store, "--generation", first_id,
                "--timeout", 30, success=False, now=650)
         os.chmod(generation / "opemos-recovery-status", 0o555)
+        stored_signature = generation / "manifest.json.sig"
+        signature_payload = stored_signature.read_bytes()
+        os.chmod(stored_signature, 0o644)
+        stored_signature.write_bytes(b"different but mock-valid signature\n")
+        os.chmod(stored_signature, 0o444)
+        _, trust_drift = invoke(environment, "activate", "--store", store,
+                                "--generation", first_id, "--timeout", 30,
+                                success=False, now=650)
+        assert trust_drift["reason"] == "desktop_update_authentication_failed"
+        os.chmod(stored_signature, 0o644)
+        stored_signature.write_bytes(signature_payload)
+        os.chmod(stored_signature, 0o444)
         _, downgrade = invoke(environment, "activate", "--store", store,
                               "--generation", second_id, "--timeout", 30,
                               success=False, now=651)
         assert "must advance" in downgrade["message"]
+        assert downgrade["reason"] == "desktop_update_version_not_newer"
 
         # A pending candidate that changes on disk is rolled back immediately,
         # without waiting for its startup deadline.
@@ -240,6 +273,7 @@ def main():
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         _, locked = invoke(environment, "status", "--store", store, success=False)
         assert "another desktop update operation" in locked["message"]
+        assert locked["reason"] == "desktop_update_busy"
         lock.close()
         victim = root / "victim"
         victim.write_text("unchanged\n")
@@ -280,6 +314,43 @@ def main():
         else:
             raise AssertionError("cancelled signature verifier remained alive")
         assert not any((root / "cancel-store" / "generations").glob(".stage-*"))
+
+        # Linux CI/VMs execute a real x86_64 ELF through the verified
+        # close-on-exec descriptor, proving the race-free launch path itself.
+        if sys.platform.startswith("linux") and platform.machine().lower() in ("x86_64", "amd64"):
+            source = UPDATE_MODULE.open_generation_executable(
+                generation, json.loads((generation / "manifest.json").read_text())
+            )
+            sealed = UPDATE_MODULE.sealed_execution_copy(
+                source, json.loads((generation / "manifest.json").read_text())
+            )
+            os.close(source)
+            try:
+                try:
+                    os.write(sealed, b"mutation")
+                except OSError:
+                    pass
+                else:
+                    raise AssertionError("sealed launch payload remained writable")
+            finally:
+                os.close(sealed)
+            launch_store = root / "launch-store"
+            launch_paths = list(update_files(root, "1.0.0", "launch"))
+            launch_paths[2].write_bytes(Path("/bin/true").read_bytes())
+            launch_document = json.loads(launch_paths[0].read_text())
+            launch_document["size"] = launch_paths[2].stat().st_size
+            launch_document["sha256"] = hashlib.sha256(launch_paths[2].read_bytes()).hexdigest()
+            launch_paths[0].write_text(canonical(launch_document), encoding="utf-8")
+            _, launch_stage = stage(environment, launch_store, launch_paths)
+            invoke(environment, "activate", "--store", launch_store,
+                   "--generation", launch_stage["generation"], "--initial", now=900)
+            launched = subprocess.run(
+                [sys.executable, str(TOOL), "launch", "--store", launch_store],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                env={**environment, "OPEMOS_TEST_NOW": "901"}, check=False,
+            )
+            assert launched.returncode == 0, launched.stderr
+            assert launched.stdout == ""
 
         # The committed production policy deliberately remains fail closed.
         production = {key: value for key, value in environment.items()

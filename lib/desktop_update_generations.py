@@ -38,13 +38,17 @@ MANIFEST_FIELDS = {
 class UpdateError(Exception):
     """A bounded, user-safe update contract failure."""
 
+    def __init__(self, reason, message):
+        super().__init__(message)
+        self.reason = reason
+
 
 class UpdateCancelled(Exception):
     """An explicit lifecycle cancellation, distinct from retryable EINTR."""
 
 
-def fail(message):
-    raise UpdateError(message)
+def fail(message, reason="desktop_update_validation_failed"):
+    raise UpdateError(reason, message)
 
 
 def canonical(document):
@@ -70,7 +74,9 @@ def strict_json_bytes(payload, label):
 
 def snapshot_regular(path, maximum, label):
     try:
-        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        descriptor = os.open(
+            path, os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+        )
     except OSError:
         fail(f"{label} is missing, unreadable, or unsafe")
     try:
@@ -103,10 +109,11 @@ def require_production_anchor(path, label):
     try:
         info = path.lstat()
     except OSError:
-        fail(f"{label} is missing or unreadable")
+        fail(f"{label} is missing or unreadable", "desktop_update_authentication_failed")
     if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0
             or info.st_nlink != 1 or stat.S_IMODE(info.st_mode) & 0o022):
-        fail(f"{label} is not a root-owned immutable trust anchor")
+        fail(f"{label} is not a root-owned immutable trust anchor",
+             "desktop_update_authentication_failed")
 
 
 def sha256(payload):
@@ -184,7 +191,7 @@ def update_lock(store, create=False):
     try:
         descriptor = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     except OSError:
-        fail("update lifecycle lock is unsafe or unavailable")
+        fail("update lifecycle lock is unsafe or unavailable", "desktop_update_lock_failed")
     with os.fdopen(descriptor, "a+b") as lock:
         info = os.fstat(lock.fileno())
         if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
@@ -193,7 +200,7 @@ def update_lock(store, create=False):
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            fail("another desktop update operation is active")
+            fail("another desktop update operation is active", "desktop_update_busy")
         cleanup_staging(store / "generations")
         yield
 
@@ -233,7 +240,8 @@ def active_policy():
             or not re.fullmatch(r"[0-9a-f]{64}", policy.get("keyringSha256") or "")
             or not isinstance(policy.get("signers"), list)
             or not 1 <= len(policy["signers"]) <= 16):
-        fail("desktop update trust policy is not configured for production")
+        fail("desktop update trust policy is not configured for production",
+             "desktop_update_authentication_failed")
     signers = set()
     for record in policy["signers"]:
         if (not isinstance(record, dict)
@@ -244,10 +252,11 @@ def active_policy():
                 or record["fingerprint"] in signers):
             fail("desktop update trust policy contains an invalid signer")
         signers.add(record["fingerprint"])
-    keyring = snapshot_regular(keyring_path, 16 * 1024 * 1024, "desktop update keyring")
     require_production_anchor(keyring_path, "desktop update keyring")
+    keyring = snapshot_regular(keyring_path, 16 * 1024 * 1024, "desktop update keyring")
     if sha256(keyring) != policy["keyringSha256"]:
-        fail("desktop update keyring differs from the reviewed policy")
+        fail("desktop update keyring differs from the reviewed policy",
+             "desktop_update_authentication_failed")
     return policy, policy_payload, keyring
 
 
@@ -319,26 +328,31 @@ def verify_signature(manifest_payload, signature_payload, keyring_payload, allow
                 stderr=subprocess.PIPE, text=True, start_new_session=True,
             )
         except OSError:
-            fail("desktop update signature verification could not complete")
+            fail("desktop update signature verification could not complete",
+                 "desktop_update_authentication_failed")
         try:
             stdout, _stderr = process.communicate(timeout=60)
         except subprocess.TimeoutExpired:
             terminate_process_group(process)
-            fail("desktop update signature verification could not complete")
+            fail("desktop update signature verification could not complete",
+                 "desktop_update_authentication_failed")
         except BaseException:
             terminate_process_group(process)
             raise
     if process.returncode:
-        fail("desktop update signature is cryptographically invalid")
+        fail("desktop update signature is cryptographically invalid",
+             "desktop_update_authentication_failed")
     fingerprints = []
     for line in stdout.splitlines():
         fields = line.split()
         if len(fields) >= 3 and fields[:2] == ["[GNUPG:]", "VALIDSIG"]:
             fingerprints.append(fields[2].upper())
     if len(fingerprints) != 1 or not FINGERPRINT.fullmatch(fingerprints[0]):
-        fail("desktop update signature did not identify exactly one signer")
+        fail("desktop update signature did not identify exactly one signer",
+             "desktop_update_authentication_failed")
     if fingerprints[0] not in allowed_signers:
-        fail("desktop update signature is not from an active reviewed signer")
+        fail("desktop update signature is not from an active reviewed signer",
+             "desktop_update_authentication_failed")
     return fingerprints[0]
 
 
@@ -376,11 +390,13 @@ def verify_generation(store, identity):
             or not stat.S_ISDIR(generation_info.st_mode)
             or generation_info.st_uid != os.getuid()):
         fail("desktop update generation is missing or unsafe")
-    expected = {"manifest.json", "manifest.json.sig", "opemos-recovery-status"}
+    expected = {
+        "manifest.json", "manifest.json.sig", "opemos-recovery-status", "trust.json"
+    }
     names = []
     with os.scandir(generation) as iterator:
         for entry in iterator:
-            if len(names) >= 4:
+            if len(names) >= 5:
                 fail("desktop update generation contains excessive entries")
             names.append(entry.name)
     if set(names) != expected:
@@ -390,24 +406,138 @@ def verify_generation(store, identity):
     manifest_path = generation / "manifest.json"
     signature_path = generation / "manifest.json.sig"
     binary_path = generation / "opemos-recovery-status"
+    trust_path = generation / "trust.json"
     if (stat.S_IMODE(manifest_path.stat().st_mode) != 0o444
             or stat.S_IMODE(signature_path.stat().st_mode) != 0o444
-            or stat.S_IMODE(binary_path.stat().st_mode) != 0o555):
+            or stat.S_IMODE(binary_path.stat().st_mode) != 0o555
+            or stat.S_IMODE(trust_path.stat().st_mode) != 0o444):
         fail("desktop update generation file permissions are unsafe")
     manifest = snapshot_regular(manifest_path, MAX_MANIFEST_BYTES, "generation manifest")
     signature = snapshot_regular(signature_path, MAX_SIGNATURE_BYTES, "generation signature")
     binary = snapshot_regular(binary_path, MAX_BINARY_BYTES, "generation executable")
+    trust_payload = snapshot_regular(trust_path, MAX_MANIFEST_BYTES, "generation trust record")
     document = strict_json_bytes(manifest, "generation manifest")
     validate_manifest(document, manifest)
     validate_elf(binary)
     if sha256(manifest) != identity or len(binary) != document["size"] or sha256(binary) != document["sha256"]:
         fail("desktop update generation differs from its authenticated manifest")
-    policy, _, keyring = active_policy()
+    trust = strict_json_bytes(trust_payload, "generation trust record")
+    if (canonical(trust) != trust_payload or set(trust) != {
+            "schemaVersion", "manifestSha256", "signatureSha256",
+            "signerFingerprint", "keyringSha256", "policySha256"
+            } or type(trust.get("schemaVersion")) is not int or trust["schemaVersion"] != 1):
+        fail("desktop update generation trust record is malformed")
+    policy, policy_payload, keyring = active_policy()
     signer = verify_signature(
         manifest, signature, keyring,
         {item["fingerprint"] for item in policy["signers"]},
     )
+    expected_trust = {
+        "schemaVersion": 1,
+        "manifestSha256": sha256(manifest),
+        "signatureSha256": sha256(signature),
+        "signerFingerprint": signer,
+        "keyringSha256": sha256(keyring),
+        "policySha256": sha256(policy_payload),
+    }
+    if trust != expected_trust:
+        fail("desktop update generation trust record differs from reviewed inputs",
+             "desktop_update_authentication_failed")
     return generation, document, signer
+
+
+def open_generation_executable(generation, document):
+    path = generation / document["filename"]
+    try:
+        descriptor = os.open(
+            path, os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+        )
+    except OSError:
+        fail("active desktop executable could not be opened safely",
+             "desktop_update_launch_failed")
+    try:
+        info = os.fstat(descriptor)
+        if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+                or stat.S_IMODE(info.st_mode) != 0o555
+                or info.st_size != document["size"]):
+            fail("active desktop executable metadata changed before launch",
+                 "desktop_update_launch_failed")
+        digest = hashlib.sha256()
+        header = b""
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            if len(header) < 64:
+                header += chunk[:64 - len(header)]
+            digest.update(chunk)
+        if digest.hexdigest() != document["sha256"]:
+            fail("active desktop executable changed before launch",
+                 "desktop_update_launch_failed")
+        validate_elf(header)
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        return descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+def sealed_execution_copy(source, document):
+    if not hasattr(os, "memfd_create"):
+        fail("Linux sealed-memory execution is unavailable", "desktop_update_launch_failed")
+    close_on_exec = getattr(os, "MFD_CLOEXEC", 0x0001)
+    allow_sealing = getattr(os, "MFD_ALLOW_SEALING", 0x0002)
+    try:
+        destination = os.memfd_create(
+            "opemos-recovery-status", close_on_exec | allow_sealing
+        )
+    except OSError:
+        fail("Linux sealed-memory execution is unavailable", "desktop_update_launch_failed")
+    try:
+        os.lseek(source, 0, os.SEEK_SET)
+        digest = hashlib.sha256()
+        total = 0
+        header = b""
+        while True:
+            chunk = os.read(source, 1024 * 1024)
+            if not chunk:
+                break
+            if len(header) < 64:
+                header += chunk[:64 - len(header)]
+            digest.update(chunk)
+            total += len(chunk)
+            view = memoryview(chunk)
+            while view:
+                written = os.write(destination, view)
+                if written <= 0:
+                    fail("sealed desktop executable copy was incomplete",
+                         "desktop_update_launch_failed")
+                view = view[written:]
+        if total != document["size"] or digest.hexdigest() != document["sha256"]:
+            fail("active desktop executable changed during sealed launch staging",
+                 "desktop_update_launch_failed")
+        validate_elf(header)
+        os.fchmod(destination, 0o555)
+        seal_seal = getattr(fcntl, "F_SEAL_SEAL", 0x0001)
+        seals = (seal_seal
+                 | getattr(fcntl, "F_SEAL_SHRINK", 0x0002)
+                 | getattr(fcntl, "F_SEAL_GROW", 0x0004)
+                 | getattr(fcntl, "F_SEAL_WRITE", 0x0008))
+        add_seals = getattr(fcntl, "F_ADD_SEALS", 1033)
+        get_seals = getattr(fcntl, "F_GET_SEALS", 1034)
+        fcntl.fcntl(destination, add_seals, seals)
+        if fcntl.fcntl(destination, get_seals) & seals != seals:
+            fail("sealed desktop executable could not be made immutable",
+                 "desktop_update_launch_failed")
+        os.lseek(destination, 0, os.SEEK_SET)
+        return destination
+    except OSError:
+        os.close(destination)
+        fail("sealed desktop executable preparation failed",
+             "desktop_update_launch_failed")
+    except BaseException:
+        os.close(destination)
+        raise
 
 
 def stage(args):
@@ -420,7 +550,7 @@ def stage(args):
     validate_elf(binary_payload)
     if len(binary_payload) != document["size"] or sha256(binary_payload) != document["sha256"]:
         fail("desktop update executable differs from its manifest")
-    policy, _, keyring = active_policy()
+    policy, policy_payload, keyring = active_policy()
     allowed = {item["fingerprint"] for item in policy["signers"]}
     identity = sha256(manifest_payload)
     with update_lock(args.store, create=True):
@@ -438,6 +568,15 @@ def stage(args):
             signer = verify_signature(
                 manifest_payload, signature_payload, keyring, allowed,
             )
+            trust = {
+                "schemaVersion": 1,
+                "manifestSha256": sha256(manifest_payload),
+                "signatureSha256": sha256(signature_payload),
+                "signerFingerprint": signer,
+                "keyringSha256": sha256(keyring),
+                "policySha256": sha256(policy_payload),
+            }
+            write_file(temporary / "trust.json", canonical(trust), 0o444)
             fsync_directory(temporary)
             os.chmod(temporary, 0o555)
             os.replace(temporary, destination)
@@ -511,24 +650,27 @@ def activate(args):
     with update_lock(args.store):
         _, document, _ = verify_generation(args.store, args.generation)
         if read_pending(args.store) is not None:
-            fail("a desktop update activation is already pending")
+            fail("a desktop update activation is already pending", "desktop_update_state_conflict")
         current = read_marker(args.store, "current")
         if current == args.generation:
-            fail("desktop update generation is already active")
+            fail("desktop update generation is already active", "desktop_update_state_conflict")
         last_good = read_marker(args.store, "last-known-good")
         if current is None:
             if not args.initial:
-                fail("initial desktop activation requires --initial")
+                fail("initial desktop activation requires --initial", "desktop_update_state_conflict")
             if last_good is not None:
-                fail("initial desktop activation conflicts with retained healthy state")
+                fail("initial desktop activation conflicts with retained healthy state",
+                     "desktop_update_state_conflict")
         elif args.initial:
-            fail("--initial is valid only when no desktop generation is active")
+            fail("--initial is valid only when no desktop generation is active",
+                 "desktop_update_state_conflict")
         if current is not None:
             _, current_document, _ = verify_generation(args.store, current)
             candidate_version = tuple(map(int, document["version"].split(".")))
             current_version = tuple(map(int, current_document["version"].split(".")))
             if candidate_version <= current_version:
-                fail("desktop update activation must advance the installed version")
+                fail("desktop update activation must advance the installed version",
+                     "desktop_update_version_not_newer")
         now = now_epoch()
         pending = {"schemaVersion": 1, "candidate": args.generation,
                    "previous": current, "activatedAt": now,
@@ -546,10 +688,12 @@ def acknowledge(args):
         pending = read_pending(args.store)
         current = read_marker(args.store, "current", optional=False)
         if pending is None or pending["candidate"] != args.generation or current != args.generation:
-            fail("desktop update health acknowledgement does not match the pending generation")
+            fail("desktop update health acknowledgement does not match the pending generation",
+                 "desktop_update_state_conflict")
         if now_epoch() > pending["deadline"]:
             recover_locked(args.store, force=True)
-            fail("desktop update health acknowledgement arrived after its deadline")
+            fail("desktop update health acknowledgement arrived after its deadline",
+                 "desktop_update_health_timeout")
         verify_generation(args.store, current)
         write_marker(args.store, "last-known-good", current)
         durable_unlink(args.store / "pending.json")
@@ -612,6 +756,45 @@ def resolve(args):
                recovery=recovery)
 
 
+def launch(args):
+    require_runtime_architecture()
+    if platform.system() != "Linux":
+        fail("desktop generation launch requires Linux procfs execution",
+             "desktop_update_launch_failed")
+    descriptor = None
+    try:
+        with update_lock(args.store):
+            recover_locked(args.store)
+            identity = read_marker(args.store, "current", optional=False)
+            generation, document, _ = verify_generation(args.store, identity)
+            source = open_generation_executable(generation, document)
+            try:
+                descriptor = sealed_execution_copy(source, document)
+            finally:
+                os.close(source)
+            proc_path = f"/proc/self/fd/{descriptor}"
+            if not Path(proc_path).exists():
+                fail("Linux procfs is unavailable for race-free desktop launch",
+                     "desktop_update_launch_failed")
+            environment = dict(os.environ)
+            for name in (
+                "OPEMOS_DEVELOPMENT_TRUST_OVERRIDE", "OPEMOS_DESKTOP_UPDATE_POLICY",
+                "OPEMOS_DESKTOP_UPDATE_KEYRING", "OPEMOS_TEST_ARCHITECTURE",
+                "OPEMOS_TEST_GPGV", "OPEMOS_TEST_NOW", "OPEMOS_TEST_SUPPORT_REVISION",
+            ):
+                environment.pop(name, None)
+            environment["OPEMOS_UPDATE_STORE"] = str(args.store)
+            environment["OPEMOS_UPDATE_GENERATION"] = identity
+            try:
+                os.execve(proc_path, ["opemos-recovery-status"], environment)
+            except OSError:
+                fail("sealed desktop executable could not be launched",
+                     "desktop_update_launch_failed")
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
 def show_status(args):
     require_runtime_architecture()
     with update_lock(args.store):
@@ -665,6 +848,9 @@ def parser():
     resolve_parser = commands.add_parser("resolve")
     resolve_parser.add_argument("--store", required=True, type=Path)
     resolve_parser.set_defaults(operation=resolve)
+    launch_parser = commands.add_parser("launch")
+    launch_parser.add_argument("--store", required=True, type=Path)
+    launch_parser.set_defaults(operation=launch)
     status_parser = commands.add_parser("status")
     status_parser.add_argument("--store", required=True, type=Path)
     status_parser.set_defaults(operation=show_status)
@@ -683,7 +869,7 @@ def main():
         result("cancelled", "desktop_update_cancelled")
         return 130
     except UpdateError as error:
-        result("failed", "desktop_update_failed", message=str(error)[:512])
+        result("failed", error.reason, message=str(error)[:512])
         return 1
     except (OSError, ValueError, subprocess.SubprocessError):
         result("failed", "desktop_update_failed",
