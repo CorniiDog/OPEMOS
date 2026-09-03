@@ -239,14 +239,16 @@ def read_manifest(path):
 
 def write_create_only(path, payload):
     parent = path.parent.resolve(strict=True)
-    if not parent.is_dir() or path.parent.is_symlink():
+    if (not parent.is_dir() or path.name in {"", ".", ".."}
+            or "/" in path.name or "\\" in path.name):
         raise ContractError("bundle manifest output directory is unsafe")
+    output = parent / path.name
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0)
     descriptor = None
     created = False
     complete = False
     try:
-        descriptor = os.open(path, flags, 0o644)
+        descriptor = os.open(output, flags, 0o644)
         created = True
         with os.fdopen(descriptor, "wb") as stream:
             stream.write(payload)
@@ -264,7 +266,7 @@ def write_create_only(path, payload):
             os.close(descriptor)
         if created and not complete:
             try:
-                path.unlink()
+                output.unlink()
             except FileNotFoundError:
                 pass
 
