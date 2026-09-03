@@ -1,0 +1,58 @@
+{
+  "$id": "https://corniidog.github.io/OPEMOS/contracts/appliance-generation-handoff-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "hash": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "identity": {
+      "additionalProperties": false,
+      "properties": {
+        "generationId": {"$ref": "#/$defs/hash"},
+        "manifestSha256": {"$ref": "#/$defs/hash"},
+        "sequence": {"maximum": 18446744073709551615, "minimum": 1, "type": "integer"}
+      },
+      "required": ["sequence", "generationId", "manifestSha256"],
+      "type": "object"
+    },
+    "portableFilename": {
+      "maxLength": 255,
+      "pattern": "^(?!.*[.]$)(?!(?:[Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Mm][1-9]|[Ll][Pp][Tt][1-9])(?:[.]|$))[A-Za-z0-9@._+~-]+$",
+      "type": "string"
+    },
+    "receipt": {
+      "additionalProperties": false,
+      "properties": {
+        "filename": {"$ref": "#/$defs/portableFilename"},
+        "sha256": {"$ref": "#/$defs/hash"},
+        "size": {"maximum": 2147483648, "minimum": 1, "type": "integer"}
+      },
+      "required": ["filename", "size", "sha256"],
+      "type": "object"
+    },
+    "target": {"$ref": "userspace-lock-discovery-v1.schema.json#/$defs/target"}
+  },
+  "additionalProperties": false,
+  "description": "Closed transport receipt for one flat Core generation staged by OPEMOS.EXE into a managed appliance. It provides transport integrity only; Core must reauthenticate every generation before consumption.",
+  "properties": {
+    "files": {
+      "items": {"$ref": "#/$defs/receipt"},
+      "maxItems": 4101,
+      "minItems": 6,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "identity": {"$ref": "#/$defs/identity"},
+    "kind": {"const": "opemos-core-appliance-generation-handoff"},
+    "lineageManifestSha256": {
+      "items": {"$ref": "#/$defs/hash"},
+      "maxItems": 64,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "operationId": {"maxLength": 64, "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$", "type": "string"},
+    "schemaVersion": {"const": 1},
+    "target": {"$ref": "#/$defs/target"}
+  },
+  "required": ["schemaVersion", "kind", "operationId", "identity", "target", "lineageManifestSha256", "files"],
+  "title": "OPEMOS Core appliance generation handoff v1",
+  "type": "object"
+}

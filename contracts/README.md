@@ -68,6 +68,10 @@ publisher evidence, and installed-device lifecycle.
   over exact immutable snapshots. The record is inspectable contract data but
   is never an authorization token and cannot recreate the in-process verifier
   capability required by the request planner.
+- `schemas/appliance-generation-handoff-v1.schema.json` describes the closed
+  flat transport receipt OPEMOS.EXE stages into a managed appliance. The
+  receipt is never trust evidence; Core reauthenticates the signed generation
+  and exact payload set before producing installer inputs.
 - `schemas/device-generation-result-v1.schema.json` describes bounded results
   and durable state from the inactive installed-device generation lifecycle.
 - `schemas/device-generation-health-v1.schema.json` describes the closed,

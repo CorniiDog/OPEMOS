@@ -274,7 +274,36 @@ and case-insensitive Windows device names such as `CON`, `NUL`, `COM1`, and
 `LPT1` (including names with extensions). Filenames are also unique under
 case-insensitive comparison, and payload names cannot collide with the
 generation manifest or its signature. Consumers must not create an unbound
-host-specific filename mapping.
+host-specific filename mapping. A reviewed Linux package lock may retain a
+package-manager filename containing `:` while its generation asset uses a
+portable basename. Core alone resolves that representation by exact package
+and signature SHA-256, rejects zero/multiple matches and extra assets, and
+restores the lock-owned filename only inside private Linux installer staging.
+
+## OPEMOS.EXE to appliance generation handoff
+
+`appliance-generation-handoff-v1.schema.json` freezes the flat transfer
+receipt produced by OPEMOS.EXE. It binds one operation, generation sequence and
+manifest hash, exact target, bounded lineage identities, and the sorted unique
+name/size/SHA-256 of every transferred file. The inventory is exactly the
+canonical discovery pair, manifest pair, verifier audit record, and every
+manifest-owned payload. It carries transport integrity only.
+
+Inside the managed appliance, `lib/consume_appliance_generation.py` snapshots
+the installed bootstrap policy, checkpoint and generation keyring; verifies
+both detached signatures again; validates authority, checkpoint, lineage,
+target, manifest, verifier evidence, reviewed lock, package/signature closure,
+package keyring and package-specific signer policy; and produces a create-only
+private installer-input directory. EXE does not select packages or translate
+the reviewed lock.
+
+The current entry point requires `--development-test`. Production use fails
+closed until maintainers install a real independently authenticated policy,
+keyring and checkpoint. `lib/generate_development_appliance_generation.py`
+materializes exactly one deterministic synthetic generation for cross-project
+integration. Its `.invalid` origin, fake keyring, fake signatures, fake package
+bytes and test verifier are intentionally unusable for a real installation and
+must never be promoted or published as trusted artifacts.
 
 ## Migration gate
 

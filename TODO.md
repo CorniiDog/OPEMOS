@@ -11,6 +11,20 @@ index in the same commit.
 
 ### Immediate image-builder blockers
 
+* [ ] Complete OPEMOS.EXE equivalence against the deterministic development-
+  only userspace generation and Core's appliance consumer, then remove the
+  builder's duplicated package-selection/lock translation only after its
+  cross-repository tests prove identical fail-closed outcomes.
+* [ ] Obtain maintainer decisions for the production generation signing key,
+  canonical HTTPS channel, initial checkpoint, immutable release namespace,
+  publication credentials/policy, rotation/revocation and state-loss recovery.
+  Until then, production generation discovery and appliance consumption remain
+  disabled; the synthetic development generation is not installable payload.
+* [ ] Define and fixture the minimal Core source-intent authorization contract
+  for Automatic, exact published, reviewed exact-target build, reviewed project
+  source and explicit upstream-development requests so OPEMOS.EXE can remove
+  its remaining source-selection policy without guessing or fallback.
+
 * [ ] Hardware-test `gaming-no-cuda-v1` and its complete-payload restoration on
   the exact SteamOS 3.8.14 / 575.64.05 / valve24.4 target before promotion
   beyond development trust.
@@ -59,13 +73,13 @@ index in the same commit.
   contract; remove its production dynamic Arch newest-package and dependency
   selection after the locked path is fully integrated. Keep dependency
   discovery only in the support-owned maintainer audit workflow.
-* [ ] Publish the schema-1 reviewed userspace-lock data-generation contract:
+* [x] Publish the schema-1 reviewed userspace-lock data-generation contract:
   dedicated trust root, signed stable discovery descriptor, immutable signed
   generation manifest, deterministic compatibility fixtures, create-only
   publication evidence, replay/downgrade policy, and exact-target lock records.
   Routine same-schema/same-authority generations must be consumable without an
   OPEMOS.EXE, Core/CLI, or SteamOS image rebuild.
-* [ ] Implement the installed-device consumer for reviewed lock generations.
+* [x] Implement the inactive installed-device consumer for reviewed lock generations.
   Core/CLI must independently discover, authenticate, download, validate,
   cache, atomically activate, health-acknowledge, retain, repair with, and roll
   back the same immutable identities consumed by OPEMOS.EXE. Keep its device

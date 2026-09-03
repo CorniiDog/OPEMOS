@@ -184,6 +184,14 @@ appliance. Before handoff:
 The installer must never call `steamos-readonly` against Fedora or infer its
 target from Fedora's running kernel.
 
+For reviewed userspace generations, transfer the complete flat set described
+by `appliance-generation-handoff-v1.schema.json`. Then invoke Core's
+`lib/consume_appliance_generation.py` inside the x86_64 appliance. The guest
+must reauthenticate discovery, manifest, lock, keyring, signer policy and every
+package/signature; the host receipt never establishes trust. During the current
+inactive integration phase this command requires `--development-test`, and its
+result remains `development-test-only`.
+
 ## Validation and mutation
 
 Use identical staged inputs for `--validate-only` and mutation. The installer
@@ -200,7 +208,7 @@ generation:
   --input-source authenticated-bundle \
   --authenticated-bundle /media/certified-userspace.bundle \
   --bundle-store /appliance/cache/imported \
-  --bundle-keyring /appliance/trust/nvidia-userspace.gpg \
+  --bundle-keyring /appliance/trust/archlinux-nvidia-userspace-2025-08-01.gpg \
   --bundle-reviewed-signers trust/nvidia-userspace-package-signers.json \
   --bundle-steamos 3.8.14 \
   --bundle-nvidia 575.64.05 \

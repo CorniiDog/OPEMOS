@@ -36,6 +36,7 @@ description: API-style command, result, progress, trust, and failure reference.
 | `lib/installer_bundle_manifest.py` | Maintainer/integrator | Create-only output | Immutable support-bundle manifest |
 | `lib/desktop_update_generations.py` | SteamOS desktop launcher | Generation store and atomic markers | Desktop-update schema 1 JSON |
 | `bootstrap/generationctl.sh` | Installed Core/CLI | Private reviewed-lock generation store | Device-generation schema 1 JSON |
+| `lib/consume_appliance_generation.py` | Managed x86_64 appliance | Create-only private installer-input staging | Development generation preparation JSON |
 
 Every command supports `--help`; that output is the canonical option list.
 
@@ -109,6 +110,13 @@ authentication: production consumers must pin the manifest digest separately.
 `bootstrap/generationctl.sh` manages the installed device's own reviewed-lock
 cache. It is separate from OPEMOS.EXE's host cache and from the desktop
 companion's binary-update generations.
+
+For host-to-appliance integration, OPEMOS.EXE stages the closed
+`appliance-generation-handoff-v1.schema.json` receipt and its flat file set.
+Core's `consume_appliance_generation.py` treats that receipt only as transport
+integrity and independently reauthenticates the exact signed generation before
+mapping its reviewed lock to installer inputs. This path is currently guarded
+by `--development-test`; no production generation authority is configured.
 
 Implemented inactive commands are:
 

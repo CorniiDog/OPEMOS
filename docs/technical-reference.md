@@ -1008,7 +1008,7 @@ bootstrap/install_to_root.sh \
     --input-source authenticated-bundle \
     --authenticated-bundle /media/certified-userspace.bundle \
     --bundle-store /appliance/cache/imported \
-    --bundle-keyring /appliance/trust/nvidia-userspace.gpg \
+    --bundle-keyring /appliance/trust/archlinux-nvidia-userspace-2025-08-01.gpg \
     --bundle-reviewed-signers trust/nvidia-userspace-package-signers.json \
     --bundle-steamos 3.8.14 --bundle-nvidia 575.64.05 \
     --root /target-root --archive /appliance/modules.tar.gz \
