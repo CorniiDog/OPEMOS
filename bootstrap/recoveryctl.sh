@@ -54,6 +54,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 STATUS_TOOL="$SUPPORT_ROOT/lib/recovery_status.py"
+POLICY_TOOL="$SUPPORT_ROOT/lib/recovery_policy.py"
+POLICY_ROOT="$SUPPORT_ROOT"
+if [[ "${PROJECT_TEST_MODE:-0}" == 1 && -n "${PROJECT_TEST_POLICY_ROOT:-}" ]]; then
+    POLICY_ROOT="$PROJECT_TEST_POLICY_ROOT"
+fi
 FALLBACK_STATE_TOOL="$SUPPORT_ROOT/lib/recovery_fallback_state.py"
 STATE_ROOT="$(project_system_path /var/lib/$PROJECT_ID/recovery)"
 TRANSACTION="$SUPPORT_ROOT/transaction.json"
@@ -64,10 +69,18 @@ NVIDIA_INITRAMFS="$(project_system_path /etc/mkinitcpio.conf.d/90-open-gpu-kerne
 
 status_json()
 {
-    local base transaction status_code
+    local base nvidia policy policy_args transaction status_code
+    if [[ $# -eq 1 ]]; then
+        policy="$1"
+    else
+        policy_args=(--root "$POLICY_ROOT")
+        [[ "${PROJECT_TEST_MODE:-0}" != 1 ]] || policy_args+=(--test-owner)
+        policy="$(python3 "$POLICY_TOOL" "${policy_args[@]}")"
+    fi
+    nvidia="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["nvidiaVersion"])' "$policy")"
     status_code=0
     base="$(python3 "$STATUS_TOOL" --root "$ROOT" --kernel "$(get_kernel_version)" \
-        --expected-nvidia-file usr/lib/open-gpu-kernel-modules-steamos-support/nvidia-version)" || status_code=$?
+        --expected-nvidia "$nvidia")" || status_code=$?
     if [[ "$status_code" != 0 ]]; then
         printf '%s\n' "$base"
         return "$status_code"
@@ -278,10 +291,12 @@ case "$COMMAND" in
     repair-online|repair-auto)
         [[ "$ROOT" == / ]] || die "Online repair is supported only on the running SteamOS system."
         acquire_recovery_operation_lock
-        [[ -r "$SUPPORT_ROOT/support-revision" ]] || die "Pinned support revision is missing; rerun the canonical installer."
-        revision="$(tr -d '[:space:]' < "$SUPPORT_ROOT/support-revision")"
-        [[ "$revision" =~ ^[0-9a-f]{40}$ ]] || die "Pinned support revision is malformed."
-        document="$(status_json)"
+        policy_args=(--root "$POLICY_ROOT")
+        [[ "${PROJECT_TEST_MODE:-0}" != 1 ]] || policy_args+=(--test-owner)
+        policy="$(python3 "$POLICY_TOOL" "${policy_args[@]}")"
+        revision="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["supportRevision"])' "$policy")"
+        policy_nvidia="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["nvidiaVersion"])' "$policy")"
+        document="$(status_json "$policy")"
         recovery_status="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["status"])' "$document")"
         modules_status="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["moduleVerification"]["status"])' "$document")"
         if [[ "$recovery_status" == healthy ]]; then
@@ -296,6 +311,7 @@ case "$COMMAND" in
         kernel="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["target"]["kernelVersion"])' "$document")"
         nvidia="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["target"]["nvidiaVersion"] or "")' "$document")"
         [[ -n "$nvidia" ]] || die "Cannot queue repair without an exact NVIDIA userspace identity."
+        [[ "$nvidia" == "$policy_nvidia" ]] || die "Recovery status differs from persistent NVIDIA policy."
         if [[ -f "$TRANSACTION" ]]; then
             existing="$(transaction_tool show)"
             existing_phase="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["phase"])' "$existing")"
@@ -308,19 +324,20 @@ case "$COMMAND" in
                 confirm "Start a new exact-kernel repair transaction?"
                 plan_tool remove
                 transaction_tool remove-terminal
+            elif ! python3 -c 'import json,sys; d=json.loads(sys.argv[1]); raise SystemExit(0 if d["target"] == {"kernelVersion":sys.argv[2],"nvidiaVersion":sys.argv[3]} and d["supportRevision"] == sys.argv[4] else 1)' \
+                "$existing" "$kernel" "$nvidia" "$revision"; then
+                plan_tool remove
+                transaction_tool retarget --kernel "$kernel" --nvidia "$nvidia" \
+                    --support-revision "$revision" >/dev/null
             fi
         fi
         if [[ ! -f "$TRANSACTION" ]]; then
             transaction_tool begin --kernel "$kernel" --nvidia "$nvidia" \
                 --support-revision "$revision" --phase offline_waiting --reason network_not_verified >/dev/null
         else
-            python3 - "$TRANSACTION" "$kernel" "$nvidia" "$revision" <<'PY'
-import json,sys
-d=json.load(open(sys.argv[1], encoding="utf-8"))
-assert d["target"] == {"kernelVersion":sys.argv[2],"nvidiaVersion":sys.argv[3]}
-assert d["supportRevision"] == sys.argv[4]
-assert d.get("automaticRetry") is not False
-PY
+            existing="$(transaction_tool show)"
+            python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["target"] == {"kernelVersion":sys.argv[2],"nvidiaVersion":sys.argv[3]}; assert d["supportRevision"] == sys.argv[4]; assert d.get("automaticRetry") is not False' \
+                "$existing" "$kernel" "$nvidia" "$revision"
         fi
         if ! curl -fsS --connect-timeout 10 --max-time 20 https://api.github.com/meta >/dev/null; then
             transaction_tool set --phase retry_scheduled --reason network_unavailable_or_untrusted >/dev/null

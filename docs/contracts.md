@@ -601,6 +601,12 @@ Delayed repair state is stored atomically outside the replaceable rootfs and
 uses these UI phases: `offline_waiting`, `retry_scheduled`, `downloading`,
 `verifying`, `rebuilding`, `installing`, `restored`, `cancelled`, and `failed`.
 The transaction binds the exact kernel, NVIDIA version, and support commit.
+The NVIDIA version and support commit come from the persistent guardian
+snapshot on the shared SteamOS home filesystem, not from a replaceable A/B
+rootfs slot. Core reads both single-linked mode-`0644` records through one
+owner-controlled directory descriptor, enforces their canonical text formats,
+and verifies file and directory identities across the read. A missing,
+malformed, writable, linked, replaced, or unexpected-owner policy fails closed.
 Its schema-1 state is closed, bounded to 64 KiB, canonical JSON with unique
 keys, root-owned mode `0600`, single-linked, and protected by its own
 descriptor-bound lock. Phase changes follow a closed transition graph and the
@@ -611,6 +617,11 @@ Terminal transaction removal is a distinct locked operation. It accepts only a
 fully validated `restored` or `cancelled` record, rechecks the exact inode before
 unlinking it, fsyncs the containing directory, and verifies absence. An active,
 malformed, replaced, linked, or unsafe transaction is never removed.
+When SteamOS independently activates a different kernel, recovery removes the
+prior immutable release plan and atomically retargets only an active transaction
+to the newly observed kernel plus the same authenticated persistent policy. The
+replacement restarts at `offline_waiting`; it never selects a SteamOS slot.
+Cancellation remains terminal and cannot be bypassed by automatic retargeting.
 
 All mutating recovery control operations also hold one recovery-operation
 lock. This serializes guardian fallback, repair, cancellation, and manual

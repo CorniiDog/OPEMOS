@@ -1045,7 +1045,11 @@ This remains a major future area, represented by three distinct gates:
   branch must never be treated as certified merely because compilation passes.
 * [x] Persist exact target-bound delayed repair state outside the replaceable
   rootfs, wake on NetworkManager connectivity changes, and use a bounded timer
-  fallback without making network availability a boot dependency.
+  fallback without making network availability a boot dependency. Read the
+  NVIDIA/support policy from the persistent guardian snapshot rather than the
+  replaceable active slot, and atomically retarget an active repair only after
+  the independently observed running kernel changes; remove any old immutable
+  release plan before publishing the replacement transaction.
 * [x] Make cancellation disable retries without disabling recovery graphics or
   mutating a verified slot.
 * [x] Serialize guardian, fallback, repair, and cancellation workflows without

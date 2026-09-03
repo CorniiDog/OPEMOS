@@ -11,6 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 STATUS = ROOT / "lib/recovery_status.py"
+POLICY = ROOT / "lib/recovery_policy.py"
 CONTROL = ROOT / "bootstrap/recoveryctl.sh"
 GRUB = ROOT / "lib/update_recovery_grub_args.py"
 TRANSACTION = ROOT / "lib/recovery_transaction.py"
@@ -105,9 +106,18 @@ esac
     secondary.unlink()
 
     code, document = run(root, mockbin, expected="580.1.2")
-    assert code == 2
-    assert document["status"] == "unknown"
-    assert document["reason"] == "inspection_failed"
+    assert code == 0
+    assert document["status"] == "recovery-required"
+    assert document["reason"] == "module_userspace_mismatch"
+
+    installed_marker = state / "installed-nvidia.txt"
+    installed_marker.unlink()
+    code, document = run(root, mockbin, expected=NVIDIA)
+    assert code == 0
+    assert document["status"] == "recovery-required"
+    assert document["reason"] == "module_userspace_mismatch"
+    assert document["target"]["nvidiaVersion"] == NVIDIA
+    installed_marker.write_text(NVIDIA + "\n")
 
     (state / "installed-nvidia.txt").write_text("not-a-version\n")
     code, document = run(root, mockbin)
@@ -161,8 +171,10 @@ esac
         env={**os.environ, "PATH": f"{mockbin}:{os.environ['PATH']}"},
         check=False,
     )
-    assert policy_result.returncode == 2
-    assert json.loads(policy_result.stdout)["status"] == "unknown"
+    assert policy_result.returncode == 0
+    mismatched_policy = json.loads(policy_result.stdout)
+    assert mismatched_policy["status"] == "recovery-required"
+    assert mismatched_policy["reason"] == "module_userspace_mismatch"
     policy.write_text(" \n")
     policy_result = subprocess.run(
         [
@@ -231,6 +243,41 @@ esac
         assert code == 2
         assert document["status"] == "unknown"
         assert document["reason"] == "inspection_failed"
+
+with tempfile.TemporaryDirectory(prefix="opemos-recovery-policy-") as temporary:
+    policy_root = Path(temporary) / "policy"
+    policy_root.mkdir(mode=0o755)
+    revision_file = policy_root / "support-revision"
+    nvidia_file = policy_root / "nvidia-version"
+    revision_file.write_text("d" * 40 + "\n")
+    nvidia_file.write_text(NVIDIA + "\n")
+    revision_file.chmod(0o644)
+    nvidia_file.chmod(0o644)
+    policy_command = [
+        sys.executable, str(POLICY), "--root", str(policy_root), "--test-owner",
+    ]
+    policy_result = subprocess.run(policy_command, text=True,
+                                   stdout=subprocess.PIPE, check=True)
+    assert json.loads(policy_result.stdout) == {
+        "nvidiaVersion": NVIDIA,
+        "schemaVersion": 1,
+        "supportRevision": "d" * 40,
+    }
+    nvidia_file.chmod(0o666)
+    unsafe_mode = subprocess.run(policy_command, stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE)
+    assert unsafe_mode.returncode != 0
+    nvidia_file.chmod(0o644)
+    linked_policy = Path(temporary) / "linked-policy"
+    os.link(nvidia_file, linked_policy)
+    unsafe_link = subprocess.run(policy_command, stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE)
+    assert unsafe_link.returncode != 0
+    linked_policy.unlink()
+    nvidia_file.write_text("575.64.05\nextra\n")
+    malformed = subprocess.run(policy_command, stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE)
+    assert malformed.returncode != 0
 
 with tempfile.TemporaryDirectory(prefix="opemos-fallback-state-") as temporary:
     state_root = Path(temporary) / "recovery"
@@ -311,6 +358,7 @@ assert "recovery_fallback_state.py" in control
 assert "state.json.tmp" not in control
 assert "plan_tool remove" in control
 assert "transaction_tool remove-terminal" in control
+assert "transaction_tool retarget" in control
 assert 'rm -f "$TRANSACTION"' not in control
 assert 'rm -f "$RELEASE_PLAN"' not in control
 
@@ -327,11 +375,18 @@ with tempfile.TemporaryDirectory(prefix="opemos-guardian-", dir="/tmp") as tempo
     (guard_bin / "sudo").write_text("#!/bin/sh\nexec \"$@\"\n")
     (guard_bin / "flock").chmod(0o755)
     (guard_bin / "sudo").chmod(0o755)
+    guard_policy = Path(temporary) / "policy"
+    guard_policy.mkdir(mode=0o755)
+    (guard_policy / "support-revision").write_text("e" * 40 + "\n")
+    (guard_policy / "nvidia-version").write_text(NVIDIA + "\n")
+    (guard_policy / "support-revision").chmod(0o644)
+    (guard_policy / "nvidia-version").chmod(0o644)
     guard_environment = {
         **os.environ,
         "PATH": f"{guard_bin}:{os.environ['PATH']}",
         "PROJECT_TEST_MODE": "1",
         "PROJECT_TEST_ROOT": str(guard_root),
+        "PROJECT_TEST_POLICY_ROOT": str(guard_policy),
     }
     unknown = subprocess.run(
         [str(CONTROL), "status", "--json"],
@@ -503,8 +558,27 @@ with tempfile.TemporaryDirectory(prefix="opemos-recovery-transaction-") as tempo
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
     )
     assert active_removal.returncode != 0 and active_state.is_file()
+    next_kernel = KERNEL + "-next"
+    retargeted = subprocess.run(base + [
+        "retarget", "--state", str(active_state), "--kernel", next_kernel,
+        "--nvidia", NVIDIA, "--support-revision", "d" * 40,
+    ], text=True, stdout=subprocess.PIPE, check=True)
+    retargeted_document = json.loads(retargeted.stdout)
+    assert retargeted_document["target"]["kernelVersion"] == next_kernel
+    assert retargeted_document["phase"] == "offline_waiting"
+    assert retargeted_document["attempt"] == 0
+    duplicate_retarget = subprocess.run(base + [
+        "retarget", "--state", str(active_state), "--kernel", next_kernel,
+        "--nvidia", NVIDIA, "--support-revision", "d" * 40,
+    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert duplicate_retarget.returncode != 0
     subprocess.run(base + ["cancel", "--state", str(active_state)],
                    stdout=subprocess.PIPE, check=True)
+    terminal_retarget = subprocess.run(base + [
+        "retarget", "--state", str(active_state), "--kernel", KERNEL,
+        "--nvidia", NVIDIA, "--support-revision", "c" * 40,
+    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert terminal_retarget.returncode != 0
     linked_state = Path(temporary) / "active-removal-hardlink.json"
     os.link(active_state, linked_state)
     linked_removal = subprocess.run(
@@ -671,6 +745,7 @@ with tempfile.TemporaryDirectory(prefix="opemos-recovery-stage-") as temporary:
     assert (persistent / "support-revision").read_text().strip() == "b" * 40
     assert (persistent / "nvidia-version").read_text().strip() == NVIDIA
     assert (persistent / "lib/open_opemos_contract.py").is_file()
+    assert (persistent / "lib/recovery_policy.py").is_file()
     assert (persistent / "lib/recovery_fallback_state.py").is_file()
     assert (persistent / "lib/desktop_update_generations.py").is_file()
     assert (persistent / "bootstrap/launch_desktop_companion.sh").is_file()

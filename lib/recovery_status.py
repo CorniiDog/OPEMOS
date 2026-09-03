@@ -272,11 +272,11 @@ def inspect(args):
     )
     if expected_version and not VERSION.fullmatch(expected_version):
         raise ValueError("expected NVIDIA policy is malformed")
-    if ((args.expected_nvidia or expected_file_version)
-            and installed_version != expected_version):
-        raise ValueError("installed NVIDIA identity differs from expected policy")
     records = []
     reasons = []
+    if ((args.expected_nvidia or expected_file_version)
+            and installed_version != expected_version):
+        reasons.append("module_userspace_mismatch")
     for name, filename in MODULES:
         path = module_path(root, kernel, filename)
         record = {"name": name, "present": path is not None}

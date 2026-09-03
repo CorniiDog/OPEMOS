@@ -34,6 +34,7 @@ FILES = (
     ("bootstrap/online_install.sh", "device-entrypoint", "0755"),
     ("lib/common.sh", "runtime-helper", "0644"),
     ("lib/recovery_status.py", "runtime-helper", "0755"),
+    ("lib/recovery_policy.py", "runtime-helper", "0755"),
     ("lib/desktop_update_generations.py", "runtime-helper", "0755"),
     ("lib/device_generation_lifecycle.py", "runtime-helper", "0755"),
     ("lib/device_generation_transport_watchdog.py", "runtime-helper", "0755"),

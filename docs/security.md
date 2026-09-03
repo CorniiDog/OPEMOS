@@ -196,7 +196,11 @@ CLI never guesses among multiple SteamOS layouts.
 
 Internet access is never a boot dependency. A delayed repair transaction is
 stored atomically with the shared root-owned guardian snapshot and binds the
-kernel, NVIDIA version, and support commit. NetworkManager connectivity changes
+kernel, NVIDIA version, and support commit. Those policy identities are read
+from the persistent snapshot through stable, no-follow descriptors rather than
+trusted from the newly active replaceable rootfs. Thus an A/B slot that lacks
+or disagrees with the prior NVIDIA payload enters fallback but retains an exact
+repair target. NetworkManager connectivity changes
 may wake it, while a bounded timer supplies a fallback retry. DNS, TLS, captive
 portal, and network failures leave console recovery active. Cancelling disables
 automatic retries without changing either slot. An authenticated offline cache
@@ -218,6 +222,11 @@ operations fully validate and identity-check the terminal transaction and
 release plan, fsync their parent after removal, and fail closed on active,
 malformed, linked, replaced, or otherwise unsafe state. The plan is removed
 first so a crash cannot leave it orphaned after transaction removal.
+An observed running-kernel change may replace only an active repair transaction:
+the old release plan is removed first, then the transaction is atomically reset
+to `offline_waiting` for the new kernel and persistent policy. A crash before
+retarget leaves the old active transaction retryable; a crash afterward leaves
+the complete new transaction. User-cancelled state is never retargeted.
 
 Generation health and rollback additionally bind the rootfs receipt's exact
 userspace-lock filename and SHA-256 to the selected generation target record.

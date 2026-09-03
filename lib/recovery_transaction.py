@@ -301,7 +301,9 @@ def now_utc():
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "operation", choices=("show", "begin", "set", "cancel", "remove-terminal")
+        "operation", choices=(
+            "show", "begin", "set", "cancel", "retarget", "remove-terminal",
+        )
     )
     parser.add_argument("--state", required=True, type=Path)
     parser.add_argument("--kernel")
@@ -324,6 +326,30 @@ def main():
             remove_terminal(args.state)
             return
         timestamp = now_utc()
+        if args.operation == "retarget":
+            if (not (args.kernel and args.nvidia and args.support_revision)
+                    or args.phase or args.reason):
+                fail("retarget requires only an exact target and support revision")
+            current = load(args.state)
+            if current is None:
+                fail("no recovery transaction exists")
+            if not current["active"]:
+                fail("a terminal recovery transaction cannot be retargeted")
+            target = {
+                "kernelVersion": args.kernel, "nvidiaVersion": args.nvidia,
+            }
+            if (current["target"] == target
+                    and current["supportRevision"] == args.support_revision):
+                fail("recovery transaction already has the requested target")
+            document = {
+                "schemaVersion": 1, "active": True, "automaticRetry": True,
+                "phase": "offline_waiting", "reason": "target_changed",
+                "target": target, "supportRevision": args.support_revision,
+                "attempt": 0, "createdAt": timestamp, "updatedAt": timestamp,
+            }
+            write(args.state, document)
+            print(json.dumps(document, sort_keys=True, separators=(",", ":")))
+            return
         if args.operation == "begin":
             if not (args.kernel and args.nvidia and args.support_revision and args.phase):
                 raise SystemExit("begin requires exact target, support revision, and phase")
