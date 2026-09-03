@@ -60,6 +60,7 @@ def main():
     assert "e401a4db2e5e04d1967b6729774faa96da629bcf3ba90b67d8d9cce9906bec0f" in runner
     assert "sha256sum -c" in runner
     assert "-display none" in runner and "-serial" in runner
+    assert "QEMU_DISPLAY_ARGS=(-name open-gpu-validation)" in runner
     assert "-nic user" in runner and "hostfwd" not in runner
     assert "2700" in runner and "20G" in runner
     assert "expected_result=" in runner and "OPEN_GPU_VM_COMPLETE" in runner

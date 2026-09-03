@@ -200,7 +200,7 @@ stop_qemu()
 trap stop_qemu EXIT
 trap 'stop_qemu; exit 130' INT
 trap 'stop_qemu; exit 143' TERM
-QEMU_DISPLAY_ARGS=()
+QEMU_DISPLAY_ARGS=(-name open-gpu-validation)
 if [[ "$INTERSTITIAL" == 1 ]]; then
     QEMU_DISPLAY_ARGS=(-device virtio-vga)
 fi
