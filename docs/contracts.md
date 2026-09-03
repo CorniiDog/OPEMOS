@@ -137,9 +137,12 @@ is a generic transport failure.
 Each phase must return exactly the requested single-link files. Core rejects
 missing, extra, substituted, oversized, or renamed output and rechecks the
 installed policy, keyring, and checkpoint identities between phases and before
-publication. Each trust guard is captured from the same open descriptor as its
-validated bytes, so a concurrent path replacement cannot bind stale bytes to a
-new identity. Payload responses are streamed through exact size/SHA-256 checks
+publication. Every trust snapshot independently requires the configured owner,
+a single link, and no group/other write access. Core also binds each containing
+trust directory's device, inode, owner, group, and mode for the full operation.
+Each file guard is captured from the same open descriptor as its validated
+bytes, so a concurrent file or directory replacement cannot bind stale bytes
+to a new identity. Payload responses are streamed through exact size/SHA-256 checks
 into private mode-0400 staging rather than accumulated in memory. Successful
 acquisition authenticates the descriptor, manifest,
 both detached signatures, authority, exact target, lineage, and every payload

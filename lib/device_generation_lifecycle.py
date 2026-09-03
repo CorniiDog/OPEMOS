@@ -160,12 +160,14 @@ def require_directory_guards(guards):
             fail("device_generation_input_changed", f"{label} identity changed")
 
 
-def trust_file_guard(path, label):
+def trust_file_guard(path, label, expected_owner=None):
     try:
         info = path.lstat()
     except OSError:
         fail("device_generation_input_changed", f"{label} is unavailable")
-    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+    if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+            or expected_owner is not None and info.st_uid != expected_owner
+            or stat.S_IMODE(info.st_mode) & 0o022):
         fail("device_generation_input_changed", f"{label} is unsafe")
     return (
         info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns,
@@ -173,9 +175,28 @@ def trust_file_guard(path, label):
     )
 
 
+def trust_directory_guard(path, label, expected_owner):
+    try:
+        info = path.lstat()
+    except OSError:
+        fail("device_generation_input_changed", f"{label} is unavailable")
+    if (not stat.S_ISDIR(info.st_mode) or path.is_symlink()
+            or info.st_uid != expected_owner
+            or stat.S_IMODE(info.st_mode) & 0o022):
+        fail("device_generation_input_changed", f"{label} is unsafe")
+    return (
+        info.st_dev, info.st_ino, info.st_uid, info.st_gid,
+        stat.S_IMODE(info.st_mode),
+    )
+
+
 def require_trust_guards(policy):
+    expected_owner = policy["expectedOwner"]
+    for path, label, expected in policy["directoryGuards"]:
+        if trust_directory_guard(path, label, expected_owner) != expected:
+            fail("device_generation_input_changed", f"{label} changed")
     for path, label, expected in policy["guards"]:
-        if trust_file_guard(path, label) != expected:
+        if trust_file_guard(path, label, expected_owner) != expected:
             fail("device_generation_input_changed", f"{label} changed")
 
 
@@ -242,7 +263,7 @@ def snapshot_regular(path, maximum, label,
             os.close(descriptor)
 
 
-def snapshot_trust_file(path, maximum, label):
+def snapshot_trust_file(path, maximum, label, expected_owner):
     """Read a trust file and return identity from the same open descriptor."""
     descriptor = None
     try:
@@ -255,7 +276,9 @@ def snapshot_trust_file(path, maximum, label):
     try:
         before = os.fstat(descriptor)
         if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
-                or not 1 <= before.st_size <= maximum):
+                or not 1 <= before.st_size <= maximum
+                or before.st_uid != expected_owner
+                or stat.S_IMODE(before.st_mode) & 0o022):
             fail("device_generation_authentication_failed", f"{label} is unsafe")
         chunks = []
         remaining = maximum + 1
@@ -1248,22 +1271,33 @@ def require_production_anchor(path, label):
 
 def active_policy(arguments):
     policy_path, keyring_path, checkpoint_path = trust_paths(arguments)
-    for path, label in (
+    trust_inputs = (
             (policy_path, "generation trust policy"),
             (keyring_path, "generation keyring"),
-            (checkpoint_path, "generation bootstrap checkpoint")):
+            (checkpoint_path, "generation bootstrap checkpoint"),
+    )
+    for path, label in trust_inputs:
         reject_symlink_components(path, label)
     require_production_anchor(policy_path, "generation trust policy")
     require_production_anchor(keyring_path, "generation keyring")
     require_production_anchor(checkpoint_path, "generation bootstrap checkpoint")
+    expected_owner = os.geteuid() if development_override() else 0
+    directory_guards = []
+    for parent in dict.fromkeys(path.parent for path, _label in trust_inputs):
+        label = "generation trust directory"
+        directory_guards.append((
+            parent, label,
+            trust_directory_guard(parent, label, expected_owner),
+        ))
     policy_payload, policy_guard = snapshot_trust_file(
-        policy_path, MAX_POLICY_BYTES, "generation trust policy"
+        policy_path, MAX_POLICY_BYTES, "generation trust policy", expected_owner
     )
     keyring_payload, keyring_guard = snapshot_trust_file(
-        keyring_path, MAX_KEYRING_BYTES, "generation keyring"
+        keyring_path, MAX_KEYRING_BYTES, "generation keyring", expected_owner
     )
     checkpoint_payload, checkpoint_guard = snapshot_trust_file(
-        checkpoint_path, MAX_POLICY_BYTES, "generation bootstrap checkpoint"
+        checkpoint_path, MAX_POLICY_BYTES, "generation bootstrap checkpoint",
+        expected_owner,
     )
     try:
         bootstrap_policy = parse_policy(policy_payload)
@@ -1281,6 +1315,8 @@ def active_policy(arguments):
         ],
         "bootstrap": bootstrap_policy,
         "payload": policy_payload,
+        "expectedOwner": expected_owner,
+        "directoryGuards": tuple(directory_guards),
         "guards": (
             (policy_path, "generation trust policy", policy_guard),
             (keyring_path, "generation keyring", keyring_guard),

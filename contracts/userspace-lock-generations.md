@@ -354,8 +354,11 @@ Each invocation receives only that exact plan, must return the exact closed
 file set, and cannot change the plan while running. Missing, extra, renamed,
 oversized, or hash-substituted output is rejected before download-cache
 publication. Core rechecks the installed policy, keyring, and checkpoint
-identities between phases. Those guards come from the same open descriptors as
-the validated trust bytes, closing path-replacement windows. Authenticated
+identities between phases. Each snapshot independently enforces the configured
+owner, single-link state, and non-writable mode. Core also binds the containing
+trust directories' device, inode, ownership, and mode across the operation.
+File guards come from the same open descriptors as the validated trust bytes,
+closing file- and directory-replacement windows. Authenticated
 payloads are streamed into private mode-0400 staging with exact size and hash
 verification, so the bounded on-disk generation ceiling is not also an in-memory
 allocation. It does not enable device networking, replace the legacy embedded

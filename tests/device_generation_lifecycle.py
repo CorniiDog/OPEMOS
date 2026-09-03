@@ -302,9 +302,14 @@ def create_adversarial_transport(path, source, mode, trust_path=None):
         "    plan_path.chmod(0o600)\n"
         "    plan_path.write_bytes(b'{}\\n')\n"
         + (
-            "if mode in {'replace-keyring', 'replace-policy'} "
+            "if mode in {'replace-keyring', 'replace-policy', "
+            "'replace-trust-directory'} "
             "and plan['phase'] == 'manifest':\n"
-            f"    pathlib.Path({str(trust_path)!r}).write_bytes(b'replaced\\n')\n"
+            f"    trust_path = pathlib.Path({str(trust_path)!r})\n"
+            "    if mode == 'replace-trust-directory':\n"
+            "        trust_path.parent.chmod(0o755)\n"
+            "    else:\n"
+            "        trust_path.write_bytes(b'replaced\\n')\n"
             if trust_path is not None else ""
         )
     ).encode()
@@ -429,7 +434,9 @@ def main():
 
         with mock.patch.object(Path, "lstat", replace_before_identity_check):
             try:
-                snapshot_trust_file(raced_trust, 1024, "raced trust input")
+                snapshot_trust_file(
+                    raced_trust, 1024, "raced trust input", os.geteuid()
+                )
             except DeviceGenerationError as error:
                 assert error.reason == "device_generation_input_changed"
             else:
@@ -534,6 +541,25 @@ def main():
         assert json.loads(production_override.stdout)["reason"] == (
             "device_generation_target_observation_invalid"
         )
+
+        policy.chmod(0o622)
+        writable_policy = activate(
+            environment, store, policy, keyring, checkpoint, generation_7,
+            success=False,
+        )
+        assert writable_policy["reason"] == (
+            "device_generation_authentication_failed"
+        )
+        policy.chmod(0o600)
+        root.chmod(0o733)
+        writable_trust_directory = activate(
+            environment, store, policy, keyring, checkpoint, generation_7,
+            success=False,
+        )
+        assert writable_trust_directory["reason"] == (
+            "device_generation_input_changed"
+        )
+        root.chmod(0o700)
 
         initial = activate(
             environment, store, policy, keyring, checkpoint, generation_7
@@ -991,6 +1017,20 @@ def main():
         )
         assert stale_policy["reason"] == "device_generation_input_changed"
         write(policy, policy_payload)
+        assert not list((store / "downloads").glob(".acquire-*"))
+
+        stale_directory_transport = root / "stale-trust-directory-transport"
+        create_adversarial_transport(
+            stale_directory_transport, generation_10,
+            "replace-trust-directory", policy,
+        )
+        stale_directory = invoke(
+            environment, store, policy, keyring, checkpoint, "update",
+            ["--transport", str(stale_directory_transport), *TARGET_ARGUMENTS],
+            success=False,
+        )
+        assert stale_directory["reason"] == "device_generation_input_changed"
+        root.chmod(0o700)
         assert not list((store / "downloads").glob(".acquire-*"))
 
         partial_transport = root / "partial-transport"

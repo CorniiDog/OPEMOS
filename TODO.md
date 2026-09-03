@@ -1515,6 +1515,11 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   stale output can be consumed. Cover portable pipe-loss/descendant teardown,
   normal exit propagation, catchable cancellation, and a conditional Linux
   lifecycle-parent SIGKILL integration case with restart cleanup.
+* [x] Bind installed generation trust snapshots to owner-controlled,
+  non-writable files and containing trust directories for the complete
+  lifecycle operation. Reject unsafe initial modes/owners and file or directory
+  replacement between acquisition phases before cache publication or state
+  mutation.
 * [x] Specify the stable canonical discovery location in the separately
   authenticated bootstrap policy, without placing URLs or redirects inside the
   signed descriptor. Core's immutable request planner now consumes that policy
