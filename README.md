@@ -120,6 +120,10 @@ Btrfs, mount, chroot, and cancellation coverage:
 | --- | --- |
 | [`OPEMOS`](https://github.com/CorniiDog/OPEMOS) | CLI workflows, exact artifact resolution, builds, userspace locks, offline installation, provenance, and publication |
 | [`OPEMOS.EXE`](https://github.com/CorniiDog/OPEMOS.EXE) | Desktop UI, recovery-image inspection, appliance lifecycle, safe image export, and independent final-image validation |
+
+The authoritative, read-only repository and UI exception rules are in
+[`BOUNDARIES.md`](BOUNDARIES.md). Responsibility summaries elsewhere are
+non-authoritative.
 | [`open-gpu-kernel-modules-steamos`](https://github.com/CorniiDog/open-gpu-kernel-modules-steamos) | Versioned NVIDIA source branches and SteamOS-specific patches |
 
 ## Safety properties

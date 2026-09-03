@@ -1,0 +1,4 @@
+# Governance contracts require explicit owner review.
+/BOUNDARIES.md @CorniiDog
+/AGENTS.md @CorniiDog
+/tests/boundary_policy.py @CorniiDog

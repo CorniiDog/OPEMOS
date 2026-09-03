@@ -170,6 +170,9 @@ criteria without duplicating that queue.
 
 ### Core and frontend dependency boundary
 
+Authority: [`BOUNDARIES.md`](BOUNDARIES.md). This checklist is an
+implementation summary and must not redefine that read-only governance file.
+
 * [x] Treat OPEMOS Core as the one lower-level policy and contract provider:
   exact-target resolution, trust, userspace locks, installation, verification,
   recovery state, progress records, and structured results belong here.

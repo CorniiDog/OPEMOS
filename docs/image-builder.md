@@ -17,6 +17,10 @@ description: Exact OPEMOS contract used by OPEMOS.EXE to resolve, validate, and 
 
 ## Responsibility boundary
 
+The repository authority is
+[`BOUNDARIES.md`](https://github.com/CorniiDog/OPEMOS/blob/main/BOUNDARIES.md).
+This page explains the integration without redefining that read-only contract.
+
 [OPEMOS.EXE](https://github.com/CorniiDog/OPEMOS.EXE) owns recovery-image layout
 and appliance lifecycle. OPEMOS owns artifact and installation correctness.
 
