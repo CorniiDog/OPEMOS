@@ -28,6 +28,7 @@ description: API-style command, result, progress, trust, and failure reference.
 | `bootstrap/audit_userspace_closure.py` | Maintainer | Stage/output only | Candidate-lock schema 1 |
 | `bootstrap/finalize_userspace_lock.py` | Maintainer | Create-only output | Reviewed lock |
 | `bootstrap/publish_artifacts.sh` | Maintainer | GitHub release unless `--dry-run` | Publication plan JSON |
+| `bootstrap/publish_installer_bundle.sh` | Maintainer | Create-only immutable Core-bundle release unless `--dry-run` | Publication plan JSON |
 | `bootstrap/publish_desktop_update.sh` | Maintainer | Create-only GitHub release unless `--dry-run` | Desktop publication schema 1 JSON |
 | `bootstrap/repack_artifacts.sh` | Maintainer | Output/release unless `--dry-run` | Repack plan/result JSON |
 | `lib/validate_install_contract.py` | Consumer | No | Contract-validation result |
@@ -62,6 +63,11 @@ Its additive machine-readable definition is
 Compatibility and asset selection remain support-owned policy; graphical
 consumers validate this result but must not independently select a release.
 
+When no valid release matches, reason `no_compatible_release` includes a
+bounded `nextAction` authorizing the managed x86_64 exact-target build entry
+point. Missing, duplicate, or otherwise invalid release assets do not receive
+that fallback because they represent publication-integrity failures.
+
 ## Installer consumer bundle
 
 `lib/installer_bundle_manifest.py` replaces consumer-maintained copies of the
@@ -77,6 +83,11 @@ and verify every mode, size, and hash before execution. The manifest generator
 uses create-only output; see the
 [`contracts/README.md`](https://github.com/CorniiDog/OPEMOS/blob/main/contracts/README.md) for
 commands and the self-reference rationale.
+
+`bootstrap/publish_installer_bundle.sh` publishes the generated document as a
+single asset in a commit-specific, create-only release. It never modifies an
+NVIDIA artifact release. Publication supplies availability, not independent
+authentication: production consumers must pin the manifest digest separately.
 
 ## Build result
 

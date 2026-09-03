@@ -54,6 +54,16 @@ def validate_resolver_fixture(document):
         assert {"optionalCudaOmission"} <= set(document["capabilities"])
     else:
         assert isinstance(document["reason"], str) and isinstance(document["message"], str)
+        if document["reason"] == "no_compatible_release":
+            assert document["nextAction"] == {
+                "schemaVersion": 1,
+                "kind": "build_exact_target",
+                "entrypoint": "bootstrap/build_for_target.sh",
+                "executionArchitecture": "x86_64",
+                "kernelPolicy": "exact",
+            }
+        else:
+            assert "nextAction" not in document
 
 
 def main():
@@ -102,6 +112,16 @@ def main():
     )
     validate_resolver_fixture(unavailable)
     assert unavailable["status"] == "no_compatible_artifact"
+    assert unavailable["nextAction"]["kind"] == "build_exact_target"
+    assert unavailable["nextAction"]["kernelPolicy"] == "exact"
+    incomplete = copy.deepcopy(releases)
+    incomplete[0]["assets"] = []
+    incomplete_result = resolve_target(
+        "3.8.14", "6.16.12-valve24.4-x86", "x86_64", incomplete,
+        "CorniiDog/OPEMOS",
+    )
+    assert incomplete_result["reason"] == "release_assets_missing"
+    assert "nextAction" not in incomplete_result
     invalid = resolve_target(
         "3.8", "kernel", "x86_64", releases, "CorniiDog/OPEMOS"
     )

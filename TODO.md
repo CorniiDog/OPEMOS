@@ -63,6 +63,9 @@ index in the same commit.
   to an immutable support Git commit and every required path, role, mode, size,
   and SHA-256. It reads committed blobs rather than the mutable worktree,
   produces create-only canonical output, and validates all 55 current files.
+* [x] Add a separate create-only immutable Core-bundle publisher with canonical
+  tag, title, notes, manifest digest, dry-run plan, GitHub permission checks,
+  and existing-release refusal. It does not modify NVIDIA artifact releases.
 * [ ] Replace OPEMOS.EXE's manually duplicated support-file inventory with a
   pin to the exact support commit plus canonical manifest hash, while retaining
   complete download verification, path confinement, and executable-mode checks
@@ -1123,6 +1126,9 @@ signing policy.
 * [x] Apply the normal bounded same-series SteamOS certification fallback while
   still requiring an exact kernel match.
 * [x] Treat no compatible artifact as a normal fail-closed resolution result.
+* [x] Advertise the managed x86_64 exact-target build contract as an additive
+  `nextAction` only for `no_compatible_release`; never offer it for incomplete,
+  ambiguous, or otherwise invalid publication metadata.
 * [x] Require the expected release archive, SHA256 sidecar, and provenance
   sidecar to be advertised before returning a compatible published artifact.
 * [x] Keep publication separate from certification and require consumers to

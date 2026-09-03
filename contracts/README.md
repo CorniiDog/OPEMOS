@@ -16,6 +16,11 @@ reimplement compatibility, package-selection, signer, or mutation policy.
 Unknown additive fields are permitted. Removing a required field, changing its
 meaning, or tightening a previously valid value requires a new schema version.
 
+When resolution returns `no_compatible_artifact` with reason
+`no_compatible_release`, `nextAction` explicitly authorizes only the existing
+exact-kernel `bootstrap/build_for_target.sh` contract. Publication-integrity
+failures never advertise a build fallback.
+
 ## Installer bundle manifest
 
 `lib/installer_bundle_manifest.py` creates the canonical consumer bundle from
@@ -42,3 +47,21 @@ The manifest itself is a release or handoff artifact, avoiding an impossible
 self-reference where a committed file attempts to contain its own commit ID.
 Consumers pin the exact support commit and manifest SHA-256, then verify every
 listed path, role, mode, size, and hash before execution.
+
+## Immutable bundle publication
+
+Maintainers publish a manifest in its own create-only release. This command
+never edits an existing release and does not alter target-specific NVIDIA
+artifact releases:
+
+```bash
+COMMIT="$(git rev-parse HEAD)"
+bootstrap/publish_installer_bundle.sh \
+  --support-commit "$COMMIT" \
+  --dry-run
+```
+
+Remove `--dry-run` only after reviewing the canonical plan. The release tag
+and asset name are both `opemos-installer-bundle-<full-commit>`. A consumer
+must pin the manifest SHA-256 independently; co-location in a GitHub release is
+not an independent trust signal.

@@ -27,6 +27,17 @@ def result(status, target, **fields):
     return document
 
 
+def exact_target_build_action():
+    """Describe the sole safe fallback when no published release matches."""
+    return {
+        "schemaVersion": 1,
+        "kind": "build_exact_target",
+        "entrypoint": "bootstrap/build_for_target.sh",
+        "executionArchitecture": "x86_64",
+        "kernelPolicy": "exact",
+    }
+
+
 def resolve_target(steamos, kernel, architecture, releases, repository):
     target = {
         "steamosVersion": steamos,
@@ -81,6 +92,7 @@ def resolve_target(steamos, kernel, architecture, releases, repository):
             "no_compatible_artifact", target, reason="no_compatible_release",
             message=("No published release matches the exact target kernel "
                      "within the permitted SteamOS compatibility range."),
+            nextAction=exact_target_build_action(),
         )
 
     published_steamos, nvidia, selected_kernel, tag = selected

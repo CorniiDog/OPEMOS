@@ -90,6 +90,8 @@ cargo clippy --locked --manifest-path interstitial/Cargo.toml --all-targets -- -
 cargo fmt --manifest-path interstitial/Cargo.toml -- --check
 printf 'Checking canonical cross-frontend contracts...\n'
 python3 tests/consumer_contracts.py
+printf 'Checking immutable installer-bundle publisher...\n'
+python3 tests/installer_bundle_publisher.py
 
 printf 'Checking immutable installer input snapshots...\n'
 SNAPSHOT_FIXTURE="$(mktemp -d /tmp/installer-input-snapshot.XXXXXX)"
@@ -539,6 +541,13 @@ result = json.loads(sys.argv[1])
 assert result["status"] == "no_compatible_artifact"
 assert result["reason"] == "no_compatible_release"
 assert "artifact" not in result
+assert result["nextAction"] == {
+    "schemaVersion": 1,
+    "kind": "build_exact_target",
+    "entrypoint": "bootstrap/build_for_target.sh",
+    "executionArchitecture": "x86_64",
+    "kernelPolicy": "exact",
+}
 PY
 
 RESOLVED="$(python3 "$PROJECT_ROOT/lib/resolve_target.py" \

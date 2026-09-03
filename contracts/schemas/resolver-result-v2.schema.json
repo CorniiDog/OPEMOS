@@ -27,6 +27,28 @@
     }
   },
   "description": "Canonical additive result emitted by lib/resolve_target.py.",
+  "allOf": [
+    {
+      "if": {"required": ["nextAction"]},
+      "then": {
+        "properties": {
+          "reason": {"const": "no_compatible_release"},
+          "status": {"const": "no_compatible_artifact"}
+        },
+        "required": ["reason", "status"]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "reason": {"const": "no_compatible_release"},
+          "status": {"const": "no_compatible_artifact"}
+        },
+        "required": ["reason", "status"]
+      },
+      "then": {"required": ["nextAction"]}
+    }
+  ],
   "oneOf": [
     {
       "properties": {
@@ -83,6 +105,23 @@
     "capabilities": {"type": "object"},
     "compatibility": {"enum": ["exact", "same_series_fallback"]},
     "message": {"maxLength": 2048, "minLength": 1, "type": "string"},
+    "nextAction": {
+      "properties": {
+        "entrypoint": {"const": "bootstrap/build_for_target.sh"},
+        "executionArchitecture": {"const": "x86_64"},
+        "kernelPolicy": {"const": "exact"},
+        "kind": {"const": "build_exact_target"},
+        "schemaVersion": {"const": 1}
+      },
+      "required": [
+        "schemaVersion",
+        "kind",
+        "entrypoint",
+        "executionArchitecture",
+        "kernelPolicy"
+      ],
+      "type": "object"
+    },
     "publication": {
       "properties": {
         "kernelVersion": {"type": "string"},
