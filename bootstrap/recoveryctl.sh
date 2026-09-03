@@ -100,6 +100,32 @@ plan_tool()
     python3 "$SUPPORT_ROOT/lib/recovery_release_plan.py" "$@" --plan "$RELEASE_PLAN"
 }
 
+reconcile_verified_transaction()
+{
+    local existing kernel="$1" nvidia="$2" revision="$3"
+    [[ -f "$TRANSACTION" ]] || return 0
+    existing="$(transaction_tool show)"
+    case "$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["phase"])' "$existing")" in
+        cancelled) return 0 ;;
+        restored)
+            if ! python3 -c 'import json,sys; d=json.loads(sys.argv[1]); raise SystemExit(0 if d["target"] == {"kernelVersion":sys.argv[2],"nvidiaVersion":sys.argv[3]} and d["supportRevision"] == sys.argv[4] else 1)' \
+                "$existing" "$kernel" "$nvidia" "$revision"; then
+                plan_tool remove
+                transaction_tool remove-terminal
+            fi
+            return 0
+            ;;
+    esac
+    if ! python3 -c 'import json,sys; d=json.loads(sys.argv[1]); raise SystemExit(0 if d["target"] == {"kernelVersion":sys.argv[2],"nvidiaVersion":sys.argv[3]} and d["supportRevision"] == sys.argv[4] else 1)' \
+        "$existing" "$kernel" "$nvidia" "$revision"; then
+        plan_tool remove
+        transaction_tool retarget --kernel "$kernel" --nvidia "$nvidia" \
+            --support-revision "$revision" >/dev/null
+    fi
+    transaction_tool reconcile-restored --kernel "$kernel" --nvidia "$nvidia" \
+        --support-revision "$revision" >/dev/null
+}
+
 acquire_recovery_operation_lock()
 {
     [[ "$RECOVERY_OPERATION_LOCK_HELD" == 0 ]] || return 0
@@ -299,19 +325,26 @@ case "$COMMAND" in
         document="$(status_json "$policy")"
         recovery_status="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["status"])' "$document")"
         modules_status="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["moduleVerification"]["status"])' "$document")"
-        if [[ "$recovery_status" == healthy ]]; then
-            emit_result restored exact_nvidia_already_healthy no_action
-            exit 0
-        fi
-        if [[ "$recovery_status" == fallback-active && "$modules_status" == verified ]]; then
-            YES=1 disable_fallback
-            emit_result restored exact_nvidia_restored fallback_disabled
-            exit 0
-        fi
         kernel="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["target"]["kernelVersion"])' "$document")"
         nvidia="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["target"]["nvidiaVersion"] or "")' "$document")"
         [[ -n "$nvidia" ]] || die "Cannot queue repair without an exact NVIDIA userspace identity."
         [[ "$nvidia" == "$policy_nvidia" ]] || die "Recovery status differs from persistent NVIDIA policy."
+        if [[ "$COMMAND" == repair-auto && -f "$TRANSACTION" ]]; then
+            existing="$(transaction_tool show)"
+            existing_phase="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["phase"])' "$existing")"
+            [[ "$existing_phase" != cancelled ]] || die "Automatic recovery retries were cancelled."
+        fi
+        if [[ "$recovery_status" == healthy ]]; then
+            reconcile_verified_transaction "$kernel" "$nvidia" "$revision"
+            emit_result restored exact_nvidia_already_healthy no_action
+            exit 0
+        fi
+        if [[ "$recovery_status" == fallback-active && "$modules_status" == verified ]]; then
+            reconcile_verified_transaction "$kernel" "$nvidia" "$revision"
+            YES=1 disable_fallback
+            emit_result restored exact_nvidia_restored fallback_disabled
+            exit 0
+        fi
         if [[ -f "$TRANSACTION" ]]; then
             existing="$(transaction_tool show)"
             existing_phase="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["phase"])' "$existing")"
@@ -332,6 +365,7 @@ case "$COMMAND" in
             fi
         fi
         if [[ ! -f "$TRANSACTION" ]]; then
+            plan_tool remove
             transaction_tool begin --kernel "$kernel" --nvidia "$nvidia" \
                 --support-revision "$revision" --phase offline_waiting --reason network_not_verified >/dev/null
         else
@@ -359,8 +393,8 @@ case "$COMMAND" in
             transaction_tool set --phase failed --reason post_install_verification_failed >/dev/null
             die "Installed repair did not pass exact module verification; fallback remains active."
         }
+        reconcile_verified_transaction "$kernel" "$nvidia" "$revision"
         YES=1 disable_fallback
-        transaction_tool set --phase restored --reason exact_nvidia_restored >/dev/null
         ;;
     cancel-repair)
         acquire_recovery_operation_lock

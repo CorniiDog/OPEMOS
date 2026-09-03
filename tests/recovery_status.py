@@ -359,6 +359,13 @@ assert "state.json.tmp" not in control
 assert "plan_tool remove" in control
 assert "transaction_tool remove-terminal" in control
 assert "transaction_tool retarget" in control
+assert "transaction_tool reconcile-restored" in control
+assert "reconcile_verified_transaction" in control
+cancel_gate = control.index(
+    '[[ "$existing_phase" != cancelled ]] || die "Automatic recovery retries were cancelled."'
+)
+healthy_gate = control.index('if [[ "$recovery_status" == healthy ]]')
+assert cancel_gate < healthy_gate
 assert 'rm -f "$TRANSACTION"' not in control
 assert 'rm -f "$RELEASE_PLAN"' not in control
 
@@ -579,6 +586,12 @@ with tempfile.TemporaryDirectory(prefix="opemos-recovery-transaction-") as tempo
         "--nvidia", NVIDIA, "--support-revision", "c" * 40,
     ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     assert terminal_retarget.returncode != 0
+    cancelled_reconciliation = subprocess.run(base + [
+        "reconcile-restored", "--state", str(active_state),
+        "--kernel", next_kernel, "--nvidia", NVIDIA,
+        "--support-revision", "d" * 40,
+    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert cancelled_reconciliation.returncode != 0
     linked_state = Path(temporary) / "active-removal-hardlink.json"
     os.link(active_state, linked_state)
     linked_removal = subprocess.run(
@@ -594,6 +607,43 @@ with tempfile.TemporaryDirectory(prefix="opemos-recovery-transaction-") as tempo
     subprocess.run(base + ["remove-terminal", "--state", str(active_state)],
                    stdout=subprocess.PIPE, check=True)
     assert not active_state.exists()
+
+    reconcile_state = Path(temporary) / "reconcile.json"
+    subprocess.run(base + [
+        "begin", "--state", str(reconcile_state), "--kernel", KERNEL,
+        "--nvidia", NVIDIA, "--support-revision", "e" * 40,
+        "--phase", "offline_waiting", "--reason", "network_not_verified",
+    ], stdout=subprocess.PIPE, check=True)
+    subprocess.run(base + [
+        "set", "--state", str(reconcile_state), "--phase", "downloading",
+        "--reason", "exact_artifact_resolution",
+    ], stdout=subprocess.PIPE, check=True)
+    wrong_reconciliation = subprocess.run(base + [
+        "reconcile-restored", "--state", str(reconcile_state),
+        "--kernel", next_kernel, "--nvidia", NVIDIA,
+        "--support-revision", "e" * 40,
+    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert wrong_reconciliation.returncode != 0
+    reconciled = subprocess.run(base + [
+        "reconcile-restored", "--state", str(reconcile_state),
+        "--kernel", KERNEL, "--nvidia", NVIDIA,
+        "--support-revision", "e" * 40,
+    ], text=True, stdout=subprocess.PIPE, check=True)
+    reconciled_document = json.loads(reconciled.stdout)
+    assert reconciled_document["phase"] == "restored"
+    assert reconciled_document["active"] is False
+    assert reconciled_document["automaticRetry"] is False
+    repeated_reconciliation = subprocess.run(base + [
+        "reconcile-restored", "--state", str(reconcile_state),
+        "--kernel", KERNEL, "--nvidia", NVIDIA,
+        "--support-revision", "e" * 40,
+    ], text=True, stdout=subprocess.PIPE, check=True)
+    assert json.loads(repeated_reconciliation.stdout) == reconciled_document
+    cancel_restored = subprocess.run(
+        base + ["cancel", "--state", str(reconcile_state)],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    assert cancel_restored.returncode != 0
 
     hostile_state = Path(temporary) / "hostile.json"
     hostile_state.write_text('{"schemaVersion":NaN}\n')

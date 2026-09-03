@@ -302,7 +302,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "operation", choices=(
-            "show", "begin", "set", "cancel", "retarget", "remove-terminal",
+            "show", "begin", "set", "cancel", "retarget",
+            "reconcile-restored", "remove-terminal",
         )
     )
     parser.add_argument("--state", required=True, type=Path)
@@ -348,6 +349,35 @@ def main():
                 "attempt": 0, "createdAt": timestamp, "updatedAt": timestamp,
             }
             write(args.state, document)
+            print(json.dumps(document, sort_keys=True, separators=(",", ":")))
+            return
+        if args.operation == "reconcile-restored":
+            if (not (args.kernel and args.nvidia and args.support_revision)
+                    or args.phase or args.reason):
+                fail("reconcile-restored requires only an exact target and support revision")
+            document = load(args.state)
+            if document is None:
+                fail("no recovery transaction exists")
+            expected_target = {
+                "kernelVersion": args.kernel, "nvidiaVersion": args.nvidia,
+            }
+            if (document["target"] != expected_target
+                    or document["supportRevision"] != args.support_revision):
+                fail("verified target differs from the recovery transaction")
+            if document["phase"] == "cancelled":
+                fail("a cancelled recovery transaction cannot be restored")
+            if document["phase"] != "restored":
+                if document["attempt"] >= MAX_ATTEMPTS:
+                    fail("transaction attempt limit is exhausted")
+                document.update({
+                    "active": False,
+                    "automaticRetry": False,
+                    "phase": "restored",
+                    "reason": "exact_nvidia_restored",
+                    "attempt": document["attempt"] + 1,
+                    "updatedAt": timestamp,
+                })
+                write(args.state, document)
             print(json.dumps(document, sort_keys=True, separators=(",", ":")))
             return
         if args.operation == "begin":

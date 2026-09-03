@@ -1059,7 +1059,10 @@ This remains a major future area, represented by three distinct gates:
   state without replacing the last durable record. Remove terminal transaction
   state and immutable release plans only through their locked, validated,
   identity-bound, parent-fsynced helpers; never unlink active state or bypass
-  those helpers from the recovery shell workflow.
+  those helpers from the recovery shell workflow. Reconcile a crash after exact
+  installation but before transaction finalization from independent exact-module
+  verification, without reviving a cancelled transaction; remove an orphaned
+  immutable plan before beginning any new transaction.
 * [ ] Connect the reviewed authenticated-cache bundle to on-device repair and
   test exact cached repair with GitHub, Valve, and Arch endpoints unavailable.
 * [ ] Run delayed-network fault injection for absent/flapping connectivity,

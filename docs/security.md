@@ -227,6 +227,12 @@ the old release plan is removed first, then the transaction is atomically reset
 to `offline_waiting` for the new kernel and persistent policy. A crash before
 retarget leaves the old active transaction retryable; a crash afterward leaves
 the complete new transaction. User-cancelled state is never retargeted.
+If exact modules became healthy before a crash, the next repair run may mark an
+active transaction restored only after binding that independent verification to
+the transaction's exact kernel, NVIDIA version, and support revision. It never
+reconciles cancelled state. Before a transaction is created, any leftover plan
+must pass full validation and locked removal, so an orphan cannot silently
+resurrect an earlier release selection.
 
 Generation health and rollback additionally bind the rootfs receipt's exact
 userspace-lock filename and SHA-256 to the selected generation target record.

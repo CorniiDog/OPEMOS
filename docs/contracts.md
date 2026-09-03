@@ -622,6 +622,13 @@ prior immutable release plan and atomically retargets only an active transaction
 to the newly observed kernel plus the same authenticated persistent policy. The
 replacement restarts at `offline_waiting`; it never selects a SteamOS slot.
 Cancellation remains terminal and cannot be bypassed by automatic retargeting.
+After independent exact-target module verification, Core may reconcile an
+active transaction directly to `restored` even if interruption prevented the
+ordinary intermediate phase writes. Reconciliation requires exact equality of
+kernel, NVIDIA version, and support revision; it is idempotent for the same
+restored record and rejects cancellation or any identity mismatch. A new
+transaction first removes any validated orphan release plan, preventing stale
+publication identity from being inherited after interrupted cleanup.
 
 All mutating recovery control operations also hold one recovery-operation
 lock. This serializes guardian fallback, repair, cancellation, and manual
