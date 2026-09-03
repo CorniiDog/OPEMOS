@@ -100,8 +100,13 @@ index in the same commit.
   destinations, root-owned mode 0644, decompression proof, and payload-hash
   binding to the authenticated validation record; retain bounded failed
   mismatch records without accepting them as success proofs.
-* [ ] Publish the remaining userspace/initramfs/workspace verification, receipt,
-  and gaming-payload schemas from OPEMOS. The additive installer-result schema
+* [x] Publish the mandatory userspace-verification schema-1 record and its
+  bounded deterministic fixture matrix. Bind package filenames, versions,
+  hashes, dependency/provider arrays, reviewed lock/provenance identities,
+  pacman consistency, payload confinement/hash/mode/ownership/link proofs, and
+  exact-version GSP firmware to authenticated validation.
+* [ ] Publish the remaining initramfs/workspace verification, receipt, and
+  gaming-payload schemas from OPEMOS. The additive installer-result schema
   1 envelope and mandatory success proofs are now published. Generate or
   fixture-test OPEMOS.EXE's
   Rust consumers against all schemas while retaining builder-owned session

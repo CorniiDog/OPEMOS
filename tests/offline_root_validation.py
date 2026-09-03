@@ -960,6 +960,10 @@ def main():
                 "schemaVersion": 1,
                 "status": "verified",
                 "reason": "installed_userspace_verified",
+                "validationBinding": {
+                    "userspaceLockSha256": "a" * 64,
+                    "provenanceSha256": "b" * 64,
+                },
                 "pacmanDatabase": {
                     "path": "/usr/lib/holo/pacmandb",
                     "status": "verified",
@@ -969,11 +973,19 @@ def main():
                 "packages": [
                     {
                         "packageName": name,
+                        "packageFilename": f"{name}-1-1-x86_64.pkg.tar.zst",
                         "version": "1-1",
                         "packageSha256": str(index) * 64,
+                        "dependencies": [],
+                        "provides": [],
                         "packageQueryVerified": True,
                         "pacmanIntegrityVerified": True,
                         "payloadVerified": True,
+                        "payloadPathsConfined": True,
+                        "payloadHashesVerified": True,
+                        "payloadModesVerified": True,
+                        "payloadOwnershipVerified": True,
+                        "payloadLinksVerified": True,
                         "directories": 0,
                         "regularFiles": 1,
                         "symlinks": 0,
@@ -1011,6 +1023,39 @@ def main():
         )
         assert "Traceback" not in malformed_result.stderr
         assert not (result_temporary / "malformed-result.json").exists()
+        failed_userspace = result_temporary / "failed-userspace.json"
+        failed_userspace_document = {
+            "schemaVersion": 1,
+            "status": "failed",
+            "reason": "installed_userspace_mismatch",
+            "message": "fixture diagnostic",
+            "packageMismatches": [{
+                "packageName": "nvidia-utils",
+                "invalidFields": ["payloadHash", "payloadMode"],
+                "affectedEntries": ["usr/lib/libnvidia-example.so"],
+            }],
+        }
+        failed_userspace.write_text(
+            json.dumps(failed_userspace_document), encoding="utf-8"
+        )
+        failed_result_path = result_temporary / "failed-userspace-result.json"
+        failed_result = subprocess.run(
+            [
+                sys.executable, str(RESULT_WRITER),
+                "--output", str(failed_result_path),
+                "--status", "failed", "--reason", "userspace_verification",
+                "--message", "fixture", "--phase", "userspace_verification",
+                "--root", "/target-root", "--kernel", KERNEL,
+                "--userspace-verification", str(failed_userspace),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        assert failed_result.returncode == 0, failed_result.stderr
+        assert json.loads(failed_result_path.read_text(encoding="utf-8"))[
+            "userspaceVerification"
+        ] == failed_userspace_document
     excessive_attempt = subprocess.run(
         [str(INSTALLER), "--progress-attempt", "1000001"],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,

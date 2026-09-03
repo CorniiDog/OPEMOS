@@ -53,6 +53,11 @@ MODULE_DECOMPRESSION_STATUSES = {
     "verified", "not-required", "failed", "timeout", "size-limit", "empty",
     "not-attempted", "missing", "ambiguous", "unreadable",
 }
+USERSPACE_MISMATCH_FIELDS = (
+    "presence", "filename", "version", "packageSha256", "query",
+    "databaseIntegrity", "payloadPath", "payloadHash", "payloadMode",
+    "payloadOwnership", "payloadLink", "dependencies", "provides", "firmware",
+)
 MEASUREMENT_PHASES = {
     "dependency_check", "image_create", "filesystem_create", "mount",
     "baseline_usage", "package_extraction", "package_usage",
@@ -453,22 +458,71 @@ def load_userspace_verification(path):
         if (path.is_symlink() or not path.is_file()
                 or not 0 < path.stat().st_size <= MAX_USERSPACE_VERIFICATION_BYTES):
             raise OSError
-        document = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError):
+        document = json.loads(
+            path.read_text(encoding="utf-8"), object_pairs_hook=unique_object,
+            parse_constant=reject_json_constant,
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
         raise SystemExit("Userspace verification metadata is unreadable or excessive.")
-    if (not isinstance(document, dict)
-            or set(document) != {
-                "schemaVersion", "status", "reason", "pacmanDatabase",
-                "packages", "gspFirmware",
-            }
-            or document.get("schemaVersion") != 1
-            or document.get("status") != "verified"
+    if not isinstance(document, dict) or document.get("schemaVersion") != 1:
+        raise SystemExit("Userspace verification metadata is malformed.")
+    if document.get("status") == "failed":
+        required = {"schemaVersion", "status", "reason", "message", "packageMismatches"}
+        mismatches = document.get("packageMismatches")
+        if (not required <= set(document)
+                or any(field in document for field in (
+                    "validationBinding", "pacmanDatabase", "packages", "gspFirmware"
+                ))
+                or document.get("reason") != "installed_userspace_mismatch"
+                or not isinstance(document.get("message"), str)
+                or not bounded_message(document["message"])
+                or not isinstance(mismatches, list)
+                or not 1 <= len(mismatches) <= 64):
+            raise SystemExit("Failed userspace verification metadata is malformed.")
+        seen = set()
+        for record in mismatches:
+            if not isinstance(record, dict) or set(record) != {
+                    "packageName", "invalidFields", "affectedEntries"}:
+                raise SystemExit("Failed userspace verification metadata is malformed.")
+            name = record.get("packageName")
+            invalid = record.get("invalidFields")
+            entries = record.get("affectedEntries")
+            if (not isinstance(name, str)
+                    or re.fullmatch(r"(?:unexpected|[A-Za-z0-9@._+:-]{1,256})", name)
+                    is None or name in seen
+                    or not isinstance(invalid, list)
+                    or invalid != [field for field in USERSPACE_MISMATCH_FIELDS
+                                   if field in invalid]
+                    or not invalid
+                    or not isinstance(entries, list) or len(entries) > 16
+                    or entries != sorted(set(entries))
+                    or any(not isinstance(entry, str) or not 1 <= len(entry) <= 512
+                           or Path(entry).is_absolute() or ".." in Path(entry).parts
+                           or re.fullmatch(r"[A-Za-z0-9._+~/-]+", entry) is None
+                           for entry in entries)):
+                raise SystemExit("Failed userspace verification metadata is malformed.")
+            seen.add(name)
+        return document
+    if (document.get("status") != "verified"
+            or not {"schemaVersion", "status", "reason", "validationBinding",
+                    "pacmanDatabase", "packages", "gspFirmware"} <= set(document)
+            or any(field in document for field in ("message", "packageMismatches"))
             or document.get("reason") != "installed_userspace_verified"):
         raise SystemExit("Userspace verification metadata is malformed.")
+    binding = document.get("validationBinding")
+    if (not isinstance(binding, dict)
+            or set(binding) != {"userspaceLockSha256", "provenanceSha256"}
+            or any(not isinstance(binding.get(field), str)
+                   or HEX_SHA256.fullmatch(binding[field]) is None
+                   for field in binding)):
+        raise SystemExit("Userspace verification binding is malformed.")
     packages = document.get("packages")
     package_keys = {
-        "packageName", "version", "packageSha256", "packageQueryVerified",
-        "pacmanIntegrityVerified", "payloadVerified", "directories",
+        "packageName", "packageFilename", "version", "packageSha256",
+        "dependencies", "provides", "packageQueryVerified",
+        "pacmanIntegrityVerified", "payloadVerified", "payloadPathsConfined",
+        "payloadHashesVerified", "payloadModesVerified",
+        "payloadOwnershipVerified", "payloadLinksVerified", "directories",
         "regularFiles", "symlinks", "hardlinks", "sharedLibraries",
     }
     if (not isinstance(packages, list) or not 2 <= len(packages) <= 64
@@ -484,12 +538,23 @@ def load_userspace_verification(path):
                 or not isinstance(record.get("version"), str)
                 or re.fullmatch(r"[A-Za-z0-9@._+:-]{1,256}", record["version"])
                 is None
+                or not plain_name(record.get("packageFilename", ""))
                 or not isinstance(record.get("packageSha256"), str)
                 or HEX_SHA256.fullmatch(record["packageSha256"]) is None
                 or any(record.get(field) is not True for field in (
                     "packageQueryVerified", "pacmanIntegrityVerified",
-                    "payloadVerified",
+                    "payloadVerified", "payloadPathsConfined",
+                    "payloadHashesVerified", "payloadModesVerified",
+                    "payloadOwnershipVerified", "payloadLinksVerified",
                 ))
+                or any(not isinstance(record.get(field), list)
+                       or len(record[field]) > 64
+                       or any(not isinstance(value, str) or not 1 <= len(value) <= 256
+                              or any(ord(character) < 32 or ord(character) == 127
+                                     for character in value)
+                              for value in record[field])
+                       or len(record[field]) != len(set(record[field]))
+                       for field in ("dependencies", "provides"))
                 or any(not isinstance(record.get(field), int)
                        or isinstance(record[field], bool)
                        or not 0 <= record[field] <= 250_000
@@ -497,6 +562,9 @@ def load_userspace_verification(path):
                            "directories", "regularFiles", "symlinks", "hardlinks",
                            "sharedLibraries",
                        ))
+                or sum(record[field] for field in (
+                    "directories", "regularFiles", "symlinks", "hardlinks"
+                )) == 0
                 or record["sharedLibraries"] > (
                     record["regularFiles"] + record["symlinks"]
                     + record["hardlinks"]
@@ -538,6 +606,44 @@ def load_userspace_verification(path):
                 or not Path(relative).name.endswith(".bin")):
             raise SystemExit("Userspace GSP firmware verification is malformed.")
     return document
+
+
+def validate_userspace_verification_binding(validation, verification, nvidia_version):
+    """Bind a successful userspace proof to the reviewed validation record."""
+    if verification.get("status") != "verified" or not isinstance(validation, dict):
+        raise SystemExit("Userspace verification is not a successful bound proof.")
+    expected = {
+        package["name"]: {
+            "packageFilename": package["filename"],
+            "version": package["fullVersion"],
+            "packageSha256": package["sha256"],
+            "dependencies": sorted(package["dependencies"]),
+            "provides": sorted(package["provides"]),
+        }
+        for package in validation.get("packages", [])
+    }
+    actual = {
+        package["packageName"]: {
+            field: package[field] for field in (
+                "packageFilename", "version", "packageSha256"
+            )
+        } | {
+            "dependencies": sorted(package["dependencies"]),
+            "provides": sorted(package["provides"]),
+        }
+        for package in verification["packages"]
+    }
+    binding = verification["validationBinding"]
+    if (actual != expected
+            or binding["userspaceLockSha256"]
+            != validation.get("userspaceLock", {}).get("sha256")
+            or binding["provenanceSha256"] != validation.get("provenanceSha256")
+            or verification["pacmanDatabase"]["path"]
+            != validation.get("pacmanDatabase", {}).get("path")
+            or verification["gspFirmware"]["version"] != nvidia_version):
+        raise SystemExit(
+            "Userspace verification does not match validated installation metadata."
+        )
 
 
 def load_payload_receipt(path):
@@ -679,7 +785,8 @@ def validate_verified_metadata(validation):
             relations = package[field]
             if (not isinstance(relations, list) or len(relations) > 64
                     or any(not isinstance(value, str) or not 0 < len(value) <= 256
-                           for value in relations)):
+                           for value in relations)
+                    or len(relations) != len(set(relations))):
                 raise SystemExit("Verified installation package relations are invalid.")
     for field in ("name", "filename", "signatureFilename"):
         identities = [package[field] for package in packages]
@@ -1285,23 +1392,14 @@ def main():
         userspace_verification = load_userspace_verification(
             args.userspace_verification
         )
-        expected_packages = {
-            package["name"]: (package["fullVersion"], package["sha256"])
-            for package in document.get("validation", {}).get("packages", [])
-        }
-        actual_packages = {
-            package["packageName"]: (
-                package["version"], package["packageSha256"]
-            )
-            for package in userspace_verification["packages"]
-        }
-        if (actual_packages != expected_packages
-                or userspace_verification["pacmanDatabase"]["path"]
-                != document.get("validation", {}).get("pacmanDatabase", {}).get("path")
-                or userspace_verification["gspFirmware"]["version"]
-                != args.nvidia):
+        if (userspace_verification["status"] == "failed"
+                and (args.status != "failed" or args.phase != "userspace_verification")):
             raise SystemExit(
-                "Userspace verification does not match validated installation metadata."
+                "Failed userspace verification metadata does not match result phase."
+            )
+        if userspace_verification["status"] == "verified":
+            validate_userspace_verification_binding(
+                document.get("validation", {}), userspace_verification, args.nvidia
             )
         document["userspaceVerification"] = userspace_verification
     elif args.status == "success":

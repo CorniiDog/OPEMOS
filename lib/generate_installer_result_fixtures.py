@@ -163,15 +163,27 @@ def userspace_verification():
     packages = []
     for package in package_records():
         packages.append({
-            "packageName": package["name"], "version": package["fullVersion"],
+            "packageName": package["name"],
+            "packageFilename": package["filename"],
+            "version": package["fullVersion"],
             "packageSha256": package["sha256"],
+            "dependencies": package["dependencies"],
+            "provides": package["provides"],
             "packageQueryVerified": True, "pacmanIntegrityVerified": True,
-            "payloadVerified": True, "directories": 1, "regularFiles": 1,
+            "payloadVerified": True, "payloadPathsConfined": True,
+            "payloadHashesVerified": True, "payloadModesVerified": True,
+            "payloadOwnershipVerified": True, "payloadLinksVerified": True,
+            "directories": 1, "regularFiles": 1,
             "symlinks": 0, "hardlinks": 0, "sharedLibraries": 1,
         })
     return {
         "schemaVersion": 1, "status": "verified",
-        "reason": "installed_userspace_verified", "packages": packages,
+        "reason": "installed_userspace_verified",
+        "validationBinding": {
+            "userspaceLockSha256": "c" * 64,
+            "provenanceSha256": "b" * 64,
+        },
+        "packages": packages,
         "pacmanDatabase": {
             "path": "/usr/lib/holo/pacmandb", "status": "verified",
             "consistencyVerified": True, "verifiedPackageCount": len(packages),

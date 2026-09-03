@@ -44,7 +44,8 @@
         "dependencies": {
           "items": {"$ref": "#/$defs/relation"},
           "maxItems": 64,
-          "type": "array"
+          "type": "array",
+          "uniqueItems": true
         },
         "filename": {"$ref": "#/$defs/plainFilename"},
         "fullVersion": {"$ref": "#/$defs/packageToken"},
@@ -59,7 +60,8 @@
         "provides": {
           "items": {"$ref": "#/$defs/relation"},
           "maxItems": 64,
-          "type": "array"
+          "type": "array",
+          "uniqueItems": true
         },
         "role": {"enum": ["nvidia-userspace", "dependency"]},
         "sha256": {"$ref": "#/$defs/hash"},

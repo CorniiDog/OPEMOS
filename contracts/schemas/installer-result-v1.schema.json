@@ -113,40 +113,6 @@
       "pattern": "^[A-Za-z0-9._+~-]+$",
       "type": "string"
     },
-    "packageProof": {
-      "properties": {
-        "directories": {"maximum": 250000, "minimum": 0, "type": "integer"},
-        "hardlinks": {"maximum": 250000, "minimum": 0, "type": "integer"},
-        "packageName": {"$ref": "#/$defs/packageToken"},
-        "packageQueryVerified": {"const": true},
-        "packageSha256": {"$ref": "#/$defs/hash"},
-        "pacmanIntegrityVerified": {"const": true},
-        "payloadVerified": {"const": true},
-        "regularFiles": {"maximum": 250000, "minimum": 0, "type": "integer"},
-        "sharedLibraries": {"maximum": 250000, "minimum": 0, "type": "integer"},
-        "symlinks": {"maximum": 250000, "minimum": 0, "type": "integer"},
-        "version": {"$ref": "#/$defs/packageToken"}
-      },
-      "required": [
-        "packageName",
-        "version",
-        "packageSha256",
-        "packageQueryVerified",
-        "pacmanIntegrityVerified",
-        "payloadVerified",
-        "directories",
-        "regularFiles",
-        "symlinks",
-        "hardlinks",
-        "sharedLibraries"
-      ],
-      "type": "object"
-    },
-    "packageToken": {
-      "maxLength": 256,
-      "pattern": "^[A-Za-z0-9@._+:-]+$",
-      "type": "string"
-    },
     "payloadReceipt": {
       "properties": {
         "reason": {"const": "payload_receipt_verified"},
@@ -211,47 +177,6 @@
       "required": ["path", "sizeBytes", "sha256"],
       "type": "object"
     },
-    "userspaceVerification": {
-      "properties": {
-        "gspFirmware": {
-          "properties": {
-            "status": {"const": "verified"},
-            "targetRelativeFiles": {
-              "items": {"$ref": "#/$defs/targetRelativePath"},
-              "maxItems": 16,
-              "minItems": 1,
-              "type": "array",
-              "uniqueItems": true
-            },
-            "version": {"$ref": "#/$defs/version"}
-          },
-          "required": ["status", "version", "targetRelativeFiles"],
-          "type": "object"
-        },
-        "packages": {
-          "items": {"$ref": "#/$defs/packageProof"},
-          "maxItems": 64,
-          "minItems": 2,
-          "type": "array",
-          "uniqueItems": true
-        },
-        "pacmanDatabase": {
-          "properties": {
-            "consistencyVerified": {"const": true},
-            "path": {"const": "/usr/lib/holo/pacmandb"},
-            "status": {"const": "verified"},
-            "verifiedPackageCount": {"maximum": 64, "minimum": 2, "type": "integer"}
-          },
-          "required": ["path", "status", "verifiedPackageCount", "consistencyVerified"],
-          "type": "object"
-        },
-        "reason": {"const": "installed_userspace_verified"},
-        "schemaVersion": {"const": 1},
-        "status": {"const": "verified"}
-      },
-      "required": ["schemaVersion", "status", "reason", "pacmanDatabase", "packages", "gspFirmware"],
-      "type": "object"
-    },
     "version": {
       "maxLength": 64,
       "pattern": "^(?:unknown|[0-9]+\\.[0-9]+(?:\\.[0-9]+)?)$",
@@ -287,7 +212,7 @@
           "payloadReceipt": {"$ref": "#/$defs/payloadReceipt"},
           "phase": {"const": "complete"},
           "reason": {"const": "install_complete"},
-          "userspaceVerification": {"$ref": "#/$defs/userspaceVerification"},
+          "userspaceVerification": {"$ref": "installer-userspace-verification-v1.schema.json"},
           "validation": {"$ref": "installer-validation-v1.schema.json"}
         },
         "required": [
@@ -340,7 +265,7 @@
     "trust": {
       "enum": ["pending-validation", "development-unverified", "locally-built-verified", "certified-published"]
     },
-    "userspaceVerification": {"type": "object"},
+    "userspaceVerification": {"$ref": "installer-userspace-verification-v1.schema.json"},
     "validation": {"$ref": "installer-validation-v1.schema.json"}
   },
   "required": ["schemaVersion", "status", "reason", "message", "phase", "trust", "target", "inputs", "cleanup"],

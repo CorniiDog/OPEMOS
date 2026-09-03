@@ -28,6 +28,11 @@ reimplement compatibility, package-selection, signer, or mutation policy.
   mandatory five-module success proof and bounded failed mismatch diagnostics.
   Module records are closed; exact-kernel destination and authenticated
   validation-hash binding remain authoritative Core cross-record checks.
+- `schemas/installer-userspace-verification-v1.schema.json` describes the
+  mandatory reviewed-package success proof and bounded failed mismatch
+  diagnostics. Package records are closed and bind filenames, versions,
+  hashes, dependencies/providers, payload invariants, pacman consistency, and
+  GSP firmware back to the reviewed lock and provenance.
 
 Unknown additive fields are permitted. Removing a required field, changing its
 meaning, or tightening a previously valid value requires a new schema version.
@@ -75,6 +80,14 @@ normalized modules, payload-hash binding, representation, target path,
 ownership, mode and decompression invariants, bounded failure diagnostics,
 safe top-level additions, and hostile JSON/document inputs. Human-readable
 failure messages are intentionally unfrozen.
+
+`lib/generate_installer_userspace_verification_fixtures.py` deterministically
+emits the bounded userspace-verification schema-1 matrix. Structural acceptance
+is distinct from exact-installation proof binding: a safe record with a
+different package, lock, provenance, dependency/provider list, or NVIDIA
+firmware version is representable but cannot prove the reviewed installation.
+Dependency and provider arrays use set semantics: ordering is irrelevant,
+duplicates are rejected, and exact binding compares their normalized values.
 
 When resolution returns `no_compatible_artifact` with reason
 `no_compatible_release`, `nextAction` explicitly authorizes only the existing

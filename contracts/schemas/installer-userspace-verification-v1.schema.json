@@ -1,0 +1,108 @@
+{
+  "$id": "https://corniidog.github.io/OPEMOS/contracts/installer-userspace-verification-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "count": {"maximum": 250000, "minimum": 0, "type": "integer"},
+    "hash": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "invalidField": {
+      "enum": ["presence", "filename", "version", "packageSha256", "query", "databaseIntegrity", "payloadPath", "payloadHash", "payloadMode", "payloadOwnership", "payloadLink", "dependencies", "provides", "firmware"]
+    },
+    "packageName": {"maxLength": 256, "pattern": "^[A-Za-z0-9@._+:-]+$", "type": "string"},
+    "plainFilename": {"maxLength": 255, "pattern": "^[A-Za-z0-9@._+~:-]+$", "type": "string"},
+    "relation": {"maxLength": 256, "minLength": 1, "pattern": "^[^\\u0000-\\u001F\\u007F]+$", "type": "string"},
+    "targetRelativePath": {"maxLength": 512, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._+~/-]+$", "type": "string"},
+    "verifiedPackage": {
+      "additionalProperties": false,
+      "properties": {
+        "dependencies": {"items": {"$ref": "#/$defs/relation"}, "maxItems": 64, "type": "array", "uniqueItems": true},
+        "directories": {"$ref": "#/$defs/count"},
+        "hardlinks": {"$ref": "#/$defs/count"},
+        "packageFilename": {"$ref": "#/$defs/plainFilename"},
+        "packageName": {"$ref": "#/$defs/packageName"},
+        "packageQueryVerified": {"const": true},
+        "packageSha256": {"$ref": "#/$defs/hash"},
+        "pacmanIntegrityVerified": {"const": true},
+        "payloadHashesVerified": {"const": true},
+        "payloadLinksVerified": {"const": true},
+        "payloadModesVerified": {"const": true},
+        "payloadOwnershipVerified": {"const": true},
+        "payloadPathsConfined": {"const": true},
+        "payloadVerified": {"const": true},
+        "provides": {"items": {"$ref": "#/$defs/relation"}, "maxItems": 64, "type": "array", "uniqueItems": true},
+        "regularFiles": {"$ref": "#/$defs/count"},
+        "sharedLibraries": {"$ref": "#/$defs/count"},
+        "symlinks": {"$ref": "#/$defs/count"},
+        "version": {"$ref": "#/$defs/packageName"}
+      },
+      "required": ["packageName", "packageFilename", "version", "packageSha256", "dependencies", "provides", "packageQueryVerified", "pacmanIntegrityVerified", "payloadVerified", "payloadPathsConfined", "payloadHashesVerified", "payloadModesVerified", "payloadOwnershipVerified", "payloadLinksVerified", "directories", "regularFiles", "symlinks", "hardlinks", "sharedLibraries"],
+      "type": "object"
+    },
+    "mismatchRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "affectedEntries": {"items": {"$ref": "#/$defs/targetRelativePath"}, "maxItems": 16, "type": "array", "uniqueItems": true},
+        "invalidFields": {"items": {"$ref": "#/$defs/invalidField"}, "maxItems": 14, "minItems": 1, "type": "array", "uniqueItems": true},
+        "packageName": {"oneOf": [{"$ref": "#/$defs/packageName"}, {"const": "unexpected"}]}
+      },
+      "required": ["packageName", "invalidFields", "affectedEntries"],
+      "type": "object"
+    }
+  },
+  "description": "Bounded userspace verification emitted after the reviewed offline package transaction. Exact lock, provenance, package and target bindings are enforced by Core across records.",
+  "oneOf": [
+    {
+      "properties": {
+        "gspFirmware": {
+          "additionalProperties": false,
+          "properties": {
+            "status": {"const": "verified"},
+            "targetRelativeFiles": {"items": {"$ref": "#/$defs/targetRelativePath"}, "maxItems": 16, "minItems": 1, "type": "array", "uniqueItems": true},
+            "version": {"maxLength": 64, "pattern": "^[0-9]+\\.[0-9]+(?:\\.[0-9]+)?$", "type": "string"}
+          },
+          "required": ["version", "status", "targetRelativeFiles"],
+          "type": "object"
+        },
+        "packages": {"items": {"$ref": "#/$defs/verifiedPackage"}, "maxItems": 64, "minItems": 2, "type": "array"},
+        "pacmanDatabase": {
+          "additionalProperties": false,
+          "properties": {
+            "consistencyVerified": {"const": true},
+            "path": {"const": "/usr/lib/holo/pacmandb"},
+            "status": {"const": "verified"},
+            "verifiedPackageCount": {"maximum": 64, "minimum": 2, "type": "integer"}
+          },
+          "required": ["path", "status", "verifiedPackageCount", "consistencyVerified"],
+          "type": "object"
+        },
+        "reason": {"const": "installed_userspace_verified"},
+        "schemaVersion": {"const": 1},
+        "status": {"const": "verified"},
+        "validationBinding": {
+          "additionalProperties": false,
+          "properties": {
+            "provenanceSha256": {"$ref": "#/$defs/hash"},
+            "userspaceLockSha256": {"$ref": "#/$defs/hash"}
+          },
+          "required": ["userspaceLockSha256", "provenanceSha256"],
+          "type": "object"
+        }
+      },
+      "required": ["schemaVersion", "status", "reason", "validationBinding", "pacmanDatabase", "packages", "gspFirmware"],
+      "type": "object"
+    },
+    {
+      "properties": {
+        "message": {"maxLength": 2048, "minLength": 1, "type": "string"},
+        "packageMismatches": {"items": {"$ref": "#/$defs/mismatchRecord"}, "maxItems": 64, "minItems": 1, "type": "array"},
+        "reason": {"const": "installed_userspace_mismatch"},
+        "schemaVersion": {"const": 1},
+        "status": {"const": "failed"}
+      },
+      "required": ["schemaVersion", "status", "reason", "message", "packageMismatches"],
+      "type": "object"
+    }
+  ],
+  "title": "OPEMOS installer userspace verification v1",
+  "type": "object",
+  "unevaluatedProperties": true
+}

@@ -43,9 +43,14 @@ def main():
             },
             "cleanup": {"mountsReleased": True, "runtimeMountsExpected": 4,
                         "runtimeMountsReleased": 4, "compressionPolicyRestored": True},
-            "validation": {"status": "verified", "packages": [
-                {"name": "nvidia-utils", "fullVersion": "575.64.05-2", "sha256": "1" * 64},
-                {"name": "lib32-nvidia-utils", "fullVersion": "575.64.05-1", "sha256": "2" * 64},
+            "validation": {"status": "verified", "provenanceSha256": "b" * 64,
+                           "userspaceLock": {"sha256": "c" * 64}, "packages": [
+                {"name": "nvidia-utils", "filename": "nvidia-utils.pkg.tar.zst",
+                 "fullVersion": "575.64.05-2", "sha256": "1" * 64,
+                 "dependencies": ["glibc"], "provides": ["vulkan-driver"]},
+                {"name": "lib32-nvidia-utils", "filename": "lib32-nvidia-utils.pkg.tar.zst",
+                 "fullVersion": "575.64.05-1", "sha256": "2" * 64,
+                 "dependencies": ["lib32-glibc"], "provides": []},
             ], "modules": [
                 {"name": name, "payloadSha256": str(index) * 64}
                 for index, name in enumerate(sorted({
@@ -77,16 +82,30 @@ def main():
             "userspaceVerification": {
                 "schemaVersion": 1, "status": "verified",
                 "reason": "installed_userspace_verified",
+                "validationBinding": {"userspaceLockSha256": "c" * 64,
+                                      "provenanceSha256": "b" * 64},
                 "packages": [{
-                    "packageName": "nvidia-utils", "version": "575.64.05-2",
+                    "packageName": "nvidia-utils",
+                    "packageFilename": "nvidia-utils.pkg.tar.zst",
+                    "version": "575.64.05-2", "dependencies": ["glibc"],
+                    "provides": ["vulkan-driver"],
                     "packageSha256": "1" * 64, "packageQueryVerified": True,
                     "pacmanIntegrityVerified": True, "payloadVerified": True,
+                    "payloadPathsConfined": True, "payloadHashesVerified": True,
+                    "payloadModesVerified": True, "payloadOwnershipVerified": True,
+                    "payloadLinksVerified": True,
                     "directories": 1, "regularFiles": 1, "symlinks": 0,
                     "hardlinks": 0, "sharedLibraries": 1,
                 }, {
-                    "packageName": "lib32-nvidia-utils", "version": "575.64.05-1",
+                    "packageName": "lib32-nvidia-utils",
+                    "packageFilename": "lib32-nvidia-utils.pkg.tar.zst",
+                    "version": "575.64.05-1", "dependencies": ["lib32-glibc"],
+                    "provides": [],
                     "packageSha256": "2" * 64, "packageQueryVerified": True,
                     "pacmanIntegrityVerified": True, "payloadVerified": True,
+                    "payloadPathsConfined": True, "payloadHashesVerified": True,
+                    "payloadModesVerified": True, "payloadOwnershipVerified": True,
+                    "payloadLinksVerified": True,
                     "directories": 1, "regularFiles": 1, "symlinks": 0,
                     "hardlinks": 0, "sharedLibraries": 1,
                 }],

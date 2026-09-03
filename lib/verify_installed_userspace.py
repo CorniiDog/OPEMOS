@@ -28,6 +28,19 @@ MAX_PROGRESS_ATTEMPT = 1_000_000
 MAX_RESULT_BYTES = 256 * 1024
 
 
+def unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON key")
+        result[key] = value
+    return result
+
+
+def reject_json_constant(value):
+    raise ValueError(f"non-standard JSON constant: {value}")
+
+
 def progress_attempt(value):
     if re.fullmatch(r"[0-9]{1,7}", value) is None:
         raise argparse.ArgumentTypeError("progress attempt must be an integer")
@@ -91,8 +104,11 @@ def load_packages(path, incoming_paths):
             raise OSError
         if path.stat().st_size > MAX_VALIDATION_BYTES:
             raise OSError
-        document = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError):
+        document = json.loads(
+            path.read_text(encoding="utf-8"), object_pairs_hook=unique_object,
+            parse_constant=reject_json_constant,
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
         fail("Verified userspace metadata is unavailable.")
     packages = document.get("packages") if isinstance(document, dict) else None
     target = document.get("target") if isinstance(document, dict) else None
@@ -117,11 +133,20 @@ def load_packages(path, incoming_paths):
         seen.add(name)
         filename = package.get("filename")
         digest = package.get("sha256")
+        dependencies = package.get("dependencies")
+        provides = package.get("provides")
         if (not isinstance(filename, str) or Path(filename).name != filename
                 or not isinstance(digest, str)
-                or re.fullmatch(r"[0-9a-f]{64}", digest) is None):
+                or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+                or any(not isinstance(values, list) or len(values) > 64
+                       or any(not isinstance(value, str) or not 1 <= len(value) <= 256
+                              or any(ord(character) < 32 or ord(character) == 127
+                                     for character in value)
+                              for value in values)
+                       or len(values) != len(set(values))
+                       for values in (dependencies, provides))):
             fail("Verified userspace package records are malformed.")
-        result.append((name, version, filename, digest))
+        result.append((name, version, filename, digest, dependencies, provides))
     incoming = {}
     for path in incoming_paths:
         try:
@@ -134,8 +159,17 @@ def load_packages(path, incoming_paths):
         incoming[path.name] = path
     if set(incoming) != {record[2] for record in result}:
         fail("Incoming userspace package set differs from verified metadata.")
-    return ([(name, version, incoming[filename], digest)
-             for name, version, filename, digest in result], nvidia_version)
+    binding = {
+        "userspaceLockSha256": document.get("userspaceLock", {}).get("sha256"),
+        "provenanceSha256": document.get("provenanceSha256"),
+    }
+    if any(not isinstance(value, str)
+           or re.fullmatch(r"[0-9a-f]{64}", value) is None
+           for value in binding.values()):
+        fail("Verified userspace binding metadata is malformed.")
+    return ([(name, version, filename, incoming[filename], digest, dependencies, provides)
+             for name, version, filename, digest, dependencies, provides in result],
+            nvidia_version, binding)
 
 
 def confined_target(root, relative, *, allow_leaf_symlink=False):
@@ -315,11 +349,14 @@ def main():
     except (OSError, RuntimeError, ValueError):
         fail("Target userspace database is unsafe.")
 
-    packages, nvidia_version = load_packages(args.validation, args.package)
+    packages, nvidia_version, validation_binding = load_packages(
+        args.validation, args.package
+    )
     deadline = time.monotonic() + MAX_TOTAL_SECONDS
     records = []
     all_gsp_firmware = []
-    for completed, (name, expected_version, package, expected_digest) in enumerate(
+    for completed, (name, expected_version, filename, package, expected_digest,
+                    dependencies, provides) in enumerate(
         packages, start=1
     ):
         if sha256(package, deadline) != expected_digest:
@@ -346,11 +383,19 @@ def main():
         emit_progress(args.progress_attempt, completed, len(packages))
         records.append({
             "packageName": name,
+            "packageFilename": filename,
             "version": expected_version,
             "packageSha256": expected_digest,
+            "dependencies": dependencies,
+            "provides": provides,
             "packageQueryVerified": True,
             "pacmanIntegrityVerified": True,
             "payloadVerified": True,
+            "payloadPathsConfined": True,
+            "payloadHashesVerified": True,
+            "payloadModesVerified": True,
+            "payloadOwnershipVerified": True,
+            "payloadLinksVerified": True,
             **counts,
         })
     all_gsp_firmware = sorted(set(all_gsp_firmware))
@@ -367,6 +412,7 @@ def main():
         "schemaVersion": 1,
         "status": "verified",
         "reason": "installed_userspace_verified",
+        "validationBinding": validation_binding,
         "pacmanDatabase": {
             "path": "/usr/lib/holo/pacmandb",
             "status": "verified",

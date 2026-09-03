@@ -116,16 +116,31 @@ def validate_success_proofs(document, target):
     expected_packages = {}
     for record in validated_packages:
         if (not isinstance(record, dict)
-                or not {"name", "fullVersion", "sha256"} <= set(record)
+                or not {"name", "filename", "fullVersion", "sha256",
+                        "dependencies", "provides"} <= set(record)
                 or not isinstance(record["name"], str)
                 or PACKAGE_IDENTITY.fullmatch(record["name"]) is None
                 or record["name"] in expected_packages
+                or not isinstance(record["filename"], str)
+                or not plain_filename(record["filename"])
                 or not isinstance(record["fullVersion"], str)
                 or PACKAGE_IDENTITY.fullmatch(record["fullVersion"]) is None
                 or not isinstance(record["sha256"], str)
-                or HEX_SHA256.fullmatch(record["sha256"]) is None):
+                or HEX_SHA256.fullmatch(record["sha256"]) is None
+                or any(not isinstance(record[field], list)
+                       or len(record[field]) > 64
+                       or any(not isinstance(value, str) or not 1 <= len(value) <= 256
+                              for value in record[field])
+                       or len(record[field]) != len(set(record[field]))
+                       for field in ("dependencies", "provides"))):
             raise ValueError("success validation package set is malformed")
-        expected_packages[record["name"]] = (record["fullVersion"], record["sha256"])
+        expected_packages[record["name"]] = {
+            "packageFilename": record["filename"],
+            "version": record["fullVersion"],
+            "packageSha256": record["sha256"],
+            "dependencies": sorted(record["dependencies"]),
+            "provides": sorted(record["provides"]),
+        }
 
     validated_modules = validation.get("modules") if isinstance(validation, dict) else None
     if (not isinstance(validated_modules, list)
@@ -202,15 +217,26 @@ def validate_success_proofs(document, target):
             or len(package_records) != len(expected_packages)):
         raise ValueError("success userspace verification is malformed")
     actual_packages = {}
+    package_record_keys = {
+        "packageName", "packageFilename", "version", "packageSha256",
+        "dependencies", "provides", "packageQueryVerified",
+        "pacmanIntegrityVerified", "payloadVerified", "payloadPathsConfined",
+        "payloadHashesVerified", "payloadModesVerified",
+        "payloadOwnershipVerified", "payloadLinksVerified", "directories",
+        "regularFiles", "symlinks", "hardlinks", "sharedLibraries",
+    }
     for record in package_records:
-        if not isinstance(record, dict):
+        if not isinstance(record, dict) or set(record) != package_record_keys:
             raise ValueError("success userspace verification is malformed")
         name = record.get("packageName")
         if (not isinstance(name, str)
                 or PACKAGE_IDENTITY.fullmatch(name) is None
                 or name in actual_packages
                 or any(record.get(field) is not True for field in (
-                    "packageQueryVerified", "pacmanIntegrityVerified", "payloadVerified"
+                    "packageQueryVerified", "pacmanIntegrityVerified", "payloadVerified",
+                    "payloadPathsConfined", "payloadHashesVerified",
+                    "payloadModesVerified", "payloadOwnershipVerified",
+                    "payloadLinksVerified",
                 ))
                 or any(not isinstance(record.get(field), int)
                        or isinstance(record.get(field), bool)
@@ -218,18 +244,40 @@ def validate_success_proofs(document, target):
                        for field in (
                            "directories", "regularFiles", "symlinks", "hardlinks",
                            "sharedLibraries",
-                       ))):
+                       ))
+                or sum(record[field] for field in (
+                    "directories", "regularFiles", "symlinks", "hardlinks"
+                )) == 0
+                or record["sharedLibraries"] > (
+                    record["regularFiles"] + record["symlinks"] + record["hardlinks"]
+                )):
             raise ValueError("success userspace verification is malformed")
-        actual_packages[name] = (record.get("version"), record.get("packageSha256"))
+        actual_packages[name] = {
+            "packageFilename": record.get("packageFilename"),
+            "version": record.get("version"),
+            "packageSha256": record.get("packageSha256"),
+            "dependencies": sorted(record.get("dependencies", [])),
+            "provides": sorted(record.get("provides", [])),
+        }
     database = userspace.get("pacmanDatabase")
     firmware = userspace.get("gspFirmware")
+    binding = userspace.get("validationBinding")
     if (actual_packages != expected_packages
+            or not isinstance(binding, dict)
+            or set(binding) != {"userspaceLockSha256", "provenanceSha256"}
+            or binding.get("userspaceLockSha256")
+            != validation.get("userspaceLock", {}).get("sha256")
+            or binding.get("provenanceSha256") != validation.get("provenanceSha256")
             or not isinstance(database, dict)
+            or set(database) != {
+                "path", "status", "verifiedPackageCount", "consistencyVerified"
+            }
             or database.get("path") != "/usr/lib/holo/pacmandb"
             or database.get("status") != "verified"
             or database.get("consistencyVerified") is not True
             or database.get("verifiedPackageCount") != len(expected_packages)
             or not isinstance(firmware, dict)
+            or set(firmware) != {"version", "status", "targetRelativeFiles"}
             or firmware.get("status") != "verified"
             or firmware.get("version") != target["nvidiaVersion"]
             or not isinstance(firmware.get("targetRelativeFiles"), list)
@@ -240,7 +288,12 @@ def validate_success_proofs(document, target):
                    )
                    or Path(relative).is_absolute()
                    or ".." in Path(relative).parts
-                   for relative in firmware["targetRelativeFiles"])):
+                   or re.fullmatch(r"[A-Za-z0-9._+~/-]{1,512}", relative) is None
+                   or not Path(relative).name.startswith("gsp")
+                   or not Path(relative).name.endswith(".bin")
+                   for relative in firmware["targetRelativeFiles"])
+            or firmware["targetRelativeFiles"]
+            != sorted(set(firmware["targetRelativeFiles"]))):
         raise ValueError("success userspace verification is inconsistent")
 
     workspace = document["initramfsWorkspace"]
