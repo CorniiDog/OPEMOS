@@ -25,25 +25,80 @@ MAX_CONFIG_BYTES = 1024 * 1024
 
 def confined(root: Path, path: Path) -> Path:
     resolved_root = root.resolve()
-    resolved = path.resolve(strict=False)
+    try:
+        relative = path.relative_to(root)
+    except ValueError:
+        raise ValueError("status path is outside the target root") from None
+    if any(component in ("", ".", "..") for component in relative.parts):
+        raise ValueError("status path is malformed")
+    candidate = resolved_root
+    for component in relative.parts:
+        candidate = candidate / component
+        if candidate.is_symlink():
+            raise ValueError("status path contains a symlink")
+    resolved = candidate.resolve(strict=False)
     if resolved != resolved_root and resolved_root not in resolved.parents:
         raise ValueError(f"path escapes target root: {path}")
-    return resolved
+    return candidate
 
 
 def regular_text(root: Path, relative: str, optional=True) -> str:
     path = confined(root, root / relative)
+    components = Path(relative).parts
+    directory_descriptors = []
+    descriptor = None
     try:
-        info = path.lstat()
+        directory_flags = (
+            os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+        )
+        parent = os.open(root.resolve(), directory_flags)
+        directory_descriptors.append(parent)
+        for component in components[:-1]:
+            parent = os.open(component, directory_flags, dir_fd=parent)
+            directory_descriptors.append(parent)
+        flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        descriptor = os.open(components[-1], flags, dir_fd=parent)
     except FileNotFoundError:
         if optional:
             return ""
         raise ValueError(f"required file is missing: {relative}")
-    if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
-        raise ValueError(f"unsafe status input: {relative}")
-    if info.st_size > MAX_CONFIG_BYTES:
-        raise ValueError(f"status input is excessive: {relative}")
-    return path.read_text(encoding="utf-8", errors="strict")
+    try:
+        before = os.fstat(descriptor)
+        expected_owner = 0 if root == Path("/") else os.geteuid()
+        if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+                or before.st_uid != expected_owner
+                or stat.S_IMODE(before.st_mode) & 0o022):
+            raise ValueError(f"unsafe status input: {relative}")
+        if before.st_size > MAX_CONFIG_BYTES:
+            raise ValueError(f"status input is excessive: {relative}")
+        chunks = []
+        remaining = MAX_CONFIG_BYTES + 1
+        while remaining:
+            chunk = os.read(descriptor, remaining)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        payload = b"".join(chunks)
+        after = os.fstat(descriptor)
+        current = os.stat(components[-1], dir_fd=parent, follow_symlinks=False)
+        identity = lambda info: (
+            info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns,
+            info.st_ctime_ns, info.st_uid, info.st_gid,
+            stat.S_IMODE(info.st_mode), info.st_nlink,
+        )
+        if (len(payload) != before.st_size or identity(before) != identity(after)
+                or identity(after) != identity(current)):
+            raise ValueError(f"status input changed while read: {relative}")
+        return payload.decode("utf-8", errors="strict")
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        for directory_descriptor in reversed(directory_descriptors):
+            os.close(directory_descriptor)
 
 
 def module_path(root: Path, kernel: str, name: str) -> Path | None:
@@ -89,6 +144,7 @@ def modinfo(path: Path, field: str) -> str:
 
 
 def installed_nvidia(root: Path) -> str:
+    records = []
     for relative in (
         "var/lib/open-gpu-kernel-modules-steamos-support/offline-install/nvidia-version",
         "var/lib/open-gpu-kernel-modules-steamos-support/installed-nvidia.txt",
@@ -97,7 +153,9 @@ def installed_nvidia(root: Path) -> str:
     ):
         value = regular_text(root, relative).strip()
         if value:
-            return value if VERSION.fullmatch(value) else ""
+            if not VERSION.fullmatch(value):
+                raise ValueError("installed NVIDIA identity is malformed")
+            records.append(value)
     if root == Path("/"):
         result = subprocess.run(
             ["pacman", "-Q", "nvidia-utils"], text=True,
@@ -108,9 +166,14 @@ def installed_nvidia(root: Path) -> str:
         if result.returncode == 0 and len(fields) == 2:
             # Arch package release is appended after the NVIDIA version.
             value = fields[1].rsplit("-", 1)[0]
-            if VERSION.fullmatch(value):
-                return value
-    return ""
+            if not VERSION.fullmatch(value):
+                raise ValueError("installed NVIDIA package identity is malformed")
+            records.append(value)
+        elif result.returncode == 0:
+            raise ValueError("installed NVIDIA package identity is malformed")
+    if len(set(records)) > 1:
+        raise ValueError("installed NVIDIA identities are ambiguous")
+    return records[0] if records else ""
 
 
 def inspect(args):
@@ -130,9 +193,21 @@ def inspect(args):
         except json.JSONDecodeError:
             raise ValueError("recovery state is malformed") from None
 
-    expected_version = args.expected_nvidia or installed_nvidia(root)
+    installed_version = installed_nvidia(root)
+    expected_file_version = ""
+    if args.expected_nvidia_file:
+        expected_file_version = regular_text(
+            root, args.expected_nvidia_file,
+        ).strip()
+    if args.expected_nvidia and expected_file_version:
+        raise ValueError("expected NVIDIA policy is ambiguous")
+    expected_version = (
+        args.expected_nvidia or expected_file_version or installed_version
+    )
     if expected_version and not VERSION.fullmatch(expected_version):
         raise ValueError("expected NVIDIA policy is malformed")
+    if args.expected_nvidia and installed_version != args.expected_nvidia:
+        raise ValueError("installed NVIDIA identity differs from expected policy")
     records = []
     reasons = []
     for name, filename in MODULES:
@@ -188,6 +263,7 @@ def main():
     parser.add_argument("--root", default="/")
     parser.add_argument("--kernel")
     parser.add_argument("--expected-nvidia")
+    parser.add_argument("--expected-nvidia-file")
     parser.add_argument("--output")
     args = parser.parse_args()
     try:

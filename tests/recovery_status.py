@@ -22,9 +22,14 @@ KERNEL = "6.16.12-valve24.5-1-neptune-616-test"
 NVIDIA = "575.64.05"
 
 
-def run(root, path):
+def run(root, path, expected=None):
+    arguments = [
+        "python3", str(STATUS), "--root", str(root), "--kernel", KERNEL,
+    ]
+    if expected is not None:
+        arguments.extend(("--expected-nvidia", expected))
     result = subprocess.run(
-        ["python3", str(STATUS), "--root", str(root), "--kernel", KERNEL],
+        arguments,
         text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         env={**os.environ, "PATH": f"{path}:{os.environ['PATH']}"}, check=False,
     )
@@ -69,6 +74,79 @@ esac
     assert all(item["exactKernel"] and item["exactUserspace"]
                for item in document["moduleVerification"]["records"])
 
+    secondary = state / "nvidia-setup/nvidia-version"
+    secondary.parent.mkdir()
+    secondary.write_text("580.1.2\n")
+    code, document = run(root, mockbin)
+    assert code == 2
+    assert document["status"] == "unknown"
+    assert document["reason"] == "inspection_failed"
+    secondary.unlink()
+
+    code, document = run(root, mockbin, expected="580.1.2")
+    assert code == 2
+    assert document["status"] == "unknown"
+    assert document["reason"] == "inspection_failed"
+
+    (state / "installed-nvidia.txt").write_text("not-a-version\n")
+    code, document = run(root, mockbin)
+    assert code == 2
+    assert document["status"] == "unknown"
+    (state / "installed-nvidia.txt").write_text(NVIDIA + "\n")
+
+    installed_marker = state / "installed-nvidia.txt"
+    installed_marker.chmod(0o666)
+    code, document = run(root, mockbin)
+    assert code == 2 and document["status"] == "unknown"
+    installed_marker.chmod(0o644)
+    linked_marker = Path(temporary) / "linked-marker"
+    os.link(installed_marker, linked_marker)
+    code, document = run(root, mockbin)
+    assert code == 2 and document["status"] == "unknown"
+    linked_marker.unlink()
+    marker_payload = installed_marker.read_text()
+    installed_marker.unlink()
+    marker_target = Path(temporary) / "marker-target"
+    marker_target.write_text(marker_payload)
+    installed_marker.symlink_to(marker_target)
+    code, document = run(root, mockbin)
+    assert code == 2 and document["status"] == "unknown"
+    installed_marker.unlink()
+    installed_marker.write_text(marker_payload)
+
+    policy = root / "usr/lib/open-gpu-kernel-modules-steamos-support/nvidia-version"
+    policy.parent.mkdir(parents=True)
+    policy.write_text(NVIDIA + "\n")
+    policy_result = subprocess.run(
+        [
+            "python3", str(STATUS), "--root", str(root), "--kernel", KERNEL,
+            "--expected-nvidia-file",
+            "usr/lib/open-gpu-kernel-modules-steamos-support/nvidia-version",
+        ],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        env={**os.environ, "PATH": f"{mockbin}:{os.environ['PATH']}"},
+        check=False,
+    )
+    assert policy_result.returncode == 0
+    assert json.loads(policy_result.stdout)["status"] == "healthy"
+    policy.unlink()
+    outside_policy = Path(temporary) / "outside-policy"
+    outside_policy.write_text(NVIDIA + "\n")
+    policy.symlink_to(outside_policy)
+    policy_result = subprocess.run(
+        [
+            "python3", str(STATUS), "--root", str(root), "--kernel", KERNEL,
+            "--expected-nvidia-file",
+            "usr/lib/open-gpu-kernel-modules-steamos-support/nvidia-version",
+        ],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        env={**os.environ, "PATH": f"{mockbin}:{os.environ['PATH']}"},
+        check=False,
+    )
+    assert policy_result.returncode == 2
+    assert json.loads(policy_result.stdout)["status"] == "unknown"
+    policy.unlink()
+
     recovery = state / "recovery"
     recovery.mkdir()
     (recovery / "state.json").write_text(
@@ -94,6 +172,57 @@ assert "set-default multi-user.target" not in control  # selected through the pr
 assert "acquire_recovery_operation_lock" in control
 assert 'exec 8>"$lock_file"' in control
 assert 'flock -n 8' in control
+assert 'if ! document="$(status_json)"' in control
+assert "PROFILE=console YES=1 enable_fallback" in control
+
+with tempfile.TemporaryDirectory(prefix="opemos-guardian-", dir="/tmp") as temporary:
+    guard_root = Path(temporary) / "root"
+    guard_state = (
+        guard_root / "var/lib/open-gpu-kernel-modules-steamos-support"
+    )
+    guard_state.mkdir(parents=True)
+    (guard_state / "installed-nvidia.txt").write_text("ambiguous-invalid\n")
+    guard_bin = Path(temporary) / "bin"
+    guard_bin.mkdir()
+    (guard_bin / "flock").write_text("#!/bin/sh\nexit 0\n")
+    (guard_bin / "sudo").write_text("#!/bin/sh\nexec \"$@\"\n")
+    (guard_bin / "flock").chmod(0o755)
+    (guard_bin / "sudo").chmod(0o755)
+    guard_environment = {
+        **os.environ,
+        "PATH": f"{guard_bin}:{os.environ['PATH']}",
+        "PROJECT_TEST_MODE": "1",
+        "PROJECT_TEST_ROOT": str(guard_root),
+    }
+    unknown = subprocess.run(
+        [str(CONTROL), "status", "--json"],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        env=guard_environment, check=False,
+    )
+    assert unknown.returncode == 2
+    assert unknown.stdout.strip(), (unknown.stdout, unknown.stderr)
+    assert unknown.stdout.count("\n") == 1, repr(unknown.stdout)
+    assert json.loads(unknown.stdout)["status"] == "unknown"
+    assert not (ROOT / ".transaction.json.lock").exists()
+    guarded = subprocess.run(
+        [str(CONTROL), "guard", "--json"],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        env=guard_environment,
+        check=False,
+    )
+    assert guarded.returncode == 0, guarded.stderr
+    result = json.loads(guarded.stdout)
+    assert result == {
+        "action": "console", "reason": "fallback_enabled",
+        "schemaVersion": 1, "status": "fallback-active",
+    }
+    fallback_state = json.loads((
+        guard_root
+        / "var/lib/open-gpu-kernel-modules-steamos-support/recovery/state.json"
+    ).read_text())
+    assert fallback_state == {
+        "schemaVersion": 1, "active": True, "profile": "console",
+    }
 
 with tempfile.TemporaryDirectory(prefix="opemos-recovery-grub-") as temporary:
     grub = Path(temporary) / "grub"

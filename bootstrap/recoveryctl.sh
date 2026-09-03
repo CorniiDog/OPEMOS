@@ -63,12 +63,14 @@ NVIDIA_INITRAMFS="$(project_system_path /etc/mkinitcpio.conf.d/90-open-gpu-kerne
 
 status_json()
 {
-    local base transaction
-    local expected_args=()
-    if [[ -r "$SUPPORT_ROOT/nvidia-version" ]]; then
-        expected_args=(--expected-nvidia "$(tr -d '[:space:]' < "$SUPPORT_ROOT/nvidia-version")")
+    local base transaction status_code
+    status_code=0
+    base="$(python3 "$STATUS_TOOL" --root "$ROOT" --kernel "$(get_kernel_version)" \
+        --expected-nvidia-file usr/lib/open-gpu-kernel-modules-steamos-support/nvidia-version)" || status_code=$?
+    if [[ "$status_code" != 0 ]]; then
+        printf '%s\n' "$base"
+        return "$status_code"
     fi
-    base="$(python3 "$STATUS_TOOL" --root "$ROOT" --kernel "$(get_kernel_version)" "${expected_args[@]}")"
     transaction="$(transaction_tool show)"
     python3 -c 'import json,sys; d=json.loads(sys.argv[1]); d["transaction"]=json.loads(sys.argv[2]); print(json.dumps(d,sort_keys=True,separators=(",",":")))' \
         "$base" "$transaction"
@@ -257,13 +259,18 @@ disable_fallback()
 
 case "$COMMAND" in
     status)
-        document="$(status_json)"
+        status_code=0
+        document="$(status_json)" || status_code=$?
         if [[ "$JSON" == 1 ]]; then printf '%s\n' "$document"; else
             python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print("OPEMOS NVIDIA recovery: %s (%s)" % (d["status"],d["reason"]))' "$document"
         fi
+        exit "$status_code"
         ;;
     guard)
-        document="$(status_json)"
+        if ! document="$(status_json)"; then
+            PROFILE=console YES=1 enable_fallback
+            exit 0
+        fi
         if python3 -c 'import json,sys; raise SystemExit(0 if json.loads(sys.argv[1])["moduleVerification"]["status"] == "verified" else 1)' "$document"; then
             exit 0
         fi

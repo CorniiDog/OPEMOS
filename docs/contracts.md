@@ -558,6 +558,15 @@ The default recovery action is `console`; it blacklists both driver families.
 automatic action. `disable-fallback` refuses to mutate until
 `moduleVerification.status` is `verified`.
 
+The boot guardian observes every installed NVIDIA identity marker rather than
+accepting the first readable value. Missing, malformed, conflicting, or
+expected-policy-mismatched identities make status `unknown`. A failed or
+unknown status subprocess is itself a console-fallback condition; shell
+`errexit` must never terminate the guardian before the safe profile is enabled.
+Status inputs are read through confined descriptors and must remain
+single-linked, owner-controlled, non-writable by other identities, and stable
+for the complete bounded read.
+
 `repair-online` re-enters the canonical installer with the exact support commit
 recorded during guardian installation. It may install only an artifact accepted
 by the existing exact-kernel resolver. No match leaves recovery active.

@@ -1019,7 +1019,12 @@ Desired design:
 This remains a major future area, represented by three distinct gates:
 
 * [x] Add a persistent boot-time guardian that detects the newly active slot's
-  running kernel before the display manager without background polling.
+  running kernel before the display manager without background polling. Treat
+  missing, malformed, policy-mismatched, or conflicting installed NVIDIA
+  identities as an inspection failure and enter console fallback even when the
+  status subprocess itself fails. Snapshot status inputs through confined
+  descriptors and reject symlinked, hardlinked, writable, replaced, or
+  unexpected-owner identity records.
 * [x] Add a bounded UI-neutral recovery status/action contract shared by the
   canonical one-line install and image-builder deployments.
 * [x] Add mutually exclusive console, validated-iGPU, and explicitly authorized

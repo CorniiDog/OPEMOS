@@ -166,6 +166,14 @@ are rejected. Offline staging requires its caller to provide the exact support
 commit explicitly; it never derives a trusted identity from an arbitrary local
 checkout or rewrites a detected device name into executable shell code.
 
+At boot, conflicting NVIDIA identity markers across persistent and active-slot
+locations are rejected rather than resolved by precedence. A malformed,
+missing, or pinned-policy-mismatched identity makes inspection fail closed, and
+the guardian enables the mutually exclusive console fallback even when the
+status helper exits nonzero. Identity records and fallback state are read from
+confined descriptors; symlinks, hardlinks, unsafe modes or owners, excessive
+files, and replacement during a read are rejected.
+
 `repair-online` is bound to the exact support commit installed by the original
 transaction. It uses the normal published-release resolver and still requires
 the exact running kernel and matching userspace. If no authenticated exact
