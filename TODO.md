@@ -1444,6 +1444,12 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   pending-active, and LKG before pruning; bound nodes, depth, and logical bytes;
   reject symlinks, hardlinks, and special entries; and require conservative
   byte/finite-inode admission before staging a new immutable generation.
+* [x] Journal the activation intent before publishing an immutable cache
+  generation. On restart, distinguish a committed activation from an orphaned
+  publication using the exact prior revision/state hash, verify the cached
+  candidate, and either clear the completed intent or remove the uncommitted
+  generation through confined marker-first deletion. Cover state ENOSPC,
+  SIGTERM, and SIGKILL on both sides of the durable state commit.
 * [ ] Specify a stable canonical discovery location without placing URLs or
   redirects inside the signed descriptor. OPEMOS.EXE owns host transport and
   its cache; installed Core/CLI owns device transport and its separate cache.

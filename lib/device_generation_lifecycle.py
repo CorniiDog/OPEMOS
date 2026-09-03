@@ -21,6 +21,7 @@ from pathlib import Path
 from device_generation_contract import (
     DeviceGenerationContractError,
     validate_health,
+    validate_identity as validate_generation_identity,
     validate_result,
     validate_state as validate_state_document,
 )
@@ -65,7 +66,13 @@ CHECKPOINT_FIELDS = {
 }
 STATE_MARKER_FIELDS = {"schemaVersion", "revision", "stateSha256", "state"}
 STATE_MARKERS = ("state-a.json", "state-b.json")
-STATE_TEMP_PREFIXES = tuple(f".{name}.tmp-" for name in STATE_MARKERS)
+PENDING_ACTIVATION = "pending-activation.json"
+PENDING_ACTIVATION_FIELDS = {
+    "schemaVersion", "candidate", "priorRevision", "priorStateSha256",
+}
+STATE_TEMP_PREFIXES = tuple(
+    f".{name}.tmp-" for name in (*STATE_MARKERS, PENDING_ACTIVATION)
+)
 MAX_STORE_ROOT_ENTRIES = 16
 MAX_CACHE_TREE_NODES = MAX_FILES + 16
 MAX_CACHE_TREE_BYTES = (
@@ -241,7 +248,8 @@ def validate_store_layout(store):
     if len(entries) > MAX_STORE_ROOT_ENTRIES:
         fail("device_generation_store_excessive", "device generation store has too many entries")
     allowed = {
-        "generations", ".generation.lock", "state.json", *STATE_MARKERS,
+        "generations", ".generation.lock", "state.json", PENDING_ACTIVATION,
+        *STATE_MARKERS,
     }
     for entry in entries:
         if entry.name in allowed or any(
@@ -392,11 +400,13 @@ def lifecycle_lock(store, create=False):
         cleanup_state_temporaries(store)
         cleanup_staging(generations)
         ensure_state_marker(store, generations)
+        reconcile_pending_activation(store, generations)
         reconcile_state_markers(store, generations)
         try:
             yield generations
         except DeviceGenerationCancelled:
             cleanup_staging(generations)
+            reconcile_pending_activation(store, generations)
             raise
 
 
@@ -491,6 +501,145 @@ def read_state(store):
     return read_state_record(store)[0]
 
 
+def validate_pending_activation(document):
+    if (not isinstance(document, dict)
+            or set(document) != PENDING_ACTIVATION_FIELDS
+            or document.get("schemaVersion") != 1
+            or type(document.get("priorRevision")) is not int
+            or not 0 <= document["priorRevision"] <= MAX_SEQUENCE
+            or not isinstance(document.get("priorStateSha256"), str)
+            or HASH.fullmatch(document["priorStateSha256"]) is None):
+        fail(
+            "device_generation_state_reconciliation_required",
+            "pending activation record is invalid",
+        )
+    try:
+        validate_generation_identity(document.get("candidate"))
+    except DeviceGenerationContractError as error:
+        fail("device_generation_state_reconciliation_required", str(error))
+    return document
+
+
+def read_pending_activation(store):
+    path = store / PENDING_ACTIVATION
+    if not path.exists() and not path.is_symlink():
+        return None
+    payload = snapshot_regular(
+        path, MAX_STATE_BYTES, "pending activation record",
+        "device_generation_state_reconciliation_required",
+        "device_generation_state_reconciliation_required",
+        os.geteuid(), 0o600,
+    )
+    try:
+        document = strict_json(payload, MAX_STATE_BYTES, "pending activation record")
+    except GenerationContractError as error:
+        fail("device_generation_state_reconciliation_required", str(error))
+    return validate_pending_activation(document)
+
+
+def write_pending_activation(store, state, revision, candidate):
+    validate_state(state)
+    try:
+        validate_generation_identity(candidate)
+    except DeviceGenerationContractError as error:
+        fail("device_generation_state_invalid", str(error))
+    if revision < 0 or candidate["sequence"] <= state["highWaterSequence"]:
+        fail("device_generation_state_invalid", "activation transition is invalid")
+    document = {
+        "schemaVersion": 1,
+        "candidate": candidate,
+        "priorRevision": revision,
+        "priorStateSha256": sha256(canonical(state)),
+    }
+    durable_write(store / PENDING_ACTIVATION, canonical(document))
+
+
+def clear_pending_activation(store):
+    path = store / PENDING_ACTIVATION
+    if not path.exists() and not path.is_symlink():
+        return
+    read_pending_activation(store)
+    parent_descriptor = descriptor = None
+    try:
+        parent_descriptor = os.open(
+            store, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+        )
+        descriptor = os.open(
+            PENDING_ACTIVATION,
+            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=parent_descriptor,
+        )
+        opened = os.fstat(descriptor)
+        current = os.stat(
+            PENDING_ACTIVATION, dir_fd=parent_descriptor, follow_symlinks=False,
+        )
+        if (not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1
+                or opened.st_uid != os.geteuid()
+                or stat.S_IMODE(opened.st_mode) != 0o600
+                or (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino)):
+            fail(
+                "device_generation_state_reconciliation_required",
+                "pending activation record changed",
+            )
+        os.unlink(PENDING_ACTIVATION, dir_fd=parent_descriptor)
+        os.fsync(parent_descriptor)
+    except OSError:
+        fail(
+            "device_generation_state_reconciliation_required",
+            "pending activation record could not be removed",
+        )
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        if parent_descriptor is not None:
+            os.close(parent_descriptor)
+
+
+def reconcile_pending_activation(store, generations):
+    pending = read_pending_activation(store)
+    if pending is None:
+        return
+    state, revision = read_state_record(store)
+    candidate = pending["candidate"]
+    identity = candidate["manifestSha256"]
+    destination = generations / identity
+    if (state["active"] == candidate
+            and state["highWaterSequence"] >= candidate["sequence"]):
+        manifest = verify_cached_generation(destination, identity)
+        if manifest["sequence"] != candidate["sequence"]:
+            fail(
+                "device_generation_state_reconciliation_required",
+                "committed activation identity differs from cached generation",
+            )
+        clear_pending_activation(store)
+        return
+    if (revision != pending["priorRevision"]
+            or sha256(canonical(state)) != pending["priorStateSha256"]
+            or candidate["sequence"] <= state["highWaterSequence"]):
+        fail(
+            "device_generation_state_reconciliation_required",
+            "pending activation does not match durable state",
+        )
+    if destination.exists() or destination.is_symlink():
+        manifest = verify_cached_generation(destination, identity)
+        if manifest["sequence"] != candidate["sequence"]:
+            fail(
+                "device_generation_state_reconciliation_required",
+                "pending activation identity differs from cached generation",
+            )
+        tombstone = generations / f".prune-{identity}"
+        if tombstone.exists() or tombstone.is_symlink():
+            fail(
+                "device_generation_state_reconciliation_required",
+                "pending activation cleanup target is unsafe",
+            )
+        os.rename(destination, tombstone)
+        fsync_directory(generations)
+        remove_confined_generation_tree(tombstone)
+    clear_pending_activation(store)
+
+
 def cleanup_state_temporaries(store):
     for entry in list(store.iterdir()):
         if any(entry.name.startswith(prefix) for prefix in STATE_TEMP_PREFIXES):
@@ -580,6 +729,11 @@ def write_state(store, state):
         "stateSha256": sha256(canonical(state)),
         "state": state,
     }
+    if (development_override()
+            and state["active"] is not None
+            and os.environ.get("OPEMOS_GENERATION_TEST_FAIL_PHASE")
+            == "state-enospc"):
+        fail("device_generation_space_insufficient", "state storage is full")
     name = STATE_MARKERS[(next_revision - 1) % len(STATE_MARKERS)]
     durable_write(store / name, canonical(marker))
     legacy = store / "state.json"
@@ -1260,7 +1414,7 @@ def activate(arguments):
         )
         lineage_pairs.append((item["discovery"], item["manifest"]))
     with lifecycle_lock(store, create=True) as generations:
-        state = read_state(store)
+        state, prior_revision = read_state_record(store)
         current_identity = pair["discovery"]["generation"]["manifestSha256"]
         if (state["active"] is not None
                 and state["active"]["manifestSha256"] == current_identity):
@@ -1290,24 +1444,46 @@ def activate(arguments):
         require_cache_admission(
             generations, pair, payload_records, policy, authority
         )
-        _generation, created = publish_generation(
-            generations, pair, payload_root, payload_records, policy, authority
-        )
         previous = state["active"]
         candidate = {
             "sequence": pair["manifest"]["sequence"],
             "manifestSha256": current_identity,
         }
-        state = {
+        activated_state = {
             **state,
             "active": candidate,
-            "lastKnownGood": previous if previous is not None else state["lastKnownGood"],
-            "highWaterSequence": max(state["highWaterSequence"], candidate["sequence"]),
+            "lastKnownGood": (
+                previous if previous is not None else state["lastKnownGood"]
+            ),
+            "highWaterSequence": max(
+                state["highWaterSequence"], candidate["sequence"]
+            ),
             "healthPending": candidate != state["lastKnownGood"],
         }
-        pruned, cancellation_after_commit = commit_state_and_prune(
-            store, generations, state
-        )
+        write_pending_activation(store, state, prior_revision, candidate)
+        try:
+            _generation, created = publish_generation(
+                generations, pair, payload_root, payload_records, policy, authority
+            )
+            if (development_override() and os.environ.get(
+                    "OPEMOS_GENERATION_TEST_PAUSE_AFTER_PUBLISH")):
+                time.sleep(float(
+                    os.environ["OPEMOS_GENERATION_TEST_PAUSE_AFTER_PUBLISH"]
+                ))
+            pruned, cancellation_after_commit = commit_state_and_prune(
+                store, generations, activated_state
+            )
+            clear_pending_activation(store)
+        except DeviceGenerationCancelled:
+            reconcile_pending_activation(store, generations)
+            if read_state(store) != activated_state:
+                raise
+            cancellation_after_commit = True
+            pruned = 0
+        except (DeviceGenerationError, OSError):
+            reconcile_pending_activation(store, generations)
+            raise
+        state = activated_state
         return result(
             "ok", "activated", state=state,
             details={
@@ -1412,6 +1588,11 @@ def status(arguments, check=False):
                     )
             return result("ok", "checked", state=state)
     safe_store(store, create=False)
+    if read_pending_activation(store) is not None:
+        fail(
+            "device_generation_state_reconciliation_required",
+            "an interrupted activation requires locked reconciliation",
+        )
     state = read_state(store)
     return result("ok", "status", state=state)
 

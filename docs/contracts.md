@@ -129,6 +129,14 @@ Core validates both through `lib/device_generation_contract.py`; the canonical
 compatibility matrix is emitted deterministically by
 `lib/generate_device_generation_fixtures.py`.
 
+Local activation also uses a private internal intent record between immutable
+generation publication and the alternating durable state markers. A locked
+restart binds that intent to the exact prior state revision and hash. It removes
+an authenticated-but-uncommitted cache generation, or clears the intent after
+verifying that the candidate is already the durable active generation. This
+internal crash-recovery record is not a shared wire contract and does not alter
+the discovery, generation-manifest, state, health, or result schemas.
+
 Production `update` and `update-or-repair` remain fail-closed because no
 reviewed data-generation signer, keyring, bootstrap checkpoint, or canonical
 device discovery endpoint is configured. Local activation is an integration

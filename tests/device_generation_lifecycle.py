@@ -365,6 +365,66 @@ def main():
             environment, store, policy, keyring, checkpoint, "status"
         )["state"]["active"]["manifestSha256"] == hash_9
 
+        state_no_space = activate(
+            {
+                **environment,
+                "OPEMOS_GENERATION_TEST_FAIL_PHASE": "state-enospc",
+            },
+            store, policy, keyring, checkpoint, generation_10, success=False,
+        )
+        assert state_no_space["reason"] == "device_generation_space_insufficient"
+        assert not (store / "generations" / hash_10).exists()
+        assert not (store / "pending-activation.json").exists()
+        assert invoke(
+            environment, store, policy, keyring, checkpoint, "check"
+        )["state"]["active"]["manifestSha256"] == hash_9
+
+        publish_pause_environment = {
+            **environment, "OPEMOS_GENERATION_TEST_PAUSE_AFTER_PUBLISH": "30",
+        }
+        publish_pause_command = [
+            sys.executable, str(TOOL), "--store", str(store),
+            "--policy", str(policy), "--keyring", str(keyring),
+            "--checkpoint", str(checkpoint), "activate", "--source",
+            str(generation_10), *TARGET_ARGUMENTS,
+        ]
+        cancelled_publish = subprocess.Popen(
+            publish_pause_command, cwd="/", env=publish_pause_environment,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        deadline = time.time() + 5
+        while (not (store / "generations" / hash_10).exists()
+               and time.time() < deadline):
+            time.sleep(0.02)
+        assert (store / "generations" / hash_10).exists()
+        assert (store / "pending-activation.json").exists()
+        cancelled_publish.send_signal(signal.SIGTERM)
+        stdout, stderr = cancelled_publish.communicate(timeout=5)
+        assert cancelled_publish.returncode == 130 and stderr == ""
+        assert json.loads(stdout)["status"] == "cancelled"
+        assert not (store / "generations" / hash_10).exists()
+        assert not (store / "pending-activation.json").exists()
+
+        killed_publish = subprocess.Popen(
+            publish_pause_command, cwd="/", env=publish_pause_environment,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        deadline = time.time() + 5
+        while (not (store / "generations" / hash_10).exists()
+               and time.time() < deadline):
+            time.sleep(0.02)
+        assert (store / "generations" / hash_10).exists()
+        assert (store / "pending-activation.json").exists()
+        killed_publish.kill()
+        killed_publish.communicate(timeout=5)
+        assert killed_publish.returncode == -signal.SIGKILL
+        recovered_uncommitted = invoke(
+            environment, store, policy, keyring, checkpoint, "check"
+        )
+        assert recovered_uncommitted["state"]["active"]["manifestSha256"] == hash_9
+        assert not (store / "generations" / hash_10).exists()
+        assert not (store / "pending-activation.json").exists()
+
         cancel_environment = {
             **environment, "OPEMOS_GENERATION_TEST_PAUSE_AFTER_STAGE": "30",
         }
@@ -552,6 +612,7 @@ def main():
         assert durable_state(store)["active"] == {
             "sequence": 13, "manifestSha256": hash_13,
         }
+        assert (store / "pending-activation.json").exists()
         crashed.kill()
         crashed.communicate(timeout=5)
         assert crashed.returncode == -signal.SIGKILL
@@ -559,6 +620,7 @@ def main():
             environment, store, policy, keyring, checkpoint, "check"
         )
         assert recovered["state"]["active"]["sequence"] == 13
+        assert not (store / "pending-activation.json").exists()
         acknowledge(environment, store, policy, keyring, checkpoint)
 
         generation_14 = root / "generation-14-cancel-after-commit"
@@ -591,6 +653,24 @@ def main():
             success=False,
         )
         assert inactive["reason"] == "device_generation_network_inactive"
+
+        pending_record = store / "pending-activation.json"
+        write(pending_record, b'{}\n')
+        pending_status = invoke(
+            environment, store, policy, keyring, checkpoint, "status",
+            success=False,
+        )
+        assert pending_status["reason"] == (
+            "device_generation_state_reconciliation_required"
+        )
+        pending_check = invoke(
+            environment, store, policy, keyring, checkpoint, "check",
+            success=False,
+        )
+        assert pending_check["reason"] == (
+            "device_generation_state_reconciliation_required"
+        )
+        pending_record.unlink()
 
         unknown_store_entry = store / "unexpected-entry"
         write(unknown_store_entry, b"unexpected\n")
