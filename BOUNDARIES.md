@@ -30,13 +30,17 @@ Frontends do not import, link against, or execute one another.
   initramfs, receipts, and structured post-install verification.
 - Machine-readable progress/results and target-side CLI, Desktop Companion,
   DRM/KMS interstitial, recovery guardian, and device update contracts.
+- The versioned, platform-neutral shared UI contract: canonical branding
+  assets, design tokens, progress hierarchy, state semantics, and bounded
+  presentation data consumed by every graphical OPEMOS frontend.
 - Core contract, archive, Fedora build/transaction, target mutation, and
   target-client tests.
 
 ## OPEMOS.EXE owns
 
 - macOS/Tauri windows, menus, accessibility, labels, progress weighting,
-  diagnostics, controls, and application updates.
+  diagnostics, controls, and application updates, rendered from the pinned
+  Core-owned shared UI contract where that contract applies.
 - Host HTTP acquisition, physical cache location, retries, authenticated
   manifest pinning, host-to-appliance transport, and transfer cleanup.
 - Recovery-image inspection, boot-slot/kernel discovery, A/B and partition
@@ -52,16 +56,20 @@ Frontends do not import, link against, or execute one another.
 
 ## Sole UI exception
 
-OPEMOS.EXE may carry and install authenticated, Core-owned SteamOS UI payloads
-from the exact pinned Core bundle into a disposable target image. This permits
-the generated image to contain the Desktop Companion and DRM/KMS interstitial
-and permits consistent branding and progress semantics.
+OPEMOS.EXE must consume the pinned, Core-owned shared UI contract for the
+common branded loading and progress experience. This is the only permitted UI
+dependency across the boundary. It is a read-only, declarative dependency from
+OPEMOS.EXE to Core; it may contain assets, tokens, layout/state semantics, and
+bounded display data, but never commands, platform event-loop code, security
+decisions, or mutation logic. OPEMOS.EXE renders it through its own Tauri/macOS
+implementation and must not rewrite it at runtime.
 
-This is the only frontend-boundary exception. It is payload deployment, not a
-source, build, or runtime dependency: OPEMOS.EXE must not import, link, modify,
-or execute those SteamOS frontends as part of its macOS runtime. Core remains
-their sole implementation, release, authentication, and device-runtime owner.
-The builder-owned installation-media welcome application remains separate.
+OPEMOS.EXE may also carry and install authenticated, Core-owned SteamOS UI
+payloads from the same exact bundle into a disposable target image. It must not
+import, link, modify, or execute the Desktop Companion or DRM/KMS interstitial
+as part of its macOS runtime. Core remains their sole implementation, release,
+authentication, and device-runtime owner. The builder-owned installation-media
+welcome application stays separate but uses the same shared UI contract.
 
 ## Shared handoff
 

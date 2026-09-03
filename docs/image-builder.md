@@ -67,10 +67,17 @@ There are two intentionally separate fullscreen experiences:
 - OPEMOS owns the installed-system no-input DRM/KMS interstitial used during
   boot, recovery, and updates.
 
-They may share branding and progress vocabulary, but neither frontend imports,
-launches, or links against the other. OPEMOS emits bounded progress facts;
-OPEMOS.EXE owns their macOS labels, weighting, animation, accessibility, and
-controls.
+The sole UI exception is a pinned, read-only, platform-neutral UI contract
+owned by OPEMOS. OPEMOS.EXE consumes its canonical assets, design tokens,
+progress hierarchy, and bounded state/layout semantics, then renders them with
+its own Tauri/macOS implementation. The contract cannot contain commands,
+security decisions, mutation logic, platform event loops, or executable
+frontend code. OPEMOS emits bounded progress facts; OPEMOS.EXE still owns its
+macOS labels, weighting, animation, accessibility, and controls.
+
+Neither frontend imports, launches, or links against the other's executable.
+OPEMOS.EXE may deploy authenticated Core-owned SteamOS UI payloads into the
+target image, but it does not execute them in the macOS application runtime.
 
 ### Collaboration boundary
 
