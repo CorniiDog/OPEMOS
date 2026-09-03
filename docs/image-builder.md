@@ -42,6 +42,41 @@ OPEMOS must:
   cancellation;
 - fail closed on drift, ambiguity, missing trust inputs, or insufficient space.
 
+### Boundary details
+
+Downloading and authenticating are separate operations. OPEMOS.EXE performs
+host HTTP requests, chooses its cache location, transfers files into managed
+appliances, and pins the expected Core-manifest digest. OPEMOS defines the
+allowed artifact identities and validates the resulting bytes, signatures,
+locks, provenance, and bundle membership. A transport success never promotes
+trust by itself.
+
+Rollback is similarly layered. OPEMOS restores mutations made inside the
+mounted target transaction and releases its target mounts. OPEMOS.EXE owns the
+disposable overlay and may discard it after any Core or independent-validation
+failure; it never asks Core to restore the original source image.
+
+There are two intentionally separate fullscreen experiences:
+
+- OPEMOS.EXE owns the installation-media welcome application and its guarded
+  target-disk selection bridge.
+- OPEMOS owns the installed-system no-input DRM/KMS interstitial used during
+  boot, recovery, and updates.
+
+They may share branding and progress vocabulary, but neither frontend imports,
+launches, or links against the other. OPEMOS emits bounded progress facts;
+OPEMOS.EXE owns their macOS labels, weighting, animation, accessibility, and
+controls.
+
+### Collaboration boundary
+
+The OPEMOS agent changes Core policy, schemas, publishers, installer/build
+entry points, target-side clients, and their Fedora/device-contract tests. The
+OPEMOS.EXE agent changes host acquisition, Core consumers, Tauri presentation,
+VM/overlay lifecycle, export, USB writing, and independent final-image tests.
+Cross-repository changes are handed off as an immutable Core commit plus an
+explicit contract diff; neither agent silently edits the other repository.
+
 ## End-to-end flow
 
 ```text

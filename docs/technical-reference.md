@@ -41,6 +41,13 @@ Three project repositories and NVIDIA upstream have deliberately separate jobs:
 | `CorniiDog/open-gpu-kernel-modules-steamos` | Project-owned NVIDIA source branches and individual SteamOS compatibility patches |
 | `NVIDIA/open-gpu-kernel-modules` | Pristine upstream source and tags used as control baselines |
 
+OPEMOS owns canonical bundle membership and authentication policy, while
+OPEMOS.EXE owns host acquisition and transport. OPEMOS owns rollback within a
+mounted target transaction; OPEMOS.EXE owns disposable-overlay rollback and
+source-image preservation. The OPEMOS.EXE installation-media welcome UI is not
+the OPEMOS installed-system DRM/KMS interstitial—these are sibling frontends
+with separate runtimes and lifecycle owners.
+
 OPEMOS owns build and release metadata. The source repository
 owns patch history. Project releases must identify the exact source commit used
 to build their modules.

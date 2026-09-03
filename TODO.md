@@ -197,6 +197,38 @@ criteria without duplicating that queue.
   currently embedded in OPEMOS.EXE must move down into OPEMOS Core; macOS VM,
   image, `diskutil`, Finder, USB, and Tauri behavior remains in OPEMOS.EXE.
 
+#### Exact execution and agent boundary
+
+* [x] OPEMOS Core names what may be downloaded and proves whether the bytes are
+  trusted. OPEMOS.EXE owns the host network request, cache location, transfer
+  transport, retry UX, and independently pinned manifest digest. A successful
+  download is never equivalent to successful Core authentication.
+* [x] OPEMOS Core owns rollback inside a mounted target transaction: packages,
+  modules, GRUB, initramfs, receipts, temporary mounts, and target state.
+  OPEMOS.EXE owns the outer rollback boundary: disposable overlay retention or
+  discard, VM shutdown, source-image preservation, export, and USB recovery.
+* [x] Distinguish the two fullscreen programs. The installation-media welcome
+  application and guarded disk-selection bridge belong to OPEMOS.EXE. The
+  installed-system no-input DRM/KMS boot/update interstitial belongs to OPEMOS
+  Core. Neither is a runtime dependency of the other frontend.
+* [x] OPEMOS Core defines progress phase identities, counters, terminal states,
+  and validation rules. OPEMOS.EXE assigns macOS labels, weights, layout,
+  animation, accessibility, and controls. It must preserve indeterminate Core
+  phases rather than inventing completion percentages.
+* [x] The support-side agent changes Core policy, schemas, publishers, build and
+  installer entry points, target-side clients, and Core tests in `OPEMOS`.
+  It returns immutable commits and changed contracts; it does not edit or pin
+  the macOS application.
+* [x] The builder-side agent changes host acquisition, Core consumers, Tauri
+  presentation, appliance/overlay orchestration, export, and independent image
+  verification in `OPEMOS.EXE`. It must not recreate compatibility, signer,
+  dependency, installation, or target-verification policy in Rust/JavaScript.
+* [x] Test ownership follows execution ownership. Core runs contract, archive,
+  Fedora build/transaction, target mutation, and device-client tests.
+  OPEMOS.EXE runs macOS UI, download/transfer, VM lifecycle, overlay, export,
+  USB, and independent final-image tests. Maintainers own real SteamOS/NVIDIA
+  hardware certification and cross-repository release approval.
+
 * [x] Keep the support/build/install tooling in:
 
   * `CorniiDog/OPEMOS`
@@ -1091,6 +1123,11 @@ post-install verification, recovery/device clients, machine-readable results,
 provenance, Fedora transaction tests, build cleanup, and eventual
 certified-artifact publication.
 
+It also owns canonical bundle contents, manifests, schemas, safe next-action
+semantics, target-transaction rollback, and the installed-system Desktop
+Companion and DRM/KMS interstitial. It does not own host HTTP transport, macOS
+application updates, recovery-image partition selection, or final image export.
+
 The image builder owns recovery-image inspection, active boot-kernel selection,
 Valve A/B and installer-layout handling, appliance lifecycle, progress and
 cancellation UX, authenticated host acquisition and appliance transfer,
@@ -1100,6 +1137,8 @@ of the original input. It must not independently decide release compatibility,
 userspace dependency closure, signer policy, or installer mutation semantics.
 OPEMOS owns authenticated cache/bundle semantics; OPEMOS.EXE owns where and how
 those authenticated objects are acquired, retained, and handed to appliances.
+The OPEMOS.EXE installation-media welcome application is builder-owned and is
+separate from Core's installed-system no-input interstitial.
 
 The patched NVIDIA source repository owns versioned `nvidia/<version>` branches,
 SteamOS-specific patches, and an unambiguous driver-version-to-source-commit
