@@ -106,13 +106,6 @@ index in the same commit.
   hashes, dependency/provider arrays, reviewed lock/provenance identities,
   pacman consistency, payload confinement/hash/mode/ownership/link proofs, and
   exact-version GSP firmware to authenticated validation.
-* [ ] Publish the remaining gaming-payload schema from OPEMOS. The additive
-  installer-result schema
-  1 envelope and mandatory success proofs are now published. Generate or
-  fixture-test OPEMOS.EXE's
-  Rust consumers against all schemas while retaining builder-owned session
-  binding, bounds, cleanup checks, transfer validation, and independent
-  final-image inspection rather than duplicating support policy.
 * [ ] Define a bounded adapter from installer `STEAMOS_NVIDIA_PROGRESS` records
   to the shared overall/current-operation presentation model. OPEMOS.EXE owns
   macOS labels, weighting, controls, and loading UI; the SteamOS interstitial
@@ -1378,6 +1371,9 @@ signing policy.
 * [x] Produce the first reviewed deterministic derived package set for the exact
   SteamOS 3.8.14 / 575.64.05 / valve24.4 target; pin every source signature,
   omission, output package hash, ownership record, and saved-byte total.
+* [x] Publish the standalone closed schema-1 proof and bounded deterministic
+  compatibility matrix. Distinguish structural parsing from terminal binding
+  to the reviewed policy, exact profile, userspace lock, target, and packages.
 * [ ] Hardware-test the reduced profile and its complete-payload restoration on
   the exact target before promoting either path beyond development trust.
 

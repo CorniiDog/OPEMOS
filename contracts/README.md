@@ -42,6 +42,10 @@ reimplement compatibility, package-selection, signer, or mutation policy.
 - `schemas/installer-payload-receipt-v1.schema.json` describes the success-only
   six-document rootfs receipt, canonical receipt identity, exact target, and
   role-specific filenames and byte ceilings.
+- `schemas/installer-gaming-payload-v1.schema.json` describes the closed
+  `gaming-no-cuda-v1` selection embedded in validation. A reviewed record is
+  only terminally authoritative when Core also binds it to the exact reviewed
+  target, profile and policy hashes, userspace lock, and derived package set.
 
 Unknown additive fields are permitted. Removing a required field, changing its
 meaning, or tightening a previously valid value requires a new schema version.
@@ -125,6 +129,14 @@ canonical `{schemaVersion,target,records}` identity. Structural acceptance is
 separate from terminal target binding. Recorded evidence hashes are verified
 against the rootfs-resident files by `lib/payload_receipt.py verify`, including
 during independent final-image inspection.
+
+`lib/generate_installer_gaming_payload_fixtures.py` deterministically emits
+the bounded gaming-payload schema-1 matrix. It covers the closed
+`not-requested` state, the exact reviewed profile, target/profile/policy/lock
+and package binding failures, capability and package-set contradictions, and
+hostile JSON/document inputs. Structural record acceptance is separate from
+terminal authority binding. This security-critical record does not permit
+additive schema-1 fields; a future representation requires a new schema.
 
 When resolution returns `no_compatible_artifact` with reason
 `no_compatible_release`, `nextAction` explicitly authorizes only the existing

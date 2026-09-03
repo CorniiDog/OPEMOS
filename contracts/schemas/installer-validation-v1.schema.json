@@ -257,52 +257,6 @@
       "maxItems": 8,
       "type": "array"
     },
-    "gamingDelivery": {
-      "additionalProperties": false,
-      "properties": {
-        "packageOwnership": {"const": "archive-and-pacman-database-exact"},
-        "repacker": {
-          "additionalProperties": false,
-          "properties": {
-            "compression": {"const": "zstd-19-t1"},
-            "name": {"const": "repack_gaming_userspace.py"},
-            "schemaVersion": {"const": 1},
-            "zstdVersion": {"const": "1.5.7"}
-          },
-          "required": ["name", "schemaVersion", "zstdVersion", "compression"],
-          "type": "object"
-        },
-        "sourceAuthentication": {"const": "arch-detached-signatures-and-reviewed-userspace-lock"},
-        "strategy": {"const": "deterministic-authenticated-source-repack-v1"}
-      },
-      "required": ["strategy", "packageOwnership", "sourceAuthentication", "repacker"],
-      "type": "object"
-    },
-    "gamingPackage": {
-      "additionalProperties": false,
-      "properties": {
-        "filename": {"$ref": "#/$defs/plainFilename"},
-        "installedSize": {"$ref": "#/$defs/nonNegativeBytes"},
-        "name": {"enum": ["nvidia-utils", "lib32-nvidia-utils"]},
-        "savedBytes": {"$ref": "#/$defs/nonNegativeBytes"},
-        "sha256": {"$ref": "#/$defs/hash"},
-        "sourceFilename": {"$ref": "#/$defs/plainFilename"},
-        "sourceSha256": {"$ref": "#/$defs/hash"},
-        "sourceSignatureFilename": {"$ref": "#/$defs/plainFilename"},
-        "sourceSignatureSha256": {"$ref": "#/$defs/hash"},
-        "sourceSignerFingerprint": {
-          "pattern": "^(?:[0-9A-F]{40}|[0-9A-F]{64})$",
-          "type": "string"
-        },
-        "version": {"$ref": "#/$defs/packageToken"}
-      },
-      "required": [
-        "name", "sourceFilename", "sourceSignatureFilename", "sourceSha256",
-        "sourceSignatureSha256", "sourceSignerFingerprint", "filename",
-        "version", "sha256", "installedSize", "savedBytes"
-      ],
-      "type": "object"
-    },
     "target": {
       "additionalProperties": false,
       "properties": {
@@ -313,62 +267,6 @@
       },
       "required": ["steamosVersion", "kernelVersion", "nvidiaVersion", "architecture"],
       "type": "object"
-    },
-    "gamingPayload": {
-      "oneOf": [
-        {
-          "additionalProperties": false,
-          "properties": {
-            "profileId": {"const": "gaming-no-cuda-v1"},
-            "schemaVersion": {"const": 1},
-            "status": {"const": "not-requested"}
-          },
-          "required": ["schemaVersion", "status", "profileId"],
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "properties": {
-            "delivery": {"$ref": "#/$defs/gamingDelivery"},
-            "omittedCapabilities": {
-              "const": ["cuda-compute"]
-            },
-            "packageOwnership": {"const": "archive-and-pacman-database-exact"},
-            "packageRecords": {
-              "items": {"$ref": "#/$defs/gamingPackage"},
-              "maxItems": 2,
-              "minItems": 2,
-              "type": "array",
-              "uniqueItems": true
-            },
-            "policySha256": {"$ref": "#/$defs/hash"},
-            "preservedCapabilities": {
-              "items": {
-                "enum": [
-                  "graphics", "vulkan", "glvnd-egl", "nvenc", "nvdec",
-                  "gsp-firmware", "gaming-32bit", "recovery-rendering"
-                ]
-              },
-              "maxItems": 8,
-              "minItems": 8,
-              "type": "array",
-              "uniqueItems": true
-            },
-            "profileId": {"const": "gaming-no-cuda-v1"},
-            "savedBytes": {"$ref": "#/$defs/nonNegativeBytes"},
-            "schemaVersion": {"const": 1},
-            "sha256": {"$ref": "#/$defs/hash"},
-            "status": {"const": "reviewed"},
-            "target": {"$ref": "#/$defs/target"}
-          },
-          "required": [
-            "schemaVersion", "status", "profileId", "sha256", "policySha256",
-            "target", "delivery", "omittedCapabilities", "preservedCapabilities",
-            "packageOwnership", "savedBytes", "packageRecords"
-          ],
-          "type": "object"
-        }
-      ]
     }
   },
   "description": "Additive verified installer validation proof. Cross-field package, dependency, storage, compression, boot-policy, and gaming-profile invariants remain enforced by lib/write_install_result.py.",
@@ -391,7 +289,7 @@
       "unevaluatedProperties": true
     },
     "compression": {"$ref": "#/$defs/compression"},
-    "gamingPayload": {"$ref": "#/$defs/gamingPayload"},
+    "gamingPayload": {"$ref": "installer-gaming-payload-v1.schema.json"},
     "inputSource": {
       "allOf": [
         {

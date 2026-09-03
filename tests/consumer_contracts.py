@@ -32,6 +32,7 @@ from validate_install_contract import (  # noqa: E402
     validate_result,
 )
 from write_install_result import (  # noqa: E402
+    MAX_GAMING_PAYLOAD_BYTES,
     MAX_INITRAMFS_VERIFICATION_BYTES,
     MAX_MODULE_VERIFICATION_BYTES,
     MAX_PAYLOAD_RECEIPT_BYTES,
@@ -39,11 +40,13 @@ from write_install_result import (  # noqa: E402
     MAX_WORKSPACE_VERIFICATION_BYTES,
     load_initramfs_verification,
     load_initramfs_workspace,
+    load_gaming_payload,
     load_module_verification,
     load_payload_receipt,
     load_userspace_verification,
     validate_initramfs_verification_binding,
     validate_initramfs_workspace_binding,
+    validate_gaming_payload_binding,
     validate_module_verification_binding,
     validate_payload_receipt_binding,
     validate_userspace_verification_binding,
@@ -773,6 +776,11 @@ def main():
             encoding="utf-8"
         )
     )
+    gaming_payload_schema = json.loads(
+        (schema_root / "installer-gaming-payload-v1.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
     assert resolver_schema["$schema"].endswith("2020-12/schema")
     assert resolver_schema["properties"]["schemaVersion"]["const"] == 2
     assert resolver_schema["unevaluatedProperties"] is True
@@ -838,6 +846,13 @@ def main():
     assert workspace_schema["unevaluatedProperties"] is True
     assert workspace_schema["properties"]["requiredInodes"]["maximum"] == 65536
     assert len(workspace_schema["oneOf"]) == 4
+    assert gaming_payload_schema["$schema"].endswith("2020-12/schema")
+    assert gaming_payload_schema["oneOf"][0]["additionalProperties"] is False
+    assert gaming_payload_schema["$defs"]["reviewed"]["additionalProperties"] is False
+    assert gaming_payload_schema["$defs"]["package"]["additionalProperties"] is False
+    assert validation_schema["properties"]["gamingPayload"]["$ref"] == (
+        "installer-gaming-payload-v1.schema.json"
+    )
     assert result_schema["properties"]["validation"]["$ref"] == (
         "installer-validation-v1.schema.json"
     )
@@ -898,6 +913,9 @@ def main():
     )
     validate_installer_initramfs_workspace_compatibility_fixtures(
         ROOT / "lib/generate_installer_initramfs_workspace_fixtures.py"
+    )
+    validate_installer_gaming_payload_compatibility_fixtures(
+        ROOT / "lib/generate_installer_gaming_payload_fixtures.py"
     )
 
     tag = "steamos-3.8.14-nvidia-575.64.05-k6.16.12-valve24.4-x86"
@@ -1422,6 +1440,140 @@ def validate_installer_initramfs_workspace_compatibility_fixtures(generator):
         "failure-contradictory-bytes", "failure-contradictory-inodes",
         "target-reason-contradiction", "mounted-phase-contradiction",
         "unknown-phase", "missing-required-field", "malformed-json",
+        "duplicate-json-key", "non-finite-json", "oversized-document",
+    }
+
+
+def validate_installer_gaming_payload_compatibility_fixtures(generator):
+    outputs = []
+    for _ in range(2):
+        completed = subprocess.run(
+            [sys.executable, str(generator)], cwd="/", check=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        assert completed.stderr == b""
+        assert 1 <= len(completed.stdout) <= 512 * 1024
+        outputs.append(completed.stdout)
+    assert outputs[0] == outputs[1] and outputs[0].endswith(b"\n")
+    matrix = json.loads(
+        outputs[0], object_pairs_hook=resolver_module.unique_object,
+        parse_constant=resolver_module.reject_json_constant,
+    )
+    assert set(matrix) == {
+        "schemaVersion", "kind", "gamingPayloadSchemaVersion", "validation",
+        "additivePolicy", "unfrozenFields", "limits", "cases",
+    }
+    assert matrix["schemaVersion"] == 1
+    assert matrix["kind"] == (
+        "opemos-installer-gaming-payload-compatibility-fixtures"
+    )
+    assert matrix["gamingPayloadSchemaVersion"] == 1
+    assert matrix["additivePolicy"] == "closed-security-critical-record"
+    assert matrix["unfrozenFields"] == []
+    assert matrix["limits"] == {"maxDocumentBytes": MAX_GAMING_PAYLOAD_BYTES}
+    cases = matrix["cases"]
+    assert isinstance(cases, list) and 1 <= len(cases) <= 64
+    base_cases = {
+        fixture["name"]: fixture["document"]
+        for fixture in cases if "document" in fixture
+    }
+    names = []
+    with tempfile.TemporaryDirectory(prefix="opemos-gaming-fixtures-") as temporary:
+        root = Path(temporary)
+        candidate_path = root / "gaming-payload.json"
+        for fixture in cases:
+            assert isinstance(fixture, dict)
+            allowed = {
+                "name", "expected", "document", "rawDocument",
+                "documentRecipe", "validationPatch",
+            }
+            assert set(fixture) <= allowed
+            assert {"name", "expected"} <= set(fixture)
+            assert len(set(fixture) & {
+                "document", "rawDocument", "documentRecipe"
+            }) == 1
+            name = fixture["name"]
+            names.append(name)
+            assert isinstance(name, str)
+            assert re.fullmatch(r"[a-z][a-z0-9-]{0,63}", name)
+            expected = fixture["expected"]
+            assert set(expected) == {
+                "recordAccepted", "terminalBindingAccepted"
+            }
+            assert all(isinstance(value, bool) for value in expected.values())
+            if "document" in fixture:
+                payload = json.dumps(
+                    fixture["document"], sort_keys=True, separators=(",", ":")
+                ) + "\n"
+            elif "rawDocument" in fixture:
+                payload = fixture["rawDocument"]
+                assert isinstance(payload, str) and payload
+            else:
+                recipe = fixture["documentRecipe"]
+                assert recipe == {
+                    "kind": "top-level-padding",
+                    "baseCase": "valid-not-requested",
+                    "paddingBytes": MAX_GAMING_PAYLOAD_BYTES,
+                }
+                candidate = copy.deepcopy(base_cases[recipe["baseCase"]])
+                candidate["padding"] = "x" * recipe["paddingBytes"]
+                payload = json.dumps(
+                    candidate, sort_keys=True, separators=(",", ":")
+                )
+                assert (MAX_GAMING_PAYLOAD_BYTES < len(payload.encode())
+                        <= MAX_GAMING_PAYLOAD_BYTES + 16384)
+            validation = copy.deepcopy(matrix["validation"])
+            patch = fixture.get("validationPatch")
+            if patch is not None:
+                assert set(patch) == {"userspaceLock"}
+                assert set(patch["userspaceLock"]) == {"sha256"}
+                validation["userspaceLock"].update(patch["userspaceLock"])
+            candidate_path.write_text(payload, encoding="utf-8")
+            try:
+                parsed = load_gaming_payload(candidate_path)
+            except SystemExit:
+                record_accepted = False
+                binding_accepted = False
+            else:
+                record_accepted = True
+                try:
+                    validate_gaming_payload_binding(parsed, validation)
+                except SystemExit:
+                    binding_accepted = False
+                else:
+                    binding_accepted = True
+            assert record_accepted is expected["recordAccepted"], name
+            assert binding_accepted is expected["terminalBindingAccepted"], name
+
+        linked = root / "linked-gaming-payload.json"
+        linked.symlink_to(candidate_path)
+        try:
+            load_gaming_payload(linked)
+        except SystemExit:
+            pass
+        else:
+            raise AssertionError("linked gaming-payload fixture was accepted")
+
+    assert len(names) == len(set(names))
+    assert set(names) == {
+        "valid-not-requested", "valid-reviewed", "top-level-addition-rejected",
+        "not-requested-addition-rejected", "unsupported-status",
+        "unreviewed-status", "unknown-profile", "missing-profile-id",
+        "profile-hash-binding-mismatch", "policy-hash-binding-mismatch",
+        "userspace-lock-binding-mismatch", "target-binding-mismatch",
+        "package-hash-binding-mismatch", "package-version-binding-mismatch",
+        "source-hash-binding-mismatch", "missing-package", "extra-package",
+        "duplicate-package", "package-order-mismatch", "unsafe-package-filename",
+        "empty-source-filename", "malformed-signer", "negative-installed-size",
+        "zero-package-saved-bytes", "saved-byte-total-mismatch",
+        "missing-package-field", "unknown-package-field",
+        "wrong-omitted-capability", "missing-preserved-capability",
+        "duplicate-preserved-capability", "reordered-preserved-capabilities",
+        "wrong-delivery-strategy", "unknown-delivery-field",
+        "unknown-repacker-field", "unknown-target-field", "wrong-architecture",
+        "malformed-profile-hash", "non-string-profile-hash",
+        "non-string-target-version", "non-string-package-filename",
+        "non-object-package-record", "zero-saved-bytes", "malformed-json",
         "duplicate-json-key", "non-finite-json", "oversized-document",
     }
 

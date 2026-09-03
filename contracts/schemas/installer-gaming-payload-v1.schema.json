@@ -1,0 +1,99 @@
+{
+  "$id": "https://corniidog.github.io/OPEMOS/contracts/installer-gaming-payload-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "delivery": {
+      "additionalProperties": false,
+      "properties": {
+        "packageOwnership": {"const": "archive-and-pacman-database-exact"},
+        "repacker": {
+          "additionalProperties": false,
+          "properties": {
+            "compression": {"const": "zstd-19-t1"},
+            "name": {"const": "repack_gaming_userspace.py"},
+            "schemaVersion": {"const": 1},
+            "zstdVersion": {"const": "1.5.7"}
+          },
+          "required": ["name", "schemaVersion", "zstdVersion", "compression"],
+          "type": "object"
+        },
+        "sourceAuthentication": {"const": "arch-detached-signatures-and-reviewed-userspace-lock"},
+        "strategy": {"const": "deterministic-authenticated-source-repack-v1"}
+      },
+      "required": ["strategy", "packageOwnership", "sourceAuthentication", "repacker"],
+      "type": "object"
+    },
+    "hash": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "package": {
+      "additionalProperties": false,
+      "properties": {
+        "filename": {"maxLength": 255, "pattern": "^[A-Za-z0-9@._+~:-]+$", "type": "string"},
+        "installedSize": {"maximum": 9223372036854775807, "minimum": 0, "type": "integer"},
+        "name": {"enum": ["nvidia-utils", "lib32-nvidia-utils"]},
+        "savedBytes": {"maximum": 9223372036854775807, "minimum": 1, "type": "integer"},
+        "sha256": {"$ref": "#/$defs/hash"},
+        "sourceFilename": {"maxLength": 255, "pattern": "^[A-Za-z0-9@._+~:-]+$", "type": "string"},
+        "sourceSha256": {"$ref": "#/$defs/hash"},
+        "sourceSignatureFilename": {"maxLength": 255, "pattern": "^[A-Za-z0-9@._+~:-]+$", "type": "string"},
+        "sourceSignatureSha256": {"$ref": "#/$defs/hash"},
+        "sourceSignerFingerprint": {"pattern": "^(?:[0-9A-F]{40}|[0-9A-F]{64})$", "type": "string"},
+        "version": {"maxLength": 256, "pattern": "^[A-Za-z0-9@._+:-]+$", "type": "string"}
+      },
+      "required": ["name", "sourceFilename", "sourceSignatureFilename", "sourceSha256", "sourceSignatureSha256", "sourceSignerFingerprint", "filename", "version", "sha256", "installedSize", "savedBytes"],
+      "type": "object"
+    },
+    "reviewed": {
+      "additionalProperties": false,
+      "properties": {
+        "delivery": {"$ref": "#/$defs/delivery"},
+        "omittedCapabilities": {"const": ["cuda-compute"]},
+        "packageOwnership": {"const": "archive-and-pacman-database-exact"},
+        "packageRecords": {
+          "items": false,
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {"allOf": [{"$ref": "#/$defs/package"}], "properties": {"name": {"const": "lib32-nvidia-utils"}}},
+            {"allOf": [{"$ref": "#/$defs/package"}], "properties": {"name": {"const": "nvidia-utils"}}}
+          ],
+          "type": "array"
+        },
+        "policySha256": {"$ref": "#/$defs/hash"},
+        "preservedCapabilities": {"const": ["gaming-32bit", "glvnd-egl", "graphics", "gsp-firmware", "nvdec", "nvenc", "recovery-rendering", "vulkan"]},
+        "profileId": {"const": "gaming-no-cuda-v1"},
+        "savedBytes": {"maximum": 9223372036854775807, "minimum": 1, "type": "integer"},
+        "schemaVersion": {"const": 1},
+        "sha256": {"$ref": "#/$defs/hash"},
+        "status": {"const": "reviewed"},
+        "target": {
+          "additionalProperties": false,
+          "properties": {
+            "architecture": {"const": "x86_64"},
+            "kernelVersion": {"maxLength": 255, "pattern": "^(?!unknown$)[A-Za-z0-9._+~-]+$", "type": "string"},
+            "nvidiaVersion": {"pattern": "^[0-9]+\\.[0-9]+(?:\\.[0-9]+)?$", "type": "string"},
+            "steamosVersion": {"pattern": "^[0-9]+\\.[0-9]+(?:\\.[0-9]+)?$", "type": "string"}
+          },
+          "required": ["steamosVersion", "kernelVersion", "nvidiaVersion", "architecture"],
+          "type": "object"
+        }
+      },
+      "required": ["schemaVersion", "status", "profileId", "sha256", "policySha256", "target", "delivery", "omittedCapabilities", "preservedCapabilities", "packageOwnership", "savedBytes", "packageRecords"],
+      "type": "object"
+    }
+  },
+  "description": "Closed optional-CUDA gaming payload selection. Reviewed records are bound by Core to its exact target policy, profile hash, userspace lock, and validated derived packages.",
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "profileId": {"const": "gaming-no-cuda-v1"},
+        "schemaVersion": {"const": 1},
+        "status": {"const": "not-requested"}
+      },
+      "required": ["schemaVersion", "status", "profileId"],
+      "type": "object"
+    },
+    {"$ref": "#/$defs/reviewed"}
+  ],
+  "title": "OPEMOS installer gaming payload v1"
+}

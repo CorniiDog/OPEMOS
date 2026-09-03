@@ -12,6 +12,14 @@ from payload_receipt import (
     RECEIPT_RELATIVE as PAYLOAD_RECEIPT_RELATIVE,
     receipt_id,
 )
+from gaming_payload_profiles import (
+    POLICY as GAMING_POLICY,
+    ROOT as SUPPORT_ROOT,
+    ProfileError,
+    digest as gaming_digest,
+    target_record as reviewed_gaming_target,
+    validate_profile as validate_gaming_profile,
+)
 
 
 MAX_VALIDATION_BYTES = 16 * 1024 * 1024
@@ -20,6 +28,7 @@ MAX_USERSPACE_VERIFICATION_BYTES = 256 * 1024
 MAX_WORKSPACE_VERIFICATION_BYTES = 16 * 1024
 MAX_INITRAMFS_VERIFICATION_BYTES = 256 * 1024
 MAX_PAYLOAD_RECEIPT_BYTES = 64 * 1024
+MAX_GAMING_PAYLOAD_BYTES = 1024 * 1024
 MAX_TARGET_EXECUTION_FAILURE_BYTES = 16 * 1024
 TOKEN = re.compile(r"[a-z][a-z0-9_]{0,63}")
 KERNEL = re.compile(r"(?:unknown|[A-Za-z0-9._+~-]{1,255})")
@@ -45,6 +54,10 @@ INITRAMFS_REQUIRED_MODULES = (
     "nvidia.ko", "nvidia-modeset.ko", "nvidia-uvm.ko", "nvidia-drm.ko",
 )
 INITRAMFS_ROOTFS_ONLY_MODULES = ("nvidia-peermem.ko",)
+GAMING_PRESERVED_CAPABILITIES = (
+    "gaming-32bit", "glvnd-egl", "graphics", "gsp-firmware",
+    "nvdec", "nvenc", "recovery-rendering", "vulkan",
+)
 ROOT_METADATA_RESERVE_BYTES = 64 * 1024 * 1024
 VAR_RESERVE_BYTES = 16 * 1024 * 1024
 REQUIRED_KERNEL_ARGUMENTS = (
@@ -797,6 +810,167 @@ def validate_payload_receipt_binding(receipt, target):
         raise SystemExit("Payload receipt does not match the exact target identity.")
 
 
+def validate_gaming_payload_record(gaming):
+    """Validate the closed security-critical gaming payload record."""
+    if (not isinstance(gaming, dict) or gaming.get("schemaVersion") != 1
+            or gaming.get("profileId") != "gaming-no-cuda-v1"
+            or gaming.get("status") not in {"not-requested", "reviewed"}):
+        raise SystemExit("Verified gaming payload metadata is invalid.")
+    if gaming["status"] == "not-requested":
+        if set(gaming) != {"schemaVersion", "status", "profileId"}:
+            raise SystemExit("Verified gaming payload metadata is invalid.")
+        return gaming
+    required = {
+        "schemaVersion", "status", "profileId", "sha256", "policySha256",
+        "target", "delivery", "omittedCapabilities", "preservedCapabilities",
+        "packageOwnership", "savedBytes", "packageRecords",
+    }
+    target = gaming.get("target")
+    records = gaming.get("packageRecords")
+    if (set(gaming) != required
+            or not isinstance(gaming.get("sha256"), str)
+            or HEX_SHA256.fullmatch(gaming["sha256"]) is None
+            or not isinstance(gaming.get("policySha256"), str)
+            or HEX_SHA256.fullmatch(gaming["policySha256"]) is None
+            or not isinstance(target, dict)
+            or set(target) != {
+                "steamosVersion", "kernelVersion", "nvidiaVersion", "architecture"
+            }
+            or not isinstance(target.get("steamosVersion"), str)
+            or VERSION.fullmatch(target["steamosVersion"]) is None
+            or target.get("steamosVersion") == "unknown"
+            or not isinstance(target.get("kernelVersion"), str)
+            or KERNEL.fullmatch(target["kernelVersion"]) is None
+            or target.get("kernelVersion") == "unknown"
+            or not isinstance(target.get("nvidiaVersion"), str)
+            or VERSION.fullmatch(target["nvidiaVersion"]) is None
+            or target.get("nvidiaVersion") == "unknown"
+            or target.get("architecture") != "x86_64"
+            or gaming.get("delivery") != {
+                "strategy": "deterministic-authenticated-source-repack-v1",
+                "packageOwnership": "archive-and-pacman-database-exact",
+                "sourceAuthentication": (
+                    "arch-detached-signatures-and-reviewed-userspace-lock"
+                ),
+                "repacker": {
+                    "name": "repack_gaming_userspace.py", "schemaVersion": 1,
+                    "zstdVersion": "1.5.7", "compression": "zstd-19-t1",
+                },
+            }
+            or gaming.get("omittedCapabilities") != ["cuda-compute"]
+            or gaming.get("preservedCapabilities")
+            != list(GAMING_PRESERVED_CAPABILITIES)
+            or gaming.get("packageOwnership")
+            != "archive-and-pacman-database-exact"
+            or not isinstance(gaming.get("savedBytes"), int)
+            or isinstance(gaming["savedBytes"], bool)
+            or gaming["savedBytes"] <= 0
+            or not isinstance(records, list) or len(records) != 2):
+        raise SystemExit("Verified gaming payload metadata is invalid.")
+    record_keys = {
+        "name", "sourceFilename", "sourceSignatureFilename", "sourceSha256",
+        "sourceSignatureSha256", "sourceSignerFingerprint", "filename",
+        "version", "sha256", "installedSize", "savedBytes",
+    }
+    names = []
+    saved = 0
+    for record in records:
+        if (not isinstance(record, dict) or set(record) != record_keys
+                or record.get("name") not in {
+                    "nvidia-utils", "lib32-nvidia-utils"
+                }
+                or any(not isinstance(record.get(field), str)
+                       or not record[field] or not plain_name(record[field])
+                       for field in (
+                           "sourceFilename", "sourceSignatureFilename", "filename"
+                       ))
+                or any(not isinstance(record.get(field), str)
+                       or HEX_SHA256.fullmatch(record[field]) is None
+                       for field in (
+                           "sourceSha256", "sourceSignatureSha256", "sha256"
+                       ))
+                or re.fullmatch(r"[0-9A-F]{40}|[0-9A-F]{64}",
+                                record.get("sourceSignerFingerprint", "")) is None
+                or not isinstance(record.get("version"), str)
+                or re.fullmatch(r"[A-Za-z0-9@._+:-]{1,256}",
+                                record["version"]) is None
+                or any(not isinstance(record.get(field), int)
+                       or isinstance(record[field], bool) or record[field] < 0
+                       for field in ("installedSize", "savedBytes"))
+                or record["savedBytes"] <= 0):
+            raise SystemExit("Verified gaming payload package metadata is invalid.")
+        names.append(record["name"])
+        saved += record["savedBytes"]
+    if (names != ["lib32-nvidia-utils", "nvidia-utils"]
+            or saved != gaming["savedBytes"]):
+        raise SystemExit("Verified gaming payload package metadata is invalid.")
+    return gaming
+
+
+def load_gaming_payload(path):
+    try:
+        if (path.is_symlink() or not path.is_file()
+                or not 0 < path.stat().st_size <= MAX_GAMING_PAYLOAD_BYTES):
+            raise OSError
+        document = json.loads(
+            path.read_text(encoding="utf-8"), object_pairs_hook=unique_object,
+            parse_constant=reject_json_constant,
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+        raise SystemExit("Gaming payload metadata is unreadable or excessive.")
+    return validate_gaming_payload_record(document)
+
+
+def validate_gaming_payload_binding(gaming, validation):
+    """Bind a reviewed payload to Core policy, lock, target, and packages."""
+    if gaming["status"] == "not-requested":
+        return
+    target = validation.get("target")
+    try:
+        authority = reviewed_gaming_target(
+            target["steamosVersion"], target["kernelVersion"],
+            target["nvidiaVersion"], target["architecture"],
+        )
+        if authority is None:
+            raise ProfileError("target is not reviewed")
+        expected = validate_gaming_profile(
+            SUPPORT_ROOT / "profiles/gaming" / authority["profileAsset"],
+            SUPPORT_ROOT / "locks/userspace" / authority["userspaceLockAsset"],
+            target,
+        )
+    except (KeyError, TypeError, ProfileError):
+        raise SystemExit(
+            "Gaming payload is not authorized for the exact target."
+        ) from None
+    lock = validation.get("userspaceLock", {})
+    if (gaming != expected
+            or gaming["policySha256"] != gaming_digest(GAMING_POLICY)
+            or lock.get("name") != authority["userspaceLockAsset"]
+            or lock.get("sha256") != authority["userspaceLockSha256"]):
+        raise SystemExit(
+            "Gaming payload differs from reviewed profile or lock authority."
+        )
+    validated_by_name = {
+        item["name"]: item for item in validation.get("packages", [])
+        if isinstance(item, dict) and isinstance(item.get("name"), str)
+    }
+    for record in gaming["packageRecords"]:
+        installed = validated_by_name.get(record["name"])
+        if (installed is None
+                or installed.get("filename") != record["filename"]
+                or installed.get("signatureFilename")
+                != record["sourceSignatureFilename"]
+                or installed.get("fullVersion") != record["version"]
+                or installed.get("sha256") != record["sha256"]
+                or installed.get("signatureSha256")
+                != record["sourceSignatureSha256"]
+                or installed.get("signer") != record["sourceSignerFingerprint"]
+                or installed.get("installedSize") != record["installedSize"]):
+            raise SystemExit(
+                "Gaming payload differs from validated package metadata."
+            )
+
+
 def load_target_execution_failure(path):
     try:
         if (path.is_symlink() or not path.is_file()
@@ -949,88 +1123,8 @@ def validate_verified_metadata(validation):
     if {module["name"] for module in modules} != EXPECTED_MODULES:
         raise SystemExit("Verified installation module metadata is invalid.")
     gaming = validation["gamingPayload"]
-    if (not isinstance(gaming, dict) or gaming.get("schemaVersion") != 1
-            or gaming.get("profileId") != "gaming-no-cuda-v1"
-            or gaming.get("status") not in ("not-requested", "reviewed")):
-        raise SystemExit("Verified gaming payload metadata is invalid.")
-    if gaming["status"] == "not-requested":
-        if set(gaming) != {"schemaVersion", "status", "profileId"}:
-            raise SystemExit("Verified gaming payload metadata is invalid.")
-    elif (set(gaming) != {"schemaVersion", "status", "profileId", "sha256",
-                         "policySha256", "target", "delivery",
-                         "omittedCapabilities", "preservedCapabilities",
-                         "packageOwnership", "savedBytes", "packageRecords"}
-          or not HEX_SHA256.fullmatch(gaming.get("sha256", ""))
-          or not HEX_SHA256.fullmatch(gaming.get("policySha256", ""))
-          or gaming.get("target") != validation.get("target")
-          or gaming.get("delivery") != {
-              "strategy": "deterministic-authenticated-source-repack-v1",
-              "packageOwnership": "archive-and-pacman-database-exact",
-              "sourceAuthentication": (
-                  "arch-detached-signatures-and-reviewed-userspace-lock"
-              ),
-              "repacker": {"name": "repack_gaming_userspace.py",
-                           "schemaVersion": 1, "zstdVersion": "1.5.7",
-                           "compression": "zstd-19-t1"},
-          }
-          or gaming.get("omittedCapabilities") != ["cuda-compute"]
-          or set(gaming.get("preservedCapabilities", [])) != {
-              "graphics", "vulkan", "glvnd-egl", "nvenc", "nvdec",
-              "gsp-firmware", "gaming-32bit", "recovery-rendering",
-          }
-          or gaming.get("packageOwnership") != "archive-and-pacman-database-exact"
-          or not isinstance(gaming.get("savedBytes"), int)
-          or isinstance(gaming["savedBytes"], bool) or gaming["savedBytes"] <= 0
-          or not isinstance(gaming.get("packageRecords"), list)
-          or len(gaming["packageRecords"]) != 2):
-        raise SystemExit("Verified gaming payload metadata is invalid.")
-    if gaming["status"] == "reviewed":
-        record_keys = {
-            "name", "sourceFilename", "sourceSignatureFilename", "sourceSha256",
-            "sourceSignatureSha256", "sourceSignerFingerprint", "filename",
-            "version", "sha256", "installedSize", "savedBytes",
-        }
-        names = set()
-        saved = 0
-        for record in gaming["packageRecords"]:
-            if (not isinstance(record, dict) or set(record) != record_keys
-                    or record.get("name") not in {
-                        "nvidia-utils", "lib32-nvidia-utils"}
-                    or record["name"] in names
-                    or any(not plain_name(record.get(field)) for field in (
-                        "sourceFilename", "sourceSignatureFilename", "filename"
-                    ))
-                    or any(not HEX_SHA256.fullmatch(record.get(field, ""))
-                           for field in ("sourceSha256", "sourceSignatureSha256", "sha256"))
-                    or re.fullmatch(r"[0-9A-F]{40}|[0-9A-F]{64}",
-                                    record.get("sourceSignerFingerprint", "")) is None
-                    or not isinstance(record.get("version"), str)
-                    or re.fullmatch(r"[A-Za-z0-9@._+:-]{1,256}", record["version"]) is None
-                    or any(not isinstance(record.get(field), int)
-                           or isinstance(record[field], bool) or record[field] < 0
-                           for field in ("installedSize", "savedBytes"))):
-                raise SystemExit("Verified gaming payload package metadata is invalid.")
-            names.add(record["name"])
-            saved += record["savedBytes"]
-        if (names != {"nvidia-utils", "lib32-nvidia-utils"}
-                or saved != gaming["savedBytes"]):
-            raise SystemExit("Verified gaming payload package metadata is invalid.")
-        validated_by_name = {item["name"]: item for item in packages}
-        for record in gaming["packageRecords"]:
-            installed = validated_by_name.get(record["name"])
-            if (installed is None
-                    or installed["filename"] != record["filename"]
-                    or installed["signatureFilename"]
-                    != record["sourceSignatureFilename"]
-                    or installed["fullVersion"] != record["version"]
-                    or installed["sha256"] != record["sha256"]
-                    or installed["signatureSha256"]
-                    != record["sourceSignatureSha256"]
-                    or installed["signer"] != record["sourceSignerFingerprint"]
-                    or installed["installedSize"] != record["installedSize"]):
-                raise SystemExit(
-                    "Verified gaming payload differs from package metadata."
-                )
+    validate_gaming_payload_record(gaming)
+    validate_gaming_payload_binding(gaming, validation)
     storage = validation["storage"]
     compression = validation["compression"]
     base_storage = {
