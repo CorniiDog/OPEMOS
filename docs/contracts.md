@@ -169,12 +169,14 @@ Health acknowledgement and rollback both reauthenticate their selected cached
 generation against the complete currently installed policy/keyring authority.
 They also independently observe the current SteamOS version, running kernel,
 architecture, and Core's installed NVIDIA identity, then require one exact
-target lock in the selected generation. Health evidence cannot substitute for
-this target observation, and a last-known-good generation for another A/B slot
-cannot be restored after a slot transition. Core rechecks same-descriptor trust
-guards before committing state. A valid generation from an older or otherwise
-different policy cannot become LKG or be restored merely because its cached
-hashes remain intact.
+target lock in the selected generation. The observed identity must also match
+the current rootfs's confined, owner-controlled payload receipt after all six
+receipt files and hashes are reverified; a persistent `/var` marker alone is
+not sufficient. Health evidence cannot substitute for this target observation,
+and a last-known-good generation for another A/B slot cannot be restored after
+a slot transition. Core rechecks same-descriptor trust guards before committing
+state. A valid generation from an older or otherwise different policy cannot
+become LKG or be restored merely because its cached hashes remain intact.
 
 The observation root is `/` in production and cannot be selected by the
 caller. A separate `--target-root` exists only behind the explicit development

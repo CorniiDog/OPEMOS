@@ -19,6 +19,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from payload_receipt import verify_receipt
 from device_generation_contract import (
     DeviceGenerationContractError,
     validate_health,
@@ -1492,13 +1493,26 @@ def observe_current_target(arguments):
             "device_generation_target_observation_invalid",
             "target kernel or architecture identity is malformed or unsupported",
         )
-    require_observation_root(root, guard)
-    return {
+    observed = {
         "steamosVersion": steamos,
         "kernelVersion": kernel,
         "nvidiaVersion": nvidia,
         "architecture": architecture,
     }
+    try:
+        receipt = verify_receipt(root, allow_live_root=True)
+    except (OSError, UnicodeError, ValueError):
+        fail(
+            "device_generation_target_observation_invalid",
+            "current rootfs payload receipt is unavailable or invalid",
+        )
+    if receipt["target"] != observed:
+        fail(
+            "device_generation_target_mismatch",
+            "current target differs from its rootfs payload receipt",
+        )
+    require_observation_root(root, guard)
+    return observed
 
 
 def require_observed_target(pair, observed):

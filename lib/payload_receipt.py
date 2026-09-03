@@ -39,7 +39,7 @@ def unique_object(pairs):
     return result
 
 
-def read_regular(path, maximum):
+def read_regular(path, maximum, expected_owner=None, require_nonwritable=False):
     flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
              | getattr(os, "O_NONBLOCK", 0))
     if hasattr(os, "O_NOFOLLOW"):
@@ -47,7 +47,10 @@ def read_regular(path, maximum):
     descriptor = os.open(path, flags)
     try:
         before = os.fstat(descriptor)
-        if not stat.S_ISREG(before.st_mode) or not 0 < before.st_size <= maximum:
+        if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+                or not 0 < before.st_size <= maximum
+                or expected_owner is not None and before.st_uid != expected_owner
+                or require_nonwritable and stat.S_IMODE(before.st_mode) & 0o022):
             raise ValueError("receipt input is not a bounded regular file")
         payload = bytearray()
         while len(payload) <= maximum:
@@ -59,11 +62,18 @@ def read_regular(path, maximum):
         path_after = os.stat(path, follow_symlinks=False)
         if (len(payload) > maximum or len(payload) != after.st_size
                 or (before.st_dev, before.st_ino, before.st_size,
-                    before.st_mtime_ns, before.st_ctime_ns)
+                    before.st_mtime_ns, before.st_ctime_ns, before.st_uid,
+                    before.st_gid, stat.S_IMODE(before.st_mode), before.st_nlink)
                 != (after.st_dev, after.st_ino, after.st_size,
-                    after.st_mtime_ns, after.st_ctime_ns)
-                or (after.st_dev, after.st_ino)
-                != (path_after.st_dev, path_after.st_ino)):
+                    after.st_mtime_ns, after.st_ctime_ns, after.st_uid,
+                    after.st_gid, stat.S_IMODE(after.st_mode), after.st_nlink)
+                or (after.st_dev, after.st_ino, after.st_size,
+                    after.st_mtime_ns, after.st_ctime_ns, after.st_uid,
+                    after.st_gid, stat.S_IMODE(after.st_mode), after.st_nlink)
+                != (path_after.st_dev, path_after.st_ino, path_after.st_size,
+                    path_after.st_mtime_ns, path_after.st_ctime_ns,
+                    path_after.st_uid, path_after.st_gid,
+                    stat.S_IMODE(path_after.st_mode), path_after.st_nlink)):
             raise ValueError("receipt input changed while being read")
         return bytes(payload)
     finally:
@@ -78,17 +88,18 @@ def load_json(payload):
                       parse_constant=reject_constant)
 
 
-def safe_root(root):
+def safe_root(root, allow_live_root=False):
     if not root.is_absolute() or root.is_symlink():
         raise ValueError("target root must be an absolute non-symlink directory")
     resolved = root.resolve(strict=True)
-    if resolved == Path("/") or not resolved.is_dir():
+    if (resolved == Path("/") and not allow_live_root) or not resolved.is_dir():
         raise ValueError("target root is unsafe")
     return resolved
 
 
-def receipt_directory(root, create=False):
-    current = safe_root(root)
+def receipt_directory(root, create=False, allow_live_root=False,
+                      expected_owner=None):
+    current = safe_root(root, allow_live_root=allow_live_root)
     for component in RECEIPT_RELATIVE.parts:
         current = current / component
         try:
@@ -98,7 +109,10 @@ def receipt_directory(root, create=False):
                 raise ValueError("payload receipt directory is missing")
             current.mkdir(mode=0o755)
             metadata = os.lstat(current)
-        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+        if (stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode)
+                or expected_owner is not None
+                and (metadata.st_uid != expected_owner
+                     or stat.S_IMODE(metadata.st_mode) & 0o022)):
             raise ValueError("payload receipt path is unsafe")
     return current
 
@@ -204,9 +218,17 @@ def commit_receipt(args):
     return verify_receipt(args.root)
 
 
-def verify_receipt(root):
-    directory = receipt_directory(root)
-    manifest = load_json(read_regular(directory / MANIFEST_NAME, MAX_MANIFEST_BYTES))
+def verify_receipt(root, allow_live_root=False):
+    resolved_root = safe_root(root, allow_live_root=allow_live_root)
+    expected_owner = 0 if resolved_root == Path("/") else os.geteuid()
+    directory = receipt_directory(
+        resolved_root, allow_live_root=allow_live_root,
+        expected_owner=expected_owner,
+    )
+    manifest = load_json(read_regular(
+        directory / MANIFEST_NAME, MAX_MANIFEST_BYTES,
+        expected_owner=expected_owner, require_nonwritable=True,
+    ))
     if (not isinstance(manifest, dict)
             or manifest.get("schemaVersion") != 1
             or manifest.get("status") != "verified"
@@ -225,7 +247,10 @@ def verify_receipt(root):
         filename, maximum, structured = MAX_INPUTS[role]
         if record.get("filename") != filename:
             raise ValueError("payload receipt filename is inconsistent")
-        payload = read_regular(directory / filename, maximum)
+        payload = read_regular(
+            directory / filename, maximum,
+            expected_owner=expected_owner, require_nonwritable=True,
+        )
         if (record.get("sizeBytes") != len(payload)
                 or record.get("sha256") != hashlib.sha256(payload).hexdigest()):
             raise ValueError("payload receipt content differs from its manifest")

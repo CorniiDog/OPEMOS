@@ -121,6 +121,35 @@ def main():
         assert victim.read_text() == "do not read\n"
 
         assert invoke("commit", target_root, evidence, root / "repaired-again.json").returncode == 0
+        validation.chmod(0o666)
+        writable = invoke(
+            "verify", target_root, evidence, root / "writable.json"
+        )
+        assert writable.returncode != 0
+        assert not (root / "writable.json").exists()
+        validation.chmod(0o644)
+
+        linked_source = root / "linked-validation.json"
+        linked_source.write_bytes(validation.read_bytes())
+        validation.unlink()
+        validation.hardlink_to(linked_source)
+        hardlinked = invoke(
+            "verify", target_root, evidence, root / "hardlinked.json"
+        )
+        assert hardlinked.returncode != 0
+        assert not (root / "hardlinked.json").exists()
+
+        assert invoke(
+            "commit", target_root, evidence, root / "repaired-safe.json"
+        ).returncode == 0
+        receipt_root.chmod(0o777)
+        writable_directory = invoke(
+            "verify", target_root, evidence, root / "writable-directory.json"
+        )
+        assert writable_directory.returncode != 0
+        assert not (root / "writable-directory.json").exists()
+        receipt_root.chmod(0o755)
+
         (receipt_root / "receipt.json").unlink()
         partial = invoke("verify", target_root, evidence, root / "partial.json")
         assert partial.returncode != 0

@@ -12,6 +12,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 
@@ -30,6 +31,7 @@ from device_generation_lifecycle import (  # noqa: E402
     snapshot_regular,
     snapshot_trust_file,
 )
+from payload_receipt import commit_receipt  # noqa: E402
 
 
 TOOL = LIB / "device_generation_lifecycle.py"
@@ -40,6 +42,16 @@ TARGET_ARGUMENTS = [
     "--kernel", "6.16.12-valve24.4-1-neptune-616-gfe145653a794",
     "--nvidia", "575.64.05",
 ]
+TARGET = {
+    "steamosVersion": TARGET_ARGUMENTS[1],
+    "kernelVersion": TARGET_ARGUMENTS[3],
+    "nvidiaVersion": TARGET_ARGUMENTS[5],
+    "architecture": "x86_64",
+}
+MODULES = (
+    "nvidia.ko", "nvidia-drm.ko", "nvidia-modeset.ko",
+    "nvidia-peermem.ko", "nvidia-uvm.ko",
+)
 
 
 def digest(payload):
@@ -73,6 +85,45 @@ def install_alternate_policy(policy, checkpoint, base, sequence, manifest_hash):
         "minimumSequence": sequence,
         "minimumManifestSha256": manifest_hash,
     }))
+
+
+def install_target_receipt(target_root, evidence_root, target):
+    evidence_root.mkdir(exist_ok=True)
+    evidence = {
+        name: evidence_root / filename for name, filename in (
+            ("build_info", "BUILD-INFO.txt"),
+            ("provenance", "PROVENANCE.json"),
+            ("validation", "validation.json"),
+            ("module_verification", "module-verification.json"),
+            ("userspace_verification", "userspace-verification.json"),
+            ("initramfs_verification", "initramfs-verification.json"),
+        )
+    }
+    write(evidence["build_info"], b"fixture=1\n")
+    write(evidence["provenance"], canonical({
+        "schemaVersion": 1,
+        "target": target,
+        "trust": "locally-built-verified",
+    }))
+    write(evidence["validation"], canonical({
+        "schemaVersion": 1, "status": "verified", "target": target,
+    }))
+    write(evidence["module_verification"], canonical({
+        "schemaVersion": 1,
+        "status": "verified",
+        "modules": [{"moduleName": name} for name in MODULES],
+    }))
+    write(evidence["userspace_verification"], canonical({
+        "schemaVersion": 1,
+        "status": "verified",
+        "packages": [{"packageName": "nvidia-utils"}],
+    }))
+    write(evidence["initramfs_verification"], canonical({
+        "schemaVersion": 1,
+        "status": "verified",
+        "kernelVersion": target["kernelVersion"],
+    }))
+    return commit_receipt(SimpleNamespace(root=target_root, **evidence))
 
 
 def latest_state_marker(store):
@@ -444,6 +495,8 @@ def main():
             target_root / "proc/sys/kernel/architecture", b"x86_64\n"
         )
         write(installed_state / "nvidia-version", b"575.64.05\n")
+        receipt_evidence = root / "target-receipt-evidence"
+        install_target_receipt(target_root, receipt_evidence, TARGET)
         environment["OPEMOS_GENERATION_TEST_TARGET_ROOT"] = str(target_root)
         production_override = subprocess.run([
             sys.executable, str(TOOL), "--store", str(store),
@@ -600,6 +653,22 @@ def main():
             "device_generation_target_observation_invalid"
         )
         (secondary_nvidia / "installed-nvidia.txt").unlink()
+        receipt_validation = (
+            target_root
+            / "usr/lib/open-gpu-kernel-modules-steamos-support/offline-install"
+            / "validation.json"
+        )
+        receipt_validation.write_bytes(b"corrupt\n")
+        corrupt_receipt = acknowledge(
+            environment, store, policy, keyring, checkpoint, success=False
+        )
+        assert corrupt_receipt["reason"] == (
+            "device_generation_target_observation_invalid"
+        )
+        assert invoke(
+            environment, store, policy, keyring, checkpoint, "status"
+        )["state"] == pending_health_state
+        install_target_receipt(target_root, receipt_evidence, TARGET)
         healthy_7 = acknowledge(
             environment, store, policy, keyring, checkpoint
         )
@@ -632,7 +701,17 @@ def main():
         )
         write(policy, policy_payload)
         write(checkpoint, checkpoint_payload)
-        write(observed_kernel, b"6.16.13-valve25-neptune\n")
+        transitioned_target = {
+            **TARGET,
+            "kernelVersion": "6.16.13-valve25-neptune",
+        }
+        write(
+            observed_kernel,
+            (transitioned_target["kernelVersion"] + "\n").encode(),
+        )
+        install_target_receipt(
+            target_root, receipt_evidence, transitioned_target
+        )
         stale_slot_rollback = invoke(
             environment, store, policy, keyring, checkpoint, "rollback",
             success=False,
@@ -642,6 +721,7 @@ def main():
             environment, store, policy, keyring, checkpoint, "status"
         )["state"] == activated_8["state"]
         write(observed_kernel, (TARGET_ARGUMENTS[3] + "\n").encode())
+        install_target_receipt(target_root, receipt_evidence, TARGET)
         rolled_back = invoke(
             environment, store, policy, keyring, checkpoint, "rollback"
         )

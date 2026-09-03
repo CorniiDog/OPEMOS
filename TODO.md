@@ -1520,8 +1520,10 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   observed current SteamOS/kernel/NVIDIA target before recovery integration.
   Core now observes SteamOS, running kernel, architecture, and its installed
   NVIDIA identity separately from health evidence, rejects ambiguous or unsafe
-  observations, and requires an exact target lock before LKG advancement or
-  rollback. The schema-1 health record remains generation-only evidence.
+  observations, verifies the current rootfs's six-file payload receipt rather
+  than trusting a persistent `/var` marker alone, and requires an exact target
+  lock before LKG advancement or rollback. The schema-1 health record remains
+  generation-only evidence.
 * [ ] Validate the device lifecycle under Fedora and real SteamOS, including
   inode exhaustion, power loss at every durable boundary, health timeout,
   filesystem corruption, kernel-observed watchdog behavior, and service/
