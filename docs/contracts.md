@@ -115,6 +115,7 @@ Implemented inactive commands are:
 | Command | Effect |
 | --- | --- |
 | `activate` | Authenticate and create-only stage an exact local generation, then atomically select it pending health |
+| `activate-downloaded` | Reauthenticate a manifest-hash-selected entry from Core's separate device download cache, then use the same activation/health transaction |
 | `status` | Read bounded durable active/LKG/high-water state |
 | `check` | Revalidate the active and last-known-good cached payloads |
 | `acknowledge-health --evidence FILE` | Advance LKG using exact generation-bound recovery evidence |
@@ -164,6 +165,16 @@ Production `update` and `update-or-repair` remain fail-closed because no
 reviewed data-generation signer, keyring, bootstrap checkpoint, or canonical
 device discovery endpoint is configured. Local activation is an integration
 surface, not permission to replace the legacy reviewed lock path.
+
+The inactive shared bootstrap contract is defined by the closed
+`userspace-lock-bootstrap-policy-v1.schema.json` and
+`userspace-lock-bootstrap-checkpoint-v1.schema.json` schemas. The policy binds
+authority/keyring identity, strong OpenPGP algorithms, canonical channel and
+immutable-release namespaces, supported schema versions, and replay rules. The
+checkpoint binds those exact policy bytes to a minimum sequence and manifest
+hash. `lib/generate_userspace_lock_bootstrap_fixtures.py` provides the bounded
+deterministic acceptance matrix; its `.invalid` endpoints and synthetic hashes
+are not production configuration.
 
 ## Build result
 

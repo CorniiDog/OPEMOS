@@ -131,7 +131,10 @@ def main() -> None:
     handoff = LOCK_GENERATION_HANDOFF.read_text(encoding="utf-8")
     assert "](userspace-lock-generations.md)" in contracts_readme
     validate_link(CONTRACTS_README, "userspace-lock-generations.md")
-    assert "Status: design contract; not yet an active production schema" in handoff
+    assert (
+        "Status: inactive schema contract; no production trust root or endpoint exists."
+        in handoff
+    )
     descriptor_section = handoff.split(
         "The schema-1 descriptor is a closed canonical JSON object", 1
     )[1].split("`authority` contains exactly", 1)[0]

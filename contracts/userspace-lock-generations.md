@@ -1,6 +1,6 @@
 # Reviewed userspace-lock data-generation handoff
 
-Status: design contract; not yet an active production schema or trust root.
+Status: inactive schema contract; no production trust root or endpoint exists.
 
 This handoff defines the stable data boundary shared by OPEMOS.EXE and the
 installed Core/CLI. It does not authorize either consumer to copy the other's
@@ -41,8 +41,10 @@ status matrix for primary-key/subkey binding, SHA-256/384/512 acceptance,
 weak/expired/revoked/multiple signature rejection, malformed records, and the
 status-output ceiling. Human GnuPG diagnostics are not contract data.
 
-The descriptor contains no URL. Redirect and endpoint policy belongs to each
-consumer's networking layer. Consumers first snapshot both bounded files, then
+The descriptor contains no URL. Core's installed bootstrap policy pins the
+canonical HTTPS origin and channel/release namespaces; redirect handling,
+transport, and physical caching remain each consumer's networking
+implementation. Consumers first snapshot both bounded files, then
 verify the detached signature with the locally installed reviewed data keyring
 and signer policy before parsing or acting on descriptor metadata.
 The descriptor cannot contain the hash of its own detached signature without a
@@ -51,6 +53,37 @@ descriptor bytes plus canonical detached-signature asset, authenticated against
 the separately installed policy/keyring/checkpoint. Production publication
 evidence and trust anchors are deliberately unconfigured while this channel is
 inactive.
+
+## Installed bootstrap policy and checkpoint
+
+`userspace-lock-bootstrap-policy-v1.schema.json` is the closed stable-policy
+contract installed with a consumer binary or another independently
+authenticated configuration channel. It fixes the policy ID/version, exact
+keyring basename and SHA-256, one uppercase primary signing fingerprint,
+`openpgp-detached-v1`, hash algorithm identifiers `[8,9,10]`, canonical
+discovery/signature basenames, a canonical HTTPS origin, a lowercase
+path-confined discovery location, an immutable release namespace and tag
+prefix, supported schema-version lists, and mandatory monotonic-high-water,
+immediate-predecessor, and bounded authenticated-lineage rules. URL userinfo,
+ports, query/fragment state, path traversal, ambiguous separators, and mutable
+segments such as `latest`, `main`, `HEAD`, or branch refs are rejected. Redirects
+are disabled: consumers derive discovery and immutable-asset URLs only from the
+pinned origin, path namespace, release tag, and canonical asset filename.
+
+`userspace-lock-bootstrap-checkpoint-v1.schema.json` is a separate closed
+document binding the SHA-256 of those exact canonical policy bytes to
+`minimumSequence` and `minimumManifestSha256`. It is stable installed trust
+configuration, not content selected by discovery. Active, last-known-good, and
+monotonic high-water identities are separate consumer-local data-generation
+state. Routine lock generations can advance only through the pinned authority,
+compatibility, checkpoint, and predecessor rules; they cannot broaden trust,
+add an algorithm, change an endpoint, or lower the checkpoint/high-water.
+
+`lib/userspace_lock_bootstrap_contract.py` is the semantic validator and
+`lib/generate_userspace_lock_bootstrap_fixtures.py` emits the bounded
+deterministic cross-consumer matrix. Its URLs and hashes are test-only values
+under the reserved `.invalid` namespace. The repository deliberately ships no
+actual policy file, keyring, checkpoint, endpoint, or production activation.
 
 The schema-1 descriptor is a closed canonical JSON object with exactly these
 top-level fields:

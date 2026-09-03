@@ -1428,6 +1428,11 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   standalone deterministic status matrix and one shared parser to enforce
   exact primary/subkey fingerprint semantics, one signature, strong hashes,
   bounded output, adverse-status rejection, and verifier cancellation cleanup.
+* [x] Publish the inactive closed bootstrap-policy and minimum-checkpoint
+  schemas, semantic validator, and deterministic hostile compatibility matrix.
+  Separate stable binary trust/endpoint/schema/replay policy from mutable
+  active/LKG/high-water generation state. Test endpoints use `.invalid`; no
+  production key, keyring, checkpoint, endpoint, or activation is configured.
 * [ ] Create a dedicated reviewed data-generation signer policy and binary
   verification keyring. Do not reuse Arch, Valve, NVIDIA, commit-signing, or
   desktop-binary update keys.

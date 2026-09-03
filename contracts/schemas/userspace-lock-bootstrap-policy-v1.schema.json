@@ -1,0 +1,69 @@
+{
+  "$id": "https://corniidog.github.io/OPEMOS/contracts/userspace-lock-bootstrap-policy-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "canonicalPath": {"maxLength": 1024, "pattern": "^/(?!.*//)(?!.*(?:^|/)(?:latest|main|master|head|refs|heads)(?:/|$))[a-z0-9._~-]+(?:/[a-z0-9._~-]+)*$", "type": "string"},
+    "hash": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "schemaVersions": {"items": {"const": 1}, "maxItems": 1, "minItems": 1, "type": "array", "uniqueItems": true}
+  },
+  "additionalProperties": false,
+  "description": "Inactive closed policy for authenticating reviewed userspace-lock discovery and immutable generation releases. No production authority or endpoint is shipped by this schema.",
+  "properties": {
+    "authority": {
+      "additionalProperties": false,
+      "properties": {
+        "allowRedirects": {"const": false},
+        "allowedHashAlgorithmIds": {"const": [8, 9, 10]},
+        "keyringFilename": {"const": "opemos-userspace-lock-generations.gpg"},
+        "keyringSha256": {"$ref": "#/$defs/hash"},
+        "primarySigningFingerprint": {"pattern": "^(?:[0-9A-F]{40}|[0-9A-F]{64})$", "type": "string"},
+        "signatureScheme": {"const": "openpgp-detached-v1"}
+      },
+      "required": ["keyringFilename", "keyringSha256", "primarySigningFingerprint", "signatureScheme", "allowedHashAlgorithmIds"],
+      "type": "object"
+    },
+    "channel": {
+      "additionalProperties": false,
+      "properties": {
+        "discoveryFilename": {"const": "opemos-userspace-lock-discovery-v1.json"},
+        "discoveryPath": {"$ref": "#/$defs/canonicalPath"},
+        "discoverySignatureFilename": {"const": "opemos-userspace-lock-discovery-v1.json.sig"},
+        "immutableReleasePathPrefix": {"maxLength": 1024, "pattern": "^/(?!.*//)(?!.*(?:^|/)(?:latest|main|master|head|refs|heads)(?:/|$))[a-z0-9._~-]+(?:/[a-z0-9._~-]+)*/$", "type": "string"},
+        "origin": {"maxLength": 512, "pattern": "^https://(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$", "type": "string"},
+        "releaseTagPrefix": {"const": "opemos-userspace-lock-generation-v1-s"}
+      },
+      "required": ["origin", "discoveryPath", "discoveryFilename", "discoverySignatureFilename", "immutableReleasePathPrefix", "releaseTagPrefix", "allowRedirects"],
+      "type": "object"
+    },
+    "compatibility": {
+      "additionalProperties": false,
+      "properties": {
+        "discoverySchemaVersions": {"$ref": "#/$defs/schemaVersions"},
+        "generationManifestSchemaVersions": {"$ref": "#/$defs/schemaVersions"},
+        "installerResultSchemaVersions": {"$ref": "#/$defs/schemaVersions"},
+        "userspaceLockSchemaVersions": {"$ref": "#/$defs/schemaVersions"}
+      },
+      "required": ["discoverySchemaVersions", "generationManifestSchemaVersions", "userspaceLockSchemaVersions", "installerResultSchemaVersions"],
+      "type": "object"
+    },
+    "kind": {"const": "opemos-userspace-lock-bootstrap-policy"},
+    "policyId": {"const": "opemos-userspace-lock-generations"},
+    "policySchemaVersion": {"const": 1},
+    "replayPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "allowAuthenticatedLineageCatchup": {"const": true},
+        "maximumLineageGenerations": {"const": 64},
+        "requireImmediatePredecessor": {"const": true},
+        "requireMonotonicHighWater": {"const": true}
+      },
+      "required": ["requireMonotonicHighWater", "requireImmediatePredecessor", "allowAuthenticatedLineageCatchup", "maximumLineageGenerations"],
+      "type": "object"
+    },
+    "schemaVersion": {"const": 1},
+    "status": {"const": "active"}
+  },
+  "required": ["schemaVersion", "kind", "status", "policyId", "policySchemaVersion", "authority", "channel", "compatibility", "replayPolicy"],
+  "title": "OPEMOS userspace-lock bootstrap policy v1",
+  "type": "object"
+}
