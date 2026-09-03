@@ -12,6 +12,11 @@ reimplement compatibility, package-selection, signer, or mutation policy.
 - `schemas/installer-progress-v1.schema.json` describes one record following
   the `STEAMOS_NVIDIA_PROGRESS ` prefix. Cross-record monotonicity remains a
   stream property enforced by `lib/validate_install_contract.py`.
+- `schemas/installer-result-v1.schema.json` describes the terminal result from
+  `bootstrap/install_to_root.sh`. Successful results require the validation,
+  five-module, userspace, initramfs-workspace, initramfs, receipt, and cleanup
+  proof records. Cross-record identity and hash equality remain enforced by
+  `lib/validate_install_contract.py`.
 
 Unknown additive fields are permitted. Removing a required field, changing its
 meaning, or tightening a previously valid value requires a new schema version.

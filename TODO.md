@@ -72,8 +72,10 @@ index in the same commit.
   in the builder.
 * [x] Publish additive canonical schemas and fixtures for resolver schema 2 and
   installer-progress schema 1, including documented cross-record monotonicity.
-* [ ] Publish the remaining validation, installation, verification, receipt,
-  and gaming-payload schemas from OPEMOS. Generate or fixture-test OPEMOS.EXE's
+* [ ] Publish the remaining validation, verification-record, receipt, and
+  gaming-payload schemas from OPEMOS. The additive installer-result schema 1
+  envelope and mandatory success proofs are now published. Generate or
+  fixture-test OPEMOS.EXE's
   Rust consumers against all schemas while retaining builder-owned session
   binding, bounds, cleanup checks, transfer validation, and independent
   final-image inspection rather than duplicating support policy.
@@ -1549,9 +1551,12 @@ signing policy.
 
 ## Schema, liveness, failure, and target-code trust
 
-* [ ] Formalize result/progress schema evolution, mandatory versus additive
-  schema-1 fields, forward/backward fixtures, and an image-builder consumer
-  fixture covering all three structured post-install verification records.
+* [x] Formalize installer-result/progress schema evolution and mandatory versus
+  additive schema-1 fields. The installer-result schema requires all structured
+  post-install proofs, while the executable consumer validator enforces their
+  target, package, and module-hash cross-record equality. OPEMOS.EXE still needs
+  its own generated/fixture-tested Rust consumer before the broader schema item
+  above can close.
 * [ ] Add a real phase-by-phase failure/cancellation matrix for pacman hooks,
   userspace verification, module extraction/compression/copy/verification,
   GRUB, depmod, mkinitcpio, state writing, compression restoration, and

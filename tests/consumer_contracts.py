@@ -82,12 +82,29 @@ def main():
     progress_schema = json.loads(
         (schema_root / "installer-progress-v1.schema.json").read_text(encoding="utf-8")
     )
+    result_schema = json.loads(
+        (schema_root / "installer-result-v1.schema.json").read_text(encoding="utf-8")
+    )
     assert resolver_schema["$schema"].endswith("2020-12/schema")
     assert resolver_schema["properties"]["schemaVersion"]["const"] == 2
     assert resolver_schema["unevaluatedProperties"] is True
     assert progress_schema["properties"]["schemaVersion"]["const"] == 1
     assert progress_schema["properties"]["indeterminate"]["type"] == "boolean"
     assert progress_schema["unevaluatedProperties"] is True
+    assert result_schema["$schema"].endswith("2020-12/schema")
+    assert result_schema["properties"]["schemaVersion"]["const"] == 1
+    assert result_schema["properties"]["status"]["enum"] == [
+        "success", "failed", "cancelled", "validated"
+    ]
+    success_contract = result_schema["allOf"][0]["then"]
+    assert success_contract["required"] == [
+        "validation", "moduleVerification", "userspaceVerification",
+        "initramfsWorkspace", "initramfsVerification", "payloadReceipt",
+    ]
+    assert result_schema["$defs"]["moduleVerification"]["properties"][
+        "modules"
+    ]["minItems"] == 5
+    assert result_schema["unevaluatedProperties"] is True
 
     tag = "steamos-3.8.14-nvidia-575.64.05-k6.16.12-valve24.4-x86"
     archive = f"nvidia-open-{tag}-x86_64.tar.gz"

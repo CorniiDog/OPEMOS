@@ -127,6 +127,23 @@ def validate_success_proofs(document, target):
             raise ValueError("success validation package set is malformed")
         expected_packages[record["name"]] = (record["fullVersion"], record["sha256"])
 
+    validated_modules = validation.get("modules") if isinstance(validation, dict) else None
+    if (not isinstance(validated_modules, list)
+            or len(validated_modules) != len(EXPECTED_MODULES)):
+        raise ValueError("success validation module set is malformed")
+    expected_module_hashes = {}
+    for record in validated_modules:
+        if (not isinstance(record, dict)
+                or set(record) != {"name", "payloadSha256"}
+                or record.get("name") not in EXPECTED_MODULES
+                or record["name"] in expected_module_hashes
+                or not isinstance(record.get("payloadSha256"), str)
+                or HEX_SHA256.fullmatch(record["payloadSha256"]) is None):
+            raise ValueError("success validation module set is malformed")
+        expected_module_hashes[record["name"]] = record["payloadSha256"]
+    if set(expected_module_hashes) != EXPECTED_MODULES:
+        raise ValueError("success validation module set is incomplete")
+
     modules = document["moduleVerification"]
     module_records = modules.get("modules") if isinstance(modules, dict) else None
     if (modules.get("schemaVersion") != 1
@@ -155,6 +172,7 @@ def validate_success_proofs(document, target):
                 or Path(relative).name != name + (".zst" if representation == ".ko.zst" else "")
                 or not isinstance(expected_hash, str)
                 or HEX_SHA256.fullmatch(expected_hash) is None
+                or expected_hash != expected_module_hashes[name]
                 or actual_hash != expected_hash
                 or record.get("expectedMode") != "0644"
                 or record.get("actualMode") != "0644"

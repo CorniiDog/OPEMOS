@@ -1,0 +1,448 @@
+{
+  "$id": "https://corniidog.github.io/OPEMOS/contracts/installer-result-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "boundedCount": {
+      "maximum": 9223372036854775807,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "cleanup": {
+      "properties": {
+        "compressionPolicyRestored": {"type": "boolean"},
+        "mountsReleased": {"type": "boolean"},
+        "runtimeMountsExpected": {"maximum": 64, "minimum": 0, "type": "integer"},
+        "runtimeMountsReleased": {"maximum": 64, "minimum": 0, "type": "integer"}
+      },
+      "required": [
+        "mountsReleased",
+        "runtimeMountsExpected",
+        "runtimeMountsReleased",
+        "compressionPolicyRestored"
+      ],
+      "type": "object"
+    },
+    "filename": {
+      "maxLength": 255,
+      "pattern": "^[A-Za-z0-9@._+~:-]+$",
+      "type": "string"
+    },
+    "hash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "initramfsImage": {
+      "properties": {
+        "configPath": {
+          "const": "etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf"
+        },
+        "entries": {"maximum": 200000, "minimum": 1, "type": "integer"},
+        "filename": {"$ref": "#/$defs/filename"},
+        "listingSha256": {"$ref": "#/$defs/hash"},
+        "modules": {
+          "properties": {
+            "nvidia-drm.ko": {"$ref": "#/$defs/targetRelativePath"},
+            "nvidia-modeset.ko": {"$ref": "#/$defs/targetRelativePath"},
+            "nvidia-uvm.ko": {"$ref": "#/$defs/targetRelativePath"},
+            "nvidia.ko": {"$ref": "#/$defs/targetRelativePath"}
+          },
+          "required": ["nvidia.ko", "nvidia-modeset.ko", "nvidia-uvm.ko", "nvidia-drm.ko"],
+          "type": "object"
+        },
+        "sha256": {"$ref": "#/$defs/hash"},
+        "sizeBytes": {"maximum": 2147483648, "minimum": 1, "type": "integer"}
+      },
+      "required": [
+        "filename",
+        "sizeBytes",
+        "sha256",
+        "listingSha256",
+        "entries",
+        "modules",
+        "configPath"
+      ],
+      "type": "object"
+    },
+    "initramfsVerification": {
+      "properties": {
+        "config": {
+          "properties": {
+            "path": {"const": "/etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf"},
+            "sha256": {"$ref": "#/$defs/hash"},
+            "sizeBytes": {"maximum": 1048576, "minimum": 1, "type": "integer"}
+          },
+          "required": ["path", "sizeBytes", "sha256"],
+          "type": "object"
+        },
+        "images": {
+          "items": {"$ref": "#/$defs/initramfsImage"},
+          "maxItems": 32,
+          "minItems": 1,
+          "type": "array"
+        },
+        "kernelVersion": {"$ref": "#/$defs/kernelVersion"},
+        "requiredModules": {
+          "const": ["nvidia.ko", "nvidia-modeset.ko", "nvidia-uvm.ko", "nvidia-drm.ko"]
+        },
+        "rootfsOnlyModules": {"const": ["nvidia-peermem.ko"]},
+        "schemaVersion": {"const": 1},
+        "status": {"const": "verified"},
+        "tools": {
+          "properties": {
+            "lsinitcpio": {"$ref": "#/$defs/toolProof"},
+            "mkinitcpio": {"$ref": "#/$defs/toolProof"}
+          },
+          "required": ["mkinitcpio", "lsinitcpio"],
+          "type": "object"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "status",
+        "kernelVersion",
+        "requiredModules",
+        "rootfsOnlyModules",
+        "tools",
+        "config",
+        "images"
+      ],
+      "type": "object"
+    },
+    "kernelVersion": {
+      "maxLength": 255,
+      "pattern": "^[A-Za-z0-9._+~-]+$",
+      "type": "string"
+    },
+    "moduleName": {
+      "enum": ["nvidia.ko", "nvidia-drm.ko", "nvidia-modeset.ko", "nvidia-peermem.ko", "nvidia-uvm.ko"]
+    },
+    "moduleProof": {
+      "properties": {
+        "actualGid": {"const": 0},
+        "actualMode": {"const": "0644"},
+        "actualPayloadSha256": {"$ref": "#/$defs/hash"},
+        "actualUid": {"const": 0},
+        "compressedSizeBytes": {"maximum": 1073741824, "minimum": 1, "type": "integer"},
+        "decompressionStatus": {"enum": ["verified", "not-required"]},
+        "expectedGid": {"const": 0},
+        "expectedMode": {"const": "0644"},
+        "expectedPayloadSha256": {"$ref": "#/$defs/hash"},
+        "expectedUid": {"const": 0},
+        "invalidFields": {"maxItems": 0, "type": "array"},
+        "moduleName": {"$ref": "#/$defs/moduleName"},
+        "representation": {"enum": [".ko", ".ko.zst"]},
+        "targetRelativePath": {"$ref": "#/$defs/targetRelativePath"}
+      },
+      "required": [
+        "moduleName",
+        "targetRelativePath",
+        "representation",
+        "expectedPayloadSha256",
+        "actualPayloadSha256",
+        "expectedMode",
+        "actualMode",
+        "expectedUid",
+        "actualUid",
+        "expectedGid",
+        "actualGid",
+        "compressedSizeBytes",
+        "decompressionStatus",
+        "invalidFields"
+      ],
+      "type": "object"
+    },
+    "moduleVerification": {
+      "properties": {
+        "modules": {
+          "allOf": [
+            {"contains": {"properties": {"moduleName": {"const": "nvidia.ko"}}, "required": ["moduleName"]}},
+            {"contains": {"properties": {"moduleName": {"const": "nvidia-drm.ko"}}, "required": ["moduleName"]}},
+            {"contains": {"properties": {"moduleName": {"const": "nvidia-modeset.ko"}}, "required": ["moduleName"]}},
+            {"contains": {"properties": {"moduleName": {"const": "nvidia-peermem.ko"}}, "required": ["moduleName"]}},
+            {"contains": {"properties": {"moduleName": {"const": "nvidia-uvm.ko"}}, "required": ["moduleName"]}}
+          ],
+          "items": {"$ref": "#/$defs/moduleProof"},
+          "maxItems": 5,
+          "minItems": 5,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "reason": {"const": "installed_modules_verified"},
+        "schemaVersion": {"const": 1},
+        "status": {"const": "verified"}
+      },
+      "required": ["schemaVersion", "status", "reason", "modules"],
+      "type": "object"
+    },
+    "packageProof": {
+      "properties": {
+        "directories": {"maximum": 250000, "minimum": 0, "type": "integer"},
+        "hardlinks": {"maximum": 250000, "minimum": 0, "type": "integer"},
+        "packageName": {"$ref": "#/$defs/packageToken"},
+        "packageQueryVerified": {"const": true},
+        "packageSha256": {"$ref": "#/$defs/hash"},
+        "pacmanIntegrityVerified": {"const": true},
+        "payloadVerified": {"const": true},
+        "regularFiles": {"maximum": 250000, "minimum": 0, "type": "integer"},
+        "sharedLibraries": {"maximum": 250000, "minimum": 0, "type": "integer"},
+        "symlinks": {"maximum": 250000, "minimum": 0, "type": "integer"},
+        "version": {"$ref": "#/$defs/packageToken"}
+      },
+      "required": [
+        "packageName",
+        "version",
+        "packageSha256",
+        "packageQueryVerified",
+        "pacmanIntegrityVerified",
+        "payloadVerified",
+        "directories",
+        "regularFiles",
+        "symlinks",
+        "hardlinks",
+        "sharedLibraries"
+      ],
+      "type": "object"
+    },
+    "packageToken": {
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9@._+:-]+$",
+      "type": "string"
+    },
+    "payloadReceipt": {
+      "properties": {
+        "reason": {"const": "payload_receipt_verified"},
+        "receiptId": {"$ref": "#/$defs/hash"},
+        "records": {
+          "items": {
+            "properties": {
+              "filename": {"$ref": "#/$defs/filename"},
+              "role": {
+                "enum": ["buildInfo", "provenance", "validation", "moduleVerification", "userspaceVerification", "initramfsVerification"]
+              },
+              "sha256": {"$ref": "#/$defs/hash"},
+              "sizeBytes": {"minimum": 1, "type": "integer"}
+            },
+            "required": ["role", "filename", "sizeBytes", "sha256"],
+            "type": "object"
+          },
+          "maxItems": 6,
+          "minItems": 6,
+          "type": "array"
+        },
+        "rootfsRelativePath": {"const": "usr/lib/open-gpu-kernel-modules-steamos-support/offline-install/receipt.json"},
+        "schemaVersion": {"const": 1},
+        "status": {"const": "verified"},
+        "target": {"$ref": "#/$defs/receiptTarget"}
+      },
+      "required": ["schemaVersion", "status", "reason", "target", "receiptId", "rootfsRelativePath", "records"],
+      "type": "object"
+    },
+    "receiptTarget": {
+      "properties": {
+        "architecture": {"const": "x86_64"},
+        "kernelVersion": {"$ref": "#/$defs/kernelVersion"},
+        "nvidiaVersion": {"$ref": "#/$defs/version"},
+        "steamosVersion": {"$ref": "#/$defs/version"}
+      },
+      "required": ["steamosVersion", "kernelVersion", "nvidiaVersion", "architecture"],
+      "type": "object"
+    },
+    "target": {
+      "properties": {
+        "architecture": {"const": "x86_64"},
+        "kernelVersion": {"$ref": "#/$defs/kernelVersion"},
+        "nvidiaVersion": {"$ref": "#/$defs/version"},
+        "root": {"const": "/target-root"},
+        "steamosVersion": {"$ref": "#/$defs/version"}
+      },
+      "required": ["root", "steamosVersion", "kernelVersion", "nvidiaVersion", "architecture"],
+      "type": "object"
+    },
+    "targetRelativePath": {
+      "maxLength": 1024,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._+~/-]+$",
+      "type": "string"
+    },
+    "toolProof": {
+      "properties": {
+        "path": {"enum": ["/usr/bin/mkinitcpio", "/usr/bin/lsinitcpio"]},
+        "sha256": {"$ref": "#/$defs/hash"},
+        "sizeBytes": {"maximum": 8388608, "minimum": 1, "type": "integer"}
+      },
+      "required": ["path", "sizeBytes", "sha256"],
+      "type": "object"
+    },
+    "userspaceVerification": {
+      "properties": {
+        "gspFirmware": {
+          "properties": {
+            "status": {"const": "verified"},
+            "targetRelativeFiles": {
+              "items": {"$ref": "#/$defs/targetRelativePath"},
+              "maxItems": 16,
+              "minItems": 1,
+              "type": "array",
+              "uniqueItems": true
+            },
+            "version": {"$ref": "#/$defs/version"}
+          },
+          "required": ["status", "version", "targetRelativeFiles"],
+          "type": "object"
+        },
+        "packages": {
+          "items": {"$ref": "#/$defs/packageProof"},
+          "maxItems": 64,
+          "minItems": 2,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "pacmanDatabase": {
+          "properties": {
+            "consistencyVerified": {"const": true},
+            "path": {"const": "/usr/lib/holo/pacmandb"},
+            "status": {"const": "verified"},
+            "verifiedPackageCount": {"maximum": 64, "minimum": 2, "type": "integer"}
+          },
+          "required": ["path", "status", "verifiedPackageCount", "consistencyVerified"],
+          "type": "object"
+        },
+        "reason": {"const": "installed_userspace_verified"},
+        "schemaVersion": {"const": 1},
+        "status": {"const": "verified"}
+      },
+      "required": ["schemaVersion", "status", "reason", "pacmanDatabase", "packages", "gspFirmware"],
+      "type": "object"
+    },
+    "validationModule": {
+      "properties": {
+        "name": {"$ref": "#/$defs/moduleName"},
+        "payloadSha256": {"$ref": "#/$defs/hash"}
+      },
+      "required": ["name", "payloadSha256"],
+      "type": "object"
+    },
+    "validationPackage": {
+      "properties": {
+        "fullVersion": {"$ref": "#/$defs/packageToken"},
+        "name": {"$ref": "#/$defs/packageToken"},
+        "sha256": {"$ref": "#/$defs/hash"}
+      },
+      "required": ["name", "fullVersion", "sha256"],
+      "type": "object"
+    },
+    "validationProof": {
+      "properties": {
+        "modules": {
+          "items": {"$ref": "#/$defs/validationModule"},
+          "maxItems": 5,
+          "minItems": 5,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "packages": {
+          "items": {"$ref": "#/$defs/validationPackage"},
+          "maxItems": 64,
+          "minItems": 2,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": ["packages", "modules"],
+      "type": "object"
+    },
+    "version": {
+      "maxLength": 64,
+      "pattern": "^(?:unknown|[0-9]+\\.[0-9]+(?:\\.[0-9]+)?)$",
+      "type": "string"
+    },
+    "workspace": {
+      "properties": {
+        "condition": {"const": "available"},
+        "mode": {"const": "1777"},
+        "phase": {"const": "mounted_workspace"},
+        "reason": {"const": "initramfs_workspace_available"},
+        "schemaVersion": {"const": 1},
+        "status": {"const": "verified"}
+      },
+      "required": ["schemaVersion", "status", "reason", "phase", "condition", "mode"],
+      "type": "object"
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "success"}}, "required": ["status"]},
+      "then": {
+        "properties": {
+          "cleanup": {
+            "properties": {
+              "compressionPolicyRestored": {"const": true},
+              "mountsReleased": {"const": true}
+            }
+          },
+          "initramfsVerification": {"$ref": "#/$defs/initramfsVerification"},
+          "initramfsWorkspace": {"$ref": "#/$defs/workspace"},
+          "moduleVerification": {"$ref": "#/$defs/moduleVerification"},
+          "payloadReceipt": {"$ref": "#/$defs/payloadReceipt"},
+          "phase": {"const": "complete"},
+          "reason": {"const": "install_complete"},
+          "userspaceVerification": {"$ref": "#/$defs/userspaceVerification"},
+          "validation": {"$ref": "#/$defs/validationProof"}
+        },
+        "required": [
+          "validation",
+          "moduleVerification",
+          "userspaceVerification",
+          "initramfsWorkspace",
+          "initramfsVerification",
+          "payloadReceipt"
+        ]
+      }
+    },
+    {
+      "if": {"properties": {"status": {"const": "validated"}}, "required": ["status"]},
+      "then": {
+        "properties": {
+          "phase": {"const": "validated"},
+          "reason": {"const": "validation_complete"}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"status": {"const": "cancelled"}}, "required": ["status"]},
+      "then": {"properties": {"reason": {"const": "cancelled"}}}
+    }
+  ],
+  "description": "Additive terminal result emitted by bootstrap/install_to_root.sh. Cross-record target, package, and payload-hash equality remains enforced by lib/validate_install_contract.py.",
+  "properties": {
+    "cleanup": {"$ref": "#/$defs/cleanup"},
+    "initramfsVerification": {"type": "object"},
+    "initramfsWorkspace": {"type": "object"},
+    "inputs": {
+      "properties": {
+        "archive": {"anyOf": [{"$ref": "#/$defs/filename"}, {"type": "null"}]},
+        "lib32NvidiaUtils": {"anyOf": [{"$ref": "#/$defs/filename"}, {"type": "null"}]},
+        "nvidiaUtils": {"anyOf": [{"$ref": "#/$defs/filename"}, {"type": "null"}]},
+        "provenance": {"anyOf": [{"$ref": "#/$defs/filename"}, {"type": "null"}]}
+      },
+      "required": ["archive", "provenance", "nvidiaUtils", "lib32NvidiaUtils"],
+      "type": "object"
+    },
+    "message": {"maxLength": 2048, "minLength": 1, "type": "string"},
+    "moduleVerification": {"type": "object"},
+    "payloadReceipt": {"type": "object"},
+    "phase": {"maxLength": 64, "pattern": "^[a-z][a-z0-9_]{0,63}$", "type": "string"},
+    "reason": {"maxLength": 64, "pattern": "^[a-z][a-z0-9_]{0,63}$", "type": "string"},
+    "schemaVersion": {"const": 1},
+    "status": {"enum": ["success", "failed", "cancelled", "validated"]},
+    "target": {"$ref": "#/$defs/target"},
+    "trust": {
+      "enum": ["pending-validation", "development-unverified", "locally-built-verified", "certified-published"]
+    },
+    "userspaceVerification": {"type": "object"},
+    "validation": {"type": "object"}
+  },
+  "required": ["schemaVersion", "status", "reason", "message", "phase", "trust", "target", "inputs", "cleanup"],
+  "title": "OPEMOS offline installer result v1",
+  "type": "object",
+  "unevaluatedProperties": true
+}

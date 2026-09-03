@@ -976,6 +976,27 @@ def validate_measurement_failure(detail):
         raise SystemExit("Measurement failure diagnostics are malformed or excessive.")
 
 
+def validate_module_verification_binding(validated_modules, module_verification):
+    """Require verification expectations to come from authenticated validation."""
+    if validated_modules is None:
+        return
+    expected_hashes = {
+        module["name"]: module["payloadSha256"]
+        for module in validated_modules
+    }
+    records = (
+        module_verification.get("modules")
+        or module_verification.get("moduleMismatches") or []
+    )
+    for record in records:
+        name = record["moduleName"]
+        if (name in EXPECTED_MODULES
+                and record["expectedPayloadSha256"] != expected_hashes.get(name)):
+            raise SystemExit(
+                "Module verification does not match validated module payloads."
+            )
+
+
 def main():
     args = parse_args()
     artifact_names = (
@@ -1105,6 +1126,9 @@ def main():
             raise SystemExit(
                 "Failed module verification metadata does not match result phase."
             )
+        validate_module_verification_binding(
+            document.get("validation", {}).get("modules"), module_verification
+        )
         document["moduleVerification"] = module_verification
     elif args.status == "success":
         raise SystemExit(

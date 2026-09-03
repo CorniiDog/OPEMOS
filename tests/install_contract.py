@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 VALIDATOR = ROOT / "lib/validate_install_contract.py"
 sys.path.insert(0, str(ROOT / "lib"))
 from validate_install_contract import read_bounded_regular  # noqa: E402
+from write_install_result import validate_module_verification_binding  # noqa: E402
 
 
 def run(result, progress):
@@ -45,6 +46,12 @@ def main():
             "validation": {"status": "verified", "packages": [
                 {"name": "nvidia-utils", "fullVersion": "575.64.05-2", "sha256": "1" * 64},
                 {"name": "lib32-nvidia-utils", "fullVersion": "575.64.05-1", "sha256": "2" * 64},
+            ], "modules": [
+                {"name": name, "payloadSha256": str(index) * 64}
+                for index, name in enumerate(sorted({
+                    "nvidia.ko", "nvidia-drm.ko", "nvidia-modeset.ko",
+                    "nvidia-peermem.ko", "nvidia-uvm.ko",
+                }), 1)
             ]},
             "moduleVerification": {
                 "schemaVersion": 1, "status": "verified",
@@ -153,6 +160,21 @@ def main():
         assert completed.returncode == 0, completed.stderr
         assert json.loads(completed.stdout)["progressRecords"] == 2
 
+        validate_module_verification_binding(
+            document["validation"]["modules"], document["moduleVerification"]
+        )
+        unbound_modules = json.loads(json.dumps(document["moduleVerification"]))
+        unbound_modules["modules"][0]["expectedPayloadSha256"] = "f" * 64
+        unbound_modules["modules"][0]["actualPayloadSha256"] = "f" * 64
+        try:
+            validate_module_verification_binding(
+                document["validation"]["modules"], unbound_modules
+            )
+        except SystemExit as error:
+            assert "validated module payloads" in str(error)
+        else:
+            raise AssertionError("unbound module verification hashes were accepted")
+
         for mutate in (
             lambda value: value["cleanup"].update(runtimeMountsReleased=3),
             lambda value: value.pop("moduleVerification"),
@@ -171,6 +193,9 @@ def main():
             ),
             lambda value: value["moduleVerification"]["modules"][0].update(
                 actualPayloadSha256="f" * 64
+            ),
+            lambda value: value["validation"]["modules"][0].update(
+                payloadSha256="f" * 64
             ),
             lambda value: value["moduleVerification"]["modules"][0].update(
                 targetRelativePath="../nvidia.ko.zst"

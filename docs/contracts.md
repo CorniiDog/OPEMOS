@@ -133,6 +133,11 @@ record is allowed.
 Terminal statuses are `validated`, `success`, `failed`, and `cancelled`.
 `validated` means mutation did not begin. `success` is impossible unless all
 post-install verification and cleanup records are present and valid.
+The additive machine-readable envelope is
+[`installer-result-v1.schema.json`](https://github.com/CorniiDog/OPEMOS/blob/main/contracts/schemas/installer-result-v1.schema.json).
+The schema defines record shape and mandatory success proofs;
+`lib/validate_install_contract.py` additionally enforces cross-record target,
+package, and module-payload equality.
 
 Lock mismatches return sorted, bounded fields:
 
@@ -199,7 +204,7 @@ Successful installation requires these nested records:
 
 | Field | Required proof |
 | --- | --- |
-| `moduleVerification` | Five names, representation, decompressed payload hash, mode 0644, UID/GID 0, architecture, NVIDIA version, exact vermagic |
+| `moduleVerification` | Five names, representation, decompressed payload hash, mode 0644, UID/GID 0, and equality with the validated artifact hashes that bind architecture, NVIDIA version, and exact vermagic |
 | `userspaceVerification` | Every locked package/version/hash, owned payload, links, libraries, GSP firmware, Holo records and database consistency |
 | `initramfsWorkspace` | Private mounted workspace, capacity, inode policy, mode 1777, and cleanup |
 | `initramfsVerification` | Exact generated images/configuration and the explicit early-boot set: `nvidia`, `nvidia_modeset`, `nvidia_uvm`, and `nvidia_drm` |
@@ -209,6 +214,9 @@ Successful installation requires these nested records:
 Schema 1 permits bounded additive fields for forward compatibility. Consumers
 must still require every mandatory success field and reject duplicate keys,
 oversized records, invalid types, or contradictory status/reason pairs.
+The module verification hashes must also exactly equal the five validated
+artifact payload hashes. Matching expected and actual hashes that are not
+bound to the authenticated validation record are rejected.
 The five-module filesystem contract remains separate: `nvidia-peermem` must be
 installed and verified on the root filesystem, but is intentionally recorded as
 rootfs-only and rejected from the initramfs until an audited target requires it.
