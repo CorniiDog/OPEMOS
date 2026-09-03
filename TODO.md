@@ -59,6 +59,18 @@ index in the same commit.
   contract; remove its production dynamic Arch newest-package and dependency
   selection after the locked path is fully integrated. Keep dependency
   discovery only in the support-owned maintainer audit workflow.
+* [ ] Publish the schema-1 reviewed userspace-lock data-generation contract:
+  dedicated trust root, signed stable discovery descriptor, immutable signed
+  generation manifest, deterministic compatibility fixtures, create-only
+  publication evidence, replay/downgrade policy, and exact-target lock records.
+  Routine same-schema/same-authority generations must be consumable without an
+  OPEMOS.EXE, Core/CLI, or SteamOS image rebuild.
+* [ ] Implement the installed-device consumer for reviewed lock generations.
+  Core/CLI must independently discover, authenticate, download, validate,
+  cache, atomically activate, health-acknowledge, retain, repair with, and roll
+  back the same immutable identities consumed by OPEMOS.EXE. Keep its device
+  cache and activation state separate from the host cache and preserve the
+  last-known-good generation on every acquisition or activation failure.
 * [x] Publish a deterministic OPEMOS installer-bundle manifest generator bound
   to an immutable support Git commit and every required path, role, mode, size,
   and SHA-256. It reads committed blobs rather than the mutable worktree,
@@ -1379,6 +1391,72 @@ signing policy.
   to the reviewed policy, exact profile, userspace lock, target, and packages.
 * [ ] Hardware-test the reduced profile and its complete-payload restoration on
   the exact target before promoting either path beyond development trust.
+
+## Reviewed userspace-lock data generations
+
+The design handoff is recorded in
+`contracts/userspace-lock-generations.md`. This is a data channel, not the
+desktop companion/Core binary update channel. A routine reviewed lock must not
+require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
+
+### Producer and publication
+
+* [x] Keep dependency-closure discovery in the maintainer-only Core audit and
+  require create-only candidate/final review before a lock becomes production
+  input.
+* [ ] Create a dedicated reviewed data-generation signer policy and binary
+  verification keyring. Do not reuse Arch, Valve, NVIDIA, commit-signing, or
+  desktop-binary update keys.
+* [ ] Publish the closed schema-1 discovery descriptor and immutable generation
+  manifest described by the handoff, including canonical JSON, strict bounds,
+  detached signatures, monotonically increasing sequence, predecessor
+  identity, exact targets, and complete file hashes/sizes/roles.
+* [ ] Implement a deterministic create-only publisher that emits the descriptor,
+  descriptor signature, manifest, manifest signature, and every manifest-owned
+  asset in canonical order. Record release/tag/asset digests and signer
+  evidence without mutating an existing generation.
+* [ ] Add compatibility fixtures for same-authority lock additions, multiple
+  exact targets, unknown schema/authority/policy, duplicate targets/files,
+  malformed identities, unsafe names, excessive records, replay, downgrade,
+  broken predecessor chains, and signature/hash mismatch.
+
+### Two independent consumers
+
+* [ ] Specify a stable canonical discovery location without placing URLs or
+  redirects inside the signed descriptor. OPEMOS.EXE owns host transport and
+  its cache; installed Core/CLI owns device transport and its separate cache.
+  Both consume the same Core-owned identities, schemas, fixtures, and trust
+  root without importing one another's updater implementation.
+* [ ] Add installed Core/CLI commands for bounded `check`, `download`,
+  `validate`, `activate`, `status`, `acknowledge-health`, `rollback`, `prune`,
+  and one-line safe `update-or-repair`. Integrate the active reviewed lock with
+  exact-target repair while keeping networking outside boot-critical paths.
+* [ ] Use private staging, fsync, exclusive lifecycle locks, immutable
+  generations, atomic active/previous markers, bounded retention, and durable
+  health acknowledgement. Interrupted staging or activation must remain
+  recoverable after process crash or power loss.
+* [ ] Preserve the last-known-good active generation for unknown schema or
+  authority, trust-policy drift, replay/downgrade, target mismatch, partial
+  download, ENOSPC/inode exhaustion, cancellation, validation failure, health
+  timeout, cleanup failure, or an unavailable endpoint.
+* [ ] Keep the legacy embedded/pinned userspace-lock path until Core unit,
+  Fedora/SteamOS integration, cancellation, cleanup, fault-injection,
+  last-known-good rollback, and cross-repository equivalence tests all pass.
+  OPEMOS.EXE must likewise retain its existing path until it proves the same
+  schema/fixture decisions and independently validates transferred assets.
+
+### Policy still requiring maintainer approval
+
+* [ ] Choose and review the dedicated data-generation signing key and rotation/
+  revocation process. An unknown key or policy version fails closed and key
+  rotation is not a routine data update.
+* [ ] Define authoritative sequence allocation, state-loss recovery, and an
+  explicitly signed emergency downgrade procedure. Ordinary discovery never
+  permits an equal or lower sequence than the consumer's durable high-water
+  mark.
+* [ ] Define the installed-device discovery retry/backoff and health evidence
+  required before activation is acknowledged. Network timing is operational;
+  accepted identities and rollback semantics remain Core policy.
 
 ## Cancellation, cleanup, and caching
 

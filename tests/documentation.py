@@ -9,6 +9,8 @@ from urllib.parse import unquote
 ROOT = Path(__file__).resolve().parent.parent
 DOCS = ROOT / "docs"
 README = ROOT / "README.md"
+CONTRACTS_README = ROOT / "contracts/README.md"
+LOCK_GENERATION_HANDOFF = ROOT / "contracts/userspace-lock-generations.md"
 REQUIRED_PAGES = {
     "index.md",
     "getting-started.md",
@@ -124,6 +126,33 @@ def main() -> None:
     assert '<h1 align="center">OPEMOS</h1>' in readme
     assert "https://github.com/CorniiDog/OPEMOS.EXE" in readme
     assert "https://corniidog.github.io/OPEMOS.EXE/" in readme
+
+    contracts_readme = CONTRACTS_README.read_text(encoding="utf-8")
+    handoff = LOCK_GENERATION_HANDOFF.read_text(encoding="utf-8")
+    assert "](userspace-lock-generations.md)" in contracts_readme
+    validate_link(CONTRACTS_README, "userspace-lock-generations.md")
+    assert "Status: design contract; not yet an active production schema" in handoff
+    descriptor_section = handoff.split(
+        "The schema-1 descriptor is a closed canonical JSON object", 1
+    )[1].split("`authority` contains exactly", 1)[0]
+    assert re.findall(r"^\| `([^`]+)` \|", descriptor_section, re.MULTILINE) == [
+        "schemaVersion", "kind", "channel", "sequence", "publishedAt",
+        "authority", "compatibility", "generation", "targets",
+    ]
+    for field in (
+        "policyId", "policySchemaVersion", "policySha256",
+        "discoverySchemaVersion", "generationManifestSchemaVersion",
+        "releaseTag", "manifestFilename", "manifestSha256",
+        "steamosVersion", "kernelVersion", "nvidiaVersion", "architecture",
+        "role", "filename", "size", "sha256",
+    ):
+        assert f"`{field}`" in handoff
+    for invariant in (
+        "last-known-good generation", "durable high-water mark",
+        "contains no URL", "separate signing policies",
+        "does not activate them",
+    ):
+        assert invariant in handoff
     assert "actions/workflows/shell.yml" in readme
     pill = DOCS / "assets/images/opemos-pill.svg"
     pill_text = pill.read_text(encoding="utf-8")

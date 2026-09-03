@@ -5,6 +5,12 @@ CLI, SteamOS desktop companion, SteamOS DRM/KMS interstitial, and OPEMOS.EXE.
 Frontends may add presentation and session checks; they must not independently
 reimplement compatibility, package-selection, signer, or mutation policy.
 
+The planned two-consumer reviewed-lock data channel is described in
+[`userspace-lock-generations.md`](userspace-lock-generations.md). It freezes the
+schema-1 discovery/manifest field handoff for implementation planning while
+remaining explicitly inactive until Core publishes the schemas, fixtures,
+dedicated trust root, publisher evidence, and installed-device lifecycle.
+
 ## Schemas
 
 - `schemas/resolver-result-v2.schema.json` describes the additive resolver
