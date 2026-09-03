@@ -213,7 +213,9 @@ implementation summary and must not redefine that read-only governance file.
   an authorized exact-target build contract may request bounded egress.
 * [x] Treat user-requested source mode as intent supplied by OPEMOS.EXE, while
   Core alone authorizes the exact source action or fails closed. Neither side
-  may silently substitute a different branch, commit, or mode.
+  may silently substitute a different branch, commit, or mode. `Automatic` is
+  explicit intent to use only Core's reviewed production selection policy; it
+  does not authorize a development source or approximation.
 * [x] Keep recovery-image A/B discovery, pairing, and overlay mounts in
   OPEMOS.EXE; SteamOS owns base OS slot transitions; and Core owns NVIDIA
   guardian, receipt, repair, verification, and payload rollback afterward.
@@ -231,8 +233,10 @@ implementation summary and must not redefine that read-only governance file.
   phases rather than inventing completion percentages.
 * [x] Declare the sole UI exception: OPEMOS Core owns and implements the
   fullscreen no-input SteamOS UI. OPEMOS.EXE consumes it only as an
-  authenticated target payload, may install it and supply bounded Core state,
-  and must not fork, import, link, or execute it in the macOS runtime.
+  authenticated OPEMOS-owned target payload, may deploy it and stage bounded
+  Core state, and must not fork, import, link, or execute it in the host
+  runtime. A Core-owned installed-device supervisor—not another frontend—may
+  launch and monitor it after deployment.
 * [x] The support-side agent changes Core policy, schemas, publishers, build and
   installer entry points, target-side clients, and Core tests in `OPEMOS`.
   It returns immutable commits and changed contracts; it does not edit or pin

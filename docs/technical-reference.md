@@ -50,6 +50,11 @@ and lifecycle owners. The latter is the sole UI ownership exception: its full
 implementation belongs to OPEMOS Core and OPEMOS.EXE consumes it only as an
 authenticated target payload.
 
+`Automatic` is explicit user source intent constrained to reviewed Core
+production policy, not permission to select development or approximate inputs.
+OPEMOS.EXE deploys the OPEMOS-owned interstitial payload but never launches it;
+a Core-owned installed-device supervisor owns launch and monitoring afterward.
+
 OPEMOS owns build and release metadata. The source repository
 owns patch history. Project releases must identify the exact source commit used
 to build their modules.

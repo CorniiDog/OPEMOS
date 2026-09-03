@@ -22,8 +22,9 @@ Core consumers. The OPEMOS repository owns the interstitial implementation,
 packaging, and tests, but the interstitial is not part of the Core policy layer.
 
 OPEMOS Core never imports, invokes, builds against, or requires OPEMOS.EXE.
-Frontends do not import, link against, or execute one another, except for the
-explicit target-payload deployment described under **Sole UI exception**.
+Frontends do not import, link against, or execute one another. The sole UI
+exception permits OPEMOS.EXE to deploy the interstitial as target payload; it
+does not permit OPEMOS.EXE or another frontend to launch it.
 
 ## OPEMOS Core owns
 
@@ -87,9 +88,12 @@ authority in another scope.
 
 ## Source intent and Core authorization
 
-OPEMOS.EXE records the user's requested source intent, such as a published
-artifact, exact-target local build, reviewed project source, or explicit
-development control. User intent is an input, not authorization.
+OPEMOS.EXE records the user's requested source intent, such as Automatic,
+published artifact, exact-target local build, reviewed project source, or
+explicit development control. User intent is an input, not authorization.
+Automatic is itself explicit user intent: it asks Core to select only within
+the current reviewed production policy. It never authorizes development
+sources, approximation, or fallback outside that policy.
 
 Core alone validates whether that intent is permitted for the exact target and
 returns an authorized bounded action or a fail-closed result. OPEMOS.EXE never
@@ -117,13 +121,17 @@ and updates. It remains a sibling consumer of Core progress and state contracts.
 This is the one explicit exception to OPEMOS.EXE's ownership of the graphical
 image-builder experience.
 
-OPEMOS.EXE consumes the fullscreen UI only as an authenticated Core-owned
-target payload from the exact pinned bundle. It may install it and pass bounded
-Core progress/state inputs to it, but it must not fork, rewrite, import, link,
-or execute that Linux frontend as part of its host runtime. The OPEMOS
-repository owns its source, renderer, behavior, tests, packaging, release, and
-device lifecycle. The interactive installation-media welcome application
-remains builder-owned and separate from the no-input fullscreen UI.
+OPEMOS.EXE consumes the fullscreen UI only as an authenticated OPEMOS-owned
+interstitial target payload from the exact pinned bundle. It may deploy it and
+stage bounded Core progress/state inputs, but it must not fork, rewrite, import,
+link, or execute that Linux frontend as part of its host runtime.
+
+After deployment, a Core-owned installed-device supervisor may launch and
+monitor the interstitial through a bounded Core contract. That is Core-to-
+consumer lifecycle orchestration, not frontend-to-frontend execution. The
+OPEMOS repository owns the interstitial's source, renderer, behavior, tests,
+packaging, release, and device lifecycle. The interactive installation-media
+welcome application remains builder-owned and separate.
 
 ## Shared handoff
 

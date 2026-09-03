@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_SHA256 = "890c5a0fdaff8f328fc5497cebd51191c6191eaa940f509969f3c25dacc8d736"
+EXPECTED_SHA256 = "3d995e054dbad65f871dfbf20234d5be7977a54eba765b10635d09a954d01bbb"
 
 
 def main():
@@ -24,7 +24,9 @@ def main():
     assert "## Source intent and Core authorization" in text
     assert "## A/B ownership" in text
     assert "This ownership is cross-platform" in text
-    assert "must not fork, rewrite, import, link,\nor execute" in text
+    assert "Automatic is itself explicit user intent" in text
+    assert "authenticated OPEMOS-owned\ninterstitial target payload" in text
+    assert "Core-owned installed-device supervisor may launch and\nmonitor" in text
     for relative in ("README.md", "TODO.md", "docs/image-builder.md"):
         summary = (ROOT / relative).read_text(encoding="utf-8")
         assert "BOUNDARIES.md" in summary, f"{relative} does not link to the authority"

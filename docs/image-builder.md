@@ -67,7 +67,9 @@ bounded requests and never expose credentials through structured contracts.
 
 OPEMOS.EXE records the user's requested source intent. Core separately
 authorizes an exact bounded action or fails closed; neither side silently
-substitutes another source mode, branch, or commit.
+substitutes another source mode, branch, or commit. Selecting `Automatic` is
+explicit intent to let Core choose only within reviewed production policy; it
+does not authorize development sources or approximation.
 
 Rollback is similarly layered. OPEMOS restores mutations made inside the
 mounted target transaction and releases its target mounts. OPEMOS.EXE owns the
@@ -90,11 +92,14 @@ There are two intentionally separate experiences:
 The sole UI ownership exception is the fullscreen no-input DRM/KMS interface.
 The OPEMOS repository owns its source, native renderer, behavior, tests,
 package, and device lifecycle, while the interstitial remains a sibling Core
-consumer. OPEMOS.EXE consumes it only as an authenticated target payload,
-installs it, and may supply bounded Core progress/state inputs. It does not
-fork, import, link, or execute that Linux frontend in the host application
-runtime. OPEMOS.EXE continues to own host labels, weighting, animation,
-accessibility, and controls.
+consumer. OPEMOS.EXE consumes it only as an authenticated OPEMOS-owned target
+payload,
+deploys it, and may stage bounded Core progress/state inputs. It does not fork,
+import, link, or execute that Linux frontend in the host application runtime.
+A Core-owned installed-device supervisor may launch and monitor the
+interstitial after deployment; this is not frontend-to-frontend execution.
+OPEMOS.EXE continues to own host labels, weighting, animation, accessibility,
+and controls.
 
 ### Collaboration boundary
 
