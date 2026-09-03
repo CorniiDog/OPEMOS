@@ -19,6 +19,12 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
+from device_generation_contract import (
+    DeviceGenerationContractError,
+    validate_health,
+    validate_result,
+    validate_state as validate_state_document,
+)
 from userspace_lock_generation_contract import (
     DISCOVERY_MAX_BYTES,
     MANIFEST_MAX_BYTES,
@@ -50,19 +56,12 @@ MAX_STORE_ENTRIES = 32
 DISCOVERY_FILENAME = "opemos-userspace-lock-discovery-v1.json"
 HASH = re.compile(r"[0-9a-f]{64}")
 FINGERPRINT = re.compile(r"(?:[0-9A-F]{40}|[0-9A-F]{64})")
-IDENTITY_FIELDS = {"sequence", "manifestSha256"}
 POLICY_FIELDS = {
     "schemaVersion", "status", "policyId", "policySchemaVersion",
     "keyringFilename", "keyringSha256", "signingKeyFingerprint",
 }
-CHECKPOINT_FIELDS = {"schemaVersion", "policySha256", *IDENTITY_FIELDS}
-STATE_FIELDS = {
-    "schemaVersion", "channel", "active", "lastKnownGood",
-    "highWaterSequence", "healthPending",
-}
-RESULT_FIELDS = {
-    "schemaVersion", "channel", "status", "reason", "message", "state",
-    "generationCreated", "prunedGenerations", "cancellationAfterCommit",
+CHECKPOINT_FIELDS = {
+    "schemaVersion", "policySha256", "sequence", "manifestSha256",
 }
 
 
@@ -277,18 +276,6 @@ def lifecycle_lock(store, create=False):
         yield generations
 
 
-def validate_identity(identity, nullable=False):
-    if identity is None and nullable:
-        return None
-    if (not isinstance(identity, dict) or set(identity) != IDENTITY_FIELDS
-            or type(identity.get("sequence")) is not int
-            or not 1 <= identity["sequence"] <= MAX_SEQUENCE
-            or not isinstance(identity.get("manifestSha256"), str)
-            or HASH.fullmatch(identity["manifestSha256"]) is None):
-        fail("device_generation_state_invalid", "generation identity is invalid")
-    return identity
-
-
 def empty_state():
     return {
         "schemaVersion": 1,
@@ -301,24 +288,10 @@ def empty_state():
 
 
 def validate_state(state):
-    if (not isinstance(state, dict) or set(state) != STATE_FIELDS
-            or state.get("schemaVersion") != 1
-            or state.get("channel") != "reviewed-userspace-lock-generations"
-            or type(state.get("highWaterSequence")) is not int
-            or not 0 <= state["highWaterSequence"] <= MAX_SEQUENCE
-            or type(state.get("healthPending")) is not bool):
-        fail("device_generation_state_invalid", "device generation state is invalid")
-    active = validate_identity(state.get("active"), nullable=True)
-    last_good = validate_identity(state.get("lastKnownGood"), nullable=True)
-    if ((active is None) != (state["highWaterSequence"] == 0)
-            or active is not None
-            and active["sequence"] > state["highWaterSequence"]
-            or last_good is not None
-            and last_good["sequence"] > state["highWaterSequence"]
-            or state["healthPending"] and active == last_good
-            or not state["healthPending"] and active != last_good):
-        fail("device_generation_state_invalid", "device generation state is inconsistent")
-    return state
+    try:
+        return validate_state_document(state)
+    except DeviceGenerationContractError as error:
+        fail("device_generation_state_invalid", str(error))
 
 
 def read_state(store):
@@ -1034,18 +1007,12 @@ def validate_health_evidence(arguments, active):
         )
     except GenerationContractError as error:
         fail("device_generation_health_invalid", str(error))
-    if (not isinstance(document, dict) or set(document) != {
-            "schemaVersion", "kind", "status", "generation", "checks"
-            } or document.get("schemaVersion") != 1
-            or document.get("kind") != "opemos-device-generation-health"
-            or document.get("status") != "healthy"
-            or document.get("generation") != active
-            or document.get("checks") != [
-                "generation-integrity", "recovery-ready"
-            ]):
+    try:
+        validate_health(document, active)
+    except DeviceGenerationContractError as error:
         fail(
             "device_generation_health_invalid",
-            "health evidence does not authorize the active generation",
+            str(error),
         )
 
 
@@ -1151,24 +1118,9 @@ def result(status_value, reason, state=None, message=None, details=None):
 
 
 def emit(document):
-    if (not isinstance(document, dict) or not set(document) <= RESULT_FIELDS
-            or not {"schemaVersion", "channel", "status", "reason"} <= set(document)
-            or document.get("schemaVersion") != 1
-            or document.get("channel") != "reviewed-userspace-lock-generations"
-            or document.get("status") not in {"ok", "failed", "cancelled"}
-            or not isinstance(document.get("reason"), str)
-            or re.fullmatch(r"[a-z][a-z0-9_]{0,63}", document["reason"]) is None
-            or "message" in document
-            and (not isinstance(document["message"], str)
-                 or not 1 <= len(document["message"]) <= 512)
-            or "state" in document and validate_state(document["state"]) is None
-            or "generationCreated" in document
-            and type(document["generationCreated"]) is not bool
-            or "prunedGenerations" in document
-            and (type(document["prunedGenerations"]) is not int
-                 or not 0 <= document["prunedGenerations"] <= MAX_STORE_ENTRIES)
-            or "cancellationAfterCommit" in document
-            and type(document["cancellationAfterCommit"]) is not bool):
+    try:
+        validate_result(document)
+    except DeviceGenerationContractError:
         fail("device_generation_result_invalid", "device generation result is invalid")
     payload = canonical(document)
     if len(payload) > MAX_STATE_BYTES:

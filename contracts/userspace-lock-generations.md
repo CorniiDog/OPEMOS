@@ -203,3 +203,10 @@ under `/etc/opemos`; none is shipped yet. Therefore `update` and
 local activation surface exists for contract and lifecycle testing only. It
 does not enable device networking, replace the legacy embedded lock, or reuse
 the desktop binary updater.
+
+`lib/device_generation_contract.py` is authoritative for the closed lifecycle
+result, durable-state, and health-evidence semantics.
+`lib/generate_device_generation_fixtures.py` publishes deterministic accepted
+and rejected cases for empty, pending, healthy, rolled-back, malformed,
+duplicate, excessive, and cross-record identity states. Consumers should match
+the stable expected acceptance decision without freezing human messages.

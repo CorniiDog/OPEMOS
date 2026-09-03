@@ -125,6 +125,9 @@ Results follow
 [`device-generation-result-v1.schema.json`](https://github.com/CorniiDog/OPEMOS/blob/main/contracts/schemas/device-generation-result-v1.schema.json).
 Health evidence follows the closed
 [`device-generation-health-v1.schema.json`](https://github.com/CorniiDog/OPEMOS/blob/main/contracts/schemas/device-generation-health-v1.schema.json).
+Core validates both through `lib/device_generation_contract.py`; the canonical
+compatibility matrix is emitted deterministically by
+`lib/generate_device_generation_fixtures.py`.
 
 Production `update` and `update-or-repair` remain fail-closed because no
 reviewed data-generation signer, keyring, bootstrap checkpoint, or canonical

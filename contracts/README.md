@@ -62,6 +62,9 @@ publisher evidence, and installed-device lifecycle.
   and durable state from the inactive installed-device generation lifecycle.
 - `schemas/device-generation-health-v1.schema.json` describes the closed,
   exact-generation health evidence required before last-known-good advances.
+  `lib/device_generation_contract.py` is the semantic validator shared by the
+  installed-device lifecycle and the deterministic compatibility matrix from
+  `lib/generate_device_generation_fixtures.py`.
 
 Unknown additive fields are permitted only where a schema explicitly allows
 them. Closed objects reject them. Removing a required field, changing its
@@ -185,6 +188,12 @@ the explicit development-test override. Cached generations preserve the
 canonical signed discovery and sequence-specific manifest filenames. Missed-
 generation catch-up accepts bounded document-only lineage directories; it does
 not require downloading intermediate payloads.
+
+The device compatibility matrix distinguishes JSON/schema structure from
+durable lifecycle invariants: a healthy active generation must equal LKG,
+pending health must not already equal LKG, active/LKG sequences cannot exceed
+high-water, and health evidence must bind the exact active identity. Result and
+health objects are closed in schema 1; arbitrary additive fields fail closed.
 
 When resolution returns `no_compatible_artifact` with reason
 `no_compatible_release`, `nextAction` explicitly authorizes only the existing

@@ -1429,6 +1429,11 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   health acknowledgement, bounded retention, exact payload verification,
   cancellation, ENOSPC, abandoned-stage and post-commit crash recovery tests.
   Keep production trust and networking disabled.
+* [x] Publish a bounded deterministic installed-device result/state/health
+  compatibility matrix and use one Core semantic validator in the lifecycle
+  and tests. Cover healthy/LKG equality, pending-health separation,
+  rollback-stable high-water, exact-active evidence binding, closed fields,
+  duplicate keys, non-finite values, malformed records, and size bounds.
 * [ ] Specify a stable canonical discovery location without placing URLs or
   redirects inside the signed descriptor. OPEMOS.EXE owns host transport and
   its cache; installed Core/CLI owns device transport and its separate cache.
