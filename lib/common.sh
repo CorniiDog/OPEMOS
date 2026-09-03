@@ -104,11 +104,6 @@ get_nvidia_version()
     printf '%s\n' "$version"
 }
 
-source_branch_for_nvidia()
-{
-    printf 'nvidia/%s\n' "${1:-$(get_nvidia_version)}"
-}
-
 sha256_file()
 {
     sha256sum "$1" | awk '{print $1}'
@@ -207,11 +202,6 @@ get_neptune_series()
     series="$(printf "%s\n" "$kernel" | sed -n "s/.*-neptune-\([0-9][0-9]*\).*/\1/p")"
     [[ -n "$series" ]] || die "Could not determine Neptune series from kernel: $kernel"
     printf "%s\n" "$series"
-}
-
-get_neptune_headers_package()
-{
-    printf "linux-neptune-%s-headers\n" "$(get_neptune_series "${1:-$(get_kernel_version)}")"
 }
 
 valve_repository_names_from_html()
