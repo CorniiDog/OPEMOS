@@ -1489,11 +1489,14 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   development-only injected transport receives exact URLs and identities but
   cannot select either. Core rejects missing, extra, renamed, oversized, or
   substituted output, rechecks policy/keyring/checkpoint identity between
-  phases, and publishes only an exact authenticated generation to the separate
-  download cache. Cover forged audit JSON, plan replacement, stale trust files,
-  outage, timeout, ENOSPC, cancellation, hostile/partial staging cleanup,
-  repeat download, and the invariant that acquisition never activates a
-  generation. Production transport remains unconfigured and fail-closed.
+  phases using same-descriptor trust snapshots, streams exact payload hashes
+  into private staging without generation-sized memory accumulation, and
+  publishes only an exact authenticated generation to the separate download
+  cache. Cover forged audit JSON, plan/directory replacement, stale trust files,
+  hardlink/symlink/special output, outage, timeout, ENOSPC, cancellation,
+  hostile/partial staging cleanup, repeat download, and the invariant that
+  acquisition never activates a generation. Production transport remains
+  unconfigured and fail-closed.
 * [x] Contain injected transport descendants with a separate Core watchdog and
   close-on-exec owner-liveness pipe. Parent SIGKILL closes the pipe; the
   watchdog terminates and reaps the isolated transport process group before

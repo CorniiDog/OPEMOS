@@ -137,7 +137,11 @@ is a generic transport failure.
 Each phase must return exactly the requested single-link files. Core rejects
 missing, extra, substituted, oversized, or renamed output and rechecks the
 installed policy, keyring, and checkpoint identities between phases and before
-publication. Successful acquisition authenticates the descriptor, manifest,
+publication. Each trust guard is captured from the same open descriptor as its
+validated bytes, so a concurrent path replacement cannot bind stale bytes to a
+new identity. Payload responses are streamed through exact size/SHA-256 checks
+into private mode-0400 staging rather than accumulated in memory. Successful
+acquisition authenticates the descriptor, manifest,
 both detached signatures, authority, exact target, lineage, and every payload
 size/hash before create-only publication under
 `downloads/<manifest-sha256>`. It does not change active, last-known-good,

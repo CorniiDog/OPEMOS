@@ -12,6 +12,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,6 +25,10 @@ from generate_userspace_lock_generation_fixtures import (  # noqa: E402
 )
 from generate_userspace_lock_bootstrap_fixtures import policy as bootstrap_policy  # noqa: E402
 from userspace_lock_bootstrap_contract import CHECKPOINT_KIND  # noqa: E402
+from device_generation_lifecycle import (  # noqa: E402
+    DeviceGenerationError,
+    snapshot_trust_file,
+)
 
 
 TOOL = LIB / "device_generation_lifecycle.py"
@@ -206,6 +211,19 @@ def create_adversarial_transport(path, source, mode, trust_path=None):
         "    nested = destination / 'untrusted-directory'\n"
         "    nested.mkdir()\n"
         "    (nested / 'untrusted-file').write_bytes(b'untrusted\\n')\n"
+        "if mode == 'hardlink-output' and plan['phase'] == 'payload':\n"
+        "    output = destination / records[0]['filename']\n"
+        "    output.unlink()\n"
+        "    item = source / 'payload' / records[0]['filename']\n"
+        "    os.link(item, output)\n"
+        "if mode == 'replace-phase' and plan['phase'] == 'payload':\n"
+        "    destination.chmod(0o755)\n"
+        "if mode == 'replace-acquisition' and plan['phase'] == 'payload':\n"
+        "    destination.parent.chmod(0o755)\n"
+        "if mode == 'prepopulate-payload' and plan['phase'] == 'payload':\n"
+        "    payload_root = destination.parent / 'payload'\n"
+        "    payload_root.mkdir()\n"
+        "    (payload_root / 'untrusted').write_bytes(b'untrusted\\n')\n"
         "if mode == 'replace-plan' and plan['phase'] == 'bootstrap':\n"
         "    plan_path = pathlib.Path(sys.argv[4])\n"
         "    plan_path.chmod(0o600)\n"
@@ -299,6 +317,28 @@ def main():
     assert help_result.returncode == 0 and "installed-device" in help_result.stdout
     with tempfile.TemporaryDirectory(prefix="opemos-device-generations-") as name:
         root = Path(name).resolve()
+        raced_trust = root / "raced-trust.json"
+        replacement_trust = root / "replacement-trust.json"
+        write(raced_trust, b'{"old":true}\n')
+        write(replacement_trust, b'{"new":true}\n')
+        original_lstat = Path.lstat
+        replaced = False
+
+        def replace_before_identity_check(path):
+            nonlocal replaced
+            if path == raced_trust and not replaced:
+                replaced = True
+                os.replace(replacement_trust, raced_trust)
+            return original_lstat(path)
+
+        with mock.patch.object(Path, "lstat", replace_before_identity_check):
+            try:
+                snapshot_trust_file(raced_trust, 1024, "raced trust input")
+            except DeviceGenerationError as error:
+                assert error.reason == "device_generation_input_changed"
+            else:
+                raise AssertionError("replaced trust input was accepted")
+
         store = root / "device-store"
         keyring = root / "opemos-userspace-lock-generations.gpg"
         policy = root / "policy.json"
@@ -493,7 +533,8 @@ def main():
 
         for mode in (
                 "missing", "extra", "substitute", "forged-evidence",
-                "replace-plan", "unsafe-entries"):
+                "replace-plan", "replace-phase", "replace-acquisition",
+                "prepopulate-payload", "hardlink-output", "unsafe-entries"):
             hostile_transport = root / f"{mode}-transport"
             create_adversarial_transport(
                 hostile_transport, generation_10, mode
@@ -503,9 +544,12 @@ def main():
                 ["--transport", str(hostile_transport), *TARGET_ARGUMENTS],
                 success=False,
             )
-            expected_reason = "device_generation_transport_failed" \
-                if mode == "replace-plan" \
-                else "device_generation_transport_output_invalid"
+            if mode == "replace-plan":
+                expected_reason = "device_generation_transport_failed"
+            elif mode in {"replace-phase", "replace-acquisition"}:
+                expected_reason = "device_generation_input_changed"
+            else:
+                expected_reason = "device_generation_transport_output_invalid"
             assert hostile["reason"] == expected_reason
             assert not list((store / "downloads").glob(".acquire-*"))
 
@@ -673,6 +717,34 @@ def main():
         assert invoke(
             environment, store, policy, keyring, checkpoint, "check"
         )["state"]["active"]["manifestSha256"] == hash_9
+
+        publish_trust_environment = {
+            **environment, "OPEMOS_GENERATION_TEST_PAUSE_AFTER_STAGE": "1",
+        }
+        publish_trust_command = [
+            sys.executable, str(TOOL), "--store", str(store),
+            "--policy", str(policy), "--keyring", str(keyring),
+            "--checkpoint", str(checkpoint), "activate", "--source",
+            str(generation_10), *TARGET_ARGUMENTS,
+        ]
+        publish_trust_race = subprocess.Popen(
+            publish_trust_command, cwd="/", env=publish_trust_environment,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        deadline = time.time() + 5
+        while (not list((store / "generations").glob(".stage-*"))
+               and time.time() < deadline):
+            time.sleep(0.02)
+        assert list((store / "generations").glob(".stage-*"))
+        policy_payload = policy.read_bytes()
+        write(policy, b"replaced\n")
+        stdout, stderr = publish_trust_race.communicate(timeout=5)
+        assert publish_trust_race.returncode == 1 and stderr == ""
+        assert json.loads(stdout)["reason"] == "device_generation_input_changed"
+        write(policy, policy_payload)
+        assert not (store / "generations" / hash_10).exists()
+        assert not list((store / "generations").glob(".stage-*"))
+        assert not (store / "pending-activation.json").exists()
 
         publish_pause_environment = {
             **environment, "OPEMOS_GENERATION_TEST_PAUSE_AFTER_PUBLISH": "30",

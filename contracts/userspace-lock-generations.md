@@ -349,8 +349,12 @@ Each invocation receives only that exact plan, must return the exact closed
 file set, and cannot change the plan while running. Missing, extra, renamed,
 oversized, or hash-substituted output is rejected before download-cache
 publication. Core rechecks the installed policy, keyring, and checkpoint
-identities between phases. It does not enable device networking, replace the
-legacy embedded lock, or reuse the desktop binary updater.
+identities between phases. Those guards come from the same open descriptors as
+the validated trust bytes, closing path-replacement windows. Authenticated
+payloads are streamed into private mode-0400 staging with exact size and hash
+verification, so the bounded on-disk generation ceiling is not also an in-memory
+allocation. It does not enable device networking, replace the legacy embedded
+lock, or reuse the desktop binary updater.
 
 Transport phase cleanup is descriptor-relative, bounded, and does not follow
 untrusted symlinks. Catchable cancellation terminates the watchdog/process

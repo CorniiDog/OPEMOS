@@ -152,8 +152,7 @@ def trust_file_guard(path, label):
         info = path.lstat()
     except OSError:
         fail("device_generation_input_changed", f"{label} is unavailable")
-    if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
-            or path.is_symlink()):
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
         fail("device_generation_input_changed", f"{label} is unsafe")
     return (
         info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns,
@@ -209,6 +208,59 @@ def snapshot_regular(path, maximum, label,
         if before_identity != after_identity or len(payload) != before.st_size:
             fail(changed_reason, f"{label} changed while read")
         return payload
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+def snapshot_trust_file(path, maximum, label):
+    """Read a trust file and return identity from the same open descriptor."""
+    descriptor = None
+    try:
+        descriptor = os.open(
+            path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_CLOEXEC", 0),
+        )
+    except OSError:
+        fail("device_generation_authentication_failed", f"{label} is unavailable")
+    try:
+        before = os.fstat(descriptor)
+        if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+                or not 1 <= before.st_size <= maximum):
+            fail("device_generation_authentication_failed", f"{label} is unsafe")
+        chunks = []
+        remaining = maximum + 1
+        while remaining:
+            chunk = os.read(descriptor, min(1024 * 1024, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        payload = b"".join(chunks)
+        after = os.fstat(descriptor)
+        before_identity = (
+            before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns,
+            before.st_ctime_ns, before.st_uid, stat.S_IMODE(before.st_mode),
+        )
+        after_identity = (
+            after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns,
+            after.st_ctime_ns, after.st_uid, stat.S_IMODE(after.st_mode),
+        )
+        try:
+            current = path.lstat()
+        except OSError:
+            fail("device_generation_input_changed", f"{label} changed while read")
+        current_identity = (
+            current.st_dev, current.st_ino, current.st_size,
+            current.st_mtime_ns, current.st_ctime_ns, current.st_uid,
+            stat.S_IMODE(current.st_mode),
+        )
+        if (before_identity != after_identity
+                or before_identity != current_identity
+                or len(payload) != before.st_size
+                or stat.S_ISLNK(current.st_mode)):
+            fail("device_generation_input_changed", f"{label} changed while read")
+        return payload, before_identity
     finally:
         if descriptor is not None:
             os.close(descriptor)
@@ -423,7 +475,7 @@ def remove_confined_generation_tree(root):
             os.close(parent_descriptor)
 
 
-def remove_confined_transport_phase(root):
+def remove_confined_transport_phase(root, expected_identity=None):
     """Remove bounded untrusted transport output without following links."""
     if re.fullmatch(r"\.transport-phase-[A-Za-z0-9_-]{1,64}", root.name) is None:
         fail("device_generation_store_invalid", "transport cleanup target is unsafe")
@@ -440,16 +492,25 @@ def remove_confined_transport_phase(root):
         opened = os.fstat(root_descriptor)
         current = os.stat(root.name, dir_fd=parent_descriptor, follow_symlinks=False)
         if (not stat.S_ISDIR(opened.st_mode) or opened.st_uid != os.geteuid()
-                or (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino)):
+                or (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino)
+                or expected_identity is not None
+                and (opened.st_dev, opened.st_ino, opened.st_uid)
+                != expected_identity):
             fail("device_generation_store_invalid", "transport cleanup target changed")
         os.fchmod(root_descriptor, 0o700)
-        names = os.listdir(root_descriptor)
-        node_count = len(names) + 1
+        node_count = 1
         logical_bytes = 0
-        if node_count > MAX_CACHE_TREE_NODES:
-            fail("device_generation_store_excessive", "transport output has too many nodes")
-        for name in names:
-            info = os.stat(name, dir_fd=root_descriptor, follow_symlinks=False)
+        with os.scandir(root_descriptor) as entries:
+            root_entries = []
+            for entry in entries:
+                node_count += 1
+                if node_count > MAX_CACHE_TREE_NODES:
+                    fail(
+                        "device_generation_store_excessive",
+                        "transport output has too many nodes",
+                    )
+                root_entries.append((entry.name, entry.stat(follow_symlinks=False)))
+        for name, info in root_entries:
             if stat.S_ISDIR(info.st_mode):
                 child_descriptor = os.open(
                     name, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
@@ -464,18 +525,20 @@ def remove_confined_transport_phase(root):
                             "transport cleanup directory changed",
                         )
                     os.fchmod(child_descriptor, 0o700)
-                    child_names = os.listdir(child_descriptor)
-                    node_count += len(child_names)
-                    if node_count > MAX_CACHE_TREE_NODES:
-                        fail(
-                            "device_generation_store_excessive",
-                            "transport output has too many nodes",
-                        )
-                    for child_name in child_names:
-                        child_info = os.stat(
-                            child_name, dir_fd=child_descriptor,
-                            follow_symlinks=False,
-                        )
+                    with os.scandir(child_descriptor) as child_entries:
+                        children = []
+                        for child_entry in child_entries:
+                            node_count += 1
+                            if node_count > MAX_CACHE_TREE_NODES:
+                                fail(
+                                    "device_generation_store_excessive",
+                                    "transport output has too many nodes",
+                                )
+                            children.append((
+                                child_entry.name,
+                                child_entry.stat(follow_symlinks=False),
+                            ))
+                    for child_name, child_info in children:
                         if stat.S_ISDIR(child_info.st_mode):
                             fail(
                                 "device_generation_store_invalid",
@@ -575,7 +638,7 @@ def download_cache(store, create=False):
         info = path.lstat()
     except OSError:
         fail("device_generation_store_invalid", "download cache is unavailable")
-    if (not stat.S_ISDIR(info.st_mode) or path.is_symlink()
+    if (not stat.S_ISDIR(info.st_mode)
             or info.st_uid != os.geteuid()
             or stat.S_IMODE(info.st_mode) != 0o700):
         fail("device_generation_store_invalid", "download cache is unsafe")
@@ -959,20 +1022,14 @@ def active_policy(arguments):
     require_production_anchor(policy_path, "generation trust policy")
     require_production_anchor(keyring_path, "generation keyring")
     require_production_anchor(checkpoint_path, "generation bootstrap checkpoint")
-    policy_payload = snapshot_regular(
-        policy_path, MAX_POLICY_BYTES, "trust policy",
-        "device_generation_authentication_failed",
-        "device_generation_authentication_failed",
+    policy_payload, policy_guard = snapshot_trust_file(
+        policy_path, MAX_POLICY_BYTES, "generation trust policy"
     )
-    keyring_payload = snapshot_regular(
-        keyring_path, MAX_KEYRING_BYTES, "keyring",
-        "device_generation_authentication_failed",
-        "device_generation_authentication_failed",
+    keyring_payload, keyring_guard = snapshot_trust_file(
+        keyring_path, MAX_KEYRING_BYTES, "generation keyring"
     )
-    checkpoint_payload = snapshot_regular(
-        checkpoint_path, MAX_POLICY_BYTES, "bootstrap checkpoint",
-        "device_generation_authentication_failed",
-        "device_generation_authentication_failed",
+    checkpoint_payload, checkpoint_guard = snapshot_trust_file(
+        checkpoint_path, MAX_POLICY_BYTES, "generation bootstrap checkpoint"
     )
     try:
         bootstrap_policy = parse_policy(policy_payload)
@@ -990,12 +1047,10 @@ def active_policy(arguments):
         ],
         "bootstrap": bootstrap_policy,
         "payload": policy_payload,
-        "guards": tuple(
-            (path, label, trust_file_guard(path, label)) for path, label in (
-                (policy_path, "generation trust policy"),
-                (keyring_path, "generation keyring"),
-                (checkpoint_path, "generation bootstrap checkpoint"),
-            )
+        "guards": (
+            (policy_path, "generation trust policy", policy_guard),
+            (keyring_path, "generation keyring", keyring_guard),
+            (checkpoint_path, "generation bootstrap checkpoint", checkpoint_guard),
         ),
     }
     authority = {
@@ -1336,10 +1391,12 @@ def seal_generation(path):
 
 def publish_generation(generations, pair, payload_root, payload_records,
                        policy, authority):
+    require_trust_guards(policy)
     identity = pair["discovery"]["generation"]["manifestSha256"]
     destination = generations / identity
     if destination.exists() or destination.is_symlink():
         verify_cached_generation(destination, identity)
+        require_trust_guards(policy)
         return destination, False
     stage = Path(tempfile.mkdtemp(prefix=".stage-", dir=generations))
     try:
@@ -1366,6 +1423,7 @@ def publish_generation(generations, pair, payload_root, payload_records,
         trust = generation_trust_record(policy, authority, pair)
         write_exclusive(stage / "trust.json", canonical(trust))
         seal_generation(stage)
+        require_trust_guards(policy)
         os.replace(stage, destination)
         fsync_directory(generations)
         return destination, True
@@ -1745,26 +1803,234 @@ def transport_record(role, filename, url, maximum_size, expected_size=None,
     return record
 
 
-def fetch_transport_phase(arguments, acquisition, plan):
+def bounded_directory_names(path, maximum, label):
+    names = []
+    try:
+        with os.scandir(path) as entries:
+            for entry in entries:
+                names.append(entry.name)
+                if len(names) > maximum:
+                    fail(
+                        "device_generation_transport_output_invalid",
+                        f"{label} contains too many entries",
+                    )
+    except OSError:
+        fail(
+            "device_generation_transport_output_invalid",
+            f"{label} is unreadable",
+        )
+    return names
+
+
+def private_directory_identity(path, label):
+    try:
+        info = path.lstat()
+    except OSError:
+        fail("device_generation_input_changed", f"{label} is unavailable")
+    if (not stat.S_ISDIR(info.st_mode) or path.is_symlink()
+            or info.st_uid != os.geteuid()
+            or stat.S_IMODE(info.st_mode) != 0o700):
+        fail("device_generation_input_changed", f"{label} is unsafe")
+    return info.st_dev, info.st_ino, info.st_uid
+
+
+def snapshot_transport_output(directory_descriptor, record):
+    descriptor = None
+    try:
+        descriptor = os.open(
+            record["filename"], os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_CLOEXEC", 0), dir_fd=directory_descriptor,
+        )
+        before = os.fstat(descriptor)
+        if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+                or before.st_uid != os.geteuid()
+                or not 1 <= before.st_size <= record["maximumSize"]):
+            fail(
+                "device_generation_transport_output_invalid",
+                "transport output metadata differs from its request",
+            )
+        chunks = []
+        remaining = record["maximumSize"] + 1
+        while remaining:
+            chunk = os.read(descriptor, min(1024 * 1024, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        payload = b"".join(chunks)
+        after = os.fstat(descriptor)
+        if ((before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns,
+             before.st_ctime_ns)
+                != (after.st_dev, after.st_ino, after.st_size,
+                    after.st_mtime_ns, after.st_ctime_ns)
+                or len(payload) != before.st_size):
+            fail(
+                "device_generation_transport_output_invalid",
+                "transport output changed while read",
+            )
+        return payload
+    except OSError:
+        fail(
+            "device_generation_transport_output_invalid",
+            "transport output is missing or unsafe",
+        )
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+def copy_transport_output(source_directory_descriptor,
+                          destination_directory_descriptor, record):
+    """Stream one exact transport response into private immutable staging."""
+    source_descriptor = destination_descriptor = None
+    try:
+        source_descriptor = os.open(
+            record["filename"], os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_CLOEXEC", 0), dir_fd=source_directory_descriptor,
+        )
+        before = os.fstat(source_descriptor)
+        if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+                or before.st_uid != os.geteuid()
+                or before.st_size != record["expectedSize"]
+                or before.st_size > record["maximumSize"]):
+            fail(
+                "device_generation_transport_output_invalid",
+                "transport output metadata differs from its request",
+            )
+        destination_descriptor = os.open(
+            record["filename"], os.O_WRONLY | os.O_CREAT | os.O_EXCL
+            | getattr(os, "O_NOFOLLOW", 0), 0o400,
+            dir_fd=destination_directory_descriptor,
+        )
+        os.fchmod(destination_descriptor, 0o400)
+        digest = hashlib.sha256()
+        copied = 0
+        while True:
+            chunk = os.read(source_descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            view = memoryview(chunk)
+            while view:
+                written = os.write(destination_descriptor, view)
+                if written <= 0:
+                    fail(
+                        "device_generation_io_failed",
+                        "transport output copy made no progress",
+                    )
+                view = view[written:]
+            digest.update(chunk)
+            copied += len(chunk)
+        os.fsync(destination_descriptor)
+        after = os.fstat(source_descriptor)
+        before_identity = (
+            before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns,
+            before.st_ctime_ns,
+        )
+        after_identity = (
+            after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns,
+            after.st_ctime_ns,
+        )
+        if (before_identity != after_identity
+                or copied != record["expectedSize"]
+                or digest.hexdigest() != record["expectedSha256"]):
+            fail(
+                "device_generation_transport_output_invalid",
+                "transport output differs from its authenticated identity",
+            )
+    except OSError as error:
+        if error.errno == errno.ENOSPC:
+            fail(
+                "device_generation_space_insufficient",
+                "download staging storage is full",
+            )
+        fail(
+            "device_generation_transport_output_invalid",
+            "transport output could not be staged",
+        )
+    finally:
+        if destination_descriptor is not None:
+            os.close(destination_descriptor)
+        if source_descriptor is not None:
+            os.close(source_descriptor)
+
+
+def fetch_transport_phase(arguments, acquisition, plan, output_root=None):
+    acquisition_identity = private_directory_identity(
+        acquisition, "download acquisition directory"
+    )
     phase = Path(tempfile.mkdtemp(prefix=".transport-phase-", dir=acquisition))
+    phase_info = phase.lstat()
+    phase_identity = (phase_info.st_dev, phase_info.st_ino, phase_info.st_uid)
+    phase_descriptor = None
     try:
         run_injected_transport(arguments, phase, plan)
+        if private_directory_identity(
+                acquisition, "download acquisition directory"
+                ) != acquisition_identity:
+            fail(
+                "device_generation_input_changed",
+                "download acquisition directory changed during transport",
+            )
+        current_phase = phase.lstat()
+        if (not stat.S_ISDIR(current_phase.st_mode)
+                or (current_phase.st_dev, current_phase.st_ino,
+                    current_phase.st_uid) != phase_identity
+                or stat.S_IMODE(current_phase.st_mode) != 0o700):
+            fail(
+                "device_generation_input_changed",
+                "transport output directory changed during acquisition",
+            )
+        phase_descriptor = os.open(
+            phase, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+        )
+        opened_phase = os.fstat(phase_descriptor)
+        if ((opened_phase.st_dev, opened_phase.st_ino, opened_phase.st_uid)
+                != phase_identity
+                or stat.S_IMODE(opened_phase.st_mode) != 0o700):
+            fail(
+                "device_generation_input_changed",
+                "transport output directory changed before inspection",
+            )
         expected = {record["filename"]: record for record in plan["requests"]}
-        entries = list(phase.iterdir())
-        if ({entry.name for entry in entries} != set(expected)
-                or len(entries) != len(expected)):
+        names = bounded_directory_names(
+            phase_descriptor, len(expected), "transport output"
+        )
+        if set(names) != set(expected) or len(names) != len(expected):
             fail(
                 "device_generation_transport_output_invalid",
                 "transport output set differs from the Core request plan",
             )
         payloads = {}
+        output_descriptor = None
+        if output_root is not None:
+            try:
+                output_root.lstat()
+            except FileNotFoundError:
+                pass
+            except OSError:
+                fail(
+                    "device_generation_transport_output_invalid",
+                    "private payload staging is unavailable",
+                )
+            else:
+                fail(
+                    "device_generation_transport_output_invalid",
+                    "transport modified private payload staging",
+                )
+            output_root.mkdir(mode=0o700)
+            output_descriptor = os.open(
+                output_root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+                | getattr(os, "O_NOFOLLOW", 0),
+            )
         for name in sorted(expected):
             record = expected[name]
-            payload = snapshot_regular(
-                phase / name, record["maximumSize"], "transport output",
-                "device_generation_transport_output_invalid",
-                "device_generation_transport_output_invalid", os.geteuid(),
-            )
+            if output_root is not None:
+                copy_transport_output(
+                    phase_descriptor, output_descriptor, record
+                )
+                continue
+            payload = snapshot_transport_output(phase_descriptor, record)
             if ("expectedSize" in record
                     and (len(payload) != record["expectedSize"]
                          or sha256(payload) != record["expectedSha256"])):
@@ -1773,10 +2039,22 @@ def fetch_transport_phase(arguments, acquisition, plan):
                     "transport output differs from its authenticated identity",
                 )
             payloads[name] = payload
+        if output_descriptor is not None:
+            os.fsync(output_descriptor)
+            os.close(output_descriptor)
+            output_descriptor = None
         return payloads
     finally:
-        if phase.exists():
-            remove_confined_transport_phase(phase)
+        if "output_descriptor" in locals() and output_descriptor is not None:
+            os.close(output_descriptor)
+        if phase_descriptor is not None:
+            os.close(phase_descriptor)
+        try:
+            phase.lstat()
+        except FileNotFoundError:
+            pass
+        else:
+            remove_confined_transport_phase(phase, phase_identity)
 
 
 def acquire_planned_pair(arguments, acquisition, policy, authority, keyring):
@@ -1861,7 +2139,10 @@ def acquire_planned_pair(arguments, acquisition, policy, authority, keyring):
         for record in plan["requests"] if record["requestKind"] == "payload"
     ]
     payload_plan = transport_request_plan("payload", payload_requests)
-    payloads = fetch_transport_phase(arguments, acquisition, payload_plan)
+    payload_root = acquisition / "payload"
+    fetch_transport_phase(
+        arguments, acquisition, payload_plan, output_root=payload_root
+    )
     require_trust_guards(policy)
     write_exclusive(acquisition / channel["discoveryFilename"], discovery_payload)
     write_exclusive(
@@ -1869,9 +2150,6 @@ def acquire_planned_pair(arguments, acquisition, policy, authority, keyring):
     )
     write_exclusive(acquisition / generation["manifestFilename"], manifest_payload)
     write_exclusive(acquisition / generation["signatureFilename"], manifest_signature)
-    (acquisition / "payload").mkdir(mode=0o700)
-    for name, payload in payloads.items():
-        write_exclusive(acquisition / "payload" / name, payload)
     return plan
 
 
