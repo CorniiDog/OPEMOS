@@ -3,6 +3,7 @@
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -36,7 +37,8 @@ def main():
     tag = f"opemos-installer-bundle-{commit}"
     assert plan["schemaVersion"] == 1
     assert plan["status"] == "ready"
-    assert plan["repository"] == "CorniiDog/OPEMOS"
+    canonical_repository = "CorniiDog/open-gpu-kernel-modules-steamos-support"
+    assert plan["repository"] == canonical_repository
     assert plan["tag"] == tag
     assert plan["targetCommit"] == commit
     assert plan["asset"]["name"] == f"{tag}.json"
@@ -60,6 +62,21 @@ def main():
         fixture = Path(temporary)
         fake_bin = fixture / "bin"
         fake_bin.mkdir()
+        real_git = shutil.which("git")
+        assert real_git is not None
+        git = fake_bin / "git"
+        git.write_text(
+            f"#!{sys.executable}\n"
+            "import os, sys\n"
+            "args = sys.argv[1:]\n"
+            "if args[-3:] == ['remote', 'get-url', 'origin'] "
+            "and 'FAKE_ORIGIN' in os.environ:\n"
+            "    print(os.environ['FAKE_ORIGIN'])\n"
+            "    raise SystemExit(0)\n"
+            "os.execv(os.environ['REAL_GIT'], [os.environ['REAL_GIT'], *args])\n",
+            encoding="utf-8",
+        )
+        git.chmod(0o755)
         gh_log = fixture / "gh.log"
         gh = fake_bin / "gh"
         gh.write_text(
@@ -71,7 +88,7 @@ def main():
             "command = args[:2]\n"
             "if command == ['auth', 'status']:\n"
             "    raise SystemExit(0)\n"
-            "if command == ['api', 'repos/CorniiDog/OPEMOS']:\n"
+            "if command == ['api', 'repos/CorniiDog/open-gpu-kernel-modules-steamos-support']:\n"
             "    print('true')\n"
             "    raise SystemExit(0)\n"
             "if command == ['release', 'view']:\n"
@@ -88,7 +105,22 @@ def main():
         gh.chmod(0o755)
         env = os.environ.copy()
         env["PATH"] = f"{fake_bin}:{env['PATH']}"
+        env["REAL_GIT"] = real_git
         env["GH_LOG"] = str(gh_log)
+
+        mismatched_env = env.copy()
+        mismatched_env["FAKE_ORIGIN"] = "https://github.com/attacker/other"
+        mismatched = run(commit, "--dry-run", env=mismatched_env)
+        assert mismatched.returncode != 0
+        assert "origin does not match canonical repository" in mismatched.stderr
+        assert mismatched.stdout == ""
+        development_mismatch = run(
+            commit, "--development-repository", "owner/testing", "--dry-run",
+            env=mismatched_env,
+        )
+        assert development_mismatch.returncode == 0, development_mismatch.stderr
+        assert json.loads(development_mismatch.stdout)["repository"] == "owner/testing"
+
         env["GH_RELEASE_EXISTS"] = "1"
         existing = run(commit, env=env)
         assert existing.returncode != 0

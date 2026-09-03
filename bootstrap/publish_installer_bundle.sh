@@ -3,10 +3,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SUPPORT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-CANONICAL_REPOSITORY="CorniiDog/OPEMOS"
+CANONICAL_REPOSITORY="CorniiDog/open-gpu-kernel-modules-steamos-support"
 REPOSITORY="$CANONICAL_REPOSITORY"
 SUPPORT_COMMIT=""
 DRY_RUN=0
+DEVELOPMENT_REPOSITORY=0
 
 usage()
 {
@@ -36,6 +37,7 @@ while [[ $# -gt 0 ]]; do
         --development-repository)
             [[ $# -ge 2 ]] || die "$1 requires OWNER/REPO"
             REPOSITORY="$2"
+            DEVELOPMENT_REPOSITORY=1
             shift 2
             ;;
         -h|--help) usage; exit 0 ;;
@@ -45,6 +47,20 @@ done
 
 [[ "$SUPPORT_COMMIT" =~ ^[0-9a-f]{40}$ ]] || die "a full lowercase support commit is required"
 [[ "$REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "invalid repository"
+
+if (( DEVELOPMENT_REPOSITORY == 0 )); then
+    ORIGIN_URL="$(git -C "$SUPPORT_ROOT" remote get-url origin 2>/dev/null)" ||
+        die "canonical origin could not be verified"
+    case "$ORIGIN_URL" in
+        "https://github.com/${CANONICAL_REPOSITORY}"|\
+        "https://github.com/${CANONICAL_REPOSITORY}.git"|\
+        "git@github.com:${CANONICAL_REPOSITORY}"|\
+        "git@github.com:${CANONICAL_REPOSITORY}.git"|\
+        "ssh://git@github.com/${CANONICAL_REPOSITORY}"|\
+        "ssh://git@github.com/${CANONICAL_REPOSITORY}.git") ;;
+        *) die "origin does not match canonical repository: ${CANONICAL_REPOSITORY}" ;;
+    esac
+fi
 
 RESOLVED_COMMIT="$(git -C "$SUPPORT_ROOT" rev-parse --verify "${SUPPORT_COMMIT}^{commit}" 2>/dev/null)" ||
     die "support commit is unavailable"
@@ -61,6 +77,11 @@ ASSET_NAME="${TAG}.json"
 ASSET="$RUNTIME/$ASSET_NAME"
 python3 "$SUPPORT_ROOT/lib/installer_bundle_manifest.py" create \
     --root "$SUPPORT_ROOT" --support-commit "$SUPPORT_COMMIT" --output "$ASSET"
+MANIFEST_REPOSITORY="$(python3 -c \
+    'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["repository"])' \
+    "$ASSET")" || die "bundle repository identity could not be read"
+[[ "$MANIFEST_REPOSITORY" == "$CANONICAL_REPOSITORY" ]] ||
+    die "bundle repository identity differs from canonical repository"
 
 PLAN="$(python3 - "$ASSET" "$REPOSITORY" "$TAG" <<'PY'
 import hashlib

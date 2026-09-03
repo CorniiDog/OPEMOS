@@ -62,10 +62,13 @@ index in the same commit.
 * [x] Publish a deterministic OPEMOS installer-bundle manifest generator bound
   to an immutable support Git commit and every required path, role, mode, size,
   and SHA-256. It reads committed blobs rather than the mutable worktree,
-  produces create-only canonical output, and validates all 55 current files.
+  produces create-only canonical output, and validates the complete closed
+  inventory.
 * [x] Add a separate create-only immutable Core-bundle publisher with canonical
   tag, title, notes, manifest digest, dry-run plan, GitHub permission checks,
-  and existing-release refusal. It does not modify NVIDIA artifact releases.
+  existing-release refusal, and fail-closed origin/repository identity. It does
+  not modify NVIDIA artifact releases; alternate destinations require the
+  explicit development-only override.
 * [ ] Replace OPEMOS.EXE's manually duplicated support-file inventory with a
   pin to the exact support commit plus canonical manifest hash, while retaining
   complete download verification, path confinement, and executable-mode checks

@@ -14,7 +14,7 @@ from pathlib import Path
 
 SCHEMA_VERSION = 1
 KIND = "opemos-installer-bundle"
-REPOSITORY = "CorniiDog/OPEMOS"
+REPOSITORY = "CorniiDog/open-gpu-kernel-modules-steamos-support"
 MAX_MANIFEST_BYTES = 2 * 1024 * 1024
 MAX_FILE_BYTES = 128 * 1024 * 1024
 COMMIT = re.compile(r"[0-9a-f]{40}")
