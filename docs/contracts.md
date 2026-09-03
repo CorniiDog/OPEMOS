@@ -165,6 +165,12 @@ Core validates both through `lib/device_generation_contract.py`; the canonical
 compatibility matrix is emitted deterministically by
 `lib/generate_device_generation_fixtures.py`.
 
+Health acknowledgement and rollback both reauthenticate their selected cached
+generation against the complete currently installed policy/keyring authority.
+Core rechecks same-descriptor trust guards before committing state. A valid
+generation from an older or otherwise different policy cannot become LKG or be
+restored merely because its cached hashes remain intact.
+
 Local activation also uses a private internal intent record between immutable
 generation publication and the alternating durable state markers. A locked
 restart binds that intent to the exact prior state revision and hash. It removes

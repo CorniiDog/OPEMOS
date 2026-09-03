@@ -333,7 +333,12 @@ hardlinks, special files, excessive nodes, and excessive logical bytes.
 Unacknowledged active data blocks another activation. Health acknowledgement
 requires a canonical root-controlled evidence document bound to the exact
 active sequence and manifest hash, generation integrity, and recovery
-readiness. Rollback reauthenticates last known good and never lowers high-water
+readiness. Before advancing last known good, Core also reauthenticates the
+active cached generation against the currently installed complete authority and
+rechecks the trust-file guards. Rollback likewise requires the complete current
+policy, keyring, signer, and generation authority rather than accepting only a
+matching policy-hash field. A policy rotation cannot acknowledge or restore a
+generation authorized by the prior policy. Rollback never lowers high-water
 state. Retention preserves active and last known good plus bounded recent
 generations.
 

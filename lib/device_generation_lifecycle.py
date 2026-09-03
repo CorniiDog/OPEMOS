@@ -1245,6 +1245,14 @@ def require_pair_authorization(pair, authority, requested_target):
         )
 
 
+def require_pair_authority(pair, authority):
+    if pair["manifest"]["authority"] != authority:
+        fail(
+            "device_generation_authentication_failed",
+            "cached generation authority differs from installed policy",
+        )
+
+
 def load_lineage_paths(paths, keyring, signer):
     lineage_pairs = []
     for lineage_path in paths:
@@ -2379,13 +2387,25 @@ def validate_health_evidence(arguments, active):
 
 def acknowledge(arguments):
     store = absolute_path(arguments.store)
+    policy, authority, keyring, _checkpoint = active_policy(arguments)
     with lifecycle_lock(store) as generations:
         state = read_state(store)
         if state["active"] is None:
             fail("device_generation_no_active", "no active generation exists")
         identity = state["active"]["manifestSha256"]
-        verify_cached_generation(generations / identity, identity)
+        generation = generations / identity
+        verify_cached_generation(generation, identity)
+        pair = load_authenticated_pair(
+            generation, keyring, policy["signingKeyFingerprint"], cached=True
+        )
+        require_pair_authority(pair, authority)
+        if pair["manifest"]["sequence"] != state["active"]["sequence"]:
+            fail(
+                "device_generation_state_invalid",
+                "active generation sequence differs from its cached manifest",
+            )
         validate_health_evidence(arguments, state["active"])
+        require_trust_guards(policy)
         state = {
             **state,
             "lastKnownGood": dict(state["active"]),
@@ -2405,7 +2425,7 @@ def acknowledge(arguments):
 
 def rollback(arguments):
     store = absolute_path(arguments.store)
-    policy, _authority, keyring, _checkpoint = active_policy(arguments)
+    policy, authority, keyring, _checkpoint = active_policy(arguments)
     with lifecycle_lock(store) as generations:
         state = read_state(store)
         if state["lastKnownGood"] is None:
@@ -2416,9 +2436,8 @@ def rollback(arguments):
         pair = load_authenticated_pair(
             generation, keyring, policy["signingKeyFingerprint"], cached=True
         )
-        if (pair["discovery"]["authority"]["policySha256"]
-                != sha256(policy["payload"])):
-            fail("device_generation_authentication_failed", "rollback authority changed")
+        require_pair_authority(pair, authority)
+        require_trust_guards(policy)
         state = {
             **state,
             "active": dict(state["lastKnownGood"]),

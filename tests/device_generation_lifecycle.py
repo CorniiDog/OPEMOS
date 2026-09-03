@@ -61,6 +61,19 @@ def durable_state(store):
     return json.loads((store / "state.json").read_text(encoding="utf-8"))
 
 
+def install_alternate_policy(policy, checkpoint, base, sequence, manifest_hash):
+    document = json.loads(json.dumps(base))
+    document["channel"]["origin"] = "https://rotated.example.invalid"
+    write(policy, canonical(document))
+    write(checkpoint, canonical({
+        "schemaVersion": 1,
+        "kind": CHECKPOINT_KIND,
+        "policySha256": digest(policy.read_bytes()),
+        "minimumSequence": sequence,
+        "minimumManifestSha256": manifest_hash,
+    }))
+
+
 def latest_state_marker(store):
     paths = [
         store / name for name in ("state-a.json", "state-b.json")
@@ -291,7 +304,7 @@ def activate_downloaded(environment, store, policy, keyring, checkpoint,
     )
 
 
-def acknowledge(environment, store, policy, keyring, checkpoint):
+def acknowledge(environment, store, policy, keyring, checkpoint, success=True):
     state = invoke(
         environment, store, policy, keyring, checkpoint, "status"
     )["state"]
@@ -306,6 +319,7 @@ def acknowledge(environment, store, policy, keyring, checkpoint):
     return invoke(
         environment, store, policy, keyring, checkpoint,
         "acknowledge-health", ["--evidence", str(evidence)],
+        success,
     )
 
 
@@ -435,6 +449,19 @@ def main():
             success=False,
         )
         assert rejected_health["reason"] == "device_generation_health_invalid"
+        policy_payload = policy.read_bytes()
+        checkpoint_payload = checkpoint.read_bytes()
+        install_alternate_policy(
+            policy, checkpoint, policy_document, 7, hash_7
+        )
+        rejected_rotated_health = acknowledge(
+            environment, store, policy, keyring, checkpoint, success=False
+        )
+        assert rejected_rotated_health["reason"] == (
+            "device_generation_authentication_failed"
+        )
+        write(policy, policy_payload)
+        write(checkpoint, checkpoint_payload)
         healthy_7 = acknowledge(
             environment, store, policy, keyring, checkpoint
         )
@@ -455,6 +482,18 @@ def main():
         )
         assert activated_8["state"]["highWaterSequence"] == 8
         assert activated_8["state"]["lastKnownGood"]["manifestSha256"] == hash_7
+        install_alternate_policy(
+            policy, checkpoint, policy_document, 7, hash_7
+        )
+        rejected_rotated_rollback = invoke(
+            environment, store, policy, keyring, checkpoint, "rollback",
+            success=False,
+        )
+        assert rejected_rotated_rollback["reason"] == (
+            "device_generation_authentication_failed"
+        )
+        write(policy, policy_payload)
+        write(checkpoint, checkpoint_payload)
         rolled_back = invoke(
             environment, store, policy, keyring, checkpoint, "rollback"
         )
