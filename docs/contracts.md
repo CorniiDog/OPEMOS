@@ -31,6 +31,7 @@ description: API-style command, result, progress, trust, and failure reference.
 | `bootstrap/publish_desktop_update.sh` | Maintainer | Create-only GitHub release unless `--dry-run` | Desktop publication schema 1 JSON |
 | `bootstrap/repack_artifacts.sh` | Maintainer | Output/release unless `--dry-run` | Repack plan/result JSON |
 | `lib/validate_install_contract.py` | Consumer | No | Contract-validation result |
+| `lib/installer_bundle_manifest.py` | Maintainer/integrator | Create-only output | Immutable support-bundle manifest |
 | `lib/desktop_update_generations.py` | SteamOS desktop launcher | Generation store and atomic markers | Desktop-update schema 1 JSON |
 
 Every command supports `--help`; that output is the canonical option list.
@@ -56,6 +57,26 @@ Stable statuses are:
 A compatible record names the publication, archive, checksum sidecar, and
 provenance sidecar. Consumers must reject missing or duplicate required assets.
 The resolver performs no download and does not authenticate content by URL.
+Its additive machine-readable definition is
+[`resolver-result-v2.schema.json`](https://github.com/CorniiDog/OPEMOS/blob/main/contracts/schemas/resolver-result-v2.schema.json).
+Compatibility and asset selection remain support-owned policy; graphical
+consumers validate this result but must not independently select a release.
+
+## Installer consumer bundle
+
+`lib/installer_bundle_manifest.py` replaces consumer-maintained copies of the
+support file inventory. Given an exact 40-character support commit, it reads
+all 55 required blobs and executable bits directly from Git, then emits
+canonical JSON containing their paths, roles, modes, sizes, hashes, and a
+deterministic bundle ID. It never derives trusted bytes from the mutable
+working tree.
+
+Consumers pin the support commit and the resulting manifest SHA-256. They must
+validate the manifest, download exactly its confined paths from that commit,
+and verify every mode, size, and hash before execution. The manifest generator
+uses create-only output; see the
+[`contracts/README.md`](https://github.com/CorniiDog/OPEMOS/blob/main/contracts/README.md) for
+commands and the self-reference rationale.
 
 ## Build result
 
@@ -125,6 +146,11 @@ Field order is fixed: filename, signature filename, version, architecture,
 package hash, signature hash, signer, installed size, dependencies, provides.
 
 ## Progress records
+
+The additive single-record definition is
+[`installer-progress-v1.schema.json`](https://github.com/CorniiDog/OPEMOS/blob/main/contracts/schemas/installer-progress-v1.schema.json).
+The schema describes record shape; `lib/validate_install_contract.py` remains
+authoritative for stream-wide attempt ordering and monotonicity.
 
 Progress is emitted to stderr as one bounded JSON object per line:
 

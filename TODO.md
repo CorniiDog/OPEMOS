@@ -50,24 +50,30 @@ index in the same commit.
 ### Remaining engineering cleanup
 
 * [ ] Make `lib/resolve_target.py` the sole release-compatibility policy
-  implementation. Publish its versioned schema and fixtures, then have
-  OPEMOS.EXE invoke and validate that result instead of independently parsing
-  tags, selecting same-series fallbacks, or constructing canonical asset names.
+  implementation in OPEMOS.EXE. The support-owned versioned resolver schema and
+  fixtures are published; the builder must now invoke and validate that result
+  instead of independently parsing tags, selecting same-series fallbacks, or
+  constructing canonical asset names.
 * [ ] Make reviewed OPEMOS userspace locks the sole normal-build package source.
   OPEMOS.EXE must download only the exact filenames returned by the support
   contract; remove its production dynamic Arch newest-package and dependency
   selection after the locked path is fully integrated. Keep dependency
   discovery only in the support-owned maintainer audit workflow.
-* [ ] Publish one deterministic OPEMOS installer-bundle manifest containing the
-  support commit and every required path, role, mode, size, and SHA-256.
-  Replace OPEMOS.EXE's manually duplicated support-file inventory with a pin to
-  the exact support commit plus this manifest hash, while retaining complete
-  download verification and path confinement in the builder.
-* [ ] Publish canonical resolver, progress, validation, installation,
-  verification, receipt, and gaming-payload schemas from OPEMOS. Generate or
-  fixture-test the OPEMOS.EXE Rust consumers against them, retaining
-  builder-owned session binding, bounds, cleanup checks, transfer validation,
-  and independent final-image inspection rather than duplicating support policy.
+* [x] Publish a deterministic OPEMOS installer-bundle manifest generator bound
+  to an immutable support Git commit and every required path, role, mode, size,
+  and SHA-256. It reads committed blobs rather than the mutable worktree,
+  produces create-only canonical output, and validates all 55 current files.
+* [ ] Replace OPEMOS.EXE's manually duplicated support-file inventory with a
+  pin to the exact support commit plus canonical manifest hash, while retaining
+  complete download verification, path confinement, and executable-mode checks
+  in the builder.
+* [x] Publish additive canonical schemas and fixtures for resolver schema 2 and
+  installer-progress schema 1, including documented cross-record monotonicity.
+* [ ] Publish the remaining validation, installation, verification, receipt,
+  and gaming-payload schemas from OPEMOS. Generate or fixture-test OPEMOS.EXE's
+  Rust consumers against all schemas while retaining builder-owned session
+  binding, bounds, cleanup checks, transfer validation, and independent
+  final-image inspection rather than duplicating support policy.
 * [ ] Define a bounded adapter from installer `STEAMOS_NVIDIA_PROGRESS` records
   to the shared overall/current-operation presentation model. OPEMOS.EXE owns
   macOS labels, weighting, controls, and loading UI; the SteamOS interstitial
@@ -1103,6 +1109,15 @@ signing policy.
 ## Completed support-side contract
 
 * [x] Add versioned offline-target JSON resolution in `lib/resolve_target.py`.
+* [x] Publish `contracts/schemas/resolver-result-v2.schema.json` and an
+  executable compatible/no-match/invalid-target consumer fixture.
+* [x] Publish `contracts/schemas/installer-progress-v1.schema.json`, preserving
+  additive fields while documenting determinate/indeterminate record shape and
+  the stream validator's monotonicity responsibility.
+* [x] Add `lib/installer_bundle_manifest.py`, with a fixed support-owned
+  inventory, immutable Git-blob/mode reads, deterministic bundle identity,
+  create-only output, validation against the exact commit, and hostile-input
+  tests. The first real inventory validation covers 55 files.
 * [x] Accept target SteamOS version, exact kernel, and ELF architecture rather
   than inspecting the Fedora appliance host identity.
 * [x] Apply the normal bounded same-series SteamOS certification fallback while
