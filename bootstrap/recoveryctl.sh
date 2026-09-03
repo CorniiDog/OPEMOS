@@ -54,6 +54,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 STATUS_TOOL="$SUPPORT_ROOT/lib/recovery_status.py"
+FALLBACK_STATE_TOOL="$SUPPORT_ROOT/lib/recovery_fallback_state.py"
 STATE_ROOT="$(project_system_path /var/lib/$PROJECT_ID/recovery)"
 TRANSACTION="$SUPPORT_ROOT/transaction.json"
 RELEASE_PLAN="$SUPPORT_ROOT/release-plan.json"
@@ -203,21 +204,12 @@ enable_fallback()
         sudo python3 "$SUPPORT_ROOT/lib/update_recovery_grub_args.py" --config /etc/default/grub
         command -v update-grub >/dev/null 2>&1 && sudo update-grub
     fi
-    python3 - "$STATE_ROOT/state.json.tmp" "$PROFILE" <<'PY'
-import json,sys
-with open(sys.argv[1], "w", encoding="utf-8") as out:
-    json.dump({"schemaVersion":1,"active":True,"profile":sys.argv[2]},out,sort_keys=True,separators=(",",":"))
-    out.write("\n")
-PY
+    python3 "$FALLBACK_STATE_TOOL" write \
+        --state "$STATE_ROOT/state.json" --profile "$PROFILE"
     if [[ "$ROOT" == / ]]; then
-        sudo chown root:root "$STATE_ROOT/state.json.tmp"
-        sudo chmod 0644 "$STATE_ROOT/state.json.tmp"
-        sudo mv "$STATE_ROOT/state.json.tmp" "$STATE_ROOT/state.json"
         sudo systemctl set-default "$([[ "$PROFILE" == console ]] && echo multi-user.target || echo graphical.target)"
         command -v mkinitcpio >/dev/null 2>&1 && sudo mkinitcpio -P
         sudo systemctl stop display-manager.service >/dev/null 2>&1 || true
-    else
-        mv "$STATE_ROOT/state.json.tmp" "$STATE_ROOT/state.json"
     fi
     restore_readonly
     trap - EXIT INT TERM
@@ -242,7 +234,7 @@ disable_fallback()
     for path in "$NVIDIA_CONFIG" "$NVIDIA_INITRAMFS"; do
         [[ ! -f "${path}.opemos-disabled" ]] || "${move_cmd[@]}" "${path}.opemos-disabled" "$path"
     done
-    "${remove_cmd[@]}" "$STATE_ROOT/state.json"
+    python3 "$FALLBACK_STATE_TOOL" remove --state "$STATE_ROOT/state.json"
     if [[ "$ROOT" == / ]]; then
         if [[ -f "$STATE_ROOT/grub.before-fallback" ]]; then
             sudo install -o root -g root -m 0644 "$STATE_ROOT/grub.before-fallback" /etc/default/grub

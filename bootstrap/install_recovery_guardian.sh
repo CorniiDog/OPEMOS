@@ -66,6 +66,7 @@ python3 "$SUPPORT_ROOT/lib/validate_recovery_install_path.py" --root / \
     --path "${DEST#/}/bootstrap/run_guardian_with_interstitial.sh" \
     --path "${DEST#/}/bin/opemos-interstitial" \
     --path "${DEST#/}/lib/recovery_status.py" \
+    --path "${DEST#/}/lib/recovery_fallback_state.py" \
     --path "${DEST#/}/lib/desktop_update_generations.py" \
     --path "${DEST#/}/lib/open_opemos_contract.py" \
     --path "${DEST#/}/lib/interstitial_progress.py" \
@@ -95,6 +96,7 @@ sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/bootstrap/run_guardian_with_
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/bootstrap/online_install.sh" "$DEST/bootstrap/online_install.sh"
 sudo install -o root -g root -m 0644 "$SUPPORT_ROOT/lib/common.sh" "$DEST/lib/common.sh"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/recovery_status.py" "$DEST/lib/recovery_status.py"
+sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/recovery_fallback_state.py" "$DEST/lib/recovery_fallback_state.py"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/desktop_update_generations.py" "$DEST/lib/desktop_update_generations.py"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/update_recovery_grub_args.py" "$DEST/lib/update_recovery_grub_args.py"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/recovery_transaction.py" "$DEST/lib/recovery_transaction.py"

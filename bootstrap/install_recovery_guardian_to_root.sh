@@ -61,6 +61,7 @@ python3 "$SUPPORT_ROOT/lib/validate_recovery_install_path.py" "${PATH_CHECK_ARGS
     --path home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/bootstrap/run_guardian_with_interstitial.sh \
     --path home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/bootstrap/launch_interstitial.sh \
     --path home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/recovery_status.py \
+    --path home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/recovery_fallback_state.py \
     --path home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/desktop_update_generations.py \
     --path home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/open_opemos_contract.py \
     --path home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/interstitial_progress.py \
@@ -86,7 +87,7 @@ install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/run_guardian_with_int
 install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/launch_interstitial.sh" "$DEST/bootstrap/launch_interstitial.sh"
 install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/online_install.sh" "$DEST/bootstrap/online_install.sh"
 install "${OWNERSHIP[@]}" -m 0644 "$SUPPORT_ROOT/lib/common.sh" "$DEST/lib/common.sh"
-for helper in recovery_status.py recovery_transaction.py recovery_release_plan.py update_recovery_grub_args.py open_opemos_contract.py validate_recovery_install_path.py desktop_update_generations.py interstitial_progress.py validate_interstitial_binary.py; do
+for helper in recovery_status.py recovery_fallback_state.py recovery_transaction.py recovery_release_plan.py update_recovery_grub_args.py open_opemos_contract.py validate_recovery_install_path.py desktop_update_generations.py interstitial_progress.py validate_interstitial_binary.py; do
     install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/lib/$helper" "$DEST/lib/$helper"
 done
 if [[ -n "$INTERSTITIAL_BINARY" ]]; then

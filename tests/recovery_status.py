@@ -15,6 +15,7 @@ CONTROL = ROOT / "bootstrap/recoveryctl.sh"
 GRUB = ROOT / "lib/update_recovery_grub_args.py"
 TRANSACTION = ROOT / "lib/recovery_transaction.py"
 PLAN = ROOT / "lib/recovery_release_plan.py"
+FALLBACK_STATE = ROOT / "lib/recovery_fallback_state.py"
 STAGE = ROOT / "bootstrap/install_recovery_guardian_to_root.sh"
 OPEN_CONTRACT = ROOT / "lib/open_opemos_contract.py"
 PATH_VALIDATOR = ROOT / "lib/validate_recovery_install_path.py"
@@ -231,6 +232,69 @@ esac
         assert document["status"] == "unknown"
         assert document["reason"] == "inspection_failed"
 
+with tempfile.TemporaryDirectory(prefix="opemos-fallback-state-") as temporary:
+    state_root = Path(temporary) / "recovery"
+    state_root.mkdir()
+    fallback_state = state_root / "state.json"
+    state_command = [sys.executable, str(FALLBACK_STATE)]
+    subprocess.run(state_command + [
+        "write", "--state", str(fallback_state), "--profile", "console",
+    ], check=True)
+    assert fallback_state.read_bytes() == (
+        b'{"active":true,"profile":"console","schemaVersion":1}\n'
+    )
+    assert fallback_state.stat().st_mode & 0o777 == 0o644
+
+    abandoned = state_root / ".fallback-state.tmp-abandoned"
+    abandoned.write_bytes(b"partial")
+    subprocess.run(state_command + [
+        "write", "--state", str(fallback_state),
+        "--profile", "igpu-desktop",
+    ], check=True)
+    assert not abandoned.exists()
+    assert json.loads(fallback_state.read_text())["profile"] == "igpu-desktop"
+
+    lock_path = state_root / ".fallback-state.lock"
+    with lock_path.open("a+b") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        contended = subprocess.run(state_command + [
+            "write", "--state", str(fallback_state), "--profile", "console",
+        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        assert contended.returncode != 0
+        assert b"another fallback state operation" in contended.stderr
+
+    outside = Path(temporary) / "outside"
+    outside.write_text("unchanged\n")
+    fallback_state.unlink()
+    fallback_state.symlink_to(outside)
+    subprocess.run(state_command + [
+        "write", "--state", str(fallback_state), "--profile", "console",
+    ], check=True)
+    assert not fallback_state.is_symlink()
+    assert outside.read_text() == "unchanged\n"
+
+    hardlink = Path(temporary) / "state-hardlink.json"
+    os.link(fallback_state, hardlink)
+    linked_remove = subprocess.run(state_command + [
+        "remove", "--state", str(fallback_state),
+    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert linked_remove.returncode != 0 and fallback_state.exists()
+    hardlink.unlink()
+    subprocess.run(state_command + [
+        "remove", "--state", str(fallback_state),
+    ], check=True)
+    assert not fallback_state.exists()
+    subprocess.run(state_command + [
+        "remove", "--state", str(fallback_state),
+    ], check=True)
+
+    state_root.chmod(0o777)
+    unsafe_parent = subprocess.run(state_command + [
+        "write", "--state", str(fallback_state), "--profile", "console",
+    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert unsafe_parent.returncode != 0 and not fallback_state.exists()
+    state_root.chmod(0o755)
+
 control = CONTROL.read_text(encoding="utf-8")
 assert "--allow-nouveau" in control
 assert "Nouveau requires --allow-nouveau" in control
@@ -243,6 +307,8 @@ assert 'exec 8>"$lock_file"' in control
 assert 'flock -n 8' in control
 assert 'if ! document="$(status_json)"' in control
 assert "PROFILE=console YES=1 enable_fallback" in control
+assert "recovery_fallback_state.py" in control
+assert "state.json.tmp" not in control
 
 with tempfile.TemporaryDirectory(prefix="opemos-guardian-", dir="/tmp") as temporary:
     guard_root = Path(temporary) / "root"
@@ -560,6 +626,7 @@ with tempfile.TemporaryDirectory(prefix="opemos-recovery-stage-") as temporary:
     assert (persistent / "support-revision").read_text().strip() == "b" * 40
     assert (persistent / "nvidia-version").read_text().strip() == NVIDIA
     assert (persistent / "lib/open_opemos_contract.py").is_file()
+    assert (persistent / "lib/recovery_fallback_state.py").is_file()
     assert (persistent / "lib/desktop_update_generations.py").is_file()
     assert (persistent / "bootstrap/launch_desktop_companion.sh").is_file()
     assert json.loads((persistent / "trust/desktop-update-signers.json").read_text())["status"] == "unconfigured"

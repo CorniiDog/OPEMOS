@@ -1036,6 +1036,8 @@ This remains a major future area, represented by three distinct gates:
   experimental Nouveau fallback profiles; never select Nouveau automatically.
   Treat persistent fallback state as a closed canonical record and reject
   duplicate keys, unknown profiles, non-boolean activation, or extra fields.
+  Publish and remove it only through the locked, fsync-backed Core mutator;
+  clean bounded abandoned temporaries and never follow a stale state symlink.
 * [x] Bind online repair to the installed support revision and the ordinary
   exact-kernel published-artifact policy; leave fallback active on failure.
 * [ ] Add an authenticated, explicitly approved on-device exact-kernel source

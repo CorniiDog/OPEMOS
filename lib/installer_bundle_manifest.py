@@ -42,6 +42,7 @@ FILES = (
     ("lib/validate_interstitial_binary.py", "runtime-helper", "0755"),
     ("lib/recovery_transaction.py", "runtime-helper", "0755"),
     ("lib/recovery_release_plan.py", "runtime-helper", "0755"),
+    ("lib/recovery_fallback_state.py", "runtime-helper", "0755"),
     ("lib/update_recovery_grub_args.py", "runtime-helper", "0755"),
     ("lib/open_opemos_contract.py", "runtime-helper", "0755"),
     ("lib/validate_recovery_install_path.py", "runtime-helper", "0755"),

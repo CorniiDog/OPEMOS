@@ -174,7 +174,10 @@ status helper exits nonzero. Identity records and fallback state are read from
 confined descriptors; symlinks, hardlinks, unsafe modes or owners, excessive
 files, and replacement during a read are rejected. Fallback state is also
 closed canonical JSON: ambiguous keys, fields, activation types, or profiles
-fail inspection rather than selecting recovery behavior. The guardian's pinned
+fail inspection rather than selecting recovery behavior. Its dedicated mutator
+serializes direct writes/removal, publishes from an exclusive temporary,
+fsyncs the file and parent, verifies the committed bytes, rejects unsafe
+removal targets, and confines abandoned-temporary cleanup. The guardian's pinned
 NVIDIA policy is mandatory: absence, empty content, malformed content, or a
 difference from the independently observed installed identity cannot degrade
 to an unpinned health decision. Duplicate or unresolved module candidates are

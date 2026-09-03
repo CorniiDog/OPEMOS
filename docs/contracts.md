@@ -567,7 +567,11 @@ Persistent fallback state is a closed canonical schema-1 record containing
 only `active=true` and one enumerated profile. Duplicate keys, extra fields,
 non-boolean activation, unknown profiles, non-finite values, or noncanonical
 encoding make status `unknown`; they are never interpreted as an active safe
-profile.
+profile. Fallback enablement publishes this record through a dedicated
+nonblocking lock, an exclusive private temporary, file and parent-directory
+`fsync`, atomic replacement, and post-publication byte verification. Removal
+verifies the exact safe regular-file identity before unlinking. A later
+operation cleans only bounded, owner-controlled abandoned fallback temporaries.
 
 The boot guardian observes every installed NVIDIA identity marker rather than
 accepting the first readable value. Missing, malformed, conflicting, or
