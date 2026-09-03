@@ -47,8 +47,10 @@ outside the frozen subset.
 bounded installer-result schema-1 matrix. It covers validation-only and full
 mutation success, mandatory-proof omissions, target/input identity failures,
 incomplete cleanup, malformed and duplicate-key JSON, and safe additive
-fields. The matrix declares `message` unfrozen and compares only terminal
-acceptance/status plus the authoritative validator's structural rules.
+fields. It also includes bounded accepted module/userspace failure diagnostics
+with matching phases and no success-only sibling proofs. The matrix declares
+`message` unfrozen and compares only terminal acceptance/status plus the
+authoritative validator's structural rules.
 
 `lib/generate_installer_progress_fixtures.py` deterministically emits the
 bounded installer-progress schema-1 stream matrix. It covers indeterminate

@@ -159,6 +159,23 @@ def module_verification():
     }
 
 
+def failed_module_verification():
+    record = copy.deepcopy(module_verification()["modules"][0])
+    record.update({
+        "actualPayloadSha256": None,
+        "compressedSizeBytes": None,
+        "decompressionStatus": "missing",
+        "invalidFields": ["presence", "payloadSha256", "decompression"],
+    })
+    return {
+        "schemaVersion": 1,
+        "status": "failed",
+        "reason": "installed_module_mismatch",
+        "message": "Human-readable fixture wording is intentionally not frozen.",
+        "moduleMismatches": [record],
+    }
+
+
 def userspace_verification():
     packages = []
     for package in package_records():
@@ -192,6 +209,20 @@ def userspace_verification():
             "status": "verified", "version": NVIDIA,
             "targetRelativeFiles": [f"usr/lib/firmware/nvidia/{NVIDIA}/gsp.bin"],
         },
+    }
+
+
+def failed_userspace_verification():
+    return {
+        "schemaVersion": 1,
+        "status": "failed",
+        "reason": "installed_userspace_mismatch",
+        "message": "Human-readable fixture wording is intentionally not frozen.",
+        "packageMismatches": [{
+            "packageName": "nvidia-utils",
+            "invalidFields": ["payloadHash", "payloadMode"],
+            "affectedEntries": ["usr/lib/libnvidia-example.so.575.64.05"],
+        }],
     }
 
 
@@ -288,6 +319,14 @@ def matrix():
         case("validated-success", validated, True),
         case("mutation-success", success, True),
     ]
+    failed_module = envelope("failed", "module_install", "module_install")
+    failed_module["moduleVerification"] = failed_module_verification()
+    cases.append(case("failed-module-diagnostic", failed_module, True))
+    failed_userspace = envelope(
+        "failed", "userspace_verification", "userspace_verification"
+    )
+    failed_userspace["userspaceVerification"] = failed_userspace_verification()
+    cases.append(case("failed-userspace-diagnostic", failed_userspace, True))
     additive = copy.deepcopy(success)
     additive["futureAdditiveField"] = {"safe": True}
     additive["inputs"]["futureAdditiveInput"] = "accepted"

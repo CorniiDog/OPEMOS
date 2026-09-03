@@ -154,7 +154,10 @@ package, and module-payload equality.
 Cross-frontend consumers can generate the canonical compatibility matrix with
 `python3 lib/generate_installer_result_fixtures.py`. Its output is canonical,
 strict JSON bounded to 512 KiB; human-readable `message` values are explicitly
-unfrozen. The generator itself is authenticated as part of the Core bundle.
+unfrozen. Accepted failed-module and failed-userspace cases preserve one strict,
+bounded actionable diagnostic subdocument with its matching phase and omit all
+success-only sibling proofs. The generator itself is authenticated as part of
+the Core bundle.
 
 Lock mismatches return sorted, bounded fields:
 

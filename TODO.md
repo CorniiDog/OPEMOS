@@ -82,9 +82,10 @@ index in the same commit.
   canonical Core bundle and execute every case in Core consumer tests.
 * [x] Publish a deterministic bounded installer-result schema-1 compatibility
   matrix covering validation and mutation success, mandatory proof omissions,
-  target/input identity failures, cleanup failure, hostile JSON, and additive
-  fields. Include its generator in the Core bundle and run every case through
-  the authoritative consumer validator.
+  target/input identity failures, cleanup failure, hostile JSON, additive
+  fields, and accepted bounded module/userspace failure diagnostics without
+  success-only sibling proofs. Include its generator in the Core bundle and
+  run every case through the authoritative consumer validator.
 * [x] Publish a deterministic bounded installer-progress schema-1 stream
   matrix covering heartbeats, monotonic byte/item counters, legal phase and
   attempt resets, regressions, additive fields/phases, hostile JSON, and line/

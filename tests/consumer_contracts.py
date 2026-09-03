@@ -198,23 +198,37 @@ def validate_installer_result_compatibility_fixtures(generator):
                 accepted = True
                 assert parsed["schemaVersion"] == document["resultSchemaVersion"]
                 assert parsed["status"] == expected["status"]
-                validation = parsed.get("validation")
-                assert isinstance(validation, dict)
-                validate_verified_metadata(validation)
-                assert set(validation) >= {
-                    "archiveSha256", "provenanceSha256", "userspaceLock",
-                    "pacmanDatabase", "boot", "keyring", "packages", "modules",
-                    "storage", "packageDependencyClosure", "compression",
-                    "gamingPayload",
-                }
-                workspace = parsed.get("initramfsWorkspace")
-                assert isinstance(workspace, dict)
-                assert {"requiredBytes", "requiredInodes", "availableBytes",
-                        "availableInodes", "inodeCapacityMode", "mode"} <= set(workspace)
+                if parsed["status"] in {"success", "validated"}:
+                    validation = parsed.get("validation")
+                    assert isinstance(validation, dict)
+                    validate_verified_metadata(validation)
+                    assert set(validation) >= {
+                        "archiveSha256", "provenanceSha256", "userspaceLock",
+                        "pacmanDatabase", "boot", "keyring", "packages", "modules",
+                        "storage", "packageDependencyClosure", "compression",
+                        "gamingPayload",
+                    }
+                    workspace = parsed.get("initramfsWorkspace")
+                    assert isinstance(workspace, dict)
+                    assert {"requiredBytes", "requiredInodes", "availableBytes",
+                            "availableInodes", "inodeCapacityMode", "mode"} <= set(workspace)
+                elif "moduleVerification" in parsed:
+                    nested = Path(temporary) / "failed-module-verification.json"
+                    nested.write_text(json.dumps(parsed["moduleVerification"]), encoding="utf-8")
+                    assert load_module_verification(nested)["status"] == "failed"
+                    assert "userspaceVerification" not in parsed
+                elif "userspaceVerification" in parsed:
+                    nested = Path(temporary) / "failed-userspace-verification.json"
+                    nested.write_text(json.dumps(parsed["userspaceVerification"]), encoding="utf-8")
+                    assert load_userspace_verification(nested)["status"] == "failed"
+                    assert "moduleVerification" not in parsed
+                else:
+                    raise AssertionError("accepted failed result lacks actionable diagnostics")
             assert accepted is expected["accepted"], name
         assert len(names) == len(set(names))
         assert set(names) == {
             "validated-success", "mutation-success", "safe-additive-fields",
+            "failed-module-diagnostic", "failed-userspace-diagnostic",
             "missing-module-verification", "missing-userspace-verification",
             "missing-workspace-verification", "missing-initramfs-verification",
             "missing-payload-receipt", "target-proof-mismatch",
