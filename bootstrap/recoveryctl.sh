@@ -13,6 +13,7 @@ JSON=0
 YES=0
 ROOT="${PROJECT_TEST_ROOT:-/}"
 RECOVERY_OPERATION_LOCK_HELD=0
+RECOVERY_LIFECYCLE_LOCK_HELD=0
 RO_WAS_ENABLED=0
 ACTIVE_PROCESS_GROUP=""
 
@@ -157,6 +158,15 @@ acquire_recovery_operation_lock()
     RECOVERY_OPERATION_LOCK_HELD=1
 }
 
+acquire_recovery_mutation_locks()
+{
+    acquire_recovery_operation_lock
+    if [[ "$RECOVERY_LIFECYCLE_LOCK_HELD" == 0 ]]; then
+        acquire_lifecycle_lock
+        RECOVERY_LIFECYCLE_LOCK_HELD=1
+    fi
+}
+
 emit_result()
 {
     local status="$1" reason="$2" action="$3"
@@ -263,8 +273,7 @@ enable_fallback()
     esac
     confirm "Enable the ${PROFILE} recovery profile?"
     [[ "$ROOT" != / ]] || sudo -v
-    acquire_recovery_operation_lock
-    acquire_lifecycle_lock
+    acquire_recovery_mutation_locks
     with_writable_root
     local install_cmd=(install) move_cmd=(mv)
     if [[ "$ROOT" == / ]]; then install_cmd=(sudo install); move_cmd=(sudo mv); fi
@@ -317,8 +326,7 @@ disable_fallback()
     require_verified_fallback "$document"
     confirm "Disable recovery fallback and restore NVIDIA graphical boot?"
     [[ "$ROOT" != / ]] || sudo -v
-    acquire_recovery_operation_lock
-    acquire_lifecycle_lock
+    acquire_recovery_mutation_locks
     # The first check avoids prompting for an invalid operation. This second
     # check is authoritative: target/module/receipt state may change before
     # both mutation locks are held.
@@ -358,6 +366,23 @@ raise SystemExit(0 if valid else 1)' "$1" ||
         die "An active fallback and exact receipt-bound NVIDIA verification are required."
 }
 
+guard_enable_fallback()
+{
+    local document
+    acquire_recovery_mutation_locks
+    # The pre-lock observation only decides whether the guardian must enter
+    # this path. A transient failure must not activate fallback after another
+    # serialized operation restores the exact receipt-bound payload.
+    if document="$(status_json)" &&
+       python3 -c 'import json,sys; d=json.loads(sys.argv[1]); raise SystemExit(0 if d.get("moduleVerification", {}).get("status") == "verified" else 1)' \
+           "$document"; then
+        return 0
+    fi
+    PROFILE=console
+    YES=1
+    enable_fallback
+}
+
 case "$COMMAND" in
     status)
         status_code=0
@@ -369,13 +394,13 @@ case "$COMMAND" in
         ;;
     guard)
         if ! document="$(status_json)"; then
-            PROFILE=console YES=1 enable_fallback
+            guard_enable_fallback
             exit 0
         fi
         if python3 -c 'import json,sys; raise SystemExit(0 if json.loads(sys.argv[1])["moduleVerification"]["status"] == "verified" else 1)' "$document"; then
             exit 0
         fi
-        PROFILE=console YES=1 enable_fallback
+        guard_enable_fallback
         ;;
     enable-fallback) enable_fallback ;;
     disable-fallback) disable_fallback ;;

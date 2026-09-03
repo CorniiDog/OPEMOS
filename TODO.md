@@ -1064,6 +1064,10 @@ This remains a major future area, represented by three distinct gates:
   receipt-bound target/module check after both recovery locks are held. Reject
   a target or module change between prompt and mutation without touching the
   fallback state.
+* [x] Treat the boot guardian's pre-lock failure as provisional. Acquire both
+  recovery mutation locks and repeat receipt-bound verification before enabling
+  console fallback, avoiding a stale fallback transition when another
+  serialized operation restored the exact payload while the guardian waited.
 * [x] Serialize guardian, fallback, repair, and cancellation workflows without
   deadlocking the nested canonical installer. Keep delayed-repair state closed,
   bounded, canonical, single-linked, mode-0600, descriptor-locked, fsync-backed,

@@ -453,7 +453,9 @@ assert "acquire_recovery_operation_lock" in control
 assert 'exec 8>"$lock_file"' in control
 assert 'flock -n 8' in control
 assert 'if ! document="$(status_json)"' in control
-assert "PROFILE=console YES=1 enable_fallback" in control
+assert "guard_enable_fallback" in control
+assert "acquire_recovery_mutation_locks" in control
+assert "PROFILE=console YES=1 enable_fallback" not in control
 assert "recovery_fallback_state.py" in control
 assert "state.json.tmp" not in control
 assert "plan_tool remove" in control
@@ -512,8 +514,15 @@ counter = Path({str(status_counter)!r})
 attempt = int(counter.read_text()) + 1 if counter.exists() else 1
 counter.write_text(str(attempt))
 mode = os.environ.get("MOCK_RECOVERY_STATUS")
-inactive = mode == "inactive"
-healthy = inactive or mode == "stable" or attempt == 1
+if mode == "guard-recovers":
+    healthy = attempt >= 2
+    inactive = healthy
+elif mode == "guard-fails":
+    healthy = False
+    inactive = False
+else:
+    inactive = mode == "inactive"
+    healthy = inactive or mode == "stable" or attempt == 1
 print(json.dumps({{
     "schemaVersion": 1,
     "status": ("healthy" if inactive else
@@ -568,6 +577,38 @@ print(json.dumps({{
         "schemaVersion": 1, "status": "healthy",
     }
     assert not recovery_config.exists() and not recovery_state.exists()
+
+    # A guardian decision made before acquiring the mutation locks is
+    # provisional. If another serialized operation restores the exact payload,
+    # the guardian must not activate a stale console fallback.
+    status_counter.unlink(missing_ok=True)
+    recovered = subprocess.run(
+        [str(CONTROL), "guard", "--json"],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        env={**race_environment, "MOCK_RECOVERY_STATUS": "guard-recovers"},
+        check=False,
+    )
+    assert recovered.returncode == 0, recovered.stderr
+    assert recovered.stdout == ""
+    assert status_counter.read_text() == "2"
+    assert not recovery_config.exists() and not recovery_state.exists()
+
+    # A second failed observation made while both locks are held remains a
+    # fail-safe transition to the console recovery profile.
+    status_counter.unlink(missing_ok=True)
+    failed = subprocess.run(
+        [str(CONTROL), "guard", "--json"],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        env={**race_environment, "MOCK_RECOVERY_STATUS": "guard-fails"},
+        check=False,
+    )
+    assert failed.returncode == 0, failed.stderr
+    assert json.loads(failed.stdout) == {
+        "action": "console", "reason": "fallback_enabled",
+        "schemaVersion": 1, "status": "fallback-active",
+    }
+    assert status_counter.read_text() == "2"
+    assert recovery_config.is_file() and recovery_state.is_file()
 
 with tempfile.TemporaryDirectory(prefix="opemos-guardian-", dir="/tmp") as temporary:
     guard_root = Path(temporary) / "root"
