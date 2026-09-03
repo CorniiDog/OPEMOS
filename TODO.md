@@ -1060,6 +1060,10 @@ This remains a major future area, represented by three distinct gates:
 * [x] Install recovery cancellation/readonly traps before live-root mutation,
   terminate and reap isolated long-running GRUB, initramfs, and online-repair
   process groups, and exit 130 instead of returning into a cancelled mutation.
+* [x] Require an active fallback before removal and repeat the complete
+  receipt-bound target/module check after both recovery locks are held. Reject
+  a target or module change between prompt and mutation without touching the
+  fallback state.
 * [x] Serialize guardian, fallback, repair, and cancellation workflows without
   deadlocking the nested canonical installer. Keep delayed-repair state closed,
   bounded, canonical, single-linked, mode-0600, descriptor-locked, fsync-backed,

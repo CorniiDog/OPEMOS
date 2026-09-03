@@ -56,6 +56,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 STATUS_TOOL="$SUPPORT_ROOT/lib/recovery_status.py"
+if [[ "${PROJECT_TEST_MODE:-0}" == 1 && -n "${PROJECT_TEST_STATUS_TOOL:-}" ]]; then
+    STATUS_TOOL="$PROJECT_TEST_STATUS_TOOL"
+fi
 POLICY_TOOL="$SUPPORT_ROOT/lib/recovery_policy.py"
 POLICY_ROOT="$SUPPORT_ROOT"
 if [[ "${PROJECT_TEST_MODE:-0}" == 1 && -n "${PROJECT_TEST_POLICY_ROOT:-}" ]]; then
@@ -65,6 +68,10 @@ FALLBACK_STATE_TOOL="$SUPPORT_ROOT/lib/recovery_fallback_state.py"
 STATE_ROOT="$(project_system_path /var/lib/$PROJECT_ID/recovery)"
 TRANSACTION="$SUPPORT_ROOT/transaction.json"
 RELEASE_PLAN="$SUPPORT_ROOT/release-plan.json"
+if [[ "${PROJECT_TEST_MODE:-0}" == 1 ]]; then
+    TRANSACTION="$STATE_ROOT/transaction.json"
+    RELEASE_PLAN="$STATE_ROOT/release-plan.json"
+fi
 RECOVERY_CONFIG="$(project_system_path /etc/modprobe.d/98-opemos-recovery.conf)"
 NVIDIA_CONFIG="$(project_system_path /etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf)"
 NVIDIA_INITRAMFS="$(project_system_path /etc/mkinitcpio.conf.d/90-open-gpu-kernel-modules-steamos.conf)"
@@ -307,12 +314,16 @@ disable_fallback()
 {
     local document
     document="$(status_json)"
-    python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["moduleVerification"]["status"] == "verified"' "$document" ||
-        die "Exact NVIDIA verification has not succeeded; fallback remains enabled."
+    require_verified_fallback "$document"
     confirm "Disable recovery fallback and restore NVIDIA graphical boot?"
     [[ "$ROOT" != / ]] || sudo -v
     acquire_recovery_operation_lock
     acquire_lifecycle_lock
+    # The first check avoids prompting for an invalid operation. This second
+    # check is authoritative: target/module/receipt state may change before
+    # both mutation locks are held.
+    document="$(status_json)"
+    require_verified_fallback "$document"
     with_writable_root
     local remove_cmd=(rm -f) move_cmd=(mv)
     if [[ "$ROOT" == / ]]; then remove_cmd=(sudo rm -f); move_cmd=(sudo mv); fi
@@ -332,6 +343,19 @@ disable_fallback()
     fi
     restore_readonly
     emit_result healthy fallback_disabled graphical.target
+}
+
+require_verified_fallback()
+{
+    python3 -c 'import json,sys
+d=json.loads(sys.argv[1])
+valid=(d.get("status") == "fallback-active"
+       and d.get("moduleVerification", {}).get("status") == "verified"
+       and d.get("fallback", {}).get("active") is True
+       and d.get("fallback", {}).get("profile") in
+           ("console", "igpu-desktop", "nouveau-experimental"))
+raise SystemExit(0 if valid else 1)' "$1" ||
+        die "An active fallback and exact receipt-bound NVIDIA verification are required."
 }
 
 case "$COMMAND" in

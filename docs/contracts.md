@@ -571,6 +571,11 @@ alone cannot disable fallback or finalize repair. The lower-level status helper
 retains an explicit non-receipt mode for compatibility; installed recovery
 policy never uses that weaker mode. This stronger decision does not add or
 remove recovery-status fields.
+Direct fallback removal additionally requires one enumerated fallback profile
+to be active. It checks that condition once before prompting, acquires both the
+recovery-operation and global lifecycle locks, then repeats the complete
+receipt-bound status check under those locks. A changed target, receipt,
+module, or fallback state leaves the fallback files and boot policy untouched.
 Recovery mutation installs its termination and readonly-restoration handlers
 before any command can make the live root writable. Long-running `mkinitcpio`,
 GRUB regeneration, and canonical online-repair children run in isolated process

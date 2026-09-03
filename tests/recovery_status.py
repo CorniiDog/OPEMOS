@@ -475,6 +475,100 @@ assert cancel_gate < healthy_gate
 assert 'rm -f "$TRANSACTION"' not in control
 assert 'rm -f "$RELEASE_PLAN"' not in control
 
+with tempfile.TemporaryDirectory(prefix="opemos-disable-race-", dir="/tmp") as temporary:
+    race_root = Path(temporary) / "root"
+    recovery_state = (
+        race_root
+        / "var/lib/open-gpu-kernel-modules-steamos-support/recovery/state.json"
+    )
+    recovery_state.parent.mkdir(parents=True)
+    recovery_state.write_text(
+        '{"active":true,"profile":"console","schemaVersion":1}\n',
+        encoding="utf-8",
+    )
+    recovery_config = race_root / "etc/modprobe.d/98-opemos-recovery.conf"
+    recovery_config.parent.mkdir(parents=True)
+    recovery_config.write_text("fallback remains active\n", encoding="utf-8")
+    policy_root = Path(temporary) / "policy"
+    policy_root.mkdir(mode=0o755)
+    (policy_root / "support-revision").write_text("f" * 40 + "\n")
+    (policy_root / "nvidia-version").write_text(NVIDIA + "\n")
+    (policy_root / "support-revision").chmod(0o644)
+    (policy_root / "nvidia-version").chmod(0o644)
+    mock_bin = Path(temporary) / "bin"
+    mock_bin.mkdir()
+    real_python = sys.executable
+    (mock_bin / "sudo").write_text("#!/bin/sh\nexec \"$@\"\n")
+    (mock_bin / "flock").write_text("#!/bin/sh\nexit 0\n")
+    (mock_bin / "sudo").chmod(0o755)
+    (mock_bin / "flock").chmod(0o755)
+    status_counter = Path(temporary) / "status-counter"
+    status_mock = Path(temporary) / "status.py"
+    status_mock.write_text(f'''#!{real_python}
+import json
+import os
+from pathlib import Path
+counter = Path({str(status_counter)!r})
+attempt = int(counter.read_text()) + 1 if counter.exists() else 1
+counter.write_text(str(attempt))
+mode = os.environ.get("MOCK_RECOVERY_STATUS")
+inactive = mode == "inactive"
+healthy = inactive or mode == "stable" or attempt == 1
+print(json.dumps({{
+    "schemaVersion": 1,
+    "status": ("healthy" if inactive else
+               "fallback-active" if healthy else "recovery-required"),
+    "reason": ("exact_nvidia_ready" if inactive else
+               "fallback_active" if healthy else "module_payload_mismatch"),
+    "target": {{"kernelVersion": {KERNEL!r}, "nvidiaVersion": {NVIDIA!r}}},
+    "moduleVerification": {{"status": "verified" if healthy else "failed", "records": []}},
+    "fallback": {{"active": not inactive, "profile": None if inactive else "console"}},
+    "actions": (["disable-fallback"] if healthy and not inactive else
+                [] if inactive else ["repair-exact-kernel"]),
+}}, sort_keys=True, separators=(",", ":")))
+''', encoding="utf-8")
+    status_mock.chmod(0o755)
+    race_environment = {
+        **os.environ,
+        "PATH": f"{mock_bin}:{os.environ['PATH']}",
+        "PROJECT_TEST_MODE": "1",
+        "PROJECT_TEST_ROOT": str(race_root),
+        "PROJECT_TEST_POLICY_ROOT": str(policy_root),
+        "PROJECT_TEST_STATUS_TOOL": str(status_mock),
+    }
+    raced = subprocess.run(
+        [str(CONTROL), "disable-fallback", "--yes", "--json"],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        env=race_environment, check=False,
+    )
+    assert raced.returncode != 0
+    assert status_counter.read_text() == "2"
+    assert recovery_config.read_text() == "fallback remains active\n"
+    assert recovery_state.is_file()
+
+    # No active fallback is never interpreted as an idempotent removal request.
+    inactive = subprocess.run(
+        [str(CONTROL), "disable-fallback", "--yes", "--json"],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        env={**race_environment, "MOCK_RECOVERY_STATUS": "inactive"},
+        check=False,
+    )
+    assert inactive.returncode != 0
+    assert recovery_config.is_file() and recovery_state.is_file()
+
+    disabled = subprocess.run(
+        [str(CONTROL), "disable-fallback", "--yes", "--json"],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        env={**race_environment, "MOCK_RECOVERY_STATUS": "stable"},
+        check=False,
+    )
+    assert disabled.returncode == 0, disabled.stderr
+    assert json.loads(disabled.stdout) == {
+        "action": "graphical.target", "reason": "fallback_disabled",
+        "schemaVersion": 1, "status": "healthy",
+    }
+    assert not recovery_config.exists() and not recovery_state.exists()
+
 with tempfile.TemporaryDirectory(prefix="opemos-guardian-", dir="/tmp") as temporary:
     guard_root = Path(temporary) / "root"
     guard_state = (
