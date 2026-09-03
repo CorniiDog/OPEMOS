@@ -335,7 +335,10 @@ requires a canonical root-controlled evidence document bound to the exact
 active sequence and manifest hash, generation integrity, and recovery
 readiness. Before advancing last known good, Core also reauthenticates the
 active cached generation against the currently installed complete authority and
-rechecks the trust-file guards. Rollback likewise requires the complete current
+rechecks the trust-file guards. Rootfs receipt verification reads the manifest
+and all six evidence files relative to one opened, identity-stable directory
+descriptor, preventing mixed evidence across a directory replacement. Rollback
+likewise requires the complete current
 policy, keyring, signer, and generation authority rather than accepting only a
 matching policy-hash field. A policy rotation cannot acknowledge or restore a
 generation authorized by the prior policy. Rollback never lowers high-water

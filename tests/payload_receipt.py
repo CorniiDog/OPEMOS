@@ -6,9 +6,13 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "lib"))
+import payload_receipt  # noqa: E402
+
 HELPER = ROOT / "lib/payload_receipt.py"
 KERNEL = "6.16.12-valve24.4-1-neptune-616-gfixture"
 TARGET = {
@@ -142,6 +146,32 @@ def main():
         assert invoke(
             "commit", target_root, evidence, root / "repaired-safe.json"
         ).returncode == 0
+        displaced_receipt = receipt_root.with_name("offline-install-displaced")
+        original_read_regular_at = payload_receipt.read_regular_at
+        replaced_directory = False
+
+        def replace_receipt_directory(descriptor, filename, *args, **kwargs):
+            nonlocal replaced_directory
+            payload = original_read_regular_at(
+                descriptor, filename, *args, **kwargs
+            )
+            if filename == "receipt.json" and not replaced_directory:
+                receipt_root.rename(displaced_receipt)
+                receipt_root.mkdir(mode=0o755)
+                replaced_directory = True
+            return payload
+
+        with mock.patch.object(
+                payload_receipt, "read_regular_at", replace_receipt_directory):
+            try:
+                payload_receipt.verify_receipt(target_root)
+            except ValueError as error:
+                assert "directory changed" in str(error)
+            else:
+                raise AssertionError("replaced receipt directory was accepted")
+        receipt_root.rmdir()
+        displaced_receipt.rename(receipt_root)
+
         receipt_root.chmod(0o777)
         writable_directory = invoke(
             "verify", target_root, evidence, root / "writable-directory.json"

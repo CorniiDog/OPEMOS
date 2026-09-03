@@ -174,8 +174,11 @@ They also independently observe the current SteamOS version, running kernel,
 architecture, and Core's installed NVIDIA identity, then require one exact
 target lock in the selected generation. The observed identity must also match
 the current rootfs's confined, owner-controlled payload receipt after all six
-receipt files and hashes are reverified; a persistent `/var` marker alone is
-not sufficient. Health evidence cannot substitute for this target observation,
+receipt files and hashes are reverified from one opened receipt-directory
+descriptor. Core binds that directory's device, inode, ownership, and mode
+through the complete read, so evidence from replaced directory instances cannot
+be mixed into one health decision; a persistent `/var` marker alone is not
+sufficient. Health evidence cannot substitute for this target observation,
 and a last-known-good generation for another A/B slot cannot be restored after
 a slot transition. Core rechecks same-descriptor trust guards before committing
 state. A valid generation from an older or otherwise different policy cannot

@@ -82,6 +82,47 @@ def read_regular(path, maximum, expected_owner=None, require_nonwritable=False):
         os.close(descriptor)
 
 
+def read_regular_at(directory_descriptor, filename, maximum,
+                    expected_owner=None, require_nonwritable=False):
+    if filename != Path(filename).name:
+        raise ValueError("receipt filename is unsafe")
+    flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+             | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0))
+    descriptor = os.open(filename, flags, dir_fd=directory_descriptor)
+    try:
+        before = os.fstat(descriptor)
+        if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+                or not 0 < before.st_size <= maximum
+                or expected_owner is not None and before.st_uid != expected_owner
+                or require_nonwritable and stat.S_IMODE(before.st_mode) & 0o022):
+            raise ValueError("receipt input is not a bounded regular file")
+        payload = bytearray()
+        while len(payload) <= maximum:
+            chunk = os.read(
+                descriptor, min(1024 * 1024, maximum + 1 - len(payload))
+            )
+            if not chunk:
+                break
+            payload.extend(chunk)
+        after = os.fstat(descriptor)
+        current = os.stat(
+            filename, dir_fd=directory_descriptor, follow_symlinks=False
+        )
+        identity = lambda info: (
+            info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns,
+            info.st_ctime_ns, info.st_uid, info.st_gid,
+            stat.S_IMODE(info.st_mode), info.st_nlink,
+        )
+        if (len(payload) > maximum or len(payload) != before.st_size
+                or identity(before) != identity(after)
+                or identity(after) != identity(current)
+                or stat.S_ISLNK(current.st_mode)):
+            raise ValueError("receipt input changed while being read")
+        return bytes(payload)
+    finally:
+        os.close(descriptor)
+
+
 def load_json(payload):
     def reject_constant(value):
         raise ValueError(f"invalid JSON constant: {value}")
@@ -117,6 +158,32 @@ def receipt_directory(root, create=False, allow_live_root=False,
                      or stat.S_IMODE(metadata.st_mode) & 0o022)):
             raise ValueError("payload receipt path is unsafe")
     return current
+
+
+def open_receipt_directory(root, allow_live_root=False, expected_owner=None):
+    directory = receipt_directory(
+        root, allow_live_root=allow_live_root, expected_owner=expected_owner,
+    )
+    flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+             | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0))
+    descriptor = os.open(directory, flags)
+    try:
+        opened = os.fstat(descriptor)
+        current = directory.lstat()
+        identity = lambda info: (
+            info.st_dev, info.st_ino, info.st_uid, info.st_gid,
+            stat.S_IMODE(info.st_mode), info.st_nlink,
+        )
+        if (not stat.S_ISDIR(opened.st_mode)
+                or expected_owner is not None
+                and opened.st_uid != expected_owner
+                or stat.S_IMODE(opened.st_mode) & 0o022
+                or identity(opened) != identity(current)):
+            raise ValueError("payload receipt directory changed or is unsafe")
+    except BaseException:
+        os.close(descriptor)
+        raise
+    return directory, descriptor, identity(opened)
 
 
 def target_from_documents(documents):
@@ -223,41 +290,53 @@ def commit_receipt(args):
 def _verify_receipt(root, allow_live_root=False):
     resolved_root = safe_root(root, allow_live_root=allow_live_root)
     expected_owner = 0 if resolved_root == Path("/") else os.geteuid()
-    directory = receipt_directory(
+    directory, descriptor, directory_identity = open_receipt_directory(
         resolved_root, allow_live_root=allow_live_root,
         expected_owner=expected_owner,
     )
-    manifest = load_json(read_regular(
-        directory / MANIFEST_NAME, MAX_MANIFEST_BYTES,
-        expected_owner=expected_owner, require_nonwritable=True,
-    ))
-    if (not isinstance(manifest, dict)
-            or manifest.get("schemaVersion") != 1
-            or manifest.get("status") != "verified"
-            or manifest.get("reason") != "payload_receipt_committed"
-            or not isinstance(manifest.get("target"), dict)
-            or not isinstance(manifest.get("records"), list)
-            or len(manifest["records"]) != len(MAX_INPUTS)):
-        raise ValueError("payload receipt manifest is malformed")
-    expected_roles = list(MAX_INPUTS)
-    if (any(not isinstance(record, dict) for record in manifest["records"])
-            or [record.get("role") for record in manifest["records"]] != expected_roles):
-        raise ValueError("payload receipt record set is malformed")
-    documents = {}
-    for record in manifest["records"]:
-        role = record["role"]
-        filename, maximum, structured = MAX_INPUTS[role]
-        if record.get("filename") != filename:
-            raise ValueError("payload receipt filename is inconsistent")
-        payload = read_regular(
-            directory / filename, maximum,
+    try:
+        manifest = load_json(read_regular_at(
+            descriptor, MANIFEST_NAME, MAX_MANIFEST_BYTES,
             expected_owner=expected_owner, require_nonwritable=True,
+        ))
+        if (not isinstance(manifest, dict)
+                or manifest.get("schemaVersion") != 1
+                or manifest.get("status") != "verified"
+                or manifest.get("reason") != "payload_receipt_committed"
+                or not isinstance(manifest.get("target"), dict)
+                or not isinstance(manifest.get("records"), list)
+                or len(manifest["records"]) != len(MAX_INPUTS)):
+            raise ValueError("payload receipt manifest is malformed")
+        expected_roles = list(MAX_INPUTS)
+        if (any(not isinstance(record, dict) for record in manifest["records"])
+                or [record.get("role") for record in manifest["records"]]
+                != expected_roles):
+            raise ValueError("payload receipt record set is malformed")
+        documents = {}
+        for record in manifest["records"]:
+            role = record["role"]
+            filename, maximum, structured = MAX_INPUTS[role]
+            if record.get("filename") != filename:
+                raise ValueError("payload receipt filename is inconsistent")
+            payload = read_regular_at(
+                descriptor, filename, maximum,
+                expected_owner=expected_owner, require_nonwritable=True,
+            )
+            if (record.get("sizeBytes") != len(payload)
+                    or record.get("sha256")
+                    != hashlib.sha256(payload).hexdigest()):
+                raise ValueError("payload receipt content differs from its manifest")
+            if structured:
+                documents[role] = load_json(payload)
+        current = directory.lstat()
+        current_identity = (
+            current.st_dev, current.st_ino, current.st_uid, current.st_gid,
+            stat.S_IMODE(current.st_mode), current.st_nlink,
         )
-        if (record.get("sizeBytes") != len(payload)
-                or record.get("sha256") != hashlib.sha256(payload).hexdigest()):
-            raise ValueError("payload receipt content differs from its manifest")
-        if structured:
-            documents[role] = load_json(payload)
+        if current_identity != directory_identity or stat.S_ISLNK(current.st_mode):
+            raise ValueError("payload receipt directory changed while being read")
+    finally:
+        os.close(descriptor)
     target = target_from_documents(documents)
     if (manifest["target"] != target
             or manifest.get("receiptId") != receipt_id(target, manifest["records"])):
