@@ -190,6 +190,12 @@ Canonical signed discovery and sequence-specific manifest filenames are
 preserved. Each intermediate lineage input is a closed document-only directory
 containing those two documents and detached signatures, so a device that missed
 generations does not need their obsolete payloads.
+Durable selection uses two alternating revisioned state markers whose embedded
+state hashes are verified before choosing the highest revision. Legacy
+`state.json` is migrated after the first successful marker commit. Locked
+restart reconciliation removes only bounded stale temporary markers and rejects
+a cache sequence newer than the selected durable high-water; it never guesses
+that such an ambiguous generation was or was not activated.
 Unacknowledged active data blocks another activation. Health acknowledgement
 requires a canonical root-controlled evidence document bound to the exact
 active sequence and manifest hash, generation integrity, and recovery

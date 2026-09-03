@@ -188,6 +188,10 @@ the explicit development-test override. Cached generations preserve the
 canonical signed discovery and sequence-specific manifest filenames. Missed-
 generation catch-up accepts bounded document-only lineage directories; it does
 not require downloading intermediate payloads.
+Device state is committed through alternating revisioned markers. Restart
+reconciliation removes bounded abandoned marker temporaries, migrates the
+legacy single marker, and fails closed if immutable cache contents prove that a
+newer sequence exists than the surviving durable high-water.
 
 The device compatibility matrix distinguishes JSON/schema structure from
 durable lifecycle invariants: a healthy active generation must equal LKG,

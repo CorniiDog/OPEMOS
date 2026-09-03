@@ -63,6 +63,10 @@ POLICY_FIELDS = {
 CHECKPOINT_FIELDS = {
     "schemaVersion", "policySha256", "sequence", "manifestSha256",
 }
+STATE_MARKER_FIELDS = {"schemaVersion", "revision", "stateSha256", "state"}
+STATE_MARKERS = ("state-a.json", "state-b.json")
+STATE_TEMP_PREFIXES = tuple(f".{name}.tmp-" for name in STATE_MARKERS)
+MAX_STORE_ROOT_ENTRIES = 16
 
 
 class DeviceGenerationError(Exception):
@@ -99,7 +103,8 @@ def fsync_directory(path):
 
 def snapshot_regular(path, maximum, label,
                      reason="device_generation_input_invalid",
-                     changed_reason="device_generation_input_changed"):
+                     changed_reason="device_generation_input_changed",
+                     expected_owner=None, expected_mode=None):
     descriptor = None
     try:
         descriptor = os.open(
@@ -111,7 +116,10 @@ def snapshot_regular(path, maximum, label,
     try:
         before = os.fstat(descriptor)
         if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
-                or not 1 <= before.st_size <= maximum):
+                or not 1 <= before.st_size <= maximum
+                or expected_owner is not None and before.st_uid != expected_owner
+                or expected_mode is not None
+                and stat.S_IMODE(before.st_mode) != expected_mode):
             fail(
                 reason,
                 f"{label} is not a bounded single-link file",
@@ -214,7 +222,25 @@ def safe_store(store, create=False):
     if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid()
             or stat.S_IMODE(info.st_mode) != 0o700):
         fail("device_generation_store_invalid", "generation directory is unsafe")
+    validate_store_layout(store)
     return generations
+
+
+def validate_store_layout(store):
+    try:
+        entries = list(store.iterdir())
+    except OSError:
+        fail("device_generation_store_invalid", "device generation store is unreadable")
+    if len(entries) > MAX_STORE_ROOT_ENTRIES:
+        fail("device_generation_store_excessive", "device generation store has too many entries")
+    allowed = {
+        "generations", ".generation.lock", "state.json", *STATE_MARKERS,
+    }
+    for entry in entries:
+        if entry.name in allowed or any(
+                entry.name.startswith(prefix) for prefix in STATE_TEMP_PREFIXES):
+            continue
+        fail("device_generation_store_invalid", "device generation store layout is unsafe")
 
 
 def cleanup_staging(generations):
@@ -272,7 +298,17 @@ def lifecycle_lock(store, create=False):
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             fail("device_generation_busy", "another device generation operation is active")
+        try:
+            current = lock_path.lstat()
+        except OSError:
+            fail("device_generation_lock_failed", "generation lifecycle lock was replaced")
+        opened = os.fstat(lock.fileno())
+        if (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino):
+            fail("device_generation_lock_failed", "generation lifecycle lock was replaced")
+        cleanup_state_temporaries(store)
         cleanup_staging(generations)
+        ensure_state_marker(store, generations)
+        reconcile_state_markers(store, generations)
         yield generations
 
 
@@ -294,24 +330,174 @@ def validate_state(state):
         fail("device_generation_state_invalid", str(error))
 
 
-def read_state(store):
+def read_legacy_state(store):
     path = store / "state.json"
     if not path.exists() and not path.is_symlink():
-        return empty_state()
+        return None
     payload = snapshot_regular(
-        path, MAX_STATE_BYTES, "device generation state",
+        path, MAX_STATE_BYTES, "legacy device generation state",
         "device_generation_state_invalid", "device_generation_state_invalid",
+        os.geteuid(), 0o600,
     )
     try:
-        state = strict_json(payload, MAX_STATE_BYTES, "device generation state")
+        state = strict_json(payload, MAX_STATE_BYTES, "legacy device generation state")
     except GenerationContractError as error:
         fail("device_generation_state_invalid", str(error))
     return validate_state(state)
 
 
+def read_state_marker(path):
+    if not path.exists() and not path.is_symlink():
+        return None
+    payload = snapshot_regular(
+        path, MAX_STATE_BYTES, "device generation state marker",
+        "device_generation_state_invalid", "device_generation_state_invalid",
+        os.geteuid(), 0o600,
+    )
+    try:
+        marker = strict_json(payload, MAX_STATE_BYTES, "device generation state marker")
+    except GenerationContractError as error:
+        fail("device_generation_state_invalid", str(error))
+    if (not isinstance(marker, dict) or set(marker) != STATE_MARKER_FIELDS
+            or marker.get("schemaVersion") != 1
+            or type(marker.get("revision")) is not int
+            or not 1 <= marker["revision"] <= MAX_SEQUENCE
+            or not isinstance(marker.get("stateSha256"), str)
+            or HASH.fullmatch(marker["stateSha256"]) is None):
+        fail("device_generation_state_invalid", "device generation state marker is invalid")
+    state = validate_state(marker.get("state"))
+    if marker["stateSha256"] != sha256(canonical(state)):
+        fail("device_generation_state_invalid", "device generation state marker hash differs")
+    return marker
+
+
+def read_state_record(store):
+    markers = [
+        marker for marker in (
+            read_state_marker(store / name) for name in STATE_MARKERS
+        ) if marker is not None
+    ]
+    if markers:
+        revisions = [marker["revision"] for marker in markers]
+        if len(revisions) != len(set(revisions)):
+            fail("device_generation_state_invalid", "device generation revisions are ambiguous")
+        selected = max(markers, key=lambda marker: marker["revision"])
+        legacy = read_legacy_state(store)
+        if legacy is not None and legacy != selected["state"]:
+            fail("device_generation_state_invalid", "legacy state conflicts with state markers")
+        return selected["state"], selected["revision"]
+    legacy = read_legacy_state(store)
+    if legacy is not None:
+        return legacy, 0
+    generations = store / "generations"
+    try:
+        has_generations = any(generations.iterdir())
+    except OSError:
+        fail("device_generation_state_invalid", "generation directory is unreadable")
+    if has_generations:
+        fail("device_generation_state_invalid", "device generation state marker is missing")
+    return empty_state(), 0
+
+
+def read_state(store):
+    return read_state_record(store)[0]
+
+
+def cleanup_state_temporaries(store):
+    for entry in list(store.iterdir()):
+        if any(entry.name.startswith(prefix) for prefix in STATE_TEMP_PREFIXES):
+            try:
+                info = entry.lstat()
+            except OSError:
+                continue
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid()
+                    or info.st_nlink != 1):
+                fail("device_generation_store_invalid", "state temporary is unsafe")
+            entry.unlink()
+    marker_paths = [
+        store / name for name in STATE_MARKERS
+        if (store / name).exists() or (store / name).is_symlink()
+    ]
+    if marker_paths:
+        for path in marker_paths:
+            read_state_marker(path)
+        legacy = store / "state.json"
+        if legacy.exists() or legacy.is_symlink():
+            legacy.unlink()
+    fsync_directory(store)
+
+
+def ensure_state_marker(store, generations):
+    if (any((store / name).exists() or (store / name).is_symlink()
+            for name in STATE_MARKERS)
+            or (store / "state.json").exists()
+            or (store / "state.json").is_symlink()):
+        return
+    if any(generations.iterdir()):
+        fail("device_generation_state_invalid", "device generation state marker is missing")
+    write_state(store, empty_state())
+
+
+def cached_generation_sequence(generation):
+    identity = generation.name
+    if HASH.fullmatch(identity) is None or generation.is_symlink() or not generation.is_dir():
+        fail("device_generation_store_invalid", "generation store contains an unsafe entry")
+    discovery_payload = snapshot_regular(
+        generation / DISCOVERY_FILENAME, DISCOVERY_MAX_BYTES, "cached discovery",
+        "device_generation_store_invalid", "device_generation_store_invalid",
+    )
+    try:
+        discovery = strict_json(
+            discovery_payload, DISCOVERY_MAX_BYTES, "cached discovery"
+        )
+        validate_discovery(discovery)
+    except GenerationContractError as error:
+        fail("device_generation_store_invalid", str(error))
+    manifest_name = discovery["generation"]["manifestFilename"]
+    manifest_payload = snapshot_regular(
+        generation / manifest_name, MANIFEST_MAX_BYTES, "cached manifest",
+        "device_generation_store_invalid", "device_generation_store_invalid",
+    )
+    try:
+        manifest = strict_json(manifest_payload, MANIFEST_MAX_BYTES, "cached manifest")
+        validate_pair(discovery, manifest)
+    except GenerationContractError as error:
+        fail("device_generation_store_invalid", str(error))
+    if sha256(manifest_payload) != identity:
+        fail("device_generation_store_invalid", "cached manifest identity changed")
+    return manifest["sequence"]
+
+
+def reconcile_state_markers(store, generations):
+    state = read_state(store)
+    cached_sequences = [
+        cached_generation_sequence(entry) for entry in generations.iterdir()
+    ]
+    if cached_sequences and max(cached_sequences) > state["highWaterSequence"]:
+        fail(
+            "device_generation_state_reconciliation_required",
+            "cached generation is newer than the durable high-water marker",
+        )
+
+
 def write_state(store, state):
     validate_state(state)
-    durable_write(store / "state.json", canonical(state))
+    _current, revision = read_state_record(store)
+    if revision >= MAX_SEQUENCE:
+        fail("device_generation_state_invalid", "device generation revision is exhausted")
+    next_revision = revision + 1
+    marker = {
+        "schemaVersion": 1,
+        "revision": next_revision,
+        "stateSha256": sha256(canonical(state)),
+        "state": state,
+    }
+    name = STATE_MARKERS[(next_revision - 1) % len(STATE_MARKERS)]
+    durable_write(store / name, canonical(marker))
+    legacy = store / "state.json"
+    if legacy.exists() or legacy.is_symlink():
+        legacy.unlink()
+        fsync_directory(store)
 
 
 def development_override():

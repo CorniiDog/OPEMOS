@@ -42,6 +42,28 @@ def write(path, payload, mode=0o600):
     path.chmod(mode)
 
 
+def durable_state(store):
+    markers = []
+    for name in ("state-a.json", "state-b.json"):
+        path = store / name
+        if path.exists():
+            markers.append(json.loads(path.read_text(encoding="utf-8")))
+    if markers:
+        return max(markers, key=lambda marker: marker["revision"])["state"]
+    return json.loads((store / "state.json").read_text(encoding="utf-8"))
+
+
+def latest_state_marker(store):
+    paths = [
+        store / name for name in ("state-a.json", "state-b.json")
+        if (store / name).exists()
+    ]
+    return max(
+        paths,
+        key=lambda path: json.loads(path.read_text(encoding="utf-8"))["revision"],
+    )
+
+
 def create_source(root, sequence, predecessor, authority, signature):
     root.mkdir(mode=0o700)
     payload_root = root / "payload"
@@ -231,11 +253,12 @@ def main():
             success=False,
         )
         assert repeated_wrong_target["reason"] == "device_generation_not_authorized"
-        state_path = store / "state.json"
+        state_path = latest_state_marker(store)
         valid_state_payload = state_path.read_bytes()
-        invalid_state = json.loads(valid_state_payload)
-        invalid_state["healthPending"] = False
-        write(state_path, canonical(invalid_state))
+        invalid_marker = json.loads(valid_state_payload)
+        invalid_marker["state"]["healthPending"] = False
+        invalid_marker["stateSha256"] = digest(canonical(invalid_marker["state"]))
+        write(state_path, canonical(invalid_marker))
         invalid_state_result = invoke(
             environment, store, policy, keyring, checkpoint, "status",
             success=False,
@@ -458,12 +481,10 @@ def main():
         )
         deadline = time.time() + 5
         while time.time() < deadline:
-            state_path = store / "state.json"
-            if (state_path.exists()
-                    and json.loads(state_path.read_text())["active"]["sequence"] == 13):
+            if durable_state(store)["active"]["sequence"] == 13:
                 break
             time.sleep(0.02)
-        assert json.loads((store / "state.json").read_text())["active"] == {
+        assert durable_state(store)["active"] == {
             "sequence": 13, "manifestSha256": hash_13,
         }
         crashed.kill()
@@ -486,7 +507,7 @@ def main():
            stderr=subprocess.PIPE, text=True)
         deadline = time.time() + 5
         while time.time() < deadline:
-            state = json.loads((store / "state.json").read_text())
+            state = durable_state(store)
             if state["active"]["sequence"] == 14:
                 break
             time.sleep(0.02)
@@ -505,6 +526,33 @@ def main():
             success=False,
         )
         assert inactive["reason"] == "device_generation_network_inactive"
+
+        unknown_store_entry = store / "unexpected-entry"
+        write(unknown_store_entry, b"unexpected\n")
+        confined_store = invoke(
+            environment, store, policy, keyring, checkpoint, "status",
+            success=False,
+        )
+        assert confined_store["reason"] == "device_generation_store_invalid"
+        unknown_store_entry.unlink()
+
+        marker = latest_state_marker(store)
+        marker.chmod(0o644)
+        unsafe_marker = invoke(
+            environment, store, policy, keyring, checkpoint, "status",
+            success=False,
+        )
+        assert unsafe_marker["reason"] == "device_generation_state_invalid"
+        marker.chmod(0o600)
+
+        lock_copy = root / "generation-lock-copy"
+        os.link(store / ".generation.lock", lock_copy)
+        replaced_lock = invoke(
+            environment, store, policy, keyring, checkpoint, "prune",
+            success=False,
+        )
+        assert replaced_lock["reason"] == "device_generation_lock_failed"
+        lock_copy.unlink()
 
         store_link = root / "store-link"
         store_link.symlink_to(store, target_is_directory=True)
@@ -539,6 +587,43 @@ def main():
             "device_generation_authentication_failed"
         )
         assert not (root / "production").exists()
+
+        stale_state = store / ".state-a.json.tmp-abandoned"
+        write(stale_state, b"partial-state")
+        invoke(environment, store, policy, keyring, checkpoint, "prune")
+        assert not stale_state.exists()
+
+        migration_store = root / "migration-store"
+        migration_store.mkdir(mode=0o700)
+        (migration_store / "generations").mkdir(mode=0o700)
+        write(migration_store / "state.json", canonical({
+            "schemaVersion": 1,
+            "channel": "reviewed-userspace-lock-generations",
+            "active": None,
+            "lastKnownGood": None,
+            "highWaterSequence": 0,
+            "healthPending": False,
+        }))
+        migrated = activate(
+            environment, migration_store, policy, keyring, checkpoint,
+            generation_7,
+        )
+        assert migrated["state"]["active"]["manifestSha256"] == hash_7
+        assert not (migration_store / "state.json").exists()
+        assert latest_state_marker(migration_store).exists()
+        acknowledge(environment, migration_store, policy, keyring, checkpoint)
+        activate(
+            environment, migration_store, policy, keyring, checkpoint,
+            generation_8,
+        )
+        latest_state_marker(migration_store).unlink()
+        missing_marker = invoke(
+            environment, migration_store, policy, keyring, checkpoint, "prune",
+            success=False,
+        )
+        assert missing_marker["reason"] == (
+            "device_generation_state_reconciliation_required"
+        )
 
         result_schema = json.loads((
             ROOT / "contracts/schemas/device-generation-result-v1.schema.json"

@@ -1434,6 +1434,11 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   and tests. Cover healthy/LKG equality, pending-health separation,
   rollback-stable high-water, exact-active evidence binding, closed fields,
   duplicate keys, non-finite values, malformed records, and size bounds.
+* [x] Replace the inactive device cache's single state marker with an internal
+  alternating revisioned journal. Reconcile restart state against confined
+  immutable cache sequences, clean bounded abandoned marker temporaries,
+  migrate the legacy marker, bind the lifecycle lock to its opened inode, and
+  fail closed instead of lowering high-water when marker loss is ambiguous.
 * [ ] Specify a stable canonical discovery location without placing URLs or
   redirects inside the signed descriptor. OPEMOS.EXE owns host transport and
   its cache; installed Core/CLI owns device transport and its separate cache.
