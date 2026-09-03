@@ -117,6 +117,16 @@ def main():
         assert not (output / "egl-wayland-4@1.1.19-1-x86_64.pkg.tar.zst").exists()
         assert stat.S_IMODE(output.stat().st_mode) == 0o500
         assert all(stat.S_IMODE(item.stat().st_mode) == 0o400 for item in output.iterdir())
+        descriptor_hash = hashlib.sha256(
+            (output / "installer-inputs-v1.json").read_bytes()
+        ).hexdigest()
+        consume(first, output, success=False)
+        assert hashlib.sha256(
+            (output / "installer-inputs-v1.json").read_bytes()
+        ).hexdigest() == descriptor_hash
+
+        run([GENERATOR, "--development-test", "--output", first], success=False)
+        assert tree_identity(first) == tree_identity(second)
 
         denied_parent = root / "denied-output"
         denied_parent.mkdir(mode=0o700)

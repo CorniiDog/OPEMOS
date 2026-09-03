@@ -5,10 +5,7 @@ import argparse
 import copy
 import hashlib
 import json
-import os
 import shutil
-import stat
-import tempfile
 from pathlib import Path
 
 from userspace_lock_generation_contract import (
@@ -274,7 +271,11 @@ def materialize(output):
     if output.exists() or output.is_symlink():
         raise ValueError("development generation output already exists")
     output.parent.mkdir(parents=True, exist_ok=True)
-    stage = Path(tempfile.mkdtemp(prefix=".development-generation-", dir=output.parent))
+    try:
+        output.mkdir(mode=0o700)
+    except FileExistsError:
+        raise ValueError("development generation output already exists") from None
+    stage = output
     complete = False
     try:
         handoff = stage / "handoff"
@@ -299,7 +300,6 @@ def materialize(output):
         write(stage / "development-generation.json", canonical(summary))
         for directory in (handoff, trust, stage):
             directory.chmod(0o500)
-        os.replace(stage, output)
         complete = True
         return summary
     finally:

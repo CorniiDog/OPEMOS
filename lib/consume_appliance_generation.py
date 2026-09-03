@@ -177,6 +177,8 @@ def validate_handoff(document, expected_operation, expected_target):
             or any(HASH.fullmatch(item or "") is None for item in lineage)
             or len(lineage) != len(set(lineage))):
         fail("appliance handoff lineage is invalid")
+    if lineage:
+        fail("appliance handoff lineage consumption is not implemented")
     files = document["files"]
     if not isinstance(files, list) or not 1 <= len(files) <= MAX_FILES + 5:
         fail("appliance handoff file set is invalid")
@@ -600,7 +602,11 @@ def prepare(arguments):
     parent_identity = validate_private_directory(
         output.parent, "installer input output parent"
     )
-    stage = Path(tempfile.mkdtemp(prefix=".generation-inputs-", dir=output.parent))
+    try:
+        output.mkdir(mode=0o700)
+    except FileExistsError:
+        fail("installer input output already exists")
+    stage = output
     complete = False
     try:
         for package, artifact, signature in package_records:
@@ -652,11 +658,10 @@ def prepare(arguments):
         for path in stage.iterdir():
             if not path.is_file() or path.is_symlink():
                 fail("prepared installer input layout is unsafe")
-        stage.chmod(0o500)
         if validate_private_directory(output.parent, "installer input output parent") \
                 != parent_identity:
             fail("installer input output parent changed during preparation")
-        os.replace(stage, output)
+        stage.chmod(0o500)
         directory = os.open(output.parent, os.O_RDONLY)
         try:
             os.fsync(directory)
