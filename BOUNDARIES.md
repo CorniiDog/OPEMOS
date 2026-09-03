@@ -16,8 +16,14 @@ OPEMOS Core contracts
 └── OPEMOS.EXE
 ```
 
+OPEMOS Core is the lower-level policy and contract provider. The CLI, SteamOS
+Desktop Companion, fullscreen DRM/KMS interstitial, and OPEMOS.EXE are sibling
+Core consumers. The OPEMOS repository owns the interstitial implementation,
+packaging, and tests, but the interstitial is not part of the Core policy layer.
+
 OPEMOS Core never imports, invokes, builds against, or requires OPEMOS.EXE.
-Frontends do not import, link against, or execute one another.
+Frontends do not import, link against, or execute one another, except for the
+explicit target-payload deployment described under **Sole UI exception**.
 
 ## OPEMOS Core owns
 
@@ -28,15 +34,15 @@ Frontends do not import, link against, or execute one another.
   authentication, and dependency correctness.
 - Mounted-target installation, internal rollback, modules, GRUB, `depmod`,
   initramfs, receipts, and structured post-install verification.
-- Machine-readable progress/results and target-side CLI, Desktop Companion,
-  fullscreen no-input DRM/KMS interstitial, recovery guardian, and device
-  update contracts.
+- Machine-readable progress/results and the contracts consumed by the
+  target-side CLI, Desktop Companion, DRM/KMS interstitial, recovery guardian,
+  and device updater.
 - Core contract, archive, Fedora build/transaction, target mutation, and
-  target-client tests.
+  contract-conformance tests.
 
-## OPEMOS.EXE owns
+## OPEMOS.EXE host ownership
 
-- macOS/Tauri windows, menus, accessibility, labels, progress weighting,
+- Host application windows, menus, accessibility, labels, progress weighting,
   diagnostics, controls, and application updates.
 - Host HTTP acquisition, physical cache location, retries, authenticated
   manifest pinning, host-to-appliance transport, and transfer cleanup.
@@ -45,26 +51,78 @@ Frontends do not import, link against, or execute one another.
   ownership.
 - Outer rollback by retaining or discarding disposable overlays, preservation
   of the source image, independent final-image/output-manifest validation,
-  export, Finder integration, and verified USB writing.
+  export, host-shell integration, and verified removable-media writing.
 - The installation-media welcome application and its guarded target-disk
   selection bridge.
-- macOS UI, download/transfer, VM, overlay, export, USB, and independent image
-  tests.
+- Host UI, download/transfer, VM, overlay, export, removable-media, and
+  independent image tests.
+
+This ownership is cross-platform. The current implementation and validated
+host path target macOS, especially Apple Silicon, but the same boundary applies
+to future supported host operating systems. Platform-specific APIs and adapters
+remain inside OPEMOS.EXE and do not move into Core policy.
+
+## Networking boundary
+
+Networking is divided into three independent scopes:
+
+- **Host networking:** OPEMOS.EXE owns host downloads, proxy and retry UX,
+  physical cache placement, and transfer into managed appliances. Core defines
+  the permitted identities, hashes, signatures, provenance, and authentication
+  rules.
+- **Appliance networking:** OPEMOS.EXE owns VM network attachment, isolation,
+  lifecycle, and host-to-guest transport. Core commands declare bounded network
+  requirements. Installation defaults to no external appliance egress and uses
+  authenticated staged inputs; an exact-target build may receive only the
+  explicitly authorized egress its Core build contract requires. Core never
+  configures the host network.
+- **Installed-device networking:** Core-owned device clients and update/recovery
+  contracts own networking after SteamOS boots. Credentials and device network
+  state remain on the installed device and never appear in progress, result,
+  receipt, or diagnostic contracts.
+
+Success in one network scope neither establishes trust nor grants network
+authority in another scope.
+
+## Source intent and Core authorization
+
+OPEMOS.EXE records the user's requested source intent, such as a published
+artifact, exact-target local build, reviewed project source, or explicit
+development control. User intent is an input, not authorization.
+
+Core alone validates whether that intent is permitted for the exact target and
+returns an authorized bounded action or a fail-closed result. OPEMOS.EXE never
+translates rejected intent into another source mode, silently chooses another
+branch or commit, or bypasses Core authorization. Core never invents user intent
+or broadens the requested operation.
+
+## A/B ownership
+
+Recovery-image A/B orchestration belongs to OPEMOS.EXE. It inspects the image,
+determines the relevant recovery rootfs/var/EFI pairing, mounts only the
+selected disposable overlay, and preserves the original image.
+
+Installed-system A/B policy belongs to Core-owned recovery and guardian
+contracts. After installation, those contracts govern NVIDIA state, receipts,
+validation, rollback, and SteamOS slot transitions on the device. Image-time
+slot selection does not define installed-system update policy, and installed-
+system policy never repartitions or reinterprets the source recovery image.
 
 ## Sole UI exception
 
-OPEMOS Core—not OPEMOS.EXE—owns and implements the fullscreen no-input DRM/KMS
-UI shown on SteamOS during boot, recovery, installation work, and updates. This
-is the one explicit exception to OPEMOS.EXE's ownership of the graphical image
-builder experience.
+The OPEMOS repository—not OPEMOS.EXE—owns and implements the fullscreen
+no-input DRM/KMS UI shown on SteamOS during boot, recovery, installation work,
+and updates. It remains a sibling consumer of Core progress and state contracts.
+This is the one explicit exception to OPEMOS.EXE's ownership of the graphical
+image-builder experience.
 
 OPEMOS.EXE consumes the fullscreen UI only as an authenticated Core-owned
 target payload from the exact pinned bundle. It may install it and pass bounded
 Core progress/state inputs to it, but it must not fork, rewrite, import, link,
-or execute that Linux frontend as part of its macOS runtime. Core owns its
-source, renderer, behavior, tests, packaging, release, and device lifecycle.
-The interactive installation-media welcome application remains builder-owned
-and separate from Core's no-input fullscreen UI.
+or execute that Linux frontend as part of its host runtime. The OPEMOS
+repository owns its source, renderer, behavior, tests, packaging, release, and
+device lifecycle. The interactive installation-media welcome application
+remains builder-owned and separate from the no-input fullscreen UI.
 
 ## Shared handoff
 

@@ -179,10 +179,12 @@ implementation summary and must not redefine that read-only governance file.
 * [x] Treat the OPEMOS CLI, native SteamOS desktop companion, and no-input
   SteamOS DRM/KMS interstitial as sibling clients of OPEMOS Core. Packaging
   these clients in one support bundle is aggregation, not a dependency from the
-  core back into a frontend.
-* [x] Treat OPEMOS.EXE as a separate macOS frontend and image orchestrator that
+  policy layer back into a frontend; the OPEMOS repository still owns their
+  implementation, packaging, and conformance tests.
+* [x] Treat OPEMOS.EXE as a separate host frontend and image orchestrator that
   consumes one exact authenticated OPEMOS bundle. OPEMOS must never import,
-  invoke, build against, or require OPEMOS.EXE at runtime.
+  invoke, build against, or require OPEMOS.EXE at runtime. The current host is
+  macOS/Apple Silicon, but ownership remains cross-platform.
 * [x] Keep presentation with the client that runs it: OPEMOS.EXE owns macOS
   menus, dialogs, image-build loading UI, cancellation, and export workflows;
   the desktop companion owns interactive SteamOS status/recovery UI; the
@@ -206,6 +208,15 @@ implementation summary and must not redefine that read-only governance file.
   trusted. OPEMOS.EXE owns the host network request, cache location, transfer
   transport, retry UX, and independently pinned manifest digest. A successful
   download is never equivalent to successful Core authentication.
+* [x] Separate host networking, appliance networking, and installed-device
+  networking. Installation appliances default to staged offline inputs; only
+  an authorized exact-target build contract may request bounded egress.
+* [x] Treat user-requested source mode as intent supplied by OPEMOS.EXE, while
+  Core alone authorizes the exact source action or fails closed. Neither side
+  may silently substitute a different branch, commit, or mode.
+* [x] Keep recovery-image A/B discovery, pairing, and overlay mounts in
+  OPEMOS.EXE while Core owns installed-system guardian, receipt, slot-transition,
+  and rollback policy after SteamOS boots.
 * [x] OPEMOS Core owns rollback inside a mounted target transaction: packages,
   modules, GRUB, initramfs, receipts, temporary mounts, and target state.
   OPEMOS.EXE owns the outer rollback boundary: disposable overlay retention or

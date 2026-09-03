@@ -54,6 +54,13 @@ OPEMOS owns build and release metadata. The source repository
 owns patch history. Project releases must identify the exact source commit used
 to build their modules.
 
+Host acquisition, appliance attachment, and installed-device networking are
+three separate authorities. User source selection is recorded as intent by
+OPEMOS.EXE and authorized independently by Core. Recovery-image A/B layout is
+builder orchestration; installed-system A/B behavior is Core recovery policy.
+OPEMOS.EXE host ownership is cross-platform even though macOS is the currently
+implemented and validated host.
+
 Source commit, kernel/header identity, toolchain, and container digest are the
 reproducible inputs. Kernel-module bytes may still differ across builds because
 the upstream build is not currently bit-for-bit deterministic.

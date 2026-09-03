@@ -23,6 +23,8 @@ This page explains the integration without redefining that read-only contract.
 
 [OPEMOS.EXE](https://github.com/CorniiDog/OPEMOS.EXE) owns recovery-image layout
 and appliance lifecycle. OPEMOS owns artifact and installation correctness.
+OPEMOS.EXE's host ownership is cross-platform even though its current validated
+implementation targets macOS, especially Apple Silicon.
 
 OPEMOS.EXE must:
 
@@ -55,10 +57,26 @@ allowed artifact identities and validates the resulting bytes, signatures,
 locks, provenance, and bundle membership. A transport success never promotes
 trust by itself.
 
+Host, appliance, and installed-device networking are separate authority scopes.
+OPEMOS.EXE owns host acquisition and VM network attachment. Core declares
+bounded appliance requirements; installation defaults to authenticated staged
+inputs without external egress, while an authorized exact-target build may use
+only its declared egress. Core-owned device clients govern networking after
+SteamOS boots without exposing credentials through structured contracts.
+
+OPEMOS.EXE records the user's requested source intent. Core separately
+authorizes an exact bounded action or fails closed; neither side silently
+substitutes another source mode, branch, or commit.
+
 Rollback is similarly layered. OPEMOS restores mutations made inside the
 mounted target transaction and releases its target mounts. OPEMOS.EXE owns the
 disposable overlay and may discard it after any Core or independent-validation
 failure; it never asks Core to restore the original source image.
+
+OPEMOS.EXE also owns recovery-image A/B discovery, rootfs/var/EFI pairing, and
+overlay mounting. Core owns installed-system A/B guardian, receipt, transition,
+and rollback policy after boot. Neither responsibility grants the other side
+permission to repartition or reinterpret its storage boundary.
 
 There are two intentionally separate experiences:
 
@@ -67,13 +85,14 @@ There are two intentionally separate experiences:
 - OPEMOS owns the installed-system no-input DRM/KMS interstitial used during
   boot, recovery, and updates.
 
-The sole UI ownership exception is the fullscreen no-input DRM/KMS interface:
-OPEMOS Core owns its source, native renderer, behavior, tests, package, and
-device lifecycle. OPEMOS.EXE consumes it only as an authenticated target
-payload, installs it, and may supply bounded Core progress/state inputs. It
-does not fork, import, link, or execute that Linux frontend in the macOS
-application runtime. OPEMOS.EXE continues to own all macOS labels, weighting,
-animation, accessibility, and controls.
+The sole UI ownership exception is the fullscreen no-input DRM/KMS interface.
+The OPEMOS repository owns its source, native renderer, behavior, tests,
+package, and device lifecycle, while the interstitial remains a sibling Core
+consumer. OPEMOS.EXE consumes it only as an authenticated target payload,
+installs it, and may supply bounded Core progress/state inputs. It does not
+fork, import, link, or execute that Linux frontend in the host application
+runtime. OPEMOS.EXE continues to own host labels, weighting, animation,
+accessibility, and controls.
 
 ### Collaboration boundary
 
