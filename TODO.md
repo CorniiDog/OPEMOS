@@ -1418,7 +1418,10 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   data-only mode normalization (`0400` files and `0500` directories), and a
   complete logical storage-envelope ceiling distinct from payload bytes and
   filesystem safety reserve. Publish these constants in the semantic module
-  and compatibility handoff without changing the closed wire documents.
+  and compatibility handoff without changing the closed wire documents. Use a
+  standalone deterministic status matrix and one shared parser to enforce
+  exact primary/subkey fingerprint semantics, one signature, strong hashes,
+  bounded output, adverse-status rejection, and verifier cancellation cleanup.
 * [ ] Create a dedicated reviewed data-generation signer policy and binary
   verification keyring. Do not reuse Arch, Valve, NVIDIA, commit-signing, or
   desktop-binary update keys.

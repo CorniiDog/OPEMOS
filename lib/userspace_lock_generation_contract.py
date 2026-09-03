@@ -21,6 +21,7 @@ MAX_FILE_BYTES = 2 * 1024 * 1024 * 1024
 MAX_GENERATION_BYTES = 8 * 1024 * 1024 * 1024
 MAX_SIGNATURE_BYTES = 1024 * 1024
 MAX_TRUST_RECORD_BYTES = 64 * 1024
+MAX_OPENPGP_STATUS_BYTES = 64 * 1024
 MAX_GENERATION_STORAGE_BYTES = (
     MAX_GENERATION_BYTES + DISCOVERY_MAX_BYTES + MANIFEST_MAX_BYTES
     + 2 * MAX_SIGNATURE_BYTES + MAX_TRUST_RECORD_BYTES
@@ -35,6 +36,10 @@ DISCOVERY_SIGNATURE_SCHEME = "openpgp-detached-v1"
 OPENPGP_HASH_ALGORITHM_IDS = (8, 9, 10)
 GENERATION_FILE_MODE = "0400"
 GENERATION_DIRECTORY_MODE = "0500"
+OPENPGP_REJECTED_STATUS = {
+    "BADSIG", "ERRSIG", "EXPKEYSIG", "EXPSIG", "FAILURE", "KEYEXPIRED",
+    "NO_PUBKEY", "REVKEYSIG", "SIGEXPIRED",
+}
 SHA256 = re.compile(r"[0-9a-f]{64}")
 FINGERPRINT = re.compile(r"(?:[0-9A-F]{40}|[0-9A-F]{64})")
 PLAIN_FILENAME = re.compile(r"[A-Za-z0-9@._+~-]{1,255}")
@@ -177,6 +182,58 @@ def _timestamp(value):
     except ValueError:
         return False
     return parsed.strftime("%Y-%m-%dT%H:%M:%SZ") == value
+
+
+def validate_openpgp_status(payload, expected_primary_fingerprint):
+    if (not isinstance(payload, bytes)
+            or not 1 <= len(payload) <= MAX_OPENPGP_STATUS_BYTES
+            or not isinstance(expected_primary_fingerprint, str)
+            or FINGERPRINT.fullmatch(expected_primary_fingerprint) is None):
+        raise GenerationContractError("OpenPGP signature status is invalid")
+    try:
+        text = payload.decode("ascii")
+    except UnicodeError as error:
+        raise GenerationContractError("OpenPGP signature status is malformed") from error
+    valid = []
+    rejected = False
+    for line in text.splitlines():
+        fields = line.split()
+        if not fields:
+            continue
+        if len(fields) < 2 or fields[0] != "[GNUPG:]":
+            raise GenerationContractError("OpenPGP signature status is malformed")
+        keyword = fields[1]
+        rejected = rejected or keyword in OPENPGP_REJECTED_STATUS
+        if keyword != "VALIDSIG":
+            continue
+        try:
+            signature_date = datetime.datetime.strptime(
+                fields[3] if len(fields) > 3 else "", "%Y-%m-%d"
+            )
+        except ValueError:
+            signature_date = None
+        if (len(fields) != 12
+                or FINGERPRINT.fullmatch(fields[2]) is None
+                or signature_date is None
+                or signature_date.strftime("%Y-%m-%d") != fields[3]
+                or re.fullmatch(r"[0-9]+", fields[4]) is None
+                or re.fullmatch(r"[0-9]+", fields[5]) is None
+                or fields[6] != "4" or fields[7] != "0"
+                or re.fullmatch(r"[1-9][0-9]*", fields[8]) is None
+                or re.fullmatch(r"[0-9]+", fields[9]) is None
+                or int(fields[9]) not in OPENPGP_HASH_ALGORITHM_IDS
+                or fields[10] != "00"
+                or FINGERPRINT.fullmatch(fields[11]) is None):
+            raise GenerationContractError("OpenPGP VALIDSIG status is unsupported")
+        valid.append({
+            "signingFingerprint": fields[2],
+            "primaryFingerprint": fields[11],
+            "hashAlgorithmId": int(fields[9]),
+        })
+    if (rejected or len(valid) != 1
+            or valid[0]["primaryFingerprint"] != expected_primary_fingerprint):
+        raise GenerationContractError("OpenPGP signature authority is invalid")
+    return valid[0]
 
 
 def validate_authority(authority):

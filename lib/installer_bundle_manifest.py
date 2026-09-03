@@ -77,6 +77,7 @@ FILES = (
     ("lib/generate_installer_gaming_payload_fixtures.py", "contract-fixture-generator", "0755"),
     ("lib/generate_userspace_lock_generation_fixtures.py", "contract-fixture-generator", "0755"),
     ("lib/generate_device_generation_fixtures.py", "contract-fixture-generator", "0755"),
+    ("lib/generate_openpgp_status_fixtures.py", "contract-fixture-generator", "0755"),
     ("lib/userspace_lock_generation_contract.py", "contract-validator", "0755"),
     ("lib/payload_receipt.py", "installer-helper", "0644"),
     ("lib/resolve_target.py", "resolver", "0755"),

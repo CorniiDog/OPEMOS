@@ -34,13 +34,14 @@ from userspace_lock_generation_contract import (
     MAX_GENERATION_BYTES,
     MAX_GENERATION_STORAGE_BYTES,
     MAX_LINEAGE_GENERATIONS,
+    MAX_OPENPGP_STATUS_BYTES,
     MAX_SEQUENCE,
     GenerationContractError,
-    OPENPGP_HASH_ALGORITHM_IDS,
     canonical,
     strict_json,
     validate_activation,
     validate_discovery,
+    validate_openpgp_status,
     validate_pair,
 )
 
@@ -52,7 +53,6 @@ DEFAULT_CHECKPOINT = Path("/etc/opemos/userspace-lock-bootstrap-checkpoint.json"
 MAX_POLICY_BYTES = 64 * 1024
 MAX_KEYRING_BYTES = 16 * 1024 * 1024
 MAX_SIGNATURE_BYTES = 1024 * 1024
-MAX_SIGNATURE_STATUS_BYTES = 64 * 1024
 MAX_STATE_BYTES = 64 * 1024
 MAX_HEALTH_EVIDENCE_BYTES = 64 * 1024
 MAX_TRANSPORT_BYTES = 16 * 1024 * 1024
@@ -939,7 +939,7 @@ def verify_signature(document, signature, keyring, fingerprint):
                         selector.unregister(key.fileobj)
                         continue
                     output.extend(chunk)
-                    if len(output) > MAX_SIGNATURE_STATUS_BYTES:
+                    if len(output) > MAX_OPENPGP_STATUS_BYTES:
                         terminate_process(process)
                         fail(
                             "device_generation_authentication_failed",
@@ -957,27 +957,9 @@ def verify_signature(document, signature, keyring, fingerprint):
     if process.returncode:
         fail("device_generation_authentication_failed", "signature is invalid")
     try:
-        status_text = output.decode("ascii")
-    except UnicodeError:
-        fail("device_generation_authentication_failed", "signature status is malformed")
-    signatures = []
-    for line in status_text.splitlines():
-        fields = line.split()
-        if fields[:2] != ["[GNUPG:]", "VALIDSIG"]:
-            continue
-        if (len(fields) not in {11, 12}
-                or fields[6] != "4"
-                or not fields[8].isdigit()
-                or not fields[9].isdigit()
-                or int(fields[9]) not in OPENPGP_HASH_ALGORITHM_IDS
-                or fields[10] != "00"):
-            fail(
-                "device_generation_authentication_failed",
-                "signature algorithm or status is unsupported",
-            )
-        signatures.append(fields[2].upper())
-    if signatures != [fingerprint]:
-        fail("device_generation_authentication_failed", "signature signer is unauthorized")
+        validate_openpgp_status(bytes(output), fingerprint)
+    except GenerationContractError as error:
+        fail("device_generation_authentication_failed", str(error))
 
 
 def load_authenticated_pair(source, keyring, signer, cached=False, lineage=False):

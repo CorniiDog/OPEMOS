@@ -36,6 +36,10 @@ installed policy fingerprint and accept only OpenPGP hash algorithm identifiers
 8, 9, or 10 (SHA-256, SHA-384, or SHA-512). The pinned signer identity constrains
 the public-key algorithm. A weak digest, ambiguous `VALIDSIG` set, malformed
 status, or signature by another trusted-keyring member fails closed.
+`lib/generate_openpgp_status_fixtures.py` publishes the bounded deterministic
+status matrix for primary-key/subkey binding, SHA-256/384/512 acceptance,
+weak/expired/revoked/multiple signature rejection, malformed records, and the
+status-output ceiling. Human GnuPG diagnostics are not contract data.
 
 The descriptor contains no URL. Redirect and endpoint policy belongs to each
 consumer's networking layer. Consumers first snapshot both bounded files, then

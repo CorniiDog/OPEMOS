@@ -741,6 +741,36 @@ def main():
             "device_generation_authentication_failed"
         )
 
+        verifier_pid = root / "slow-verifier.pid"
+        slow_verifier = root / "slow-gpgv"
+        write(slow_verifier, (
+            "#!/bin/sh\n"
+            f"printf '%s\\n' \"$$\" > {str(verifier_pid)!r}\n"
+            "sleep 30\n"
+        ).encode(), 0o700)
+        verifier_cancel_command = [
+            sys.executable, str(TOOL), "--store", str(store),
+            "--policy", str(policy), "--keyring", str(keyring),
+            "--checkpoint", str(checkpoint), "activate", "--source",
+            str(generation_10), *TARGET_ARGUMENTS,
+        ]
+        verifier_cancelled = subprocess.Popen(
+            verifier_cancel_command, cwd="/", env={
+                **environment,
+                "OPEMOS_GENERATION_TEST_GPGV": str(slow_verifier),
+            }, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        deadline = time.time() + 5
+        while not verifier_pid.exists() and time.time() < deadline:
+            time.sleep(0.02)
+        assert verifier_pid.exists()
+        verifier_process_id = int(verifier_pid.read_text())
+        verifier_cancelled.send_signal(signal.SIGTERM)
+        stdout, stderr = verifier_cancelled.communicate(timeout=5)
+        assert verifier_cancelled.returncode == 130 and stderr == ""
+        assert json.loads(stdout)["status"] == "cancelled"
+        assert not process_alive(verifier_process_id)
+
         noisy_verifier = root / "noisy-gpgv"
         write(noisy_verifier, (
             f"#!{sys.executable}\n"
