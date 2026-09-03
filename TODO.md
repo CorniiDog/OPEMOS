@@ -1055,6 +1055,10 @@ This remains a major future area, represented by three distinct gates:
   captive portal, DNS/TLS failure, reboot mid-wait/download, and identity drift.
 * [x] Freeze the selected release identity and first downloaded archive hash for
   an active recovery transaction so a publication cannot be spliced into it.
+  Keep that plan closed, canonical, size-bounded, mode-0600, single-linked,
+  descriptor-read, identity-stable, and serialized across direct invocations;
+  hash only a stable owner-controlled archive and publish create-only or by an
+  exact prior-plan identity.
 * [ ] Test publication races: an exact release appearing during offline wait,
   wrong-kernel/version releases, mid-download publication, and a certified
   equivalent appearing after a locally-built verified repair.

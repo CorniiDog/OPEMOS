@@ -204,6 +204,10 @@ duplicate or noncanonical JSON, unsafe ownership/mode/link state, invalid phase
 transitions, concurrent writers, and non-durable replacement. The separate
 installer lifecycle lock continues to serialize root mutation; recovery does
 not hold that lock while invoking the nested canonical installer.
+The immutable release plan applies the same closed/canonical and
+descriptor-bound filesystem policy independently. Its create-only identity and
+first stable archive hash cannot be overwritten by a concurrent direct plan
+operation, pathname replacement, hardlink, writable input, or changed archive.
 
 Generation health and rollback additionally bind the rootfs receipt's exact
 userspace-lock filename and SHA-256 to the selected generation target record.

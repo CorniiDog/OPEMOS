@@ -438,6 +438,99 @@ with tempfile.TemporaryDirectory(prefix="opemos-recovery-plan-") as temporary:
                    stdout=subprocess.PIPE)
     first = json.loads(plan.read_text())
     assert len(first["archiveSha256"]) == 64
+    canonical_plan = plan.read_bytes()
+    assert plan.stat().st_mode & 0o777 == 0o600
+
+    # Rebinding the exact immutable archive is idempotent.
+    subprocess.run(base + ["bind-archive", "--plan", str(plan),
+                           "--archive", str(archive)], check=True,
+                   stdout=subprocess.PIPE)
+    assert plan.read_bytes() == canonical_plan
+
+    duplicate_create = subprocess.run(base + [
+        "create", "--plan", str(plan), "--steamos", "3.8.14",
+        "--nvidia", NVIDIA, "--kernel-tag", KERNEL,
+        "--release-tag", "duplicate", "--asset-name", "duplicate.tar.gz",
+    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert duplicate_create.returncode != 0
+    assert plan.read_bytes() == canonical_plan
+
+    plan.chmod(0o644)
+    unsafe_mode = subprocess.run(base + ["show", "--plan", str(plan)],
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert unsafe_mode.returncode != 0
+    plan.chmod(0o600)
+
+    linked_plan = Path(temporary) / "plan-hardlink.json"
+    os.link(plan, linked_plan)
+    unsafe_link = subprocess.run(base + ["show", "--plan", str(plan)],
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert unsafe_link.returncode != 0
+    linked_plan.unlink()
+
+    plan.write_bytes(canonical_plan.replace(
+        b'{"archiveSha256":', b'{"schemaVersion":1,"archiveSha256":', 1,
+    ))
+    plan.chmod(0o600)
+    duplicate_key = subprocess.run(base + ["show", "--plan", str(plan)],
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert duplicate_key.returncode != 0
+    assert b"duplicate JSON key" in duplicate_key.stderr
+    plan.write_text(json.dumps(first, indent=2) + "\n")
+    plan.chmod(0o600)
+    noncanonical = subprocess.run(base + ["show", "--plan", str(plan)],
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert noncanonical.returncode != 0
+    plan.write_text('{"schemaVersion":NaN}\n')
+    plan.chmod(0o600)
+    nonfinite = subprocess.run(base + ["show", "--plan", str(plan)],
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert nonfinite.returncode != 0
+    assert b"non-finite" in nonfinite.stderr
+    plan.write_bytes(b"{" + b" " * (64 * 1024) + b"}\n")
+    plan.chmod(0o600)
+    excessive = subprocess.run(base + ["show", "--plan", str(plan)],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert excessive.returncode != 0
+    plan.write_bytes(canonical_plan)
+    plan.chmod(0o600)
+
+    archive.chmod(0o666)
+    unsafe_archive = subprocess.run(base + [
+        "bind-archive", "--plan", str(plan), "--archive", str(archive),
+    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert unsafe_archive.returncode != 0
+    archive.chmod(0o644)
+    linked_archive = Path(temporary) / "artifact-hardlink.tar.gz"
+    os.link(archive, linked_archive)
+    unsafe_archive = subprocess.run(base + [
+        "bind-archive", "--plan", str(plan), "--archive", str(archive),
+    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert unsafe_archive.returncode != 0
+    linked_archive.unlink()
+    archive_link = Path(temporary) / "artifact-symlink.tar.gz"
+    archive_link.symlink_to(archive)
+    unsafe_archive = subprocess.run(base + [
+        "bind-archive", "--plan", str(plan), "--archive", str(archive_link),
+    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert unsafe_archive.returncode != 0
+
+    invalid_plan = Path(temporary) / "invalid-plan.json"
+    invalid_identity = subprocess.run(base + [
+        "create", "--plan", str(invalid_plan), "--steamos", "3.8.14",
+        "--nvidia", NVIDIA, "--kernel-tag", KERNEL,
+        "--release-tag", "valid-tag", "--asset-name", "../escape.tar.gz",
+    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert invalid_identity.returncode != 0 and not invalid_plan.exists()
+
+    plan_lock = Path(temporary) / ".plan.json.lock"
+    with plan_lock.open("a+b") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        contended = subprocess.run(base + ["show", "--plan", str(plan)],
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        assert contended.returncode != 0
+        assert b"another release plan operation" in contended.stderr
+
     archive.write_bytes(b"changed publication")
     changed = subprocess.run(base + ["bind-archive", "--plan", str(plan),
                                      "--archive", str(archive)],

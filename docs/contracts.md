@@ -617,6 +617,13 @@ archive hash remain fixed across connectivity retries and reboots. A newly
 published exact certified artifact may be selected while the transaction is
 still `offline_waiting`, before a plan exists. It cannot be spliced into an
 active download/install; changing plans requires cancellation or completion.
+A plan is closed canonical JSON bounded to 64 KiB in an owner-controlled
+directory. It is mode `0600`, single-linked, read through a no-follow
+descriptor, and identity-stable across every read and update. Direct plan
+operations share a descriptor-bound nonblocking lock. Initial publication is
+create-only; archive binding replaces only the exact plan inode that was read
+and only after hashing an owner-controlled, non-writable, single-linked regular
+archive whose pathname and descriptor identities remain equal.
 A later certified equivalent does not invalidate a restored
 `locally-built-verified` system and is considered only by an explicit future
 maintenance transaction. Wrong-kernel or changed-NVIDIA publications remain
