@@ -27,6 +27,7 @@ from generate_userspace_lock_bootstrap_fixtures import policy as bootstrap_polic
 from userspace_lock_bootstrap_contract import CHECKPOINT_KIND  # noqa: E402
 from device_generation_lifecycle import (  # noqa: E402
     DeviceGenerationError,
+    snapshot_regular,
     snapshot_trust_file,
 )
 
@@ -268,10 +269,18 @@ def process_alive(pid):
 
 def invoke(environment, store, policy, keyring, checkpoint, command,
            arguments=None, success=True):
-    process = subprocess.run([
+    global_arguments = [
         sys.executable, str(TOOL), "--store", str(store),
         "--policy", str(policy), "--keyring", str(keyring),
-        "--checkpoint", str(checkpoint), command, *(arguments or []),
+        "--checkpoint", str(checkpoint),
+    ]
+    if (command in {"acknowledge-health", "rollback"}
+            and environment.get("OPEMOS_GENERATION_TEST_TARGET_ROOT")):
+        global_arguments.extend([
+            "--target-root", environment["OPEMOS_GENERATION_TEST_TARGET_ROOT"]
+        ])
+    process = subprocess.run([
+        *global_arguments, command, *(arguments or []),
     ], cwd="/", env=environment, stdout=subprocess.PIPE,
        stderr=subprocess.PIPE, text=True, check=False)
     assert process.stderr == "", process.stderr
@@ -353,6 +362,27 @@ def main():
             else:
                 raise AssertionError("replaced trust input was accepted")
 
+        raced_input = root / "raced-input.json"
+        replacement_input = root / "replacement-input.json"
+        write(raced_input, b'{"old":true}\n')
+        write(replacement_input, b'{"new":true}\n')
+        replaced = False
+
+        def replace_regular_before_identity_check(path):
+            nonlocal replaced
+            if path == raced_input and not replaced:
+                replaced = True
+                os.replace(replacement_input, raced_input)
+            return original_lstat(path)
+
+        with mock.patch.object(Path, "lstat", replace_regular_before_identity_check):
+            try:
+                snapshot_regular(raced_input, 1024, "raced ordinary input")
+            except DeviceGenerationError as error:
+                assert error.reason == "device_generation_input_changed"
+            else:
+                raise AssertionError("replaced ordinary input was accepted")
+
         store = root / "device-store"
         keyring = root / "opemos-userspace-lock-generations.gpg"
         policy = root / "policy.json"
@@ -392,6 +422,41 @@ def main():
             "OPEMOS_GENERATION_DEVELOPMENT_TRUST_OVERRIDE": "1",
             "OPEMOS_GENERATION_TEST_GPGV": str(verifier),
         }
+        target_root = root / "observed-target"
+        (target_root / "usr/lib").mkdir(parents=True)
+        (target_root / "etc").mkdir()
+        (target_root / "proc/sys/kernel").mkdir(parents=True)
+        installed_state = (
+            target_root
+            / "var/lib/open-gpu-kernel-modules-steamos-support/offline-install"
+        )
+        installed_state.mkdir(parents=True)
+        write(
+            target_root / "usr/lib/os-release",
+            b'ID=steamos\nVERSION_ID="3.8.14"\n',
+        )
+        (target_root / "etc/os-release").symlink_to("../usr/lib/os-release")
+        write(
+            target_root / "proc/sys/kernel/osrelease",
+            (TARGET_ARGUMENTS[3] + "\n").encode(),
+        )
+        write(
+            target_root / "proc/sys/kernel/architecture", b"x86_64\n"
+        )
+        write(installed_state / "nvidia-version", b"575.64.05\n")
+        environment["OPEMOS_GENERATION_TEST_TARGET_ROOT"] = str(target_root)
+        production_override = subprocess.run([
+            sys.executable, str(TOOL), "--store", str(store),
+            "--target-root", str(target_root), "status",
+        ], cwd="/", env={
+            key: value for key, value in os.environ.items()
+            if key != "OPEMOS_GENERATION_DEVELOPMENT_TRUST_OVERRIDE"
+        }, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+        assert production_override.returncode == 1
+        assert production_override.stderr == ""
+        assert json.loads(production_override.stdout)["reason"] == (
+            "device_generation_target_observation_invalid"
+        )
 
         initial = activate(
             environment, store, policy, keyring, checkpoint, generation_7
@@ -462,6 +527,79 @@ def main():
         )
         write(policy, policy_payload)
         write(checkpoint, checkpoint_payload)
+        observed_kernel = target_root / "proc/sys/kernel/osrelease"
+        observed_architecture = target_root / "proc/sys/kernel/architecture"
+        observed_release = target_root / "usr/lib/os-release"
+        observed_nvidia = installed_state / "nvidia-version"
+        pending_health_state = invoke(
+            environment, store, policy, keyring, checkpoint, "status"
+        )["state"]
+        for path, replacement, reason in (
+            (observed_kernel, b"6.16.13-valve25-neptune\n",
+             "device_generation_target_mismatch"),
+            (observed_release, b"ID=steamos\nVERSION_ID=3.8.15\n",
+             "device_generation_target_mismatch"),
+            (observed_nvidia, b"580.1.2\n",
+             "device_generation_target_mismatch"),
+            (observed_architecture, b"aarch64\n",
+             "device_generation_target_observation_invalid"),
+            (observed_kernel, b"../../unsafe\n",
+             "device_generation_target_observation_invalid"),
+        ):
+            original = path.read_bytes()
+            write(path, replacement)
+            rejected_observation = acknowledge(
+                environment, store, policy, keyring, checkpoint, success=False
+            )
+            assert rejected_observation["reason"] == reason
+            assert invoke(
+                environment, store, policy, keyring, checkpoint, "status"
+            )["state"] == pending_health_state
+            write(path, original)
+        observed_kernel.chmod(0o620)
+        writable_observation = acknowledge(
+            environment, store, policy, keyring, checkpoint, success=False
+        )
+        assert writable_observation["reason"] == (
+            "device_generation_target_observation_invalid"
+        )
+        observed_kernel.chmod(0o600)
+        observed_kernel.unlink()
+        observed_kernel.symlink_to("/etc/passwd")
+        linked_observation = acknowledge(
+            environment, store, policy, keyring, checkpoint, success=False
+        )
+        assert linked_observation["reason"] == (
+            "device_generation_target_observation_invalid"
+        )
+        observed_kernel.unlink()
+        write(observed_kernel, (TARGET_ARGUMENTS[3] + "\n").encode())
+        observed_etc_release = target_root / "etc/os-release"
+        observed_etc_release.unlink()
+        write(
+            observed_etc_release,
+            b"ID=steamos\nVERSION_ID=3.8.15\n",
+        )
+        ambiguous_release = acknowledge(
+            environment, store, policy, keyring, checkpoint, success=False
+        )
+        assert ambiguous_release["reason"] == (
+            "device_generation_target_observation_invalid"
+        )
+        observed_etc_release.unlink()
+        observed_etc_release.symlink_to("../usr/lib/os-release")
+        secondary_nvidia = (
+            target_root
+            / "var/lib/open-gpu-kernel-modules-steamos-support"
+        )
+        write(secondary_nvidia / "installed-nvidia.txt", b"580.1.2\n")
+        ambiguous_observation = acknowledge(
+            environment, store, policy, keyring, checkpoint, success=False
+        )
+        assert ambiguous_observation["reason"] == (
+            "device_generation_target_observation_invalid"
+        )
+        (secondary_nvidia / "installed-nvidia.txt").unlink()
         healthy_7 = acknowledge(
             environment, store, policy, keyring, checkpoint
         )
@@ -494,6 +632,16 @@ def main():
         )
         write(policy, policy_payload)
         write(checkpoint, checkpoint_payload)
+        write(observed_kernel, b"6.16.13-valve25-neptune\n")
+        stale_slot_rollback = invoke(
+            environment, store, policy, keyring, checkpoint, "rollback",
+            success=False,
+        )
+        assert stale_slot_rollback["reason"] == "device_generation_target_mismatch"
+        assert invoke(
+            environment, store, policy, keyring, checkpoint, "status"
+        )["state"] == activated_8["state"]
+        write(observed_kernel, (TARGET_ARGUMENTS[3] + "\n").encode())
         rolled_back = invoke(
             environment, store, policy, keyring, checkpoint, "rollback"
         )

@@ -70,12 +70,15 @@ MAX_KEYRING_BYTES = 16 * 1024 * 1024
 MAX_SIGNATURE_BYTES = 1024 * 1024
 MAX_STATE_BYTES = 64 * 1024
 MAX_HEALTH_EVIDENCE_BYTES = 64 * 1024
+MAX_TARGET_OBSERVATION_BYTES = 64 * 1024
 MAX_TRANSPORT_BYTES = 16 * 1024 * 1024
 MAX_TRANSPORT_SECONDS = 300
 MAX_GENERATIONS = 4
 MAX_STORE_ENTRIES = 32
 HASH = re.compile(r"[0-9a-f]{64}")
 FINGERPRINT = re.compile(r"(?:[0-9A-F]{40}|[0-9A-F]{64})")
+VERSION = re.compile(r"[0-9]+\.[0-9]+(?:\.[0-9]+)?")
+KERNEL = re.compile(r"[A-Za-z0-9._+\-]{1,192}")
 STATE_MARKER_FIELDS = {"schemaVersion", "revision", "stateSha256", "state"}
 STATE_MARKERS = ("state-a.json", "state-b.json")
 PENDING_ACTIVATION = "pending-activation.json"
@@ -201,11 +204,27 @@ def snapshot_regular(path, maximum, label,
         after = os.fstat(descriptor)
         before_identity = (
             before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns,
+            before.st_ctime_ns, before.st_uid, before.st_gid,
+            stat.S_IMODE(before.st_mode), before.st_nlink,
         )
         after_identity = (
             after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns,
+            after.st_ctime_ns, after.st_uid, after.st_gid,
+            stat.S_IMODE(after.st_mode), after.st_nlink,
         )
-        if before_identity != after_identity or len(payload) != before.st_size:
+        try:
+            current = path.lstat()
+        except OSError:
+            fail(changed_reason, f"{label} changed while read")
+        current_identity = (
+            current.st_dev, current.st_ino, current.st_size,
+            current.st_mtime_ns, current.st_ctime_ns, current.st_uid,
+            current.st_gid, stat.S_IMODE(current.st_mode), current.st_nlink,
+        )
+        if (before_identity != after_identity
+                or before_identity != current_identity
+                or stat.S_ISLNK(current.st_mode)
+                or len(payload) != before.st_size):
             fail(changed_reason, f"{label} changed while read")
         return payload
     finally:
@@ -1250,6 +1269,253 @@ def require_pair_authority(pair, authority):
         fail(
             "device_generation_authentication_failed",
             "cached generation authority differs from installed policy",
+        )
+
+
+def observation_root(arguments):
+    value = arguments.target_root
+    if value is not None and not development_override():
+        fail(
+            "device_generation_target_observation_invalid",
+            "caller-selected observation roots are permitted only in development mode",
+        )
+    root = absolute_path(value) if value is not None else Path("/")
+    try:
+        reject_symlink_components(root, "target observation root")
+    except DeviceGenerationError:
+        fail(
+            "device_generation_target_observation_invalid",
+            "target observation root contains a symlink",
+        )
+    try:
+        info = root.lstat()
+    except OSError:
+        fail(
+            "device_generation_target_observation_invalid",
+            "target observation root is unavailable",
+        )
+    expected_owner = os.geteuid() if value is not None else 0
+    if (not stat.S_ISDIR(info.st_mode) or root.is_symlink()
+            or info.st_uid != expected_owner or stat.S_IMODE(info.st_mode) & 0o022):
+        fail(
+            "device_generation_target_observation_invalid",
+            "target observation root is unsafe",
+        )
+    return root, (
+        info.st_dev, info.st_ino, info.st_mtime_ns, info.st_ctime_ns,
+        info.st_uid, stat.S_IMODE(info.st_mode),
+    )
+
+
+def require_observation_root(root, expected):
+    try:
+        info = root.lstat()
+    except OSError:
+        fail(
+            "device_generation_target_observation_changed",
+            "target observation root became unavailable",
+        )
+    actual = (
+        info.st_dev, info.st_ino, info.st_mtime_ns, info.st_ctime_ns,
+        info.st_uid, stat.S_IMODE(info.st_mode),
+    )
+    if stat.S_ISLNK(info.st_mode) or actual != expected:
+        fail(
+            "device_generation_target_observation_changed",
+            "target observation root identity changed",
+        )
+
+
+def observation_text(root, relative, label, optional=False):
+    path = root / relative
+    try:
+        reject_symlink_components(path, label)
+    except DeviceGenerationError:
+        fail(
+            "device_generation_target_observation_invalid",
+            f"{label} contains a symlink",
+        )
+    if optional and not path.exists() and not path.is_symlink():
+        return None
+    try:
+        info = path.lstat()
+    except OSError:
+        fail(
+            "device_generation_target_observation_invalid",
+            f"{label} is unavailable",
+        )
+    expected_owner = os.geteuid() if root != Path("/") else 0
+    if (not stat.S_ISREG(info.st_mode) or info.st_uid != expected_owner
+            or stat.S_IMODE(info.st_mode) & 0o022):
+        fail(
+            "device_generation_target_observation_invalid",
+            f"{label} is not an owner-controlled regular file",
+        )
+    payload = snapshot_regular(
+        path, MAX_TARGET_OBSERVATION_BYTES, label,
+        "device_generation_target_observation_invalid",
+        "device_generation_target_observation_changed",
+        expected_owner,
+    )
+    try:
+        return payload.decode("utf-8", errors="strict")
+    except UnicodeDecodeError:
+        fail(
+            "device_generation_target_observation_invalid",
+            f"{label} is not UTF-8 text",
+        )
+
+
+def os_release_identity(payload):
+    selected = {}
+    for line in payload.splitlines():
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        if key not in {"ID", "VERSION_ID"}:
+            continue
+        if key in selected:
+            fail(
+                "device_generation_target_observation_invalid",
+                f"target OS release contains duplicate {key}",
+            )
+        if len(value) >= 2 and value[0] == value[-1] == '"':
+            value = value[1:-1]
+        elif ('"' in value or "'" in value
+              or any(character.isspace() for character in value)):
+            fail(
+                "device_generation_target_observation_invalid",
+                f"target OS release has malformed {key}",
+            )
+        selected[key] = value
+    if (selected.get("ID") != "steamos"
+            or VERSION.fullmatch(selected.get("VERSION_ID", "")) is None):
+        fail(
+            "device_generation_target_observation_invalid",
+            "target OS identity is missing or malformed",
+        )
+    return selected["VERSION_ID"]
+
+
+def observed_steamos(root):
+    records = []
+    canonical = root / "usr/lib/os-release"
+    for relative in ("usr/lib/os-release", "etc/os-release"):
+        path = root / relative
+        if path.is_symlink():
+            if relative != "etc/os-release" or not records:
+                fail(
+                    "device_generation_target_observation_invalid",
+                    "target OS release path is unsafe",
+                )
+            try:
+                resolved = path.resolve(strict=True)
+                canonical_resolved = canonical.resolve(strict=True)
+            except OSError:
+                fail(
+                    "device_generation_target_observation_invalid",
+                    "target OS release link is invalid",
+                )
+            if resolved != canonical_resolved:
+                fail(
+                    "device_generation_target_observation_invalid",
+                    "target OS release link is not canonical",
+                )
+            continue
+        payload = observation_text(
+            root, relative, "target OS release", optional=True
+        )
+        if payload is not None:
+            records.append(os_release_identity(payload))
+    if not records:
+        fail(
+            "device_generation_target_observation_invalid",
+            "target OS release is unavailable",
+        )
+    if len(set(records)) != 1:
+        fail(
+            "device_generation_target_observation_invalid",
+            "target OS release identities are ambiguous",
+        )
+    return records[0]
+
+
+def observed_nvidia(root):
+    records = []
+    for relative in (
+        "var/lib/open-gpu-kernel-modules-steamos-support/offline-install/nvidia-version",
+        "var/lib/open-gpu-kernel-modules-steamos-support/installed-nvidia.txt",
+        "var/lib/open-gpu-kernel-modules-steamos-support/nvidia-setup/nvidia-version",
+        "usr/lib/open-gpu-kernel-modules-steamos-support/offline-install/nvidia-version",
+    ):
+        payload = observation_text(
+            root, relative, "installed NVIDIA identity", optional=True
+        )
+        if payload is None:
+            continue
+        value = payload.strip()
+        if VERSION.fullmatch(value) is None:
+            fail(
+                "device_generation_target_observation_invalid",
+                "installed NVIDIA identity is malformed",
+            )
+        records.append(value)
+    if not records:
+        fail(
+            "device_generation_target_observation_invalid",
+            "installed NVIDIA identity is unavailable",
+        )
+    if len(set(records)) != 1:
+        fail(
+            "device_generation_target_observation_invalid",
+            "installed NVIDIA identities are ambiguous",
+        )
+    return records[0]
+
+
+def observe_current_target(arguments):
+    root, guard = observation_root(arguments)
+    steamos = observed_steamos(root)
+    nvidia = observed_nvidia(root)
+    if arguments.target_root is None:
+        kernel = os.uname().release
+        architecture = os.uname().machine
+    else:
+        kernel = observation_text(
+            root, "proc/sys/kernel/osrelease", "target kernel identity"
+        ).strip()
+        architecture = observation_text(
+            root, "proc/sys/kernel/architecture", "target architecture"
+        ).strip()
+    if KERNEL.fullmatch(kernel) is None or architecture != "x86_64":
+        fail(
+            "device_generation_target_observation_invalid",
+            "target kernel or architecture identity is malformed or unsupported",
+        )
+    require_observation_root(root, guard)
+    return {
+        "steamosVersion": steamos,
+        "kernelVersion": kernel,
+        "nvidiaVersion": nvidia,
+        "architecture": architecture,
+    }
+
+
+def require_observed_target(pair, observed):
+    if not any(
+            record["target"] == observed
+            for record in pair["manifest"]["targetLocks"]):
+        fail(
+            "device_generation_target_mismatch",
+            "current installed target is not authorized by the selected generation",
+        )
+
+
+def require_observation_unchanged(arguments, expected):
+    if observe_current_target(arguments) != expected:
+        fail(
+            "device_generation_target_observation_changed",
+            "current installed target changed during the lifecycle operation",
         )
 
 
@@ -2404,8 +2670,11 @@ def acknowledge(arguments):
                 "device_generation_state_invalid",
                 "active generation sequence differs from its cached manifest",
             )
+        observed_target = observe_current_target(arguments)
+        require_observed_target(pair, observed_target)
         validate_health_evidence(arguments, state["active"])
         require_trust_guards(policy)
+        require_observation_unchanged(arguments, observed_target)
         state = {
             **state,
             "lastKnownGood": dict(state["active"]),
@@ -2437,7 +2706,10 @@ def rollback(arguments):
             generation, keyring, policy["signingKeyFingerprint"], cached=True
         )
         require_pair_authority(pair, authority)
+        observed_target = observe_current_target(arguments)
+        require_observed_target(pair, observed_target)
         require_trust_guards(policy)
+        require_observation_unchanged(arguments, observed_target)
         state = {
             **state,
             "active": dict(state["lastKnownGood"]),
@@ -2522,6 +2794,7 @@ def parser():
     value.add_argument("--policy")
     value.add_argument("--keyring")
     value.add_argument("--checkpoint")
+    value.add_argument("--target-root")
     commands = value.add_subparsers(dest="command", required=True)
     activate_parser = commands.add_parser("activate")
     activate_parser.add_argument("--source", required=True)
@@ -2565,6 +2838,12 @@ def main():
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)
     try:
+        if (arguments.target_root is not None
+                and not development_override()):
+            fail(
+                "device_generation_target_observation_invalid",
+                "caller-selected observation roots are permitted only in development mode",
+            )
         if arguments.command == "activate":
             document = activate(arguments)
         elif arguments.command == "activate-downloaded":

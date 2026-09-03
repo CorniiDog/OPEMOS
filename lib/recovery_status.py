@@ -90,6 +90,7 @@ def modinfo(path: Path, field: str) -> str:
 
 def installed_nvidia(root: Path) -> str:
     for relative in (
+        "var/lib/open-gpu-kernel-modules-steamos-support/offline-install/nvidia-version",
         "var/lib/open-gpu-kernel-modules-steamos-support/installed-nvidia.txt",
         "var/lib/open-gpu-kernel-modules-steamos-support/nvidia-setup/nvidia-version",
         "usr/lib/open-gpu-kernel-modules-steamos-support/offline-install/nvidia-version",

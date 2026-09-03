@@ -1516,11 +1516,12 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   to `update` and one-line safe `update-or-repair`; integrate the active
   reviewed lock with exact-target repair while keeping networking outside
   boot-critical paths. The production CLI still fails these commands closed.
-* [ ] Bind generation health acknowledgement and rollback to an independently
+* [x] Bind generation health acknowledgement and rollback to an independently
   observed current SteamOS/kernel/NVIDIA target before recovery integration.
-  Current authority and cache bytes are reauthenticated, but the schema-1 health
-  record carries only generation identity; do not infer target health from that
-  identity or restore an older-target LKG after a SteamOS slot transition.
+  Core now observes SteamOS, running kernel, architecture, and its installed
+  NVIDIA identity separately from health evidence, rejects ambiguous or unsafe
+  observations, and requires an exact target lock before LKG advancement or
+  rollback. The schema-1 health record remains generation-only evidence.
 * [ ] Validate the device lifecycle under Fedora and real SteamOS, including
   inode exhaustion, power loss at every durable boundary, health timeout,
   filesystem corruption, kernel-observed watchdog behavior, and service/
