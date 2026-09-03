@@ -210,23 +210,18 @@ implementation summary and must not redefine that read-only governance file.
   modules, GRUB, initramfs, receipts, temporary mounts, and target state.
   OPEMOS.EXE owns the outer rollback boundary: disposable overlay retention or
   discard, VM shutdown, source-image preservation, export, and USB recovery.
-* [x] Distinguish the two fullscreen programs. The installation-media welcome
-  application and guarded disk-selection bridge belong to OPEMOS.EXE. The
-  installed-system no-input DRM/KMS boot/update interstitial belongs to OPEMOS
-  Core. Neither is a runtime dependency of the other frontend.
+* [x] Distinguish the interactive installation-media welcome application and
+  guarded disk-selection bridge, which belong to OPEMOS.EXE, from the
+  fullscreen no-input DRM/KMS boot/recovery/update UI, which belongs entirely
+  to OPEMOS Core.
 * [x] OPEMOS Core defines progress phase identities, counters, terminal states,
   and validation rules. OPEMOS.EXE assigns macOS labels, weights, layout,
   animation, accessibility, and controls. It must preserve indeterminate Core
   phases rather than inventing completion percentages.
-* [x] Declare the sole UI exception: OPEMOS.EXE consumes a pinned, read-only,
-  platform-neutral Core UI contract for shared branding, progress hierarchy,
-  and state/layout semantics, then renders it using its own Tauri/macOS code.
-  No platform event loop, command, security decision, or mutation logic may
-  cross through this exception.
-* [ ] Publish that versioned shared UI contract in the canonical Core bundle
-  and migrate OPEMOS.EXE's common loading/progress presentation to consume it
-  before removing its equivalent local constants. Preserve native renderers
-  and platform-specific accessibility behavior on both sides.
+* [x] Declare the sole UI exception: OPEMOS Core owns and implements the
+  fullscreen no-input SteamOS UI. OPEMOS.EXE consumes it only as an
+  authenticated target payload, may install it and supply bounded Core state,
+  and must not fork, import, link, or execute it in the macOS runtime.
 * [x] The support-side agent changes Core policy, schemas, publishers, build and
   installer entry points, target-side clients, and Core tests in `OPEMOS`.
   It returns immutable commits and changed contracts; it does not edit or pin

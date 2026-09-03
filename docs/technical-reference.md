@@ -45,10 +45,10 @@ OPEMOS owns canonical bundle membership and authentication policy, while
 OPEMOS.EXE owns host acquisition and transport. OPEMOS owns rollback within a
 mounted target transaction; OPEMOS.EXE owns disposable-overlay rollback and
 source-image preservation. The OPEMOS.EXE installation-media welcome UI is not
-the OPEMOS installed-system DRM/KMS interstitial—these are sibling frontends
-with separate runtimes and lifecycle owners. Their sole UI exception is the
-pinned, read-only, platform-neutral presentation contract owned by OPEMOS and
-rendered independently by each platform frontend.
+the OPEMOS fullscreen no-input DRM/KMS interface—these have separate runtimes
+and lifecycle owners. The latter is the sole UI ownership exception: its full
+implementation belongs to OPEMOS Core and OPEMOS.EXE consumes it only as an
+authenticated target payload.
 
 OPEMOS owns build and release metadata. The source repository
 owns patch history. Project releases must identify the exact source commit used

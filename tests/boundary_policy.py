@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_SHA256 = "970aba77a2557d286b5a229512782e389ff69f59e8e894b96602931b9b427166"
+EXPECTED_SHA256 = "d2d56140c3f94411edfc8610f7cc8126fa26c1fc27b6307e0c1af7f4150516fa"
 
 
 def main():
@@ -18,8 +18,8 @@ def main():
     text = payload.decode("utf-8")
     assert "READ-ONLY GOVERNANCE CONTRACT" in text
     assert "## Sole UI exception" in text
-    assert "read-only, declarative dependency from\nOPEMOS.EXE to Core" in text
-    assert "never commands, platform event-loop code, security\ndecisions" in text
+    assert "OPEMOS Core—not OPEMOS.EXE—owns and implements the fullscreen" in text
+    assert "must not fork, rewrite, import, link,\nor execute" in text
     for relative in ("README.md", "TODO.md", "docs/image-builder.md"):
         summary = (ROOT / relative).read_text(encoding="utf-8")
         assert "BOUNDARIES.md" in summary, f"{relative} does not link to the authority"

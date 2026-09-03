@@ -60,24 +60,20 @@ mounted target transaction and releases its target mounts. OPEMOS.EXE owns the
 disposable overlay and may discard it after any Core or independent-validation
 failure; it never asks Core to restore the original source image.
 
-There are two intentionally separate fullscreen experiences:
+There are two intentionally separate experiences:
 
 - OPEMOS.EXE owns the installation-media welcome application and its guarded
   target-disk selection bridge.
 - OPEMOS owns the installed-system no-input DRM/KMS interstitial used during
   boot, recovery, and updates.
 
-The sole UI exception is a pinned, read-only, platform-neutral UI contract
-owned by OPEMOS. OPEMOS.EXE consumes its canonical assets, design tokens,
-progress hierarchy, and bounded state/layout semantics, then renders them with
-its own Tauri/macOS implementation. The contract cannot contain commands,
-security decisions, mutation logic, platform event loops, or executable
-frontend code. OPEMOS emits bounded progress facts; OPEMOS.EXE still owns its
-macOS labels, weighting, animation, accessibility, and controls.
-
-Neither frontend imports, launches, or links against the other's executable.
-OPEMOS.EXE may deploy authenticated Core-owned SteamOS UI payloads into the
-target image, but it does not execute them in the macOS application runtime.
+The sole UI ownership exception is the fullscreen no-input DRM/KMS interface:
+OPEMOS Core owns its source, native renderer, behavior, tests, package, and
+device lifecycle. OPEMOS.EXE consumes it only as an authenticated target
+payload, installs it, and may supply bounded Core progress/state inputs. It
+does not fork, import, link, or execute that Linux frontend in the macOS
+application runtime. OPEMOS.EXE continues to own all macOS labels, weighting,
+animation, accessibility, and controls.
 
 ### Collaboration boundary
 
