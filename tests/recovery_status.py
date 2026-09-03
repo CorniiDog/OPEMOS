@@ -129,6 +129,32 @@ esac
     )
     assert policy_result.returncode == 0
     assert json.loads(policy_result.stdout)["status"] == "healthy"
+    policy.write_text("580.1.2\n")
+    policy_result = subprocess.run(
+        [
+            "python3", str(STATUS), "--root", str(root), "--kernel", KERNEL,
+            "--expected-nvidia-file",
+            "usr/lib/open-gpu-kernel-modules-steamos-support/nvidia-version",
+        ],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        env={**os.environ, "PATH": f"{mockbin}:{os.environ['PATH']}"},
+        check=False,
+    )
+    assert policy_result.returncode == 2
+    assert json.loads(policy_result.stdout)["status"] == "unknown"
+    policy.write_text(" \n")
+    policy_result = subprocess.run(
+        [
+            "python3", str(STATUS), "--root", str(root), "--kernel", KERNEL,
+            "--expected-nvidia-file",
+            "usr/lib/open-gpu-kernel-modules-steamos-support/nvidia-version",
+        ],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        env={**os.environ, "PATH": f"{mockbin}:{os.environ['PATH']}"},
+        check=False,
+    )
+    assert policy_result.returncode == 2
+    assert json.loads(policy_result.stdout)["status"] == "unknown"
     policy.unlink()
     outside_policy = Path(temporary) / "outside-policy"
     outside_policy.write_text(NVIDIA + "\n")
@@ -146,6 +172,18 @@ esac
     assert policy_result.returncode == 2
     assert json.loads(policy_result.stdout)["status"] == "unknown"
     policy.unlink()
+    policy_result = subprocess.run(
+        [
+            "python3", str(STATUS), "--root", str(root), "--kernel", KERNEL,
+            "--expected-nvidia-file",
+            "usr/lib/open-gpu-kernel-modules-steamos-support/nvidia-version",
+        ],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        env={**os.environ, "PATH": f"{mockbin}:{os.environ['PATH']}"},
+        check=False,
+    )
+    assert policy_result.returncode == 2
+    assert json.loads(policy_result.stdout)["status"] == "unknown"
 
     recovery = state / "recovery"
     recovery.mkdir()

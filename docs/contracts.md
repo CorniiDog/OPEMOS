@@ -566,6 +566,10 @@ accepting the first readable value. Missing, malformed, conflicting, or
 expected-policy-mismatched identities make status `unknown`. A failed or
 unknown status subprocess is itself a console-fallback condition; shell
 `errexit` must never terminate the guardian before the safe profile is enabled.
+The installed guardian always supplies its pinned `nvidia-version` policy by
+confined relative name. Once supplied, that policy file is mandatory and must
+exactly match the independently observed installed identity; it cannot fall
+back to the installed marker when missing, empty, malformed, or stale.
 Status inputs are read through confined descriptors and must remain
 single-linked, owner-controlled, non-writable by other identities, and stable
 for the complete bounded read.

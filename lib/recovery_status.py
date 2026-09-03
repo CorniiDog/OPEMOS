@@ -197,8 +197,10 @@ def inspect(args):
     expected_file_version = ""
     if args.expected_nvidia_file:
         expected_file_version = regular_text(
-            root, args.expected_nvidia_file,
+            root, args.expected_nvidia_file, optional=False,
         ).strip()
+        if VERSION.fullmatch(expected_file_version) is None:
+            raise ValueError("expected NVIDIA policy is malformed")
     if args.expected_nvidia and expected_file_version:
         raise ValueError("expected NVIDIA policy is ambiguous")
     expected_version = (
@@ -206,7 +208,8 @@ def inspect(args):
     )
     if expected_version and not VERSION.fullmatch(expected_version):
         raise ValueError("expected NVIDIA policy is malformed")
-    if args.expected_nvidia and installed_version != args.expected_nvidia:
+    if ((args.expected_nvidia or expected_file_version)
+            and installed_version != expected_version):
         raise ValueError("installed NVIDIA identity differs from expected policy")
     records = []
     reasons = []
