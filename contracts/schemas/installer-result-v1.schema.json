@@ -31,83 +31,6 @@
       "pattern": "^[0-9a-f]{64}$",
       "type": "string"
     },
-    "initramfsImage": {
-      "properties": {
-        "configPath": {
-          "const": "etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf"
-        },
-        "entries": {"maximum": 200000, "minimum": 1, "type": "integer"},
-        "filename": {"$ref": "#/$defs/filename"},
-        "listingSha256": {"$ref": "#/$defs/hash"},
-        "modules": {
-          "properties": {
-            "nvidia-drm.ko": {"$ref": "#/$defs/targetRelativePath"},
-            "nvidia-modeset.ko": {"$ref": "#/$defs/targetRelativePath"},
-            "nvidia-uvm.ko": {"$ref": "#/$defs/targetRelativePath"},
-            "nvidia.ko": {"$ref": "#/$defs/targetRelativePath"}
-          },
-          "required": ["nvidia.ko", "nvidia-modeset.ko", "nvidia-uvm.ko", "nvidia-drm.ko"],
-          "type": "object"
-        },
-        "sha256": {"$ref": "#/$defs/hash"},
-        "sizeBytes": {"maximum": 2147483648, "minimum": 1, "type": "integer"}
-      },
-      "required": [
-        "filename",
-        "sizeBytes",
-        "sha256",
-        "listingSha256",
-        "entries",
-        "modules",
-        "configPath"
-      ],
-      "type": "object"
-    },
-    "initramfsVerification": {
-      "properties": {
-        "config": {
-          "properties": {
-            "path": {"const": "/etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf"},
-            "sha256": {"$ref": "#/$defs/hash"},
-            "sizeBytes": {"maximum": 1048576, "minimum": 1, "type": "integer"}
-          },
-          "required": ["path", "sizeBytes", "sha256"],
-          "type": "object"
-        },
-        "images": {
-          "items": {"$ref": "#/$defs/initramfsImage"},
-          "maxItems": 32,
-          "minItems": 1,
-          "type": "array"
-        },
-        "kernelVersion": {"$ref": "#/$defs/kernelVersion"},
-        "requiredModules": {
-          "const": ["nvidia.ko", "nvidia-modeset.ko", "nvidia-uvm.ko", "nvidia-drm.ko"]
-        },
-        "rootfsOnlyModules": {"const": ["nvidia-peermem.ko"]},
-        "schemaVersion": {"const": 1},
-        "status": {"const": "verified"},
-        "tools": {
-          "properties": {
-            "lsinitcpio": {"$ref": "#/$defs/toolProof"},
-            "mkinitcpio": {"$ref": "#/$defs/toolProof"}
-          },
-          "required": ["mkinitcpio", "lsinitcpio"],
-          "type": "object"
-        }
-      },
-      "required": [
-        "schemaVersion",
-        "status",
-        "kernelVersion",
-        "requiredModules",
-        "rootfsOnlyModules",
-        "tools",
-        "config",
-        "images"
-      ],
-      "type": "object"
-    },
     "kernelVersion": {
       "maxLength": 255,
       "pattern": "^[A-Za-z0-9._+~-]+$",
@@ -163,20 +86,6 @@
       "required": ["root", "steamosVersion", "kernelVersion", "nvidiaVersion", "architecture"],
       "type": "object"
     },
-    "targetRelativePath": {
-      "maxLength": 1024,
-      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._+~/-]+$",
-      "type": "string"
-    },
-    "toolProof": {
-      "properties": {
-        "path": {"enum": ["/usr/bin/mkinitcpio", "/usr/bin/lsinitcpio"]},
-        "sha256": {"$ref": "#/$defs/hash"},
-        "sizeBytes": {"maximum": 8388608, "minimum": 1, "type": "integer"}
-      },
-      "required": ["path", "sizeBytes", "sha256"],
-      "type": "object"
-    },
     "version": {
       "maxLength": 64,
       "pattern": "^(?:unknown|[0-9]+\\.[0-9]+(?:\\.[0-9]+)?)$",
@@ -206,7 +115,7 @@
               "mountsReleased": {"const": true}
             }
           },
-          "initramfsVerification": {"$ref": "#/$defs/initramfsVerification"},
+          "initramfsVerification": {"$ref": "installer-initramfs-verification-v1.schema.json"},
           "initramfsWorkspace": {"$ref": "#/$defs/workspace"},
           "moduleVerification": {"$ref": "installer-module-verification-v1.schema.json"},
           "payloadReceipt": {"$ref": "#/$defs/payloadReceipt"},
@@ -242,7 +151,7 @@
   "description": "Additive terminal result emitted by bootstrap/install_to_root.sh. Cross-record target, package, and payload-hash equality remains enforced by lib/validate_install_contract.py.",
   "properties": {
     "cleanup": {"$ref": "#/$defs/cleanup"},
-    "initramfsVerification": {"type": "object"},
+    "initramfsVerification": {"$ref": "installer-initramfs-verification-v1.schema.json"},
     "initramfsWorkspace": {"type": "object"},
     "inputs": {
       "properties": {

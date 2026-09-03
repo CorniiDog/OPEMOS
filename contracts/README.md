@@ -91,6 +91,15 @@ firmware version is representable but cannot prove the reviewed installation.
 Dependency and provider arrays use set semantics: ordering is irrelevant,
 duplicates are rejected, and exact binding compares their normalized values.
 
+`lib/generate_installer_initramfs_verification_fixtures.py` deterministically
+emits the bounded success-only initramfs-verification schema-1 matrix. It
+separates structural record acceptance from exact target-kernel binding and
+covers tool/config/image identities, bounded listings, the four-module
+early-boot set, rootfs-only `nvidia-peermem`, confined module paths, safe
+additive top-level metadata, and hostile JSON. Generation or inspection errors
+remain typed failures in the outer installer result; Core does not emit a
+failed nested initramfs proof.
+
 When resolution returns `no_compatible_artifact` with reason
 `no_compatible_release`, `nextAction` explicitly authorizes only the existing
 exact-kernel `bootstrap/build_for_target.sh` contract and includes a

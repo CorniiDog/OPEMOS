@@ -8,15 +8,17 @@ import re
 import stat
 from pathlib import Path
 
+from write_install_result import (
+    validate_initramfs_verification_binding,
+    validate_initramfs_verification_record,
+)
+
 
 MAX_RESULT_BYTES = 32 * 1024 * 1024
 MAX_PROGRESS_BYTES = 16 * 1024 * 1024
 MAX_PROGRESS_LINE = 4096
 TOKEN = re.compile(r"[a-z][a-z0-9_]{0,63}")
 PREFIX = "STEAMOS_NVIDIA_PROGRESS "
-INITRAMFS_REQUIRED_MODULES = (
-    "nvidia.ko", "nvidia-modeset.ko", "nvidia-uvm.ko", "nvidia-drm.ko",
-)
 TRUST_VALUES = {
     "pending-validation", "development-unverified",
     "locally-built-verified", "certified-published",
@@ -305,31 +307,13 @@ def validate_success_proofs(document, target):
         raise ValueError("success workspace verification is malformed")
 
     initramfs = document["initramfsVerification"]
-    if (initramfs.get("schemaVersion") != 1
-            or initramfs.get("kernelVersion") != target["kernelVersion"]):
-        raise ValueError("success initramfs verification identity is malformed")
-    tools = initramfs.get("tools")
-    if not isinstance(tools, dict) or set(tools) != {"mkinitcpio", "lsinitcpio"}:
-        raise ValueError("success initramfs tool verification is malformed")
-    for name, record in tools.items():
-        if (not isinstance(record, dict)
-                or record.get("path") != f"/usr/bin/{name}"
-                or not isinstance(record.get("sizeBytes"), int)
-                or isinstance(record["sizeBytes"], bool)
-                or not 0 < record["sizeBytes"] <= 8 * 1024 * 1024
-                or not isinstance(record.get("sha256"), str)
-                or HEX_SHA256.fullmatch(record["sha256"]) is None):
-            raise ValueError("success initramfs tool verification is malformed")
-    config = initramfs.get("config")
-    if (not isinstance(config, dict)
-            or config.get("path")
-            != "/etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf"
-            or not isinstance(config.get("sizeBytes"), int)
-            or isinstance(config["sizeBytes"], bool)
-            or not 0 < config["sizeBytes"] <= 1024 * 1024
-            or not isinstance(config.get("sha256"), str)
-            or HEX_SHA256.fullmatch(config["sha256"]) is None):
-        raise ValueError("success initramfs configuration verification is malformed")
+    try:
+        validate_initramfs_verification_record(initramfs)
+        validate_initramfs_verification_binding(
+            initramfs, target["kernelVersion"]
+        )
+    except SystemExit as error:
+        raise ValueError("success initramfs verification is malformed") from error
 
     receipt = document["payloadReceipt"]
     receipt_records = receipt.get("records") if isinstance(receipt, dict) else None
@@ -439,29 +423,6 @@ def validate_result(path):
         validate_success_proofs(document, target)
         if document["initramfsWorkspace"].get("phase") != "mounted_workspace":
             raise ValueError("success workspace phase is invalid")
-        initramfs = document["initramfsVerification"]
-        if (initramfs.get("requiredModules") != list(INITRAMFS_REQUIRED_MODULES)
-                or initramfs.get("rootfsOnlyModules") != ["nvidia-peermem.ko"]
-                or not isinstance(initramfs.get("images"), list)
-                or not initramfs["images"]
-                or any(not isinstance(image, dict)
-                       or not plain_filename(image.get("filename"))
-                       or image.get("filename") is None
-                       or not isinstance(image.get("sizeBytes"), int)
-                       or isinstance(image["sizeBytes"], bool)
-                       or not 0 < image["sizeBytes"] <= 2 * 1024 * 1024 * 1024
-                       or not isinstance(image.get("entries"), int)
-                       or isinstance(image["entries"], bool)
-                       or not 1 <= image["entries"] <= 200_000
-                       or any(not isinstance(image.get(field), str)
-                              or HEX_SHA256.fullmatch(image[field]) is None
-                              for field in ("sha256", "listingSha256"))
-                       or image.get("configPath")
-                       != "etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf"
-                       or not isinstance(image.get("modules"), dict)
-                       or set(image["modules"]) != set(INITRAMFS_REQUIRED_MODULES)
-                       for image in initramfs["images"])):
-            raise ValueError("success initramfs module contract is invalid")
     elif document["status"] == "validated":
         if document["reason"] != "validation_complete" or document["phase"] != "validated":
             raise ValueError("validated terminal state is inconsistent")

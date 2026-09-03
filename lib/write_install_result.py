@@ -379,14 +379,21 @@ def load_initramfs_verification(path):
                 or not 0 < path.stat().st_size <= MAX_INITRAMFS_VERIFICATION_BYTES):
             raise OSError
         document = json.loads(path.read_text(encoding="utf-8"),
-                              object_pairs_hook=unique_object)
+                              object_pairs_hook=unique_object,
+                              parse_constant=reject_json_constant)
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
         raise SystemExit("Initramfs verification metadata is unreadable or excessive.")
-    if (not isinstance(document, dict) or set(document) != {
+    return validate_initramfs_verification_record(document)
+
+
+def validate_initramfs_verification_record(document):
+    """Validate the bounded standalone schema-1 success record."""
+    if (not isinstance(document, dict) or not {
             "schemaVersion", "status", "kernelVersion", "requiredModules",
-            "rootfsOnlyModules", "tools", "config", "images"}
+            "rootfsOnlyModules", "tools", "config", "images"} <= set(document)
             or document.get("schemaVersion") != 1 or document.get("status") != "verified"
             or not KERNEL.fullmatch(document.get("kernelVersion", ""))
+            or document.get("kernelVersion") == "unknown"
             or document.get("requiredModules") != list(INITRAMFS_REQUIRED_MODULES)
             or document.get("rootfsOnlyModules")
             != list(INITRAMFS_ROOTFS_ONLY_MODULES)):
@@ -420,7 +427,8 @@ def load_initramfs_verification(path):
         if (not isinstance(image, dict) or set(image) != {
                 "filename", "sizeBytes", "sha256", "listingSha256", "entries",
                 "modules", "configPath"}
-                or not plain_name(image.get("filename", ""))
+                or not image.get("filename")
+                or not plain_name(image["filename"])
                 or image["filename"] in filenames
                 or not isinstance(image.get("sizeBytes"), int)
                 or isinstance(image.get("sizeBytes"), bool)
@@ -451,6 +459,15 @@ def load_initramfs_verification(path):
                 )):
             raise SystemExit("Initramfs module verification metadata is malformed.")
     return document
+
+
+def validate_initramfs_verification_binding(verification, kernel_version):
+    """Bind a structurally valid proof to the installer's exact target kernel."""
+    if (verification.get("status") != "verified"
+            or verification.get("kernelVersion") != kernel_version):
+        raise SystemExit(
+            "Initramfs verification does not match the exact target kernel."
+        )
 
 
 def load_userspace_verification(path):
@@ -1432,9 +1449,9 @@ def main():
         raise SystemExit("A successful installation requires workspace verification metadata.")
     if args.initramfs_verification:
         initramfs_verification = load_initramfs_verification(args.initramfs_verification)
-        if (args.status != "success"
-                or initramfs_verification["kernelVersion"] != args.kernel):
+        if args.status != "success":
             raise SystemExit("Initramfs verification metadata does not match the result.")
+        validate_initramfs_verification_binding(initramfs_verification, args.kernel)
         document["initramfsVerification"] = initramfs_verification
     elif args.status == "success":
         raise SystemExit("A successful installation requires exact initramfs verification metadata.")

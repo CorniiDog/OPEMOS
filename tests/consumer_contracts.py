@@ -32,10 +32,13 @@ from validate_install_contract import (  # noqa: E402
     validate_result,
 )
 from write_install_result import (  # noqa: E402
+    MAX_INITRAMFS_VERIFICATION_BYTES,
     MAX_MODULE_VERIFICATION_BYTES,
     MAX_USERSPACE_VERIFICATION_BYTES,
+    load_initramfs_verification,
     load_module_verification,
     load_userspace_verification,
+    validate_initramfs_verification_binding,
     validate_module_verification_binding,
     validate_userspace_verification_binding,
     validate_verified_metadata,
@@ -749,6 +752,11 @@ def main():
             encoding="utf-8"
         )
     )
+    initramfs_verification_schema = json.loads(
+        (schema_root / "installer-initramfs-verification-v1.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
     assert resolver_schema["$schema"].endswith("2020-12/schema")
     assert resolver_schema["properties"]["schemaVersion"]["const"] == 2
     assert resolver_schema["unevaluatedProperties"] is True
@@ -796,6 +804,14 @@ def main():
     assert userspace_verification_schema["$defs"]["verifiedPackage"][
         "additionalProperties"
     ] is False
+    assert initramfs_verification_schema["$schema"].endswith("2020-12/schema")
+    assert initramfs_verification_schema["unevaluatedProperties"] is True
+    assert initramfs_verification_schema["properties"]["requiredModules"]["const"] == [
+        "nvidia.ko", "nvidia-modeset.ko", "nvidia-uvm.ko", "nvidia-drm.ko",
+    ]
+    assert initramfs_verification_schema["properties"]["rootfsOnlyModules"][
+        "const"
+    ] == ["nvidia-peermem.ko"]
     assert result_schema["properties"]["validation"]["$ref"] == (
         "installer-validation-v1.schema.json"
     )
@@ -811,6 +827,12 @@ def main():
     assert result_schema["allOf"][0]["then"]["properties"][
         "userspaceVerification"
     ]["$ref"] == "installer-userspace-verification-v1.schema.json"
+    assert result_schema["properties"]["initramfsVerification"]["$ref"] == (
+        "installer-initramfs-verification-v1.schema.json"
+    )
+    assert result_schema["allOf"][0]["then"]["properties"][
+        "initramfsVerification"
+    ]["$ref"] == "installer-initramfs-verification-v1.schema.json"
 
     validate_resolver_compatibility_fixtures(
         ROOT / "contracts/fixtures/resolver-compatibility-v2.json"
@@ -829,6 +851,9 @@ def main():
     )
     validate_installer_userspace_verification_compatibility_fixtures(
         ROOT / "lib/generate_installer_userspace_verification_fixtures.py"
+    )
+    validate_installer_initramfs_verification_compatibility_fixtures(
+        ROOT / "lib/generate_installer_initramfs_verification_fixtures.py"
     )
 
     tag = "steamos-3.8.14-nvidia-575.64.05-k6.16.12-valve24.4-x86"
@@ -967,6 +992,131 @@ def main():
         assert output.read_bytes() == payload
         assert os.stat(output).st_mode & 0o777 == 0o644
         expect_failure(write_create_only, output, payload)
+
+
+def validate_installer_initramfs_verification_compatibility_fixtures(generator):
+    outputs = []
+    for _ in range(2):
+        completed = subprocess.run(
+            [sys.executable, str(generator)], cwd="/", check=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        assert completed.stderr == b""
+        assert 1 <= len(completed.stdout) <= 512 * 1024
+        outputs.append(completed.stdout)
+    assert outputs[0] == outputs[1] and outputs[0].endswith(b"\n")
+    matrix = json.loads(
+        outputs[0], object_pairs_hook=resolver_module.unique_object,
+        parse_constant=resolver_module.reject_json_constant,
+    )
+    assert set(matrix) == {
+        "schemaVersion", "kind", "initramfsVerificationSchemaVersion",
+        "targetKernel", "unfrozenFields", "failureContract", "limits", "cases",
+    }
+    assert matrix["schemaVersion"] == 1
+    assert matrix["kind"] == (
+        "opemos-installer-initramfs-verification-compatibility-fixtures"
+    )
+    assert matrix["initramfsVerificationSchemaVersion"] == 1
+    assert matrix["unfrozenFields"] == []
+    assert matrix["failureContract"] == "outer-installer-result-only"
+    assert matrix["limits"] == {
+        "maxDocumentBytes": MAX_INITRAMFS_VERIFICATION_BYTES
+    }
+    cases = matrix["cases"]
+    assert isinstance(cases, list) and 1 <= len(cases) <= 64
+    base_cases = {
+        fixture["name"]: fixture["document"]
+        for fixture in cases if "document" in fixture
+    }
+    names = []
+    with tempfile.TemporaryDirectory(prefix="opemos-initramfs-fixtures-") as temporary:
+        root = Path(temporary)
+        candidate_path = root / "initramfs-verification.json"
+        for fixture in cases:
+            assert isinstance(fixture, dict)
+            assert set(fixture) in (
+                {"name", "expected", "document"},
+                {"name", "expected", "rawDocument"},
+                {"name", "expected", "documentRecipe"},
+            )
+            name = fixture["name"]
+            names.append(name)
+            assert isinstance(name, str)
+            assert re.fullmatch(r"[a-z][a-z0-9-]{0,63}", name)
+            expected = fixture["expected"]
+            assert set(expected) == {"recordAccepted", "successProofAccepted"}
+            assert all(isinstance(value, bool) for value in expected.values())
+            if "document" in fixture:
+                payload = json.dumps(
+                    fixture["document"], sort_keys=True, separators=(",", ":")
+                ) + "\n"
+            elif "rawDocument" in fixture:
+                payload = fixture["rawDocument"]
+                assert isinstance(payload, str) and payload
+            else:
+                recipe = fixture["documentRecipe"]
+                assert recipe == {
+                    "kind": "top-level-padding",
+                    "baseCase": "valid-normalized-success",
+                    "paddingBytes": MAX_INITRAMFS_VERIFICATION_BYTES,
+                }
+                candidate = copy.deepcopy(base_cases[recipe["baseCase"]])
+                candidate["padding"] = "x" * recipe["paddingBytes"]
+                payload = json.dumps(candidate, sort_keys=True, separators=(",", ":"))
+                assert (MAX_INITRAMFS_VERIFICATION_BYTES < len(payload.encode())
+                        <= MAX_INITRAMFS_VERIFICATION_BYTES + 16384)
+            candidate_path.write_text(payload, encoding="utf-8")
+            try:
+                parsed = load_initramfs_verification(candidate_path)
+            except SystemExit:
+                record_accepted = False
+                success_accepted = False
+            else:
+                record_accepted = True
+                try:
+                    validate_initramfs_verification_binding(
+                        parsed, matrix["targetKernel"]
+                    )
+                except SystemExit:
+                    success_accepted = False
+                else:
+                    success_accepted = True
+            assert record_accepted is expected["recordAccepted"], name
+            assert success_accepted is expected["successProofAccepted"], name
+
+        linked = root / "linked-initramfs-verification.json"
+        linked.symlink_to(candidate_path)
+        try:
+            load_initramfs_verification(linked)
+        except SystemExit:
+            pass
+        else:
+            raise AssertionError("linked initramfs-verification fixture was accepted")
+
+    assert len(names) == len(set(names))
+    assert set(names) == {
+        "valid-normalized-success", "safe-additive-top-level",
+        "kernel-binding-mismatch", "alternate-valid-image-hashes",
+        "malformed-kernel", "unknown-kernel", "missing-required-module",
+        "required-module-order",
+        "extra-required-module", "missing-rootfs-only-module",
+        "peermem-in-initramfs", "missing-tool", "extra-tool",
+        "wrong-tool-path", "zero-tool-size", "excessive-tool-size",
+        "malformed-tool-hash", "wrong-config-path", "zero-config-size",
+        "excessive-config-size", "malformed-config-hash", "missing-images",
+        "duplicate-image-identity", "excessive-image-set",
+        "unsafe-image-filename", "empty-image-filename", "zero-image-size",
+        "excessive-image-size",
+        "zero-listing-entries", "excessive-listing-entries",
+        "malformed-image-hash", "malformed-listing-hash",
+        "missing-image-module", "extra-image-module", "duplicate-module-path",
+        "module-path-traversal", "absolute-module-path",
+        "wrong-module-basename", "wrong-kernel-module-path",
+        "unsupported-module-compression", "wrong-listing-config-path",
+        "unknown-image-field", "malformed-json", "duplicate-json-key",
+        "non-finite-json", "oversized-document",
+    }
 
 
 if __name__ == "__main__":
