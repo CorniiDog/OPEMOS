@@ -52,6 +52,8 @@ MAX_SIGNATURE_BYTES = 1024 * 1024
 MAX_SIGNATURE_STATUS_BYTES = 64 * 1024
 MAX_STATE_BYTES = 64 * 1024
 MAX_HEALTH_EVIDENCE_BYTES = 64 * 1024
+MAX_TRANSPORT_BYTES = 16 * 1024 * 1024
+MAX_TRANSPORT_SECONDS = 300
 MAX_GENERATIONS = 4
 MAX_STORE_ENTRIES = 32
 DISCOVERY_FILENAME = "opemos-userspace-lock-discovery-v1.json"
@@ -77,7 +79,7 @@ MAX_STORE_ROOT_ENTRIES = 16
 MAX_CACHE_TREE_NODES = MAX_FILES + 16
 MAX_CACHE_TREE_BYTES = (
     MAX_GENERATION_BYTES + DISCOVERY_MAX_BYTES + MANIFEST_MAX_BYTES
-    + 2 * MAX_SIGNATURE_BYTES + MAX_STATE_BYTES
+    + 2 * MAX_SIGNATURE_BYTES + MAX_STATE_BYTES + MAX_TRANSPORT_BYTES
 )
 CACHE_SPACE_RESERVE_BYTES = 64 * 1024 * 1024
 CACHE_INODE_RESERVE = 128
@@ -249,7 +251,7 @@ def validate_store_layout(store):
         fail("device_generation_store_excessive", "device generation store has too many entries")
     allowed = {
         "generations", ".generation.lock", "state.json", PENDING_ACTIVATION,
-        *STATE_MARKERS,
+        "downloads", *STATE_MARKERS,
     }
     for entry in entries:
         if entry.name in allowed or any(
@@ -264,10 +266,11 @@ def cleanup_staging(generations):
         fail("device_generation_store_excessive", "generation store has too many entries")
     for entry in entries:
         is_stage = entry.name.startswith(".stage-")
+        is_acquisition = entry.name.startswith(".acquire-")
         is_prune = (entry.name.startswith(".prune-")
                     and HASH.fullmatch(entry.name[len(".prune-"):])
                     is not None)
-        if not is_stage and not is_prune:
+        if not is_stage and not is_acquisition and not is_prune:
             continue
         try:
             info = entry.lstat()
@@ -281,6 +284,7 @@ def cleanup_staging(generations):
 
 def validate_removal_root_name(name):
     if (re.fullmatch(r"\.stage-[A-Za-z0-9_-]{1,64}", name) is None
+            and re.fullmatch(r"\.acquire-[A-Za-z0-9_-]{1,64}", name) is None
             and re.fullmatch(r"\.prune-[0-9a-f]{64}", name) is None):
         fail("device_generation_store_invalid", "generation removal target is unsafe")
 
@@ -399,6 +403,10 @@ def lifecycle_lock(store, create=False):
             fail("device_generation_lock_failed", "generation lifecycle lock was replaced")
         cleanup_state_temporaries(store)
         cleanup_staging(generations)
+        downloads = download_cache(store)
+        if downloads is not None:
+            cleanup_staging(downloads)
+            prune_generations(downloads, empty_state())
         ensure_state_marker(store, generations)
         reconcile_pending_activation(store, generations)
         reconcile_state_markers(store, generations)
@@ -406,8 +414,29 @@ def lifecycle_lock(store, create=False):
             yield generations
         except DeviceGenerationCancelled:
             cleanup_staging(generations)
+            downloads = download_cache(store)
+            if downloads is not None:
+                cleanup_staging(downloads)
             reconcile_pending_activation(store, generations)
             raise
+
+
+def download_cache(store, create=False):
+    path = store / "downloads"
+    if not path.exists() and not path.is_symlink():
+        if not create:
+            return None
+        path.mkdir(mode=0o700)
+        fsync_directory(store)
+    try:
+        info = path.lstat()
+    except OSError:
+        fail("device_generation_store_invalid", "download cache is unavailable")
+    if (not stat.S_ISDIR(info.st_mode) or path.is_symlink()
+            or info.st_uid != os.geteuid()
+            or stat.S_IMODE(info.st_mode) != 0o700):
+        fail("device_generation_store_invalid", "download cache is unsafe")
+    return path
 
 
 def empty_state():
@@ -1368,7 +1397,8 @@ def prune_generations(generations, state, limit=MAX_GENERATIONS):
     }
     candidates = []
     for entry in generations.iterdir():
-        if entry.name.startswith(".stage-"):
+        if (entry.name.startswith(".stage-")
+                or entry.name.startswith(".acquire-")):
             continue
         if HASH.fullmatch(entry.name) is None or entry.is_symlink() or not entry.is_dir():
             fail("device_generation_store_invalid", "generation store contains an unsafe entry")
@@ -1391,6 +1421,148 @@ def prune_generations(generations, state, limit=MAX_GENERATIONS):
         remove_confined_generation_tree(tombstone)
     fsync_directory(generations)
     return len(candidates) - sum(identity in retained for _, identity, _ in candidates)
+
+
+def transport_timeout():
+    value = os.environ.get("OPEMOS_GENERATION_TEST_TRANSPORT_TIMEOUT")
+    if value is None:
+        return MAX_TRANSPORT_SECONDS
+    if (not development_override()
+            or re.fullmatch(r"[1-9][0-9]{0,2}", value) is None
+            or int(value) > MAX_TRANSPORT_SECONDS):
+        fail("device_generation_transport_failed", "transport timeout is invalid")
+    return int(value)
+
+
+def run_injected_transport(arguments, destination):
+    if not development_override() or not arguments.transport:
+        fail(
+            "device_generation_network_inactive",
+            "installed-device generation networking is not configured",
+        )
+    transport = absolute_path(arguments.transport)
+    reject_symlink_components(transport, "generation transport")
+    try:
+        info = transport.lstat()
+    except OSError:
+        fail("device_generation_transport_unavailable", "generation transport is unavailable")
+    if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+            or info.st_uid != os.geteuid()
+            or stat.S_IMODE(info.st_mode) & 0o022
+            or not stat.S_IMODE(info.st_mode) & 0o100):
+        fail("device_generation_transport_unavailable", "generation transport is unsafe")
+    executable_payload = snapshot_regular(
+        transport, MAX_TRANSPORT_BYTES, "generation transport",
+        "device_generation_transport_unavailable",
+        "device_generation_transport_unavailable", os.geteuid(),
+    )
+    executable = destination / ".transport"
+    write_exclusive(executable, executable_payload, 0o700)
+    try:
+        process = subprocess.Popen(
+            [str(executable), "--destination", str(destination)],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, start_new_session=True,
+            env={"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"},
+        )
+    except OSError:
+        executable.unlink(missing_ok=True)
+        fail("device_generation_transport_unavailable", "generation transport could not start")
+    try:
+        process.wait(timeout=transport_timeout())
+    except subprocess.TimeoutExpired:
+        terminate_process(process)
+        fail("device_generation_transport_unavailable", "generation transport timed out")
+    except BaseException:
+        terminate_process(process)
+        raise
+    finally:
+        executable.unlink(missing_ok=True)
+        fsync_directory(destination)
+    if process.returncode == 69:
+        fail("device_generation_transport_unavailable", "generation source is unavailable")
+    if process.returncode == 73:
+        fail("device_generation_space_insufficient", "download staging storage is full")
+    if process.returncode:
+        fail("device_generation_transport_failed", "generation transport failed")
+
+
+def acquire(arguments):
+    if not development_override() or not arguments.transport:
+        fail(
+            "device_generation_network_inactive",
+            "installed-device generation networking is not configured",
+        )
+    store = absolute_path(arguments.store)
+    policy, authority, keyring, checkpoint = active_policy(arguments)
+    if not all((arguments.steamos, arguments.kernel, arguments.nvidia)):
+        fail("device_generation_input_invalid", "exact target arguments are required")
+    requested_target = target_from_arguments(arguments)
+    with lifecycle_lock(store, create=True) as generations:
+        state = read_state(store)
+        downloads = download_cache(store, create=True)
+        cleanup_staging(downloads)
+        acquisition = Path(tempfile.mkdtemp(prefix=".acquire-", dir=downloads))
+        try:
+            run_injected_transport(arguments, acquisition)
+            pair = load_authenticated_pair(
+                acquisition, keyring, policy["signingKeyFingerprint"]
+            )
+            if (pair["manifest"]["authority"] != authority
+                    or not any(record["target"] == requested_target
+                               for record in pair["manifest"]["targetLocks"])):
+                fail(
+                    "device_generation_not_authorized",
+                    "generation does not authorize the requested target or authority",
+                )
+            lineage_pairs = []
+            for lineage_path in arguments.lineage:
+                item = load_authenticated_pair(
+                    absolute_path(lineage_path), keyring,
+                    policy["signingKeyFingerprint"], lineage=True,
+                )
+                lineage_pairs.append((item["discovery"], item["manifest"]))
+            try:
+                validate_activation(
+                    pair["discovery"], pair["manifest"], authority,
+                    requested_target, state["highWaterSequence"],
+                    None if state["active"] is None
+                    else state["active"]["manifestSha256"],
+                    lineage_pairs, checkpoint,
+                    None if state["active"] is None else state["active"]["sequence"],
+                )
+            except GenerationContractError as error:
+                fail("device_generation_not_authorized", str(error))
+            payload_root, payload_records = source_payload_records(
+                acquisition, pair["manifest"]
+            )
+            pruned_before = prune_generations(
+                downloads, empty_state(), limit=MAX_GENERATIONS - 1
+            )
+            require_cache_admission(
+                downloads, pair, payload_records, policy, authority
+            )
+            if (development_override()
+                    and os.environ.get("OPEMOS_GENERATION_TEST_FAIL_PHASE")
+                    == "acquisition-enospc"):
+                fail(
+                    "device_generation_space_insufficient",
+                    "download cache storage is full",
+                )
+            _generation, created = publish_generation(
+                downloads, pair, payload_root, payload_records, policy, authority
+            )
+            pruned = prune_generations(downloads, empty_state())
+        finally:
+            if acquisition.exists():
+                remove_confined_generation_tree(acquisition)
+        return result(
+            "ok", "downloaded", state=state,
+            details={
+                "generationCreated": created,
+                "prunedGenerations": pruned_before + pruned,
+            },
+        )
 
 
 def activate(arguments):
@@ -1656,8 +1828,14 @@ def parser():
     acknowledge_parser.add_argument("--evidence", required=True)
     commands.add_parser("rollback")
     commands.add_parser("prune")
-    commands.add_parser("update")
-    commands.add_parser("update-or-repair")
+    for name in ("update", "update-or-repair"):
+        update_parser = commands.add_parser(name)
+        update_parser.add_argument("--transport")
+        update_parser.add_argument("--lineage", action="append", default=[])
+        update_parser.add_argument("--steamos")
+        update_parser.add_argument("--kernel")
+        update_parser.add_argument("--nvidia")
+        update_parser.add_argument("--architecture", default="x86_64")
     return value
 
 
@@ -1683,10 +1861,7 @@ def main():
         elif arguments.command == "prune":
             document = prune(arguments)
         else:
-            fail(
-                "device_generation_network_inactive",
-                "installed-device generation networking is not configured",
-            )
+            document = acquire(arguments)
     except DeviceGenerationCancelled:
         emit(result("cancelled", "cancelled", message="operation was cancelled"))
         return 130

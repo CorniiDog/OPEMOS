@@ -127,6 +127,31 @@ def create_lineage_source(root, full_source):
         write(root / name, (full_source / name).read_bytes())
 
 
+def create_transport(path, source=None, exit_code=0, pause=False):
+    actions = []
+    if source is not None:
+        actions.append(
+            "for item in pathlib.Path(%r).iterdir():\n"
+            "    target = destination / item.name\n"
+            "    shutil.copytree(item, target) if item.is_dir() else "
+            "shutil.copy2(item, target)" % str(source)
+        )
+    else:
+        actions.append("(destination / 'partial').write_bytes(b'partial\\n')")
+    if pause:
+        actions.append("time.sleep(30)")
+    actions.append(f"raise SystemExit({exit_code})")
+    payload = (
+        f"#!{sys.executable}\n"
+        "import pathlib, shutil, sys, time\n"
+        "if len(sys.argv) != 3 or sys.argv[1] != '--destination':\n"
+        "    raise SystemExit(64)\n"
+        "destination = pathlib.Path(sys.argv[2])\n"
+        + "\n".join(actions) + "\n"
+    ).encode()
+    write(path, payload, 0o700)
+
+
 def invoke(environment, store, policy, keyring, checkpoint, command,
            arguments=None, success=True):
     process = subprocess.run([
@@ -339,6 +364,88 @@ def main():
         assert ambiguous["reason"] == "device_generation_input_invalid"
         (generation_10 / "unexpected").unlink()
 
+        transport = root / "generation-transport"
+        create_transport(transport, generation_10)
+        downloaded = invoke(
+            environment, store, policy, keyring, checkpoint, "update",
+            ["--transport", str(transport), *TARGET_ARGUMENTS],
+        )
+        assert downloaded["reason"] == "downloaded"
+        assert downloaded["generationCreated"] is True
+        assert downloaded["state"]["active"]["manifestSha256"] == hash_9
+        downloaded_generation = store / "downloads" / hash_10
+        assert downloaded_generation.is_dir()
+        repeated_download = invoke(
+            environment, store, policy, keyring, checkpoint,
+            "update-or-repair", ["--transport", str(transport), *TARGET_ARGUMENTS],
+        )
+        assert repeated_download["generationCreated"] is False
+        assert repeated_download["state"]["active"]["manifestSha256"] == hash_9
+
+        partial_transport = root / "partial-transport"
+        create_transport(partial_transport, exit_code=69)
+        unavailable = invoke(
+            environment, store, policy, keyring, checkpoint, "update",
+            ["--transport", str(partial_transport), *TARGET_ARGUMENTS],
+            success=False,
+        )
+        assert unavailable["reason"] == "device_generation_transport_unavailable"
+        assert not list((store / "downloads").glob(".acquire-*"))
+
+        acquisition_no_space = invoke(
+            {
+                **environment,
+                "OPEMOS_GENERATION_TEST_FAIL_PHASE": "acquisition-enospc",
+            },
+            store, policy, keyring, checkpoint, "update",
+            ["--transport", str(transport), *TARGET_ARGUMENTS], success=False,
+        )
+        assert acquisition_no_space["reason"] == (
+            "device_generation_space_insufficient"
+        )
+        assert not list((store / "downloads").glob(".acquire-*"))
+
+        paused_transport = root / "paused-transport"
+        create_transport(paused_transport, pause=True)
+        update_command = [
+            sys.executable, str(TOOL), "--store", str(store),
+            "--policy", str(policy), "--keyring", str(keyring),
+            "--checkpoint", str(checkpoint), "update", "--transport",
+            str(paused_transport), *TARGET_ARGUMENTS,
+        ]
+        cancelled_download = subprocess.Popen(
+            update_command, cwd="/", env=environment,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        deadline = time.time() + 5
+        while (not list((store / "downloads").glob(".acquire-*"))
+               and time.time() < deadline):
+            time.sleep(0.02)
+        assert list((store / "downloads").glob(".acquire-*"))
+        cancelled_download.send_signal(signal.SIGTERM)
+        stdout, stderr = cancelled_download.communicate(timeout=5)
+        assert cancelled_download.returncode == 130 and stderr == ""
+        assert json.loads(stdout)["status"] == "cancelled"
+        assert not list((store / "downloads").glob(".acquire-*"))
+
+        timed_out = invoke(
+            {
+                **environment,
+                "OPEMOS_GENERATION_TEST_TRANSPORT_TIMEOUT": "1",
+            },
+            store, policy, keyring, checkpoint, "update",
+            ["--transport", str(paused_transport), *TARGET_ARGUMENTS],
+            success=False,
+        )
+        assert timed_out["reason"] == "device_generation_transport_unavailable"
+        assert not list((store / "downloads").glob(".acquire-*"))
+
+        abandoned_download = store / "downloads/.acquire-abandoned"
+        abandoned_download.mkdir(mode=0o700)
+        write(abandoned_download / "partial", b"partial\n")
+        invoke(environment, store, policy, keyring, checkpoint, "prune")
+        assert not abandoned_download.exists()
+
         for field in (
                 "OPEMOS_GENERATION_TEST_AVAILABLE_BYTES",
                 "OPEMOS_GENERATION_TEST_AVAILABLE_INODES"):
@@ -544,6 +651,17 @@ def main():
             invalid_signature, success=False,
         )
         assert rejected["reason"] == "device_generation_authentication_failed"
+        invalid_transport = root / "invalid-signature-transport"
+        create_transport(invalid_transport, invalid_signature)
+        rejected_download = invoke(
+            environment, store, policy, keyring, checkpoint, "update",
+            ["--transport", str(invalid_transport), *TARGET_ARGUMENTS],
+            success=False,
+        )
+        assert rejected_download["reason"] == (
+            "device_generation_authentication_failed"
+        )
+        assert not list((store / "downloads").glob(".acquire-*"))
 
         noisy_verifier = root / "noisy-gpgv"
         write(noisy_verifier, (

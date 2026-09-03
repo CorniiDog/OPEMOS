@@ -1450,18 +1450,27 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   candidate, and either clear the completed intent or remove the uncommitted
   generation through confined marker-first deletion. Cover state ENOSPC,
   SIGTERM, and SIGKILL on both sides of the durable state commit.
+* [x] Add an inactive installed-device acquisition substrate for `update` and
+  `update-or-repair`. A development-only injected transport runs with a
+  sanitized environment and bounded lifetime into private store-local staging;
+  Core then authenticates the exact discovery, manifest, signatures, target,
+  lineage, and payload before create-only publication to a separate download
+  cache. Cover outage, timeout, ENOSPC, cancellation, partial/stale staging
+  cleanup, repeat download, and the invariant that acquisition never activates
+  a generation. Production transport remains unconfigured and fail-closed.
 * [ ] Specify a stable canonical discovery location without placing URLs or
   redirects inside the signed descriptor. OPEMOS.EXE owns host transport and
   its cache; installed Core/CLI owns device transport and its separate cache.
   Both consume the same Core-owned identities, schemas, fixtures, and trust
   root without importing one another's updater implementation.
-* [ ] Add authenticated installed-device `download`, online `update`, and
-  one-line safe `update-or-repair`; integrate the active reviewed lock with
-  exact-target repair while keeping networking outside boot-critical paths.
-  The inactive CLI currently fails these online commands closed.
+* [ ] Add the reviewed installed-device transport and stable discovery location
+  to `update` and one-line safe `update-or-repair`; integrate the active
+  reviewed lock with exact-target repair while keeping networking outside
+  boot-critical paths. The production CLI still fails these commands closed.
 * [ ] Validate the device lifecycle under Fedora and real SteamOS, including
   inode exhaustion, power loss at every durable boundary, health timeout,
-  filesystem corruption, and service/recovery integration.
+  filesystem corruption, transport-child containment after an uncatchable
+  parent SIGKILL, and service/recovery integration.
 * [ ] Keep the legacy embedded/pinned userspace-lock path until Core unit,
   Fedora/SteamOS integration, cancellation, cleanup, fault-injection,
   last-known-good rollback, and cross-repository equivalence tests all pass.
