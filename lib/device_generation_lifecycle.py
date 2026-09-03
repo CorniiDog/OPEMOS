@@ -19,7 +19,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from payload_receipt import verify_receipt
+from payload_receipt import verify_receipt_userspace_lock
 from device_generation_contract import (
     DeviceGenerationContractError,
     validate_health,
@@ -1714,7 +1714,9 @@ def observe_current_target(arguments):
         "architecture": architecture,
     }
     try:
-        receipt = verify_receipt(root, allow_live_root=True)
+        receipt, userspace_lock = verify_receipt_userspace_lock(
+            root, allow_live_root=True
+        )
     except (OSError, UnicodeError, ValueError):
         fail(
             "device_generation_target_observation_invalid",
@@ -1726,16 +1728,29 @@ def observe_current_target(arguments):
             "current target differs from its rootfs payload receipt",
         )
     require_observation_root(root, guard)
-    return {"target": observed, "receiptId": receipt["receiptId"]}
+    return {
+        "target": observed,
+        "receiptId": receipt["receiptId"],
+        "userspaceLock": userspace_lock,
+    }
 
 
 def require_observed_target(pair, observed):
-    if not any(
-            record["target"] == observed["target"]
-            for record in pair["manifest"]["targetLocks"]):
+    matching = [
+        record for record in pair["manifest"]["targetLocks"]
+        if record["target"] == observed["target"]
+    ]
+    if len(matching) != 1:
         fail(
             "device_generation_target_mismatch",
             "current installed target is not authorized by the selected generation",
+        )
+    lock = matching[0]["lock"]
+    expected = {"filename": lock["filename"], "sha256": lock["sha256"]}
+    if observed["userspaceLock"] != expected:
+        fail(
+            "device_generation_target_mismatch",
+            "current rootfs receipt does not bind the selected generation lock",
         )
 
 

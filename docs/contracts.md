@@ -579,8 +579,9 @@ or concurrent writer fails without replacing the prior state.
 All mutating recovery control operations also hold one recovery-operation
 lock. This serializes guardian fallback, repair, cancellation, and manual
 fallback changes across the complete workflow. Target mutation separately
-takes the ordinary installer lifecycle lock; the two locks remain distinct so the nested canonical
-installer can take its own lifecycle lock without self-deadlocking.
+takes the ordinary installer lifecycle lock; the two locks remain distinct so
+the nested canonical installer can take its own lifecycle lock without
+self-deadlocking.
 NetworkManager connectivity events trigger an immediate retry where available;
 a bounded systemd timer is the fallback. Network loss, DNS/TLS failure, captive
 portals, reboots, and flapping connectivity never block boot or disable the
@@ -597,6 +598,14 @@ A later certified equivalent does not invalidate a restored
 `locally-built-verified` system and is considered only by an explicit future
 maintenance transaction. Wrong-kernel or changed-NVIDIA publications remain
 ineligible under the ordinary resolver policy.
+
+Installed-device generation health is acknowledged only when three identities
+agree: the independently observed running target, the rootfs payload receipt,
+and the selected generation's exact target-lock record. Core compares both the
+reviewed lock filename and SHA-256 from the receipt's authenticated validation
+evidence. Merely finding the same SteamOS/kernel/NVIDIA target in two different
+generations is insufficient. This prevents a healthy receipt produced from one
+reviewed lock from acknowledging another generation for the same target.
 
 ### Open OPEMOS frontend boundary
 

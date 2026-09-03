@@ -1530,7 +1530,10 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   lock before LKG advancement or rollback. A private two-phase health marker
   durably binds LKG to that target and receipt across cancellation, SIGKILL,
   restart, and A/B transitions. The schema-1 health record remains
-  generation-only evidence.
+  generation-only evidence. Health/check/rollback also require the receipt's
+  reviewed userspace-lock filename and SHA-256 to match the selected
+  generation's exact target-lock record; same-target generations are not
+  interchangeable.
 * [ ] Validate the device lifecycle under Fedora and real SteamOS, including
   inode exhaustion, power loss at every durable boundary, health timeout,
   filesystem corruption, kernel-observed watchdog behavior, and service/

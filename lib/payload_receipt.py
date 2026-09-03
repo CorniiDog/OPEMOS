@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import stat
 from pathlib import Path
 
@@ -28,6 +29,7 @@ EXPECTED_MODULES = {
     "nvidia.ko", "nvidia-drm.ko", "nvidia-modeset.ko",
     "nvidia-peermem.ko", "nvidia-uvm.ko",
 }
+PORTABLE_FILENAME = re.compile(r"[A-Za-z0-9@._+~-]{1,255}")
 
 
 def unique_object(pairs):
@@ -218,7 +220,7 @@ def commit_receipt(args):
     return verify_receipt(args.root)
 
 
-def verify_receipt(root, allow_live_root=False):
+def _verify_receipt(root, allow_live_root=False):
     resolved_root = safe_root(root, allow_live_root=allow_live_root)
     expected_owner = 0 if resolved_root == Path("/") else os.geteuid()
     directory = receipt_directory(
@@ -260,7 +262,7 @@ def verify_receipt(root, allow_live_root=False):
     if (manifest["target"] != target
             or manifest.get("receiptId") != receipt_id(target, manifest["records"])):
         raise ValueError("payload receipt identity is inconsistent")
-    return {
+    result = {
         "schemaVersion": 1,
         "status": "verified",
         "reason": "payload_receipt_verified",
@@ -268,6 +270,33 @@ def verify_receipt(root, allow_live_root=False):
         "receiptId": manifest["receiptId"],
         "rootfsRelativePath": str(RECEIPT_RELATIVE / MANIFEST_NAME),
         "records": manifest["records"],
+    }
+    return result, documents
+
+
+def verify_receipt(root, allow_live_root=False):
+    return _verify_receipt(root, allow_live_root=allow_live_root)[0]
+
+
+def verify_receipt_userspace_lock(root, allow_live_root=False):
+    """Return a verified receipt and its exact installer lock identity.
+
+    The public receipt document intentionally remains unchanged. Installed
+    generation health uses this stronger internal view to bind the receipt's
+    authenticated validation evidence to one generation target-lock record.
+    """
+    receipt, documents = _verify_receipt(root, allow_live_root=allow_live_root)
+    lock = documents["validation"].get("userspaceLock")
+    if (not isinstance(lock, dict) or set(lock) != {"name", "sha256"}
+            or not isinstance(lock.get("name"), str)
+            or PORTABLE_FILENAME.fullmatch(lock["name"]) is None
+            or lock["name"].endswith(".")
+            or not isinstance(lock.get("sha256"), str)
+            or re.fullmatch(r"[0-9a-f]{64}", lock["sha256"]) is None):
+        raise ValueError("payload receipt userspace-lock identity is invalid")
+    return receipt, {
+        "filename": lock["name"],
+        "sha256": lock["sha256"],
     }
 
 

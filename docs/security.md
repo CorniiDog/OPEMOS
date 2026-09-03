@@ -191,6 +191,11 @@ transitions, concurrent writers, and non-durable replacement. The separate
 installer lifecycle lock continues to serialize root mutation; recovery does
 not hold that lock while invoking the nested canonical installer.
 
+Generation health and rollback additionally bind the rootfs receipt's exact
+userspace-lock filename and SHA-256 to the selected generation target record.
+Target equality alone is not treated as proof that the installed package set
+came from that generation.
+
 ## Optional CUDA omission
 
 `gaming-no-cuda-v1` is a support-owned, exact-target package profile. It omits

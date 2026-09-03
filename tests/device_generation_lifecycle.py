@@ -52,6 +52,8 @@ MODULES = (
     "nvidia.ko", "nvidia-drm.ko", "nvidia-modeset.ko",
     "nvidia-peermem.ko", "nvidia-uvm.ko",
 )
+LOCK_PAYLOAD = b'{"schemaVersion":1}\n'
+LOCK_FILENAME = "steamos-3-8-14-nvidia-575.64.05.json"
 
 
 def digest(payload):
@@ -87,7 +89,8 @@ def install_alternate_policy(policy, checkpoint, base, sequence, manifest_hash):
     }))
 
 
-def install_target_receipt(target_root, evidence_root, target):
+def install_target_receipt(target_root, evidence_root, target,
+                           lock_sha256=None):
     evidence_root.mkdir(exist_ok=True)
     evidence = {
         name: evidence_root / filename for name, filename in (
@@ -107,6 +110,10 @@ def install_target_receipt(target_root, evidence_root, target):
     }))
     write(evidence["validation"], canonical({
         "schemaVersion": 1, "status": "verified", "target": target,
+        "userspaceLock": {
+            "name": LOCK_FILENAME,
+            "sha256": lock_sha256 or digest(LOCK_PAYLOAD),
+        },
     }))
     write(evidence["module_verification"], canonical({
         "schemaVersion": 1,
@@ -141,11 +148,12 @@ def create_source(root, sequence, predecessor, authority, signature):
     root.mkdir(mode=0o700)
     payload_root = root / "payload"
     payload_root.mkdir(mode=0o700)
-    lock_payload = b'{"schemaVersion":1}\n'
+    lock_payload = LOCK_PAYLOAD
     package_payload = f"package-{sequence}\n".encode()
     package_signature = f"package-signature-{sequence}\n".encode()
     discovery, manifest = documents(sequence=sequence, predecessor=predecessor)
     lock = manifest["targetLocks"][0]["lock"]
+    assert lock["filename"] == LOCK_FILENAME
     lock.update({"size": len(lock_payload), "sha256": digest(lock_payload)})
     manifest["authority"] = dict(authority)
     manifest["files"] = sorted([
@@ -681,6 +689,16 @@ def main():
         assert corrupt_receipt["reason"] == (
             "device_generation_target_observation_invalid"
         )
+        assert invoke(
+            environment, store, policy, keyring, checkpoint, "status"
+        )["state"] == pending_health_state
+        install_target_receipt(
+            target_root, receipt_evidence, TARGET, lock_sha256="0" * 64
+        )
+        wrong_receipt_lock = acknowledge(
+            environment, store, policy, keyring, checkpoint, success=False
+        )
+        assert wrong_receipt_lock["reason"] == "device_generation_target_mismatch"
         assert invoke(
             environment, store, policy, keyring, checkpoint, "status"
         )["state"] == pending_health_state
