@@ -198,8 +198,9 @@ mod linux {
                 let target = &mut destination[row * pitch..row * pitch + row_bytes];
                 let source =
                     &self.pixels[row * self.width as usize..(row + 1) * self.width as usize];
-                for (chunk, pixel) in target.chunks_exact_mut(4).zip(source) {
-                    chunk.copy_from_slice(&pixel.to_ne_bytes());
+                for (index, pixel) in source.iter().enumerate() {
+                    let offset = index * 4;
+                    target[offset..offset + 4].copy_from_slice(&pixel.to_ne_bytes());
                 }
             }
             Ok(())
