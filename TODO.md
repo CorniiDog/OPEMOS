@@ -63,9 +63,12 @@ index in the same commit.
   the active generation untouched and must never weaken the boot guardian.
   The authenticated local generation manager, durable activation markers,
   rendered-health acknowledgement, bounded launcher, and crash-window rollback
-  tests are implemented. Remaining work is a reviewed production signing key,
-  immutable network/release acquisition, installer delivery, retention limits,
-  and real SteamOS power-loss testing.
+  tests are implemented. Canonical manifest production, reviewed public-key
+  policy onboarding, immutable input snapshots, deterministic dry-run plans,
+  create-only publication, and cancellation cleanup are also implemented.
+  Remaining work is maintainer creation and independent review of a production
+  signing key, immutable network/release acquisition, installer delivery,
+  retention limits, and real SteamOS power-loss testing.
 * [ ] Enable **Settings → Pages → Build and deployment → GitHub Actions** in
   the canonical repository, then verify the first documentation deployment and
   published navigation links.

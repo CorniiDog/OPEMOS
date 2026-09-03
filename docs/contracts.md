@@ -28,11 +28,18 @@ description: API-style command, result, progress, trust, and failure reference.
 | `bootstrap/audit_userspace_closure.py` | Maintainer | Stage/output only | Candidate-lock schema 1 |
 | `bootstrap/finalize_userspace_lock.py` | Maintainer | Create-only output | Reviewed lock |
 | `bootstrap/publish_artifacts.sh` | Maintainer | GitHub release unless `--dry-run` | Publication plan JSON |
+| `bootstrap/publish_desktop_update.sh` | Maintainer | Create-only GitHub release unless `--dry-run` | Desktop publication schema 1 JSON |
 | `bootstrap/repack_artifacts.sh` | Maintainer | Output/release unless `--dry-run` | Repack plan/result JSON |
 | `lib/validate_install_contract.py` | Consumer | No | Contract-validation result |
 | `lib/desktop_update_generations.py` | SteamOS desktop launcher | Generation store and atomic markers | Desktop-update schema 1 JSON |
 
 Every command supports `--help`; that output is the canonical option list.
+
+The desktop publication plan binds the canonical repository, release tag,
+support commit, title, notes, ordered asset names/hashes/sizes, signer
+fingerprint, reviewed keyring hash, and policy hash. A dry run performs no
+GitHub command. Live publication requires `--create-only` and refuses an
+existing tag; it never edits or clobbers a release.
 
 ## Resolver contract
 

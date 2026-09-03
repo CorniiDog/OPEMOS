@@ -12,6 +12,7 @@ description: Build, test, audit, repack, and publish exact SteamOS NVIDIA artifa
 - [Audit and finalize userspace](#audit-and-finalize-userspace)
 - [Test offline installation](#test-offline-installation)
 - [Publish a release](#publish-a-release)
+- [Publish a desktop companion update](#publish-a-desktop-companion-update)
 - [Create a compressed-module revision](#create-a-compressed-module-revision)
 - [Publish the documentation](#publish-the-documentation)
 - [Test matrix](#test-matrix)
@@ -168,6 +169,15 @@ Create a new release without clobbering an existing tag:
 The publisher derives tag, title, notes, and four ordered assets from validated
 metadata. It is fixed to the canonical repository unless an explicit
 development-only repository override is supplied.
+
+## Publish a desktop companion update
+
+Desktop companion releases use a separate canonical schema-1 manifest,
+detached signature, hash-pinned public keyring, and reviewed signer policy. See
+[SteamOS desktop companion](desktop-companion.md#release-signing-and-publication)
+for the complete public-key onboarding, manifest creation, offline signing,
+dry-run, and create-only publication workflow. The repository never generates
+or stores the signing private key.
 
 ## Create a compressed-module revision
 

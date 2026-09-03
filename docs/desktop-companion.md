@@ -10,6 +10,7 @@ description: Native status UI, authenticated generations, activation health, and
 - [Build and test](#build-and-test)
 - [Update generation contract](#update-generation-contract)
 - [Activation and rollback](#activation-and-rollback)
+- [Release signing and publication](#release-signing-and-publication)
 - [Current trust gate](#current-trust-gate)
 
 ## Scope
@@ -104,11 +105,85 @@ sealed `/proc/self/fd` identity rather than reopening a mutable pathname. It
 exports the exact generation identity so the rendered application can issue its
 bounded health acknowledgement.
 
+## Release signing and publication
+
+Desktop updates use a dedicated release-signing key. Do not reuse an Arch,
+Valve, NVIDIA, personal commit-signing, or package-signing key. Generate and
+retain the private key on a separately controlled maintainer system; this
+repository accepts only its exported public keyring. Back up and protect the
+private key independently, and verify its full 40-hex-character fingerprint
+over a separate trusted channel before reviewing it here.
+
+Export the public key as a binary keyring, then create a candidate policy. The
+policy command proves that the exact fingerprint is present in the snapshotted
+keyring and binds the policy to its SHA-256. Its output is create-only:
+
+```bash
+gpg --batch --export FULL_FINGERPRINT > opemos-desktop-updates.gpg
+python3 lib/desktop_update_release.py trust-policy \
+  --keyring opemos-desktop-updates.gpg \
+  --signer FULL_FINGERPRINT \
+  --output desktop-update-signers.candidate.json
+```
+
+Review the public-key identity and candidate out of band. Only after that
+review, install the binary keyring at
+`trust/keyrings/opemos-desktop-updates.gpg` and replace the deliberately
+unconfigured `trust/desktop-update-signers.json` in a dedicated reviewed
+commit. Never commit a secret key, passphrase, private GnuPG home, or exported
+secret-key packet.
+
+Build the Linux x86_64 companion from the exact support revision being
+published. Give the executable its canonical name and create the manifest:
+
+```bash
+REVISION="$(git rev-parse HEAD)"
+VERSION=1.0.0
+cp desktop/target/release/opemos-recovery-status opemos-recovery-status
+python3 lib/desktop_update_release.py manifest \
+  --binary opemos-recovery-status \
+  --version "$VERSION" \
+  --support-revision "$REVISION" \
+  --output "opemos-desktop-v${VERSION}.manifest.json"
+```
+
+Sign the exact canonical manifest on the controlled signing system. The
+publisher never asks for, imports, or stores the private key:
+
+```bash
+gpg --batch --local-user FULL_FINGERPRINT --detach-sign \
+  --output "opemos-desktop-v${VERSION}.manifest.json.sig" \
+  "opemos-desktop-v${VERSION}.manifest.json"
+```
+
+Validate every identity and trust binding without contacting or mutating
+GitHub:
+
+```bash
+./bootstrap/publish_desktop_update.sh \
+  --binary opemos-recovery-status \
+  --manifest "opemos-desktop-v${VERSION}.manifest.json" \
+  --signature "opemos-desktop-v${VERSION}.manifest.json.sig" \
+  --version "$VERSION" \
+  --dry-run
+```
+
+After reviewing the canonical JSON plan, publish create-only by replacing
+`--dry-run` with `--create-only`. The command privately snapshots all five
+payload/trust inputs before validation, refuses an existing release, and uploads
+the executable, manifest, and detached signature in a deterministic order. It
+uses only the committed policy/keyring in production and is fixed to
+`CorniiDog/OPEMOS`. A noncanonical repository or alternate trust input requires
+`OPEMOS_DEVELOPMENT_PUBLISH_OVERRIDE=1`; repository changes additionally require
+`--development-repository OWNER/REPO`.
+
 ## Current trust gate
 
 `trust/desktop-update-signers.json` is intentionally `unconfigured`. Production
 staging therefore fails closed until maintainers publish and review a dedicated
-desktop-release signing key, pin its binary keyring hash, and add the first
-active signer. Network acquisition, release publication, retention limits, and
-installer delivery remain separate gates; callers must not replace the trust
-policy through ordinary command-line input.
+desktop-release public key, pin its binary keyring hash, and add the first active
+signer. Canonical manifest generation and create-only publication are
+implemented, but this repository never generates or holds the private key.
+Network acquisition, retention limits, installer delivery, and real SteamOS
+testing remain separate gates; callers must not replace the trust policy through
+ordinary runtime command-line input.
