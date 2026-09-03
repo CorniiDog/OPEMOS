@@ -339,6 +339,19 @@ def main():
         assert ambiguous["reason"] == "device_generation_input_invalid"
         (generation_10 / "unexpected").unlink()
 
+        for field in (
+                "OPEMOS_GENERATION_TEST_AVAILABLE_BYTES",
+                "OPEMOS_GENERATION_TEST_AVAILABLE_INODES"):
+            constrained = activate(
+                {**environment, field: "0"}, store, policy, keyring, checkpoint,
+                generation_10, success=False,
+            )
+            assert constrained["reason"] == "device_generation_space_insufficient"
+            assert not list((store / "generations").glob(".stage-*"))
+            assert invoke(
+                environment, store, policy, keyring, checkpoint, "status"
+            )["state"]["active"]["manifestSha256"] == hash_9
+
         no_space_environment = {
             **environment, "OPEMOS_GENERATION_TEST_FAIL_PHASE": "copy-enospc",
         }
@@ -390,6 +403,58 @@ def main():
         abandoned_prune.chmod(0o500)
         invoke(environment, store, policy, keyring, checkpoint, "prune")
         assert not abandoned_prune.exists()
+
+        unsafe_stage = store / "generations/.stage-unsafe-link"
+        unsafe_stage.mkdir(mode=0o700)
+        (unsafe_stage / "payload").mkdir(mode=0o700)
+        (unsafe_stage / "payload/linked").symlink_to(root / "outside")
+        unsafe_cleanup = invoke(
+            environment, store, policy, keyring, checkpoint, "prune",
+            success=False,
+        )
+        assert unsafe_cleanup["reason"] == "device_generation_store_invalid"
+        (unsafe_stage / "payload/linked").unlink()
+        (unsafe_stage / "payload").rmdir()
+        unsafe_stage.rmdir()
+
+        hardlink_stage = store / "generations/.stage-unsafe-hardlink"
+        hardlink_stage.mkdir(mode=0o700)
+        (hardlink_stage / "payload").mkdir(mode=0o700)
+        hardlink_source = root / "hardlink-source"
+        write(hardlink_source, b"linked\n")
+        os.link(hardlink_source, hardlink_stage / "payload/linked")
+        hardlink_cleanup = invoke(
+            environment, store, policy, keyring, checkpoint, "prune",
+            success=False,
+        )
+        assert hardlink_cleanup["reason"] == "device_generation_store_invalid"
+        (hardlink_stage / "payload/linked").unlink()
+        hardlink_source.unlink()
+        (hardlink_stage / "payload").rmdir()
+        hardlink_stage.rmdir()
+
+        special_stage = store / "generations/.stage-unsafe-special"
+        special_stage.mkdir(mode=0o700)
+        (special_stage / "payload").mkdir(mode=0o700)
+        os.mkfifo(special_stage / "payload/fifo", mode=0o600)
+        special_cleanup = invoke(
+            environment, store, policy, keyring, checkpoint, "prune",
+            success=False,
+        )
+        assert special_cleanup["reason"] == "device_generation_store_invalid"
+        (special_stage / "payload/fifo").unlink()
+        (special_stage / "payload").rmdir()
+        special_stage.rmdir()
+
+        nested_stage = store / "generations/.stage-unsafe-depth"
+        (nested_stage / "nested").mkdir(parents=True, mode=0o700)
+        deep_cleanup = invoke(
+            environment, store, policy, keyring, checkpoint, "prune",
+            success=False,
+        )
+        assert deep_cleanup["reason"] == "device_generation_store_invalid"
+        (nested_stage / "nested").rmdir()
+        nested_stage.rmdir()
 
         with (store / ".generation.lock").open("a+b") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)

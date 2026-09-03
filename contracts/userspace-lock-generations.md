@@ -196,6 +196,13 @@ state hashes are verified before choosing the highest revision. Legacy
 restart reconciliation removes only bounded stale temporary markers and rejects
 a cache sequence newer than the selected durable high-water; it never guesses
 that such an ambiguous generation was or was not activated.
+Before staging, marker-first retention removes only unprotected generations and
+preserves active/pending-active and LKG. Admission then requires the exact
+generation's logical bytes plus a fixed cache reserve and, on filesystems with
+finite inode accounting, its bounded node count plus an inode reserve. Btrfs's
+explicit dynamic-inode report is treated as not applicable rather than as zero
+free inodes. Cleanup is descriptor-relative, fixed-depth, and rejects links,
+hardlinks, special files, excessive nodes, and excessive logical bytes.
 Unacknowledged active data blocks another activation. Health acknowledgement
 requires a canonical root-controlled evidence document bound to the exact
 active sequence and manifest hash, generation integrity, and recovery

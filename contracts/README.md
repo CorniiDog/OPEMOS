@@ -192,6 +192,10 @@ Device state is committed through alternating revisioned markers. Restart
 reconciliation removes bounded abandoned marker temporaries, migrates the
 legacy single marker, and fails closed if immutable cache contents prove that a
 newer sequence exists than the surviving durable high-water.
+Cache retention is marker-first and preserves active/pending-active plus LKG.
+New generations require conservative logical-byte and finite-inode admission;
+fixed-depth descriptor-relative cleanup rejects links, special files, and
+unbounded abandoned trees.
 
 The device compatibility matrix distinguishes JSON/schema structure from
 durable lifecycle invariants: a healthy active generation must equal LKG,

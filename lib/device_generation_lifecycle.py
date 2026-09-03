@@ -9,7 +9,6 @@ import json
 import os
 import re
 import selectors
-import shutil
 import signal
 import stat
 import subprocess
@@ -29,6 +28,7 @@ from userspace_lock_generation_contract import (
     DISCOVERY_MAX_BYTES,
     MANIFEST_MAX_BYTES,
     MAX_FILE_BYTES,
+    MAX_FILES,
     MAX_GENERATION_BYTES,
     MAX_LINEAGE_GENERATIONS,
     MAX_SEQUENCE,
@@ -67,6 +67,13 @@ STATE_MARKER_FIELDS = {"schemaVersion", "revision", "stateSha256", "state"}
 STATE_MARKERS = ("state-a.json", "state-b.json")
 STATE_TEMP_PREFIXES = tuple(f".{name}.tmp-" for name in STATE_MARKERS)
 MAX_STORE_ROOT_ENTRIES = 16
+MAX_CACHE_TREE_NODES = MAX_FILES + 16
+MAX_CACHE_TREE_BYTES = (
+    MAX_GENERATION_BYTES + DISCOVERY_MAX_BYTES + MANIFEST_MAX_BYTES
+    + 2 * MAX_SIGNATURE_BYTES + MAX_STATE_BYTES
+)
+CACHE_SPACE_RESERVE_BYTES = 64 * 1024 * 1024
+CACHE_INODE_RESERVE = 128
 
 
 class DeviceGenerationError(Exception):
@@ -260,21 +267,98 @@ def cleanup_staging(generations):
             continue
         if not stat.S_ISDIR(info.st_mode) or entry.is_symlink():
             fail("device_generation_store_invalid", "abandoned staging entry is unsafe")
-        make_tree_removable(entry)
-        shutil.rmtree(entry)
+        remove_confined_generation_tree(entry)
     fsync_directory(generations)
 
 
-def make_tree_removable(root):
-    for current, directories, _files in os.walk(root, followlinks=False):
-        current_path = Path(current)
-        if current_path.is_symlink():
-            fail("device_generation_store_invalid", "generation tree contains a symlink")
-        os.chmod(current_path, 0o700, follow_symlinks=False)
-        for directory in directories:
-            path = current_path / directory
-            if not path.is_symlink():
-                os.chmod(path, 0o700, follow_symlinks=False)
+def validate_removal_root_name(name):
+    if (re.fullmatch(r"\.stage-[A-Za-z0-9_-]{1,64}", name) is None
+            and re.fullmatch(r"\.prune-[0-9a-f]{64}", name) is None):
+        fail("device_generation_store_invalid", "generation removal target is unsafe")
+
+
+def remove_confined_generation_tree(root):
+    """Remove the fixed two-level cache shape using directory descriptors."""
+    validate_removal_root_name(root.name)
+    parent_descriptor = None
+    root_descriptor = None
+    try:
+        parent_descriptor = os.open(
+            root.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+        )
+        root_descriptor = os.open(
+            root.name, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+            | getattr(os, "O_NOFOLLOW", 0), dir_fd=parent_descriptor,
+        )
+        opened = os.fstat(root_descriptor)
+        current = os.stat(root.name, dir_fd=parent_descriptor, follow_symlinks=False)
+        if (not stat.S_ISDIR(opened.st_mode) or opened.st_uid != os.geteuid()
+                or (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino)):
+            fail("device_generation_store_invalid", "generation removal target changed")
+        os.fchmod(root_descriptor, 0o700)
+        names = os.listdir(root_descriptor)
+        if len(names) + 1 > MAX_CACHE_TREE_NODES:
+            fail("device_generation_store_excessive", "generation tree has too many nodes")
+        node_count = 1
+        logical_bytes = 0
+        for name in names:
+            info = os.stat(name, dir_fd=root_descriptor, follow_symlinks=False)
+            if stat.S_ISDIR(info.st_mode):
+                if name != "payload":
+                    fail("device_generation_store_invalid", "generation tree is too deep")
+                child_descriptor = os.open(
+                    name, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+                    | getattr(os, "O_NOFOLLOW", 0), dir_fd=root_descriptor,
+                )
+                try:
+                    child = os.fstat(child_descriptor)
+                    if (child.st_dev, child.st_ino) != (info.st_dev, info.st_ino):
+                        fail("device_generation_store_invalid", "payload directory changed")
+                    if child.st_uid != os.geteuid():
+                        fail("device_generation_store_invalid", "payload directory is unowned")
+                    os.fchmod(child_descriptor, 0o700)
+                    child_names = os.listdir(child_descriptor)
+                    node_count += len(child_names) + 1
+                    if node_count > MAX_CACHE_TREE_NODES:
+                        fail("device_generation_store_excessive", "generation tree has too many nodes")
+                    for child_name in child_names:
+                        child_info = os.stat(
+                            child_name, dir_fd=child_descriptor,
+                            follow_symlinks=False,
+                        )
+                        if (not stat.S_ISREG(child_info.st_mode)
+                                or child_info.st_uid != os.geteuid()
+                                or child_info.st_nlink != 1):
+                            fail("device_generation_store_invalid", "payload removal entry is unsafe")
+                        logical_bytes += child_info.st_size
+                        if logical_bytes > MAX_CACHE_TREE_BYTES:
+                            fail("device_generation_store_excessive", "generation tree is too large")
+                        os.unlink(child_name, dir_fd=child_descriptor)
+                    os.fsync(child_descriptor)
+                finally:
+                    os.close(child_descriptor)
+                os.rmdir(name, dir_fd=root_descriptor)
+            elif (stat.S_ISREG(info.st_mode) and info.st_uid == os.geteuid()
+                  and info.st_nlink == 1):
+                logical_bytes += info.st_size
+                if logical_bytes > MAX_CACHE_TREE_BYTES:
+                    fail("device_generation_store_excessive", "generation tree is too large")
+                os.unlink(name, dir_fd=root_descriptor)
+            else:
+                fail("device_generation_store_invalid", "generation removal entry is unsafe")
+        os.fsync(root_descriptor)
+        os.close(root_descriptor)
+        root_descriptor = None
+        os.rmdir(root.name, dir_fd=parent_descriptor)
+        os.fsync(parent_descriptor)
+    except OSError:
+        fail("device_generation_cleanup_failed", "generation cleanup failed")
+    finally:
+        if root_descriptor is not None:
+            os.close(root_descriptor)
+        if parent_descriptor is not None:
+            os.close(parent_descriptor)
 
 
 @contextmanager
@@ -309,7 +393,11 @@ def lifecycle_lock(store, create=False):
         cleanup_staging(generations)
         ensure_state_marker(store, generations)
         reconcile_state_markers(store, generations)
-        yield generations
+        try:
+            yield generations
+        except DeviceGenerationCancelled:
+            cleanup_staging(generations)
+            raise
 
 
 def empty_state():
@@ -923,14 +1011,7 @@ def publish_generation(generations, pair, payload_root, payload_records,
                 payload_root / record["filename"],
                 stage / "payload" / record["filename"], record,
             )
-        trust = {
-            "schemaVersion": 1,
-            "policySha256": authority["policySha256"],
-            "keyringSha256": policy["keyringSha256"],
-            "signerFingerprint": policy["signingKeyFingerprint"],
-            "discoverySignatureSha256": sha256(pair["discoverySignature"]),
-            "manifestSignatureSha256": sha256(pair["manifestSignature"]),
-        }
+        trust = generation_trust_record(policy, authority, pair)
         write_exclusive(stage / "trust.json", canonical(trust))
         seal_generation(stage)
         os.replace(stage, destination)
@@ -938,8 +1019,59 @@ def publish_generation(generations, pair, payload_root, payload_records,
         return destination, True
     finally:
         if stage.exists():
-            make_tree_removable(stage)
-            shutil.rmtree(stage)
+            remove_confined_generation_tree(stage)
+
+
+def generation_trust_record(policy, authority, pair):
+    return {
+        "schemaVersion": 1,
+        "policySha256": authority["policySha256"],
+        "keyringSha256": policy["keyringSha256"],
+        "signerFingerprint": policy["signingKeyFingerprint"],
+        "discoverySignatureSha256": sha256(pair["discoverySignature"]),
+        "manifestSignatureSha256": sha256(pair["manifestSignature"]),
+    }
+
+
+def test_admission_value(name, actual):
+    if not development_override() or name not in os.environ:
+        return actual
+    value = os.environ[name]
+    if re.fullmatch(r"[0-9]{1,20}", value) is None:
+        fail("device_generation_admission_unavailable", "cache admission override is invalid")
+    return int(value)
+
+
+def require_cache_admission(generations, pair, payload_records, policy, authority):
+    payload_bytes = sum(record["size"] for record in payload_records)
+    metadata_bytes = sum(len(pair[field]) for field in (
+        "discoveryPayload", "discoverySignature", "manifestPayload",
+        "manifestSignature",
+    )) + len(canonical(generation_trust_record(policy, authority, pair)))
+    required_bytes = payload_bytes + metadata_bytes + CACHE_SPACE_RESERVE_BYTES
+    required_inodes = len(payload_records) + 7 + CACHE_INODE_RESERVE
+    try:
+        filesystem = os.statvfs(generations)
+    except OSError:
+        fail("device_generation_admission_unavailable", "cache storage cannot be measured")
+    if (filesystem.f_frsize <= 0 or filesystem.f_bavail < 0
+            or filesystem.f_files > 0 and filesystem.f_favail < 0):
+        fail("device_generation_admission_unavailable", "cache storage report is invalid")
+    available_bytes = test_admission_value(
+        "OPEMOS_GENERATION_TEST_AVAILABLE_BYTES",
+        filesystem.f_bavail * filesystem.f_frsize,
+    )
+    available_inodes = test_admission_value(
+        "OPEMOS_GENERATION_TEST_AVAILABLE_INODES",
+        None if filesystem.f_files == 0 else filesystem.f_favail,
+    )
+    if (available_bytes < required_bytes
+            or available_inodes is not None
+            and available_inodes < required_inodes):
+        fail(
+            "device_generation_space_insufficient",
+            "device cache lacks conservative bytes or inodes for the generation",
+        )
 
 
 def verify_cached_generation(generation, identity):
@@ -1072,7 +1204,9 @@ def commit_state_and_prune(store, generations, state):
     return removed, cancellation_after_commit
 
 
-def prune_generations(generations, state):
+def prune_generations(generations, state, limit=MAX_GENERATIONS):
+    if type(limit) is not int or not 2 <= limit <= MAX_GENERATIONS:
+        fail("device_generation_store_invalid", "generation retention limit is invalid")
     protected = {
         identity["manifestSha256"] for identity in (
             state["active"], state["lastKnownGood"]
@@ -1089,7 +1223,7 @@ def prune_generations(generations, state):
     candidates.sort(reverse=True)
     retained = set(protected)
     for _sequence, identity, _entry in candidates:
-        if len(retained) >= MAX_GENERATIONS:
+        if len(retained) >= limit:
             break
         retained.add(identity)
     for _sequence, identity, entry in candidates:
@@ -1100,8 +1234,7 @@ def prune_generations(generations, state):
             fail("device_generation_store_invalid", "generation tombstone is unsafe")
         os.rename(entry, tombstone)
         fsync_directory(generations)
-        make_tree_removable(tombstone)
-        shutil.rmtree(tombstone)
+        remove_confined_generation_tree(tombstone)
     fsync_directory(generations)
     return len(candidates) - sum(identity in retained for _, identity, _ in candidates)
 
@@ -1151,6 +1284,12 @@ def activate(arguments):
         payload_root, payload_records = source_payload_records(
             source, pair["manifest"]
         )
+        pruned_before = prune_generations(
+            generations, state, limit=MAX_GENERATIONS - 1
+        )
+        require_cache_admission(
+            generations, pair, payload_records, policy, authority
+        )
         _generation, created = publish_generation(
             generations, pair, payload_root, payload_records, policy, authority
         )
@@ -1173,7 +1312,7 @@ def activate(arguments):
             "ok", "activated", state=state,
             details={
                 "generationCreated": created,
-                "prunedGenerations": pruned,
+                "prunedGenerations": pruned_before + pruned,
                 "cancellationAfterCommit": cancellation_after_commit,
             },
         )

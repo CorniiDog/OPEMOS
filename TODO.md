@@ -1439,6 +1439,11 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   immutable cache sequences, clean bounded abandoned marker temporaries,
   migrate the legacy marker, bind the lifecycle lock to its opened inode, and
   fail closed instead of lowering high-water when marker loss is ambiguous.
+* [x] Confine inactive device-cache retention and cleanup to opened directory
+  descriptors and the canonical two-level generation shape. Preserve active,
+  pending-active, and LKG before pruning; bound nodes, depth, and logical bytes;
+  reject symlinks, hardlinks, and special entries; and require conservative
+  byte/finite-inode admission before staging a new immutable generation.
 * [ ] Specify a stable canonical discovery location without placing URLs or
   redirects inside the signed descriptor. OPEMOS.EXE owns host transport and
   its cache; installed Core/CLI owns device transport and its separate cache.
