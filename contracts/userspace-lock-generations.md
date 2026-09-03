@@ -209,9 +209,9 @@ exercise these contracts; this design does not activate them for production.
 the device-local `/var/lib/opemos/userspace-lock-generations` by default; this
 is not the desktop binary-update store and is never shared with OPEMOS.EXE.
 
-The inactive implementation supports `activate`, `status`, `check`,
-`acknowledge-health`, `rollback`, and `prune`. Activation accepts a locally
-staged closed generation plus optional authenticated lineage, verifies both
+The inactive implementation supports `activate`, `activate-downloaded`,
+`status`, `check`, `acknowledge-health`, `rollback`, and `prune`. Activation
+accepts a locally staged closed generation plus optional authenticated lineage, verifies both
 detached discovery/manifest signatures with `gpgv`, applies the schema and Core
 activation policy, verifies the exact manifest-owned payload, publishes one
 immutable generation create-only, and atomically updates durable state.
@@ -219,6 +219,17 @@ Canonical signed discovery and sequence-specific manifest filenames are
 preserved. Each intermediate lineage input is a closed document-only directory
 containing those two documents and detached signatures, so a device that missed
 generations does not need their obsolete payloads.
+`activate-downloaded --manifest-sha256 <sha256>` is the explicit bridge from
+the separate device download cache into this same transaction. It accepts no
+caller-selected path: while holding the lifecycle lock it resolves only that
+closed cache identity, revalidates all immutable bytes and metadata,
+reauthenticates both signatures against the currently installed policy, and
+reruns target, lineage, checkpoint, replay, and high-water authorization before
+publishing into the activation cache. Optional cached lineage is named only by
+repeated `--lineage-manifest-sha256` identities. Downloaded bytes remain
+separate and immutable; cancellation, insufficient space, or a crash cannot
+make them active, and locked restart reconciliation removes an uncommitted
+activation while retaining the authenticated download for a safe retry.
 Durable selection uses two alternating revisioned state markers whose embedded
 state hashes are verified before choosing the highest revision. Legacy
 `state.json` is migrated after the first successful marker commit. Locked

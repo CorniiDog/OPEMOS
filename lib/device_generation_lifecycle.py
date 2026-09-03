@@ -1041,6 +1041,42 @@ def target_from_arguments(arguments):
     }
 
 
+def require_pair_authorization(pair, authority, requested_target):
+    if (pair["manifest"]["authority"] != authority
+            or not any(record["target"] == requested_target
+                       for record in pair["manifest"]["targetLocks"])):
+        fail(
+            "device_generation_not_authorized",
+            "generation does not authorize the requested target or authority",
+        )
+
+
+def load_lineage_paths(paths, keyring, signer):
+    lineage_pairs = []
+    for lineage_path in paths:
+        item = load_authenticated_pair(
+            absolute_path(lineage_path), keyring, signer, lineage=True,
+        )
+        lineage_pairs.append((item["discovery"], item["manifest"]))
+    return lineage_pairs
+
+
+def load_cached_lineage(downloads, identities, keyring, signer):
+    if len(identities) > MAX_LINEAGE_GENERATIONS:
+        fail("device_generation_input_invalid", "generation lineage is excessive")
+    if len(identities) != len(set(identities)):
+        fail("device_generation_input_invalid", "generation lineage is ambiguous")
+    lineage_pairs = []
+    for identity in identities:
+        if HASH.fullmatch(identity or "") is None:
+            fail("device_generation_input_invalid", "generation lineage identity is invalid")
+        source = downloads / identity
+        verify_cached_generation(source, identity)
+        item = load_authenticated_pair(source, keyring, signer, cached=True)
+        lineage_pairs.append((item["discovery"], item["manifest"]))
+    return lineage_pairs
+
+
 def source_payload_records(source, manifest):
     payload_root = source / "payload"
     reject_symlink_components(payload_root, "generation payload")
@@ -1532,20 +1568,10 @@ def acquire(arguments):
             pair = load_authenticated_pair(
                 acquisition, keyring, policy["signingKeyFingerprint"]
             )
-            if (pair["manifest"]["authority"] != authority
-                    or not any(record["target"] == requested_target
-                               for record in pair["manifest"]["targetLocks"])):
-                fail(
-                    "device_generation_not_authorized",
-                    "generation does not authorize the requested target or authority",
-                )
-            lineage_pairs = []
-            for lineage_path in arguments.lineage:
-                item = load_authenticated_pair(
-                    absolute_path(lineage_path), keyring,
-                    policy["signingKeyFingerprint"], lineage=True,
-                )
-                lineage_pairs.append((item["discovery"], item["manifest"]))
+            require_pair_authorization(pair, authority, requested_target)
+            lineage_pairs = load_lineage_paths(
+                arguments.lineage, keyring, policy["signingKeyFingerprint"]
+            )
             try:
                 validate_activation(
                     pair["discovery"], pair["manifest"], authority,
@@ -1589,104 +1615,123 @@ def acquire(arguments):
         )
 
 
+def activate_loaded(store, generations, state, prior_revision, source, pair,
+                    lineage_pairs, policy, authority, checkpoint,
+                    requested_target):
+    current_identity = pair["discovery"]["generation"]["manifestSha256"]
+    if (state["active"] is not None
+            and state["active"]["manifestSha256"] == current_identity):
+        verify_cached_generation(generations / current_identity, current_identity)
+        return result("ok", "already_active", state=state)
+    if state["healthPending"]:
+        fail(
+            "device_generation_health_pending",
+            "active generation requires health acknowledgement or rollback",
+        )
+    try:
+        validate_activation(
+            pair["discovery"], pair["manifest"], authority,
+            requested_target, state["highWaterSequence"],
+            None if state["active"] is None else state["active"]["manifestSha256"],
+            lineage_pairs, checkpoint,
+            None if state["active"] is None else state["active"]["sequence"],
+        )
+    except GenerationContractError as error:
+        fail("device_generation_not_authorized", str(error))
+    payload_root, payload_records = source_payload_records(source, pair["manifest"])
+    pruned_before = prune_generations(
+        generations, state, limit=MAX_GENERATIONS - 1
+    )
+    require_cache_admission(generations, pair, payload_records, policy, authority)
+    previous = state["active"]
+    candidate = {
+        "sequence": pair["manifest"]["sequence"],
+        "manifestSha256": current_identity,
+    }
+    activated_state = {
+        **state,
+        "active": candidate,
+        "lastKnownGood": previous if previous is not None else state["lastKnownGood"],
+        "highWaterSequence": max(state["highWaterSequence"], candidate["sequence"]),
+        "healthPending": candidate != state["lastKnownGood"],
+    }
+    write_pending_activation(store, state, prior_revision, candidate)
+    try:
+        destination, created = publish_generation(
+            generations, pair, payload_root, payload_records, policy, authority
+        )
+        verify_cached_generation(destination, current_identity)
+        if (development_override() and os.environ.get(
+                "OPEMOS_GENERATION_TEST_PAUSE_AFTER_PUBLISH")):
+            time.sleep(float(os.environ["OPEMOS_GENERATION_TEST_PAUSE_AFTER_PUBLISH"]))
+        pruned, cancellation_after_commit = commit_state_and_prune(
+            store, generations, activated_state
+        )
+        clear_pending_activation(store)
+    except DeviceGenerationCancelled:
+        reconcile_pending_activation(store, generations)
+        if read_state(store) != activated_state:
+            raise
+        cancellation_after_commit = True
+        pruned = 0
+    except (DeviceGenerationError, OSError):
+        reconcile_pending_activation(store, generations)
+        raise
+    return result(
+        "ok", "activated", state=activated_state,
+        details={
+            "generationCreated": created,
+            "prunedGenerations": pruned_before + pruned,
+            "cancellationAfterCommit": cancellation_after_commit,
+        },
+    )
+
+
 def activate(arguments):
     store = absolute_path(arguments.store)
     source = absolute_path(arguments.source)
     policy, authority, keyring, checkpoint = active_policy(arguments)
     pair = load_authenticated_pair(source, keyring, policy["signingKeyFingerprint"])
     requested_target = target_from_arguments(arguments)
-    if (pair["manifest"]["authority"] != authority
-            or not any(record["target"] == requested_target
-                       for record in pair["manifest"]["targetLocks"])):
-        fail(
-            "device_generation_not_authorized",
-            "generation does not authorize the requested target or authority",
-        )
-    lineage_pairs = []
-    for lineage_path in arguments.lineage:
-        item = load_authenticated_pair(
-            absolute_path(lineage_path), keyring, policy["signingKeyFingerprint"],
-            lineage=True,
-        )
-        lineage_pairs.append((item["discovery"], item["manifest"]))
+    require_pair_authorization(pair, authority, requested_target)
+    lineage_pairs = load_lineage_paths(
+        arguments.lineage, keyring, policy["signingKeyFingerprint"]
+    )
     with lifecycle_lock(store, create=True) as generations:
         state, prior_revision = read_state_record(store)
-        current_identity = pair["discovery"]["generation"]["manifestSha256"]
-        if (state["active"] is not None
-                and state["active"]["manifestSha256"] == current_identity):
-            verify_cached_generation(generations / current_identity, current_identity)
-            return result("ok", "already_active", state=state)
-        if state["healthPending"]:
-            fail(
-                "device_generation_health_pending",
-                "active generation requires health acknowledgement or rollback",
-            )
-        try:
-            validate_activation(
-                pair["discovery"], pair["manifest"], authority,
-                requested_target, state["highWaterSequence"],
-                None if state["active"] is None else state["active"]["manifestSha256"],
-                lineage_pairs, checkpoint,
-                None if state["active"] is None else state["active"]["sequence"],
-            )
-        except GenerationContractError as error:
-            fail("device_generation_not_authorized", str(error))
-        payload_root, payload_records = source_payload_records(
-            source, pair["manifest"]
+        return activate_loaded(
+            store, generations, state, prior_revision, source, pair,
+            lineage_pairs, policy, authority, checkpoint, requested_target,
         )
-        pruned_before = prune_generations(
-            generations, state, limit=MAX_GENERATIONS - 1
+
+
+def activate_downloaded(arguments):
+    store = absolute_path(arguments.store)
+    identity = arguments.manifest_sha256
+    if HASH.fullmatch(identity or "") is None:
+        fail("device_generation_input_invalid", "downloaded generation identity is invalid")
+    policy, authority, keyring, checkpoint = active_policy(arguments)
+    requested_target = target_from_arguments(arguments)
+    with lifecycle_lock(store, create=False) as generations:
+        downloads = download_cache(store)
+        if downloads is None:
+            fail("device_generation_input_invalid", "downloaded generation is unavailable")
+        source = downloads / identity
+        if not source.exists() and not source.is_symlink():
+            fail("device_generation_input_invalid", "downloaded generation is unavailable")
+        verify_cached_generation(source, identity)
+        pair = load_authenticated_pair(
+            source, keyring, policy["signingKeyFingerprint"], cached=True
         )
-        require_cache_admission(
-            generations, pair, payload_records, policy, authority
+        require_pair_authorization(pair, authority, requested_target)
+        lineage_pairs = load_cached_lineage(
+            downloads, arguments.lineage_manifest_sha256, keyring,
+            policy["signingKeyFingerprint"],
         )
-        previous = state["active"]
-        candidate = {
-            "sequence": pair["manifest"]["sequence"],
-            "manifestSha256": current_identity,
-        }
-        activated_state = {
-            **state,
-            "active": candidate,
-            "lastKnownGood": (
-                previous if previous is not None else state["lastKnownGood"]
-            ),
-            "highWaterSequence": max(
-                state["highWaterSequence"], candidate["sequence"]
-            ),
-            "healthPending": candidate != state["lastKnownGood"],
-        }
-        write_pending_activation(store, state, prior_revision, candidate)
-        try:
-            _generation, created = publish_generation(
-                generations, pair, payload_root, payload_records, policy, authority
-            )
-            if (development_override() and os.environ.get(
-                    "OPEMOS_GENERATION_TEST_PAUSE_AFTER_PUBLISH")):
-                time.sleep(float(
-                    os.environ["OPEMOS_GENERATION_TEST_PAUSE_AFTER_PUBLISH"]
-                ))
-            pruned, cancellation_after_commit = commit_state_and_prune(
-                store, generations, activated_state
-            )
-            clear_pending_activation(store)
-        except DeviceGenerationCancelled:
-            reconcile_pending_activation(store, generations)
-            if read_state(store) != activated_state:
-                raise
-            cancellation_after_commit = True
-            pruned = 0
-        except (DeviceGenerationError, OSError):
-            reconcile_pending_activation(store, generations)
-            raise
-        state = activated_state
-        return result(
-            "ok", "activated", state=state,
-            details={
-                "generationCreated": created,
-                "prunedGenerations": pruned_before + pruned,
-                "cancellationAfterCommit": cancellation_after_commit,
-            },
+        state, prior_revision = read_state_record(store)
+        return activate_loaded(
+            store, generations, state, prior_revision, source, pair,
+            lineage_pairs, policy, authority, checkpoint, requested_target,
         )
 
 
@@ -1846,6 +1891,15 @@ def parser():
     activate_parser.add_argument("--kernel", required=True)
     activate_parser.add_argument("--nvidia", required=True)
     activate_parser.add_argument("--architecture", default="x86_64")
+    downloaded_parser = commands.add_parser("activate-downloaded")
+    downloaded_parser.add_argument("--manifest-sha256", required=True)
+    downloaded_parser.add_argument(
+        "--lineage-manifest-sha256", action="append", default=[]
+    )
+    downloaded_parser.add_argument("--steamos", required=True)
+    downloaded_parser.add_argument("--kernel", required=True)
+    downloaded_parser.add_argument("--nvidia", required=True)
+    downloaded_parser.add_argument("--architecture", default="x86_64")
     commands.add_parser("status")
     commands.add_parser("check")
     acknowledge_parser = commands.add_parser("acknowledge-health")
@@ -1874,6 +1928,8 @@ def main():
     try:
         if arguments.command == "activate":
             document = activate(arguments)
+        elif arguments.command == "activate-downloaded":
+            document = activate_downloaded(arguments)
         elif arguments.command == "status":
             document = status(arguments)
         elif arguments.command == "check":

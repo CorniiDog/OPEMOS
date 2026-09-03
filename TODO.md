@@ -71,6 +71,12 @@ index in the same commit.
   back the same immutable identities consumed by OPEMOS.EXE. Keep its device
   cache and activation state separate from the host cache and preserve the
   last-known-good generation on every acquisition or activation failure.
+  The inactive device implementation now supports an explicit
+  manifest-hash-only promotion from its separate authenticated download cache;
+  promotion reauthenticates and revalidates the generation under the lifecycle
+  lock before entering the existing pending-health/LKG transaction. Production
+  discovery, networking, signing authority, and bootstrap freshness remain
+  intentionally unconfigured.
 * [x] Publish a deterministic OPEMOS installer-bundle manifest generator bound
   to an immutable support Git commit and every required path, role, mode, size,
   and SHA-256. It reads committed blobs rather than the mutable worktree,

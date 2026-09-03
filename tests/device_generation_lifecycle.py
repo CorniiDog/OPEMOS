@@ -206,6 +206,17 @@ def activate(environment, store, policy, keyring, checkpoint, source,
     )
 
 
+def activate_downloaded(environment, store, policy, keyring, checkpoint,
+                        identity, lineage=None, success=True):
+    arguments = ["--manifest-sha256", identity, *TARGET_ARGUMENTS]
+    for item in lineage or []:
+        arguments.extend(["--lineage-manifest-sha256", item])
+    return invoke(
+        environment, store, policy, keyring, checkpoint,
+        "activate-downloaded", arguments, success,
+    )
+
+
 def acknowledge(environment, store, policy, keyring, checkpoint):
     state = invoke(
         environment, store, policy, keyring, checkpoint, "status"
@@ -995,6 +1006,151 @@ def main():
         assert missing_marker["reason"] == (
             "device_generation_state_reconciliation_required"
         )
+
+        # An acquired generation remains a separate immutable download until an
+        # explicit, locked promotion reauthenticates it into the active cache.
+        promotion_store = root / "promotion-store"
+        transport_7 = root / "promotion-transport-7"
+        transport_8 = root / "promotion-transport-8"
+        create_transport(transport_7, generation_7)
+        create_transport(transport_8, generation_8)
+        invoke(
+            environment, promotion_store, policy, keyring, checkpoint, "update",
+            ["--transport", str(transport_7), *TARGET_ARGUMENTS],
+        )
+        assert durable_state(promotion_store)["active"] is None
+        missing_download = activate_downloaded(
+            environment, promotion_store, policy, keyring, checkpoint,
+            "f" * 64, success=False,
+        )
+        assert missing_download["reason"] == "device_generation_input_invalid"
+
+        downloaded_7 = promotion_store / "downloads" / hash_7
+        signature_7 = downloaded_7 / f"{DISCOVERY_FILENAME}.sig"
+        signature_7.chmod(0o600)
+        signature_7.write_bytes(b"changed-signature\n")
+        signature_7.chmod(0o400)
+        changed_download = activate_downloaded(
+            environment, promotion_store, policy, keyring, checkpoint,
+            hash_7, success=False,
+        )
+        assert changed_download["reason"] == "device_generation_store_invalid"
+        signature_7.chmod(0o600)
+        signature_7.write_bytes(signature)
+        signature_7.chmod(0o400)
+
+        promoted_7 = activate_downloaded(
+            environment, promotion_store, policy, keyring, checkpoint, hash_7
+        )
+        assert promoted_7["reason"] == "activated"
+        assert promoted_7["state"]["active"] == {
+            "sequence": 7, "manifestSha256": hash_7,
+        }
+        activated_7 = promotion_store / "generations" / hash_7
+        for source_file in sorted(
+                item for item in downloaded_7.rglob("*") if item.is_file()):
+            relative = source_file.relative_to(downloaded_7)
+            assert source_file.read_bytes() == (activated_7 / relative).read_bytes()
+        repeated_promotion = activate_downloaded(
+            environment, promotion_store, policy, keyring, checkpoint, hash_7
+        )
+        assert repeated_promotion["reason"] == "already_active"
+        acknowledge(environment, promotion_store, policy, keyring, checkpoint)
+
+        invoke(
+            environment, promotion_store, policy, keyring, checkpoint, "update",
+            ["--transport", str(transport_8), *TARGET_ARGUMENTS],
+        )
+        promotion_no_space = activate_downloaded(
+            {**environment, "OPEMOS_GENERATION_TEST_FAIL_PHASE": "copy-enospc"},
+            promotion_store, policy, keyring, checkpoint, hash_8, success=False,
+        )
+        assert promotion_no_space["reason"] == "device_generation_space_insufficient"
+        assert not list((promotion_store / "generations").glob(".stage-*"))
+        assert (promotion_store / "downloads" / hash_8).is_dir()
+
+        promotion_command = [
+            sys.executable, str(TOOL), "--store", str(promotion_store),
+            "--policy", str(policy), "--keyring", str(keyring),
+            "--checkpoint", str(checkpoint), "activate-downloaded",
+            "--manifest-sha256", hash_8, *TARGET_ARGUMENTS,
+        ]
+        paused_promotion = subprocess.Popen(
+            promotion_command, cwd="/", env={
+                **environment, "OPEMOS_GENERATION_TEST_PAUSE_AFTER_STAGE": "30",
+            }, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        deadline = time.time() + 5
+        while (not list((promotion_store / "generations").glob(".stage-*"))
+               and time.time() < deadline):
+            time.sleep(0.02)
+        assert list((promotion_store / "generations").glob(".stage-*"))
+        paused_promotion.send_signal(signal.SIGTERM)
+        stdout, stderr = paused_promotion.communicate(timeout=5)
+        assert paused_promotion.returncode == 130 and stderr == ""
+        assert json.loads(stdout)["status"] == "cancelled"
+        assert not list((promotion_store / "generations").glob(".stage-*"))
+        assert (promotion_store / "downloads" / hash_8).is_dir()
+
+        killed_promotion = subprocess.Popen(
+            promotion_command, cwd="/", env={
+                **environment, "OPEMOS_GENERATION_TEST_PAUSE_AFTER_PUBLISH": "30",
+            }, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        deadline = time.time() + 5
+        while (not (promotion_store / "generations" / hash_8).exists()
+               and time.time() < deadline):
+            time.sleep(0.02)
+        assert (promotion_store / "pending-activation.json").exists()
+        killed_promotion.kill()
+        killed_promotion.communicate(timeout=5)
+        assert killed_promotion.returncode == -signal.SIGKILL
+        recovered_promotion = invoke(
+            environment, promotion_store, policy, keyring, checkpoint, "check"
+        )
+        assert recovered_promotion["state"]["active"] == {
+            "sequence": 7, "manifestSha256": hash_7,
+        }
+        assert not (promotion_store / "generations" / hash_8).exists()
+        assert not (promotion_store / "pending-activation.json").exists()
+        assert (promotion_store / "downloads" / hash_8).is_dir()
+
+        promoted_8 = activate_downloaded(
+            environment, promotion_store, policy, keyring, checkpoint, hash_8
+        )
+        assert promoted_8["state"]["highWaterSequence"] == 8
+        assert activate_downloaded(
+            environment, promotion_store, policy, keyring, checkpoint, hash_8
+        )["reason"] == "already_active"
+        rolled_back_promotion = invoke(
+            environment, promotion_store, policy, keyring, checkpoint, "rollback"
+        )
+        assert rolled_back_promotion["state"]["active"] == {
+            "sequence": 7, "manifestSha256": hash_7,
+        }
+        assert rolled_back_promotion["state"]["highWaterSequence"] == 8
+        replayed_download = activate_downloaded(
+            environment, promotion_store, policy, keyring, checkpoint,
+            hash_8, success=False,
+        )
+        assert replayed_download["reason"] == "device_generation_not_authorized"
+        assert (promotion_store / "downloads" / hash_8).is_dir()
+
+        transport_9 = root / "promotion-transport-9"
+        create_transport(transport_9, generation_9)
+        invoke(
+            environment, promotion_store, policy, keyring, checkpoint, "update",
+            ["--transport", str(transport_9), "--lineage", str(lineage_8),
+             *TARGET_ARGUMENTS],
+        )
+        promoted_9 = activate_downloaded(
+            environment, promotion_store, policy, keyring, checkpoint, hash_9,
+            lineage=[hash_8],
+        )
+        assert promoted_9["state"]["active"] == {
+            "sequence": 9, "manifestSha256": hash_9,
+        }
+        assert promoted_9["state"]["highWaterSequence"] == 9
 
         result_schema = json.loads((
             ROOT / "contracts/schemas/device-generation-result-v1.schema.json"
