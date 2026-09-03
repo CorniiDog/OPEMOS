@@ -213,6 +213,11 @@ The immutable release plan applies the same closed/canonical and
 descriptor-bound filesystem policy independently. Its create-only identity and
 first stable archive hash cannot be overwritten by a concurrent direct plan
 operation, pathname replacement, hardlink, writable input, or changed archive.
+Recovery cleanup never uses raw shell deletion for either record. Locked helper
+operations fully validate and identity-check the terminal transaction and
+release plan, fsync their parent after removal, and fail closed on active,
+malformed, linked, replaced, or otherwise unsafe state. The plan is removed
+first so a crash cannot leave it orphaned after transaction removal.
 
 Generation health and rollback additionally bind the rootfs receipt's exact
 userspace-lock filename and SHA-256 to the selected generation target record.

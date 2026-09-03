@@ -82,6 +82,11 @@ transaction_tool()
     python3 "$SUPPORT_ROOT/lib/recovery_transaction.py" "$@" --state "$TRANSACTION"
 }
 
+plan_tool()
+{
+    python3 "$SUPPORT_ROOT/lib/recovery_release_plan.py" "$@" --plan "$RELEASE_PLAN"
+}
+
 acquire_recovery_operation_lock()
 {
     [[ "$RECOVERY_OPERATION_LOCK_HELD" == 0 ]] || return 0
@@ -296,11 +301,13 @@ case "$COMMAND" in
             existing_phase="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["phase"])' "$existing")"
             existing_active="$(python3 -c 'import json,sys; print("1" if json.loads(sys.argv[1]).get("active") else "0")' "$existing")"
             if [[ "$existing_active" == 0 && "$existing_phase" == restored ]]; then
-                rm -f "$TRANSACTION" "$RELEASE_PLAN"
+                plan_tool remove
+                transaction_tool remove-terminal
             elif [[ "$existing_phase" == cancelled ]]; then
                 [[ "$COMMAND" == repair-online ]] || die "Automatic recovery retries were cancelled."
                 confirm "Start a new exact-kernel repair transaction?"
-                rm -f "$TRANSACTION" "$RELEASE_PLAN"
+                plan_tool remove
+                transaction_tool remove-terminal
             fi
         fi
         if [[ ! -f "$TRANSACTION" ]]; then
@@ -341,7 +348,7 @@ PY
     cancel-repair)
         acquire_recovery_operation_lock
         transaction_tool cancel
-        rm -f "$RELEASE_PLAN"
+        plan_tool remove
         ;;
     rollback-plan)
         emit_result coordination-required ab_slot_selection "validate exact disk, slot, kernel, and module set before changing boot selection"

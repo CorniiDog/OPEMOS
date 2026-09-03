@@ -176,6 +176,16 @@ def verify_destination(path, expected_identity):
         fail("release plan was replaced before publication")
 
 
+def fsync_directory(path):
+    descriptor = os.open(
+        path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0),
+    )
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
 def write(path, document, expected_identity=None, create_only=False):
     validate(document)
     path = safe_parent(path)
@@ -201,13 +211,7 @@ def write(path, document, expected_identity=None, create_only=False):
         else:
             os.replace(temporary, path)
             temporary = None
-        directory = os.open(
-            path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0),
-        )
-        try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
+        fsync_directory(path.parent)
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
@@ -279,9 +283,27 @@ def hash_archive(path):
         os.close(descriptor)
 
 
+def remove_plan(path):
+    if not path.exists() and not path.is_symlink():
+        return
+    _document, expected = read(path)
+    descriptor = safe_open(path)
+    try:
+        if identity(os.fstat(descriptor)) != expected:
+            fail("release plan changed before removal")
+    finally:
+        os.close(descriptor)
+    path.unlink()
+    fsync_directory(path.parent)
+    if path.exists() or path.is_symlink():
+        fail("release plan remains after removal")
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("operation", choices=("create", "show", "bind-archive"))
+    parser.add_argument(
+        "operation", choices=("create", "show", "bind-archive", "remove")
+    )
     parser.add_argument("--plan", required=True, type=Path)
     parser.add_argument("--steamos")
     parser.add_argument("--nvidia")
@@ -291,6 +313,12 @@ def main():
     parser.add_argument("--archive", type=Path)
     args = parser.parse_args()
     with plan_lock(args.plan) as plan:
+        if args.operation == "remove":
+            if any((args.steamos, args.nvidia, args.kernel_tag, args.release_tag,
+                    args.asset_name, args.archive)):
+                fail("remove does not accept release identity arguments")
+            remove_plan(plan)
+            return
         if args.operation == "create":
             value = {
                 "schemaVersion": 1,

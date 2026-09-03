@@ -607,6 +607,10 @@ descriptor-bound lock. Phase changes follow a closed transition graph and the
 attempt counter is bounded. Publication fsyncs both the replacement file and
 its parent directory. A second begin, unsafe state object, invalid transition,
 or concurrent writer fails without replacing the prior state.
+Terminal transaction removal is a distinct locked operation. It accepts only a
+fully validated `restored` or `cancelled` record, rechecks the exact inode before
+unlinking it, fsyncs the containing directory, and verifies absence. An active,
+malformed, replaced, linked, or unsafe transaction is never removed.
 
 All mutating recovery control operations also hold one recovery-operation
 lock. This serializes guardian fallback, repair, cancellation, and manual
@@ -633,6 +637,11 @@ operations share a descriptor-bound nonblocking lock. Initial publication is
 create-only; archive binding replaces only the exact plan inode that was read
 and only after hashing an owner-controlled, non-writable, single-linked regular
 archive whose pathname and descriptor identities remain equal.
+Plan removal uses the same plan lock, complete canonical validation, exact inode
+recheck, parent-directory fsync, and absence verification. Terminal restart
+cleanup removes the plan before its transaction record, so interruption cannot
+leave an orphaned plan beside no transaction. Cancellation tolerates an absent
+plan but refuses to erase a malformed or replaced one.
 A later certified equivalent does not invalidate a restored
 `locally-built-verified` system and is considered only by an explicit future
 maintenance transaction. Wrong-kernel or changed-NVIDIA publications remain

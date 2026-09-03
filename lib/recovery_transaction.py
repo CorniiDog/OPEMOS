@@ -240,6 +240,30 @@ def write(path, document, *, create_only=False):
                 pass
 
 
+def remove_terminal(path):
+    document = load(path)
+    if document is None:
+        fail("no recovery transaction exists")
+    if document["phase"] not in {"restored", "cancelled"}:
+        fail("an active recovery transaction cannot be removed")
+    descriptor = safe_open(path, missing_ok=False)
+    try:
+        opened = os.fstat(descriptor)
+        current = path.lstat()
+        if (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino):
+            fail("transaction state changed before removal")
+    finally:
+        os.close(descriptor)
+    path.unlink()
+    directory = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+    if path.exists() or path.is_symlink():
+        fail("transaction state remains after removal")
+
+
 @contextmanager
 def transaction_lock(path):
     parent = safe_parent(path)
@@ -276,7 +300,9 @@ def now_utc():
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("operation", choices=("show", "begin", "set", "cancel"))
+    parser.add_argument(
+        "operation", choices=("show", "begin", "set", "cancel", "remove-terminal")
+    )
     parser.add_argument("--state", required=True, type=Path)
     parser.add_argument("--kernel")
     parser.add_argument("--nvidia")
@@ -290,6 +316,12 @@ def main():
             document = load(args.state)
             print(json.dumps(document or {"schemaVersion": 1, "phase": "restored", "active": False},
                              sort_keys=True, separators=(",", ":")))
+            return
+        if args.operation == "remove-terminal":
+            if any((args.kernel, args.nvidia, args.support_revision,
+                    args.phase, args.reason)):
+                fail("remove-terminal does not accept transaction fields")
+            remove_terminal(args.state)
             return
         timestamp = now_utc()
         if args.operation == "begin":

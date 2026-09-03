@@ -1052,7 +1052,10 @@ This remains a major future area, represented by three distinct gates:
   deadlocking the nested canonical installer. Keep delayed-repair state closed,
   bounded, canonical, single-linked, mode-0600, descriptor-locked, fsync-backed,
   and constrained to reviewed phase transitions; reject concurrent or unsafe
-  state without replacing the last durable record.
+  state without replacing the last durable record. Remove terminal transaction
+  state and immutable release plans only through their locked, validated,
+  identity-bound, parent-fsynced helpers; never unlink active state or bypass
+  those helpers from the recovery shell workflow.
 * [ ] Connect the reviewed authenticated-cache bundle to on-device repair and
   test exact cached repair with GitHub, Valve, and Arch endpoints unavailable.
 * [ ] Run delayed-network fault injection for absent/flapping connectivity,

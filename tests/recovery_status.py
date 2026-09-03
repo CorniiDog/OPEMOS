@@ -309,6 +309,10 @@ assert 'if ! document="$(status_json)"' in control
 assert "PROFILE=console YES=1 enable_fallback" in control
 assert "recovery_fallback_state.py" in control
 assert "state.json.tmp" not in control
+assert "plan_tool remove" in control
+assert "transaction_tool remove-terminal" in control
+assert 'rm -f "$TRANSACTION"' not in control
+assert 'rm -f "$RELEASE_PLAN"' not in control
 
 with tempfile.TemporaryDirectory(prefix="opemos-guardian-", dir="/tmp") as temporary:
     guard_root = Path(temporary) / "root"
@@ -484,6 +488,38 @@ with tempfile.TemporaryDirectory(prefix="opemos-recovery-transaction-") as tempo
     successful = json.loads(completed.stdout)
     assert successful["phase"] == "restored" and successful["active"] is False
     assert successful["attempt"] == len(route)
+    subprocess.run(base + ["remove-terminal", "--state", str(success_state)],
+                   stdout=subprocess.PIPE, check=True)
+    assert not success_state.exists()
+
+    active_state = Path(temporary) / "active-removal.json"
+    subprocess.run(base + [
+        "begin", "--state", str(active_state), "--kernel", KERNEL,
+        "--nvidia", NVIDIA, "--support-revision", "c" * 40,
+        "--phase", "offline_waiting", "--reason", "network_not_verified",
+    ], stdout=subprocess.PIPE, check=True)
+    active_removal = subprocess.run(
+        base + ["remove-terminal", "--state", str(active_state)],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    assert active_removal.returncode != 0 and active_state.is_file()
+    subprocess.run(base + ["cancel", "--state", str(active_state)],
+                   stdout=subprocess.PIPE, check=True)
+    linked_state = Path(temporary) / "active-removal-hardlink.json"
+    os.link(active_state, linked_state)
+    linked_removal = subprocess.run(
+        base + ["remove-terminal", "--state", str(active_state)],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    assert linked_removal.returncode != 0 and active_state.is_file()
+    linked_state.unlink()
+    invalid_removal = subprocess.run(base + [
+        "remove-terminal", "--state", str(active_state), "--reason", "ignored",
+    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert invalid_removal.returncode != 0 and active_state.is_file()
+    subprocess.run(base + ["remove-terminal", "--state", str(active_state)],
+                   stdout=subprocess.PIPE, check=True)
+    assert not active_state.exists()
 
     hostile_state = Path(temporary) / "hostile.json"
     hostile_state.write_text('{"schemaVersion":NaN}\n')
@@ -543,6 +579,10 @@ with tempfile.TemporaryDirectory(prefix="opemos-recovery-plan-") as temporary:
     unsafe_link = subprocess.run(base + ["show", "--plan", str(plan)],
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     assert unsafe_link.returncode != 0
+    unsafe_link_removal = subprocess.run(base + ["remove", "--plan", str(plan)],
+                                         stdout=subprocess.PIPE,
+                                         stderr=subprocess.PIPE)
+    assert unsafe_link_removal.returncode != 0 and plan.exists()
     linked_plan.unlink()
 
     plan.write_bytes(canonical_plan.replace(
@@ -614,6 +654,11 @@ with tempfile.TemporaryDirectory(prefix="opemos-recovery-plan-") as temporary:
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     assert changed.returncode != 0
     assert json.loads(plan.read_text()) == first
+    subprocess.run(base + ["remove", "--plan", str(plan)],
+                   stdout=subprocess.PIPE, check=True)
+    assert not plan.exists()
+    subprocess.run(base + ["remove", "--plan", str(plan)],
+                   stdout=subprocess.PIPE, check=True)
 
 with tempfile.TemporaryDirectory(prefix="opemos-recovery-stage-") as temporary:
     target = Path(temporary) / "root"
