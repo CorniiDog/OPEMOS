@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>OPEMOS interstitial test</title>
+  <style>
+    :root { color-scheme: dark; --canvas:#101924; --panel:#182535; --edge:#344c62;
+      --text:#edf5fb; --muted:#9fb4c5; --steam:#66c0f4; --nvidia:#76b900; }
+    * { box-sizing:border-box; }
+    html,body { width:100%; height:100%; margin:0; overflow:hidden; background:var(--canvas);
+      color:var(--text); font-family:Inter,ui-sans-serif,system-ui,sans-serif; }
+    body::before { content:""; position:fixed; inset:0; pointer-events:none;
+      background:radial-gradient(circle at 16% 12%,rgba(102,192,244,.13),transparent 34%),
+      radial-gradient(circle at 84% 88%,rgba(118,185,0,.14),transparent 36%); }
+    main { width:min(88vw,1080px); min-height:54vh; position:absolute; inset:50% auto auto 50%;
+      transform:translate(-50%,-50%); border:2px solid var(--edge); border-radius:24px;
+      background:rgba(24,37,53,.96); padding:clamp(32px,6vw,72px); display:flex;
+      flex-direction:column; justify-content:space-between; box-shadow:0 28px 90px rgba(0,0,0,.35); }
+    .brand { display:flex; align-items:center; gap:18px; font-size:clamp(26px,4vw,48px);
+      font-weight:850; letter-spacing:.08em; }
+    .pill { display:block; width:clamp(96px,14vw,192px); height:auto; }
+    h1 { font-size:clamp(20px,3.2vw,40px); margin:52px 0 12px; letter-spacing:.055em; }
+    p { color:var(--muted); margin:0; font-size:clamp(14px,1.8vw,21px); letter-spacing:.04em; }
+    .progress-stack { height:24px; margin-top:70px; padding:3px; overflow:hidden; display:grid;
+      grid-template-rows:1fr 1fr; gap:2px; border:1px solid var(--edge); border-radius:999px;
+      background:rgba(10,20,29,.48); }
+    .track { min-height:0; overflow:hidden; border-radius:999px; background:rgba(52,76,98,.72); }
+    .bar { height:100%; width:0; border-radius:999px; background:linear-gradient(90deg,var(--steam),#1a9fff);
+      transition:width .55s cubic-bezier(.2,.8,.2,1); }
+    .step-bar { height:100%; width:0; border-radius:999px;
+      background:linear-gradient(90deg,rgba(118,185,0,.72),#92cf3f); transition:width .3s linear; }
+    .track.indeterminate .bar,.track.indeterminate .step-bar { animation:scan 1.25s ease-in-out infinite; }
+    .track.indeterminate .bar { width:34%!important; }
+    .track.indeterminate .step-bar { width:24%!important; }
+    @keyframes scan { 0%{transform:translateX(-110%)} 50%{transform:translateX(210%)} 100%{transform:translateX(-110%)} }
+  </style>
+</head>
+<body>
+  <main aria-live="polite">
+    <div>
+      <div class="brand"><img class="pill" src="/opemos-pill.svg" alt=""><span>OPEMOS</span></div>
+      <h1 id="phase">STARTING OPEMOS</h1>
+      <p>Exact-kernel NVIDIA recovery · no-input boot session</p>
+    </div>
+    <div>
+      <div class="progress-stack" aria-hidden="true">
+        <div class="track" id="overall-track"><div class="bar" id="bar"></div></div>
+        <div class="track" id="step-track"><div class="step-bar" id="step-bar"></div></div>
+      </div>
+    </div>
+  </main>
+  <script>
+    "use strict";
+    const phases = [
+      ["STARTING OPEMOS",4,null],["CHECKING EXACT NVIDIA SUPPORT",13,55],
+      ["VERIFYING SIGNATURES AND HASHES",29,72],["DOWNLOADING AUTHENTICATED PAYLOADS",45,38],
+      ["INSTALLING NVIDIA USERSPACE",64,67],["INSTALLING NVIDIA MODULES",76,40],
+      ["UPDATING BOOT CONFIGURATION",84,null],["GENERATING INITRAMFS",92,null],
+      ["VERIFYING AND CLEANING UP",98,80],["NVIDIA GRAPHICS READY",100,100]
+    ];
+    let index=0;
+    function advance(){
+      const [label,value,step]=phases[index];
+      document.getElementById("phase").textContent=label;
+      document.getElementById("bar").style.width=value+"%";
+      const stepTrack=document.getElementById("step-track");
+      stepTrack.classList.toggle("indeterminate",step===null);
+      document.getElementById("step-bar").style.width=(step===null?24:step)+"%";
+      index=(index+1)%phases.length;
+      if(index===0){ setTimeout(()=>{document.getElementById("bar").style.width="0";},900); }
+    }
+    advance(); setInterval(advance,1400);
+  </script>
+</body>
+</html>

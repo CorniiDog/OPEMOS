@@ -1,0 +1,61 @@
+[Unit]
+Description=OPEMOS no-input recovery interstitial
+Documentation=https://corniidog.github.io/OPEMOS/interstitial.html
+Before=display-manager.service graphical.target
+After=local-fs.target systemd-udev-settle.service
+ConditionPathExists=@DEST@/bin/opemos-interstitial
+ConditionPathExists=@DEST@/interstitial.sha256
+
+[Service]
+Type=simple
+ExecStartPre=/usr/bin/install -d -o root -g root -m 0755 /run/opemos/interstitial
+ExecStartPre=/usr/bin/python3 @DEST@/lib/interstitial_progress.py reset --state /run/opemos/interstitial/progress.json
+ExecStart=@DEST@/bootstrap/launch_interstitial.sh
+RuntimeMaxSec=315
+TimeoutStopSec=5
+SuccessExitStatus=1 124 130 143
+Restart=no
+User=root
+Group=root
+UMask=0077
+StandardInput=null
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateNetwork=yes
+PrivateDevices=no
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX
+ReadWritePaths=/run/opemos/interstitial
+DevicePolicy=closed
+DeviceAllow=/dev/dri/card0 rw
+DeviceAllow=/dev/dri/card1 rw
+DeviceAllow=/dev/dri/card2 rw
+DeviceAllow=/dev/dri/card3 rw
+DeviceAllow=/dev/dri/card4 rw
+DeviceAllow=/dev/dri/card5 rw
+DeviceAllow=/dev/dri/card6 rw
+DeviceAllow=/dev/dri/card7 rw
+DeviceAllow=/dev/dri/card8 rw
+DeviceAllow=/dev/dri/card9 rw
+DeviceAllow=/dev/dri/card10 rw
+DeviceAllow=/dev/dri/card11 rw
+DeviceAllow=/dev/dri/card12 rw
+DeviceAllow=/dev/dri/card13 rw
+DeviceAllow=/dev/dri/card14 rw
+DeviceAllow=/dev/dri/card15 rw
+
+[Install]
+WantedBy=multi-user.target

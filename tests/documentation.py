@@ -14,6 +14,7 @@ REQUIRED_PAGES = {
     "getting-started.md",
     "developer-guide.md",
     "image-builder.md",
+    "interstitial.md",
     "contracts.md",
     "security.md",
     "technical-reference.md",
@@ -22,6 +23,7 @@ NAVIGATION_PAGES = {
     "getting-started.md",
     "developer-guide.md",
     "image-builder.md",
+    "interstitial.md",
     "contracts.md",
     "security.md",
 }

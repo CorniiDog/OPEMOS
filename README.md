@@ -24,6 +24,7 @@ rather than substituting a nearby kernel or unreviewed userspace payload.
 | --- | --- |
 | Build a recovery image through a graphical macOS application | [OPEMOS.EXE](https://github.com/CorniiDog/OPEMOS.EXE) · [Documentation](https://corniidog.github.io/OPEMOS.EXE/) |
 | View installed NVIDIA recovery health in SteamOS Desktop Mode | [OPEMOS native status companion](desktop/README.md) |
+| Test or integrate the temporary no-input boot display | [OPEMOS DRM/KMS interstitial](docs/interstitial.md) |
 | Inspect, build, validate, publish, or install from a terminal or automation | **OPEMOS CLI** · continue below |
 
 > [!IMPORTANT]
@@ -42,6 +43,7 @@ Read the **[OPEMOS documentation](https://corniidog.github.io/OPEMOS/)**.
 - [OPEMOS.EXE integration](docs/image-builder.md)
 - [OPEMOS.EXE graphical application](https://corniidog.github.io/OPEMOS.EXE/)
 - [Command and JSON contracts](docs/contracts.md)
+- [No-input boot interstitial](docs/interstitial.md)
 - [Trust, safety, and recovery model](docs/security.md)
 - [Complete technical reference](docs/technical-reference.md)
 - [Current roadmap](TODO.md)

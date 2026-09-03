@@ -5,3 +5,4 @@ __pycache__/
 
 # Rust desktop companion output
 desktop/target/
+interstitial/target/

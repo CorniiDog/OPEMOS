@@ -12,6 +12,7 @@ header_pages:
   - developer-guide.md
   - image-builder.md
   - desktop-companion.md
+  - interstitial.md
   - contracts.md
   - security.md
 exclude:

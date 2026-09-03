@@ -12,7 +12,7 @@ fail()
 }
 
 printf 'Checking shell syntax...\n'
-for script_file in bootstrap/*.sh lib/*.sh commit_myself.sh tests/*.sh; do
+for script_file in bootstrap/*.sh lib/*.sh commit_myself.sh test_update_macos.sh tests/*.sh; do
     bash -n "$script_file"
 done
 bash -n tests/vm/run-steamos-recovery.sh tests/vm/inspect-steamos-recovery.sh \
@@ -71,10 +71,21 @@ python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __
     lib/desktop_update_generations.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/desktop_update_release.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/interstitial_progress.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/validate_interstitial_binary.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    tests/interstitial_demo_server.py
 printf 'Checking crash-safe desktop update generations...\n'
 python3 tests/desktop_update_generations.py
 printf 'Checking canonical desktop update publisher...\n'
 python3 tests/desktop_update_publisher.py
+printf 'Checking no-input boot interstitial...\n'
+python3 tests/interstitial.py
+cargo test --locked --manifest-path interstitial/Cargo.toml
+cargo clippy --locked --manifest-path interstitial/Cargo.toml --all-targets -- -D warnings
+cargo fmt --manifest-path interstitial/Cargo.toml -- --check
 
 printf 'Checking immutable installer input snapshots...\n'
 SNAPSHOT_FIXTURE="$(mktemp -d /tmp/installer-input-snapshot.XXXXXX)"

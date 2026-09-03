@@ -36,10 +36,11 @@ supported by Valve or NVIDIA.
 2. [Developer tutorials](developer-guide.md)
 3. [OPEMOS.EXE integration](image-builder.md)
 4. [SteamOS desktop companion](desktop-companion.md)
-5. [Command and JSON contracts](contracts.md)
-6. [Trust, safety, and recovery](security.md)
-7. [Complete technical reference](technical-reference.md)
-8. [Project roadmap](https://github.com/CorniiDog/OPEMOS/blob/main/TODO.md)
+5. [No-input boot interstitial](interstitial.md)
+6. [Command and JSON contracts](contracts.md)
+7. [Trust, safety, and recovery](security.md)
+8. [Complete technical reference](technical-reference.md)
+9. [Project roadmap](https://github.com/CorniiDog/OPEMOS/blob/main/TODO.md)
 
 ## Choose your path
 
@@ -48,6 +49,7 @@ supported by Valve or NVIDIA.
 | Inspect or install from a Steam Deck terminal | [Getting started](getting-started.md) |
 | Build an image with the graphical macOS application | [OPEMOS.EXE documentation](https://corniidog.github.io/OPEMOS.EXE/) |
 | View installed recovery health in SteamOS Desktop Mode | [Desktop companion](desktop-companion.md) |
+| Understand the temporary pre-session recovery display | [No-input boot interstitial](interstitial.md) |
 | Build an exact missing kernel artifact | [Developer guide: offline target build](developer-guide.md#build-for-an-offline-target) |
 | Integrate OPEMOS with OPEMOS.EXE | [OPEMOS.EXE integration](image-builder.md) |
 | Consume resolver, progress, or result JSON | [Contracts](contracts.md) |

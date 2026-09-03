@@ -2,10 +2,12 @@
 Description=OPEMOS exact-kernel NVIDIA boot guardian
 Before=display-manager.service graphical.target
 After=local-fs.target
+Wants=opemos-interstitial.service
+After=opemos-interstitial.service
 
 [Service]
 Type=oneshot
-ExecStart=@DEST@/bootstrap/recoveryctl.sh guard --json
+ExecStart=@DEST@/bootstrap/run_guardian_with_interstitial.sh
 TimeoutStartSec=300
 
 [Install]

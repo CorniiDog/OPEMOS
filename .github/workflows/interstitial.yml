@@ -1,0 +1,60 @@
+name: SteamOS no-input interstitial
+
+on:
+  push:
+    paths:
+      - interstitial/**
+      - lib/interstitial_progress.py
+      - lib/validate_interstitial_binary.py
+      - bootstrap/run_guardian_with_interstitial.sh
+      - bootstrap/install_recovery_guardian_to_root.sh
+      - support/recovery/opemos-interstitial.service.in
+      - tests/interstitial.py
+      - .github/workflows/interstitial.yml
+  pull_request:
+    paths:
+      - interstitial/**
+      - lib/interstitial_progress.py
+      - lib/validate_interstitial_binary.py
+      - bootstrap/run_guardian_with_interstitial.sh
+      - bootstrap/install_recovery_guardian_to_root.sh
+      - support/recovery/opemos-interstitial.service.in
+      - tests/interstitial.py
+      - .github/workflows/interstitial.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  arch-linux:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - name: Install build dependencies
+        run: pacman -Syu --noconfirm cargo rust git
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Test progress and installation contracts
+        run: python3 tests/interstitial.py
+
+      - name: Test and lint locked Rust implementation
+        run: |
+          cargo test --locked --release --manifest-path interstitial/Cargo.toml
+          cargo clippy --locked --manifest-path interstitial/Cargo.toml --all-targets -- -D warnings
+          cargo fmt --manifest-path interstitial/Cargo.toml -- --check
+
+      - name: Build x86_64 Linux executable
+        run: cargo build --locked --release --manifest-path interstitial/Cargo.toml
+
+      - name: Exercise software rendering without a display server
+        run: interstitial/target/release/opemos-interstitial --smoke-test
+
+      - name: Upload development executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: opemos-interstitial-x86_64-arch-linux-development
+          path: interstitial/target/release/opemos-interstitial
+          if-no-files-found: error

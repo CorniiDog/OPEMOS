@@ -17,10 +17,11 @@ SERIAL_LOG="$RUNTIME_DIR/serial.log"
 NO_IMAGE_DOWNLOAD=0
 OFFLINE_CACHE_ONLY=0
 DESKTOP_GUI=0
+INTERSTITIAL=0
 
 usage()
 {
-    printf 'Usage: %s [--no-image-download] [--offline-cache-only|--desktop-gui]\n' "${0##*/}"
+    printf 'Usage: %s [--no-image-download] [--offline-cache-only|--desktop-gui|--interstitial]\n' "${0##*/}"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -28,14 +29,15 @@ while [[ $# -gt 0 ]]; do
         --no-image-download) NO_IMAGE_DOWNLOAD=1 ;;
         --offline-cache-only) OFFLINE_CACHE_ONLY=1 ;;
         --desktop-gui) DESKTOP_GUI=1 ;;
+        --interstitial) INTERSTITIAL=1 ;;
         -h|--help) usage; exit 0 ;;
         *) usage >&2; printf 'unknown argument: %s\n' "$1" >&2; exit 2 ;;
     esac
     shift
 done
 
-[[ "$OFFLINE_CACHE_ONLY" == 0 || "$DESKTOP_GUI" == 0 ]] || {
-    printf '%s\n' 'offline-cache-only and desktop-gui modes are mutually exclusive' >&2
+(( OFFLINE_CACHE_ONLY + DESKTOP_GUI + INTERSTITIAL <= 1 )) || {
+    printf '%s\n' 'offline-cache-only, desktop-gui, and interstitial modes are mutually exclusive' >&2
     exit 2
 }
 
@@ -92,7 +94,23 @@ COPYFILE_DISABLE=1 tar --exclude=.git --exclude=desktop/target \
     --exclude=tests/vm/.cache --exclude=tests/vm/.runtime \
     -C "$PROJECT_ROOT" -czf "$SEED_DIR/repo.tgz" .
 cp "$SCRIPT_DIR/meta-data" "$SEED_DIR/meta-data"
-if [[ "$DESKTOP_GUI" == 1 ]]; then
+if [[ "$INTERSTITIAL" == 1 ]]; then
+cat > "$SEED_DIR/user-data" <<'EOF'
+#cloud-config
+package_update: false
+packages:
+  - cargo
+  - rust
+runcmd:
+  - [bash, -lc, "mkdir -p /mnt/seed /opt/open-gpu && mount -o ro /dev/sr0 /mnt/seed && tar -xzf /mnt/seed/repo.tgz -C /opt/open-gpu"]
+  - [bash, -lc, "/opt/open-gpu/tests/vm/interstitial-guest.sh /opt/open-gpu > /dev/ttyS0 2>&1"]
+final_message: OPEN_GPU_VM_COMPLETE
+power_state:
+  mode: poweroff
+  timeout: 30
+  condition: true
+EOF
+elif [[ "$DESKTOP_GUI" == 1 ]]; then
 cat > "$SEED_DIR/user-data" <<'EOF'
 #cloud-config
 package_update: false
@@ -182,9 +200,14 @@ stop_qemu()
 trap stop_qemu EXIT
 trap 'stop_qemu; exit 130' INT
 trap 'stop_qemu; exit 143' TERM
+QEMU_DISPLAY_ARGS=()
+if [[ "$INTERSTITIAL" == 1 ]]; then
+    QEMU_DISPLAY_ARGS=(-device virtio-vga)
+fi
 qemu-system-x86_64 \
     -machine q35,accel=tcg -cpu max -smp 4 -m 4096 \
     -display none -monitor none -serial "file:$SERIAL_LOG" \
+    "${QEMU_DISPLAY_ARGS[@]}" \
     -no-reboot -nic user,model=virtio-net-pci \
     -drive "if=virtio,file=$OVERLAY,format=qcow2" \
     -drive "if=ide,media=cdrom,readonly=on,file=$SEED_ISO,format=raw" &
@@ -209,7 +232,14 @@ release_runtime_lock
 trap - EXIT INT TERM
 
 result="$(sed -n '/{"schemaVersion":1,/ { s/^[^{]*//; p; }' "$SERIAL_LOG" | tail -n1 | tr -d '\r' || true)"
-if [[ "$DESKTOP_GUI" == 1 ]]; then
+if [[ "$INTERSTITIAL" == 1 ]]; then
+    expected_prefix='{"schemaVersion":1,"status":"passed","interstitialBuild":"passed","softwareFrame":"passed","drm":"'
+    [[ "$result" == "$expected_prefix"*'"}' ]] || {
+        printf 'VM did not report an interstitial result; serial log: %s\n' "$SERIAL_LOG" >&2
+        exit 1
+    }
+    expected_result="$result"
+elif [[ "$DESKTOP_GUI" == 1 ]]; then
     expected_result='{"schemaVersion":1,"status":"passed","desktopGui":"passed"}'
 elif [[ "$OFFLINE_CACHE_ONLY" == 1 ]]; then
     expected_result='{"schemaVersion":1,"status":"passed","offlineAuthenticatedCache":"passed","offlineBundleSelection":"passed","offlineCacheRetention":"passed"}'

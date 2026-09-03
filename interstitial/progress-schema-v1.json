@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "maxDocumentBytes": 65536,
+  "maxSequence": 1000000000,
+  "fields": [
+    "schemaVersion",
+    "sequence",
+    "status",
+    "phase",
+    "completed",
+    "total",
+    "stepCompleted",
+    "stepTotal"
+  ],
+  "statuses": [
+    "working",
+    "succeeded",
+    "failed"
+  ],
+  "phases": [
+    {"id": "starting", "label": "STARTING OPEMOS"},
+    {"id": "inspecting", "label": "CHECKING EXACT NVIDIA SUPPORT"},
+    {"id": "waiting_for_network", "label": "WAITING FOR A TRUSTED NETWORK"},
+    {"id": "downloading", "label": "DOWNLOADING AUTHENTICATED PAYLOADS"},
+    {"id": "verifying", "label": "VERIFYING SIGNATURES AND HASHES"},
+    {"id": "building", "label": "BUILDING FOR THE EXACT KERNEL"},
+    {"id": "installing_userspace", "label": "INSTALLING NVIDIA USERSPACE"},
+    {"id": "installing_modules", "label": "INSTALLING NVIDIA MODULES"},
+    {"id": "updating_boot", "label": "UPDATING BOOT CONFIGURATION"},
+    {"id": "generating_initramfs", "label": "GENERATING INITRAMFS"},
+    {"id": "cleaning_up", "label": "VERIFYING AND CLEANING UP"},
+    {"id": "complete", "label": "NVIDIA GRAPHICS READY"},
+    {"id": "recovery_required", "label": "RECOVERY NEEDS ATTENTION"}
+  ]
+}

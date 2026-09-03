@@ -49,6 +49,14 @@ index in the same commit.
 
 ### Remaining engineering cleanup
 
+* [ ] Hardware-validate the implemented no-input DRM/KMS boot interstitial on
+  real SteamOS with simpledrm and intended iGPU paths, internal/external display
+  handoff, hotplug, renderer crash/SIGKILL, power loss, watchdog expiry, and
+  successful continuation into both the preselected Gaming and Desktop Mode.
+  Portable model/rasterizer/progress/install tests and the Fedora build/KMS
+  harness are implemented; normal-user delivery remains disabled until the
+  exact Linux binary is bound to a reviewed signed release.
+
 * [ ] Design and implement a fail-closed self-update contract for the native
   SteamOS companion using versioned A/B application generations. Download into
   private staging, authenticate an immutable release manifest and every file,
@@ -878,7 +886,7 @@ This remains a major future area, represented by three distinct gates:
   and keyboard/accessibility behavior without moving privileged policy out of
   recoveryctl. This is the installed target-device application, not the
   separate installation-media welcome UI owned by OPEMOS.EXE.
-* [ ] Design a bounded full-screen OPEMOS boot interstitial that temporarily
+* [x] Design and implement a bounded full-screen OPEMOS boot interstitial that temporarily
   enters a dedicated no-input recovery session instead of Gaming or Desktop
   Mode, displays authenticated guardian/install progress, and then resumes the
   originally requested systemd target. It must render without depending on a
@@ -886,7 +894,11 @@ This remains a major future area, represented by three distinct gates:
   never accept arbitrary input or shell content, and fail open to the safe
   console/boot target under a watchdog timeout. Specify crash/reboot recovery,
   target-transition idempotency, accessibility, display hotplug, missing DRM,
-  corrupt progress, and power-loss tests before enabling it during boot.
+  corrupt progress, and power-loss tests before enabling it during boot. The
+  direct DRM/KMS software renderer, bounded root-owned progress document,
+  fail-open systemd ordering, optional exact-ELF installation, macOS browser
+  simulation, and Fedora VM build/KMS harness are implemented. Physical
+  SteamOS display and power-loss validation remains in the top unresolved list.
 
 ---
 
