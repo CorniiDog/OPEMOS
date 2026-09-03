@@ -1,0 +1,44 @@
+{
+  "$id": "https://corniidog.github.io/OPEMOS/contracts/device-generation-result-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "identity": {
+      "additionalProperties": false,
+      "properties": {
+        "manifestSha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+        "sequence": {"maximum": 18446744073709551615, "minimum": 1, "type": "integer"}
+      },
+      "required": ["sequence", "manifestSha256"],
+      "type": "object"
+    },
+    "state": {
+      "additionalProperties": false,
+      "properties": {
+        "active": {"oneOf": [{"$ref": "#/$defs/identity"}, {"type": "null"}]},
+        "channel": {"const": "reviewed-userspace-lock-generations"},
+        "healthPending": {"type": "boolean"},
+        "highWaterSequence": {"maximum": 18446744073709551615, "minimum": 0, "type": "integer"},
+        "lastKnownGood": {"oneOf": [{"$ref": "#/$defs/identity"}, {"type": "null"}]},
+        "schemaVersion": {"const": 1}
+      },
+      "required": ["schemaVersion", "channel", "active", "lastKnownGood", "highWaterSequence", "healthPending"],
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Inactive bounded result from the installed-device reviewed userspace-lock generation lifecycle.",
+  "properties": {
+    "cancellationAfterCommit": {"type": "boolean"},
+    "channel": {"const": "reviewed-userspace-lock-generations"},
+    "generationCreated": {"type": "boolean"},
+    "message": {"maxLength": 512, "minLength": 1, "type": "string"},
+    "prunedGenerations": {"maximum": 32, "minimum": 0, "type": "integer"},
+    "reason": {"pattern": "^[a-z][a-z0-9_]{0,63}$", "type": "string"},
+    "schemaVersion": {"const": 1},
+    "state": {"$ref": "#/$defs/state"},
+    "status": {"enum": ["ok", "failed", "cancelled"]}
+  },
+  "required": ["schemaVersion", "channel", "status", "reason"],
+  "title": "OPEMOS installed-device generation result v1",
+  "type": "object"
+}

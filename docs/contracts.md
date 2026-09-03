@@ -8,6 +8,7 @@ description: API-style command, result, progress, trust, and failure reference.
 
 - [Entry points](#entry-points)
 - [Resolver contract](#resolver-contract)
+- [Installed-device lock generations](#installed-device-lock-generations)
 - [Build result](#build-result)
 - [Installer contract](#installer-contract)
 - [Progress records](#progress-records)
@@ -34,6 +35,7 @@ description: API-style command, result, progress, trust, and failure reference.
 | `lib/validate_install_contract.py` | Consumer | No | Contract-validation result |
 | `lib/installer_bundle_manifest.py` | Maintainer/integrator | Create-only output | Immutable support-bundle manifest |
 | `lib/desktop_update_generations.py` | SteamOS desktop launcher | Generation store and atomic markers | Desktop-update schema 1 JSON |
+| `bootstrap/generationctl.sh` | Installed Core/CLI | Private reviewed-lock generation store | Device-generation schema 1 JSON |
 
 Every command supports `--help`; that output is the canonical option list.
 
@@ -101,6 +103,33 @@ commands and the self-reference rationale.
 single asset in a commit-specific, create-only release. It never modifies an
 NVIDIA artifact release. Publication supplies availability, not independent
 authentication: production consumers must pin the manifest digest separately.
+
+## Installed-device lock generations
+
+`bootstrap/generationctl.sh` manages the installed device's own reviewed-lock
+cache. It is separate from OPEMOS.EXE's host cache and from the desktop
+companion's binary-update generations.
+
+Implemented inactive commands are:
+
+| Command | Effect |
+| --- | --- |
+| `activate` | Authenticate and create-only stage an exact local generation, then atomically select it pending health |
+| `status` | Read bounded durable active/LKG/high-water state |
+| `check` | Revalidate the active and last-known-good cached payloads |
+| `acknowledge-health --evidence FILE` | Advance LKG using exact generation-bound recovery evidence |
+| `rollback` | Reauthenticate and restore LKG without decreasing high-water |
+| `prune` | Retain active, LKG, and a bounded recent set |
+
+Results follow
+[`device-generation-result-v1.schema.json`](https://github.com/CorniiDog/OPEMOS/blob/main/contracts/schemas/device-generation-result-v1.schema.json).
+Health evidence follows the closed
+[`device-generation-health-v1.schema.json`](https://github.com/CorniiDog/OPEMOS/blob/main/contracts/schemas/device-generation-health-v1.schema.json).
+
+Production `update` and `update-or-repair` remain fail-closed because no
+reviewed data-generation signer, keyring, bootstrap checkpoint, or canonical
+device discovery endpoint is configured. Local activation is an integration
+surface, not permission to replace the legacy reviewed lock path.
 
 ## Build result
 

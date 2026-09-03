@@ -166,9 +166,40 @@ host-specific filename mapping.
 ## Migration gate
 
 This document freezes the intended field names for cross-project planning but
-does not activate them. Core must still publish JSON Schemas, deterministic
-valid/hostile/replay fixtures, a dedicated reviewed public keyring and policy,
-publisher evidence, and installed-device lifecycle commands. Legacy embedded
-locks and both consumers' existing paths remain until unit, integration,
-cancellation, cleanup, failure-injection, power-loss, and cross-repository
-equivalence tests pass.
+does not activate production updates. Core must still publish a dedicated
+reviewed public keyring and policy, publisher evidence, and installed-device
+networking. Legacy embedded locks and both consumers' existing paths remain
+until unit, integration, cancellation, cleanup, failure-injection, power-loss,
+and cross-repository equivalence tests pass. The implemented inactive surfaces
+exercise these contracts; this design does not activate them for production.
+
+## Inactive installed-device implementation
+
+`bootstrap/generationctl.sh` dispatches to the Core-owned
+`lib/device_generation_lifecycle.py`. It stores reviewed lock generations under
+the device-local `/var/lib/opemos/userspace-lock-generations` by default; this
+is not the desktop binary-update store and is never shared with OPEMOS.EXE.
+
+The inactive implementation supports `activate`, `status`, `check`,
+`acknowledge-health`, `rollback`, and `prune`. Activation accepts a locally
+staged closed generation plus optional authenticated lineage, verifies both
+detached discovery/manifest signatures with `gpgv`, applies the schema and Core
+activation policy, verifies the exact manifest-owned payload, publishes one
+immutable generation create-only, and atomically updates durable state.
+Canonical signed discovery and sequence-specific manifest filenames are
+preserved. Each intermediate lineage input is a closed document-only directory
+containing those two documents and detached signatures, so a device that missed
+generations does not need their obsolete payloads.
+Unacknowledged active data blocks another activation. Health acknowledgement
+requires a canonical root-controlled evidence document bound to the exact
+active sequence and manifest hash, generation integrity, and recovery
+readiness. Rollback reauthenticates last known good and never lowers high-water
+state. Retention preserves active and last known good plus bounded recent
+generations.
+
+Production defaults require root-owned policy, keyring, and checkpoint files
+under `/etc/opemos`; none is shipped yet. Therefore `update` and
+`update-or-repair` fail with `device_generation_network_inactive`. The current
+local activation surface exists for contract and lifecycle testing only. It
+does not enable device networking, replace the legacy embedded lock, or reuse
+the desktop binary updater.

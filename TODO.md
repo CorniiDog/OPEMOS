@@ -1422,23 +1422,25 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
 
 ### Two independent consumers
 
+* [x] Implement the inactive installed-device physical cache and local
+  activation lifecycle independently from OPEMOS.EXE and desktop binary
+  updates. Include create-only immutable generations, fsync-backed atomic
+  state, exclusive locking, active/LKG identities, rollback-stable high-water,
+  health acknowledgement, bounded retention, exact payload verification,
+  cancellation, ENOSPC, abandoned-stage and post-commit crash recovery tests.
+  Keep production trust and networking disabled.
 * [ ] Specify a stable canonical discovery location without placing URLs or
   redirects inside the signed descriptor. OPEMOS.EXE owns host transport and
   its cache; installed Core/CLI owns device transport and its separate cache.
   Both consume the same Core-owned identities, schemas, fixtures, and trust
   root without importing one another's updater implementation.
-* [ ] Add installed Core/CLI commands for bounded `check`, `download`,
-  `validate`, `activate`, `status`, `acknowledge-health`, `rollback`, `prune`,
-  and one-line safe `update-or-repair`. Integrate the active reviewed lock with
+* [ ] Add authenticated installed-device `download`, online `update`, and
+  one-line safe `update-or-repair`; integrate the active reviewed lock with
   exact-target repair while keeping networking outside boot-critical paths.
-* [ ] Use private staging, fsync, exclusive lifecycle locks, immutable
-  generations, atomic active/previous markers, bounded retention, and durable
-  health acknowledgement. Interrupted staging or activation must remain
-  recoverable after process crash or power loss.
-* [ ] Preserve the last-known-good active generation for unknown schema or
-  authority, trust-policy drift, replay/downgrade, target mismatch, partial
-  download, ENOSPC/inode exhaustion, cancellation, validation failure, health
-  timeout, cleanup failure, or an unavailable endpoint.
+  The inactive CLI currently fails these online commands closed.
+* [ ] Validate the device lifecycle under Fedora and real SteamOS, including
+  inode exhaustion, power loss at every durable boundary, health timeout,
+  filesystem corruption, and service/recovery integration.
 * [ ] Keep the legacy embedded/pinned userspace-lock path until Core unit,
   Fedora/SteamOS integration, cancellation, cleanup, fault-injection,
   last-known-good rollback, and cross-repository equivalence tests all pass.

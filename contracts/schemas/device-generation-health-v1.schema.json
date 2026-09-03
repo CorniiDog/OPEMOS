@@ -1,0 +1,27 @@
+{
+  "$id": "https://corniidog.github.io/OPEMOS/contracts/device-generation-health-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Inactive generation-bound health evidence consumed before last-known-good acknowledgement.",
+  "properties": {
+    "checks": {
+      "const": ["generation-integrity", "recovery-ready"],
+      "type": "array"
+    },
+    "generation": {
+      "additionalProperties": false,
+      "properties": {
+        "manifestSha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+        "sequence": {"maximum": 18446744073709551615, "minimum": 1, "type": "integer"}
+      },
+      "required": ["sequence", "manifestSha256"],
+      "type": "object"
+    },
+    "kind": {"const": "opemos-device-generation-health"},
+    "schemaVersion": {"const": 1},
+    "status": {"const": "healthy"}
+  },
+  "required": ["schemaVersion", "kind", "status", "generation", "checks"],
+  "title": "OPEMOS installed-device generation health evidence v1",
+  "type": "object"
+}

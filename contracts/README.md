@@ -58,6 +58,10 @@ publisher evidence, and installed-device lifecycle.
   inactive, closed immutable generation inventory. Core additionally enforces
   authority, sequence/predecessor, target-lock, manifest-hash, and total-size
   invariants across both documents.
+- `schemas/device-generation-result-v1.schema.json` describes bounded results
+  and durable state from the inactive installed-device generation lifecycle.
+- `schemas/device-generation-health-v1.schema.json` describes the closed,
+  exact-generation health evidence required before last-known-good advances.
 
 Unknown additive fields are permitted only where a schema explicitly allows
 them. Closed objects reject them. Removing a required field, changing its
@@ -167,6 +171,20 @@ cache identity is the authenticated generation manifest SHA-256; cache and
 network lifecycle remain consumer-owned. Consumers durably retain the paired
 sequence and manifest hash for active and last-known-good identities plus a
 monotonic high-water sequence that rollback cannot decrease.
+
+`bootstrap/generationctl.sh` is the installed-device CLI entrypoint backed by
+`lib/device_generation_lifecycle.py`. Its local `activate`, `status`, `check`,
+`acknowledge-health`, `rollback`, and `prune` paths are implemented and tested
+against the same generation contracts. The cache is private, create-only,
+fsync-backed, independently retained, and separate from desktop binary updates
+and OPEMOS.EXE host storage. Health acknowledgement requires closed evidence
+bound to the exact active identity. `update` and `update-or-repair`
+intentionally fail with `device_generation_network_inactive` until production
+trust and endpoint policy exist; caller-selected trust is accepted only under
+the explicit development-test override. Cached generations preserve the
+canonical signed discovery and sequence-specific manifest filenames. Missed-
+generation catch-up accepts bounded document-only lineage directories; it does
+not require downloading intermediate payloads.
 
 When resolution returns `no_compatible_artifact` with reason
 `no_compatible_release`, `nextAction` explicitly authorizes only the existing
