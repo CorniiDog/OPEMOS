@@ -74,6 +74,26 @@ esac
     assert all(item["exactKernel"] and item["exactUserspace"]
                for item in document["moduleVerification"]["records"])
 
+    duplicate_directory = modules / "duplicate"
+    duplicate_directory.mkdir()
+    duplicate = duplicate_directory / "nvidia.ko.zst"
+    duplicate.write_text("duplicate fixture\n")
+    code, document = run(root, mockbin)
+    assert code == 2 and document["status"] == "unknown"
+    duplicate.unlink()
+    duplicate_directory.rmdir()
+
+    unsafe_module = modules / "nvidia.ko.zst"
+    unsafe_module.chmod(0o666)
+    code, document = run(root, mockbin)
+    assert code == 2 and document["status"] == "unknown"
+    unsafe_module.chmod(0o644)
+    hardlink = Path(temporary) / "nvidia-hardlink.ko.zst"
+    os.link(unsafe_module, hardlink)
+    code, document = run(root, mockbin)
+    assert code == 2 and document["status"] == "unknown"
+    hardlink.unlink()
+
     secondary = state / "nvidia-setup/nvidia-version"
     secondary.parent.mkdir()
     secondary.write_text("580.1.2\n")

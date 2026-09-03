@@ -575,7 +575,11 @@ exactly match the independently observed installed identity; it cannot fall
 back to the installed marker when missing, empty, malformed, or stale.
 Status inputs are read through confined descriptors and must remain
 single-linked, owner-controlled, non-writable by other identities, and stable
-for the complete bounded read.
+for the complete bounded read. Module verification rejects duplicate candidates
+instead of choosing by pathname order. The live root requires `modinfo -n` to
+resolve exactly one confined candidate; offline roots require exactly one.
+Selected module files must remain single-linked, owner-controlled,
+non-writable, size-bounded, and identity-stable across both metadata queries.
 
 `repair-online` re-enters the canonical installer with the exact support commit
 recorded during guardian installation. It may install only an artifact accepted

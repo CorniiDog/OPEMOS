@@ -21,6 +21,7 @@ MODULES = (
 VERSION = re.compile(r"^[0-9]+\.[0-9]+(?:\.[0-9]+)?$")
 KERNEL = re.compile(r"^[A-Za-z0-9._+\-]{1,192}$")
 MAX_CONFIG_BYTES = 1024 * 1024
+MAX_MODULE_BYTES = 256 * 1024 * 1024
 
 
 def confined(root: Path, path: Path) -> Path:
@@ -109,13 +110,20 @@ def module_path(root: Path, kernel: str, name: str) -> Path | None:
     for suffix in (".ko", ".ko.zst", ".ko.xz", ".ko.gz"):
         for candidate in base.rglob(name + suffix):
             try:
+                confined(root, candidate)
                 info = candidate.lstat()
             except FileNotFoundError:
                 continue
-            if stat.S_ISREG(info.st_mode) and not stat.S_ISLNK(info.st_mode):
+            expected_owner = 0 if root == Path("/") else os.geteuid()
+            if (stat.S_ISREG(info.st_mode) and not stat.S_ISLNK(info.st_mode)
+                    and info.st_nlink == 1 and info.st_uid == expected_owner
+                    and not stat.S_IMODE(info.st_mode) & 0o022
+                    and 0 < info.st_size <= MAX_MODULE_BYTES):
                 matches.append(candidate)
                 if len(matches) > 32:
                     raise ValueError(f"excessive module candidates for {name}")
+            else:
+                raise ValueError(f"unsafe module candidate for {name}")
     if not matches:
         return None
     # depmod's resolved identity is authoritative when examining the live root.
@@ -126,10 +134,32 @@ def module_path(root: Path, kernel: str, name: str) -> Path | None:
         ).stdout.strip()
         if resolved:
             resolved_path = Path(resolved).resolve(strict=False)
-            for candidate in matches:
-                if candidate.resolve(strict=False) == resolved_path:
-                    return candidate
-    return sorted(matches, key=lambda item: str(item))[0]
+            selected = [
+                candidate for candidate in matches
+                if candidate.resolve(strict=False) == resolved_path
+            ]
+            if len(selected) == 1:
+                return selected[0]
+        raise ValueError(f"loaded module identity is unresolved for {name}")
+    if len(matches) != 1:
+        raise ValueError(f"module identity is ambiguous for {name}")
+    return matches[0]
+
+
+def module_identity(root: Path, path: Path):
+    confined(root, path)
+    info = path.lstat()
+    expected_owner = 0 if root == Path("/") else os.geteuid()
+    if (not stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode)
+            or info.st_nlink != 1 or info.st_uid != expected_owner
+            or stat.S_IMODE(info.st_mode) & 0o022
+            or not 0 < info.st_size <= MAX_MODULE_BYTES):
+        raise ValueError("installed module identity is unsafe")
+    return (
+        info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns,
+        info.st_ctime_ns, info.st_uid, info.st_gid,
+        stat.S_IMODE(info.st_mode), info.st_nlink,
+    )
 
 
 def modinfo(path: Path, field: str) -> str:
@@ -219,8 +249,11 @@ def inspect(args):
         if path is None:
             reasons.append("missing_exact_modules")
         else:
+            identity = module_identity(root, path)
             vermagic = modinfo(path, "vermagic").split(" ", 1)[0]
             version = modinfo(path, "version")
+            if module_identity(root, path) != identity:
+                raise ValueError(f"installed module changed during inspection: {name}")
             record.update({
                 "path": str(path.relative_to(root)),
                 "vermagic": vermagic,

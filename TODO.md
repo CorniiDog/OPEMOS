@@ -1027,7 +1027,9 @@ This remains a major future area, represented by three distinct gates:
   unexpected-owner identity records. Require the guardian's pinned NVIDIA
   policy file and reject absence, malformed content, or disagreement with the
   independently observed installed identity rather than falling back to that
-  identity.
+  identity. Require one unambiguous owner-controlled module candidate, bind its
+  identity across metadata inspection, and never substitute pathname ordering
+  when the live depmod identity cannot be resolved.
 * [x] Add a bounded UI-neutral recovery status/action contract shared by the
   canonical one-line install and image-builder deployments.
 * [x] Add mutually exclusive console, validated-iGPU, and explicitly authorized

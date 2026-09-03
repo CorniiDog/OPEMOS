@@ -175,7 +175,10 @@ confined descriptors; symlinks, hardlinks, unsafe modes or owners, excessive
 files, and replacement during a read are rejected. The guardian's pinned
 NVIDIA policy is mandatory: absence, empty content, malformed content, or a
 difference from the independently observed installed identity cannot degrade
-to an unpinned health decision.
+to an unpinned health decision. Duplicate or unresolved module candidates are
+also rejected; the guardian never certifies a lexicographically selected module
+when depmod's live identity is unavailable. Module ownership, link count, mode,
+size, and identity must remain safe and stable throughout metadata inspection.
 
 `repair-online` is bound to the exact support commit installed by the original
 transaction. It uses the normal published-release resolver and still requires
