@@ -22,6 +22,45 @@ VERSION = re.compile(r"^[0-9]+\.[0-9]+(?:\.[0-9]+)?$")
 KERNEL = re.compile(r"^[A-Za-z0-9._+\-]{1,192}$")
 MAX_CONFIG_BYTES = 1024 * 1024
 MAX_MODULE_BYTES = 256 * 1024 * 1024
+RECOVERY_STATE_FIELDS = {"schemaVersion", "active", "profile"}
+RECOVERY_PROFILES = {"console", "igpu-desktop", "nouveau-experimental"}
+
+
+def strict_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("recovery state contains a duplicate JSON key")
+        result[key] = value
+    return result
+
+
+def reject_constant(_value):
+    raise ValueError("recovery state contains a non-finite number")
+
+
+def recovery_profile(payload):
+    try:
+        document = json.loads(
+            payload, object_pairs_hook=strict_object,
+            parse_constant=reject_constant,
+        )
+    except json.JSONDecodeError:
+        raise ValueError("recovery state is malformed") from None
+    if (not isinstance(document, dict)
+            or set(document) != RECOVERY_STATE_FIELDS
+            or type(document.get("schemaVersion")) is not int
+            or document["schemaVersion"] != 1
+            or document.get("active") is not True
+            or not isinstance(document.get("profile"), str)
+            or document["profile"] not in RECOVERY_PROFILES):
+        raise ValueError("recovery state is malformed")
+    canonical = json.dumps(
+        document, sort_keys=True, separators=(",", ":"), ensure_ascii=True,
+    ) + "\n"
+    if payload != canonical:
+        raise ValueError("recovery state is not canonical JSON")
+    return document["profile"]
 
 
 def confined(root: Path, path: Path) -> Path:
@@ -216,12 +255,7 @@ def inspect(args):
     )
     fallback = None
     if recovery_state:
-        try:
-            state = json.loads(recovery_state)
-            if state.get("schemaVersion") == 1 and state.get("active") is True:
-                fallback = state.get("profile")
-        except json.JSONDecodeError:
-            raise ValueError("recovery state is malformed") from None
+        fallback = recovery_profile(recovery_state)
 
     installed_version = installed_nvidia(root)
     expected_file_version = ""

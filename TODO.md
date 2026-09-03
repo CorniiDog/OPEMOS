@@ -1034,6 +1034,8 @@ This remains a major future area, represented by three distinct gates:
   canonical one-line install and image-builder deployments.
 * [x] Add mutually exclusive console, validated-iGPU, and explicitly authorized
   experimental Nouveau fallback profiles; never select Nouveau automatically.
+  Treat persistent fallback state as a closed canonical record and reject
+  duplicate keys, unknown profiles, non-boolean activation, or extra fields.
 * [x] Bind online repair to the installed support revision and the ordinary
   exact-kernel published-artifact policy; leave fallback active on failure.
 * [ ] Add an authenticated, explicitly approved on-device exact-kernel source

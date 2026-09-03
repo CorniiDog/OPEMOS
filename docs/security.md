@@ -172,7 +172,9 @@ missing, or pinned-policy-mismatched identity makes inspection fail closed, and
 the guardian enables the mutually exclusive console fallback even when the
 status helper exits nonzero. Identity records and fallback state are read from
 confined descriptors; symlinks, hardlinks, unsafe modes or owners, excessive
-files, and replacement during a read are rejected. The guardian's pinned
+files, and replacement during a read are rejected. Fallback state is also
+closed canonical JSON: ambiguous keys, fields, activation types, or profiles
+fail inspection rather than selecting recovery behavior. The guardian's pinned
 NVIDIA policy is mandatory: absence, empty content, malformed content, or a
 difference from the independently observed installed identity cannot degrade
 to an unpinned health decision. Duplicate or unresolved module candidates are

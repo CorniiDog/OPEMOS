@@ -563,6 +563,11 @@ The default recovery action is `console`; it blacklists both driver families.
 `nouveau-experimental` requires `--allow-nouveau` and is never returned as an
 automatic action. `disable-fallback` refuses to mutate until
 `moduleVerification.status` is `verified`.
+Persistent fallback state is a closed canonical schema-1 record containing
+only `active=true` and one enumerated profile. Duplicate keys, extra fields,
+non-boolean activation, unknown profiles, non-finite values, or noncanonical
+encoding make status `unknown`; they are never interpreted as an active safe
+profile.
 
 The boot guardian observes every installed NVIDIA identity marker rather than
 accepting the first readable value. Missing, malformed, conflicting, or

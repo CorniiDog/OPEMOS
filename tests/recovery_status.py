@@ -208,17 +208,28 @@ esac
     recovery = state / "recovery"
     recovery.mkdir()
     (recovery / "state.json").write_text(
-        '{"schemaVersion":1,"active":true,"profile":"console"}\n'
+        '{"active":true,"profile":"console","schemaVersion":1}\n'
     )
     _, document = run(root, mockbin)
     assert document["status"] == "fallback-active"
     assert document["actions"] == ["disable-fallback"]
 
-    (recovery / "state.json").write_text("not-json\n")
-    code, document = run(root, mockbin)
-    assert code == 2
-    assert document["status"] == "unknown"
-    assert document["reason"] == "inspection_failed"
+    hostile_states = (
+        "not-json\n",
+        '{"active":true,"active":false,"profile":"console","schemaVersion":1}\n',
+        '{"active":true,"extra":1,"profile":"console","schemaVersion":1}\n',
+        '{"active":1,"profile":"console","schemaVersion":1}\n',
+        '{"active":true,"profile":"unknown","schemaVersion":1}\n',
+        '{"active":true,"profile":{"name":"console"},"schemaVersion":1}\n',
+        '{"active":true,"profile":"console","schemaVersion":NaN}\n',
+        '{ "active": true, "profile": "console", "schemaVersion": 1 }\n',
+    )
+    for hostile_state in hostile_states:
+        (recovery / "state.json").write_text(hostile_state)
+        code, document = run(root, mockbin)
+        assert code == 2
+        assert document["status"] == "unknown"
+        assert document["reason"] == "inspection_failed"
 
 control = CONTROL.read_text(encoding="utf-8")
 assert "--allow-nouveau" in control
