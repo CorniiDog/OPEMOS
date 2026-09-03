@@ -34,6 +34,22 @@ incomplete cleanup, malformed and duplicate-key JSON, and safe additive
 fields. The matrix declares `message` unfrozen and compares only terminal
 acceptance/status plus the authoritative validator's structural rules.
 
+`lib/generate_installer_progress_fixtures.py` deterministically emits the
+bounded installer-progress schema-1 stream matrix. It covers indeterminate
+heartbeats, monotonic byte/item counters, phase and attempt resets, additive
+fields and phases, malformed or duplicated JSON, counter regressions, and the
+published line/stream limits. Oversized streams use one bounded repeat recipe;
+consumers materialize that recipe for their limit test rather than embedding a
+multi-megabyte fixture in the bundle.
+
+Progress records intentionally do not carry a terminal state. Core emitters
+stop before their process exits and Core launchers reap their child process
+groups. Correlating a stream with a particular host operation and ignoring
+data delivered after that operation has terminated are consumer session-
+binding responsibilities, so they are not represented as progress-schema
+accept/reject cases. Human-facing labels, weighting, animation, and percentage
+composition are likewise frontend presentation rather than Core semantics.
+
 When resolution returns `no_compatible_artifact` with reason
 `no_compatible_release`, `nextAction` explicitly authorizes only the existing
 exact-kernel `bootstrap/build_for_target.sh` contract and includes a

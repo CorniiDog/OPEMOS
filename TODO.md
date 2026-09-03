@@ -85,6 +85,11 @@ index in the same commit.
   target/input identity failures, cleanup failure, hostile JSON, and additive
   fields. Include its generator in the Core bundle and run every case through
   the authoritative consumer validator.
+* [x] Publish a deterministic bounded installer-progress schema-1 stream
+  matrix covering heartbeats, monotonic byte/item counters, legal phase and
+  attempt resets, regressions, additive fields/phases, hostile JSON, and line/
+  stream limits. Keep host operation/session binding and all visual progress
+  presentation in OPEMOS.EXE.
 * [ ] Publish the remaining validation, verification-record, receipt, and
   gaming-payload schemas from OPEMOS. The additive installer-result schema 1
   envelope and mandatory success proofs are now published. Generate or

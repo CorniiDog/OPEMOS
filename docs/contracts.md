@@ -200,7 +200,9 @@ STEAMOS_NVIDIA_PROGRESS {"attempt":1,"indeterminate":true,"phase":"initramfs","s
 Rules:
 
 - `attempt` is an integer from 0 through 1,000,000.
-- Phase names are fixed internal tokens.
+- Phase names are stable producer tokens. Consumers accept an otherwise-valid
+  unknown token as an additive phase and present it as indeterminate until
+  their own presentation mapping understands it.
 - Determinate counts never decrease or change total/unit within an attempt.
 - `hashing` is one aggregate byte sequence per attempt. Its fixed total is the
   sum of every immutable archive, checksum, provenance, package, detached
@@ -209,6 +211,15 @@ Rules:
 - Records never contain paths, credentials, arbitrary messages, or subprocess
   output.
 - Stderr lines without the prefix are not part of this API.
+- The canonical bounded compatibility corpus is emitted by
+  `lib/generate_installer_progress_fixtures.py`. It freezes accept/reject and
+  parsed-record-count expectations, not optional human wording.
+
+The progress record has no terminal marker. The final schema-1 installer
+result and process exit establish termination. Core stops emitting before exit
+and reaps its subprocess group; OPEMOS.EXE owns binding received bytes to the
+correct host operation and discarding out-of-session data. Frontends also own
+labels, progress weights, animation, layout, and accessibility.
 
 Important phases include hashing, Holo database, archive layout, dependency
 closure, storage calculation, compression measurement, pacman policy, runtime

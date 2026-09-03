@@ -25,8 +25,10 @@ from installer_bundle_manifest import (  # noqa: E402
     write_create_only,
 )
 from validate_install_contract import (  # noqa: E402
+    MAX_PROGRESS_BYTES,
     MAX_RESULT_BYTES,
     load_document as load_install_result,
+    validate_progress,
     validate_result,
 )
 from write_install_result import validate_verified_metadata  # noqa: E402
@@ -221,6 +223,105 @@ def validate_installer_result_compatibility_fixtures(generator):
             raise AssertionError("linked installer-result fixture was accepted")
 
 
+def validate_installer_progress_compatibility_fixtures(generator):
+    outputs = []
+    for _ in range(2):
+        completed = subprocess.run(
+            [sys.executable, str(generator)], cwd="/", check=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        assert completed.stderr == b""
+        assert 1 <= len(completed.stdout) <= 512 * 1024
+        outputs.append(completed.stdout)
+    assert outputs[0] == outputs[1]
+    assert outputs[0].endswith(b"\n")
+    document = json.loads(
+        outputs[0], object_pairs_hook=resolver_module.unique_object,
+        parse_constant=resolver_module.reject_json_constant,
+    )
+    assert set(document) == {
+        "schemaVersion", "kind", "progressSchemaVersion", "unfrozenFields",
+        "limits", "cases",
+    }
+    assert document["schemaVersion"] == 1
+    assert document["kind"] == "opemos-installer-progress-compatibility-fixtures"
+    assert document["progressSchemaVersion"] == 1
+    assert document["unfrozenFields"] == ["message"]
+    assert document["limits"] == {
+        "maxLineBytes": 4096, "maxStreamBytes": MAX_PROGRESS_BYTES,
+    }
+    cases = document["cases"]
+    assert isinstance(cases, list) and 1 <= len(cases) <= 64
+    names = []
+    with tempfile.TemporaryDirectory(prefix="opemos-progress-fixtures-") as temporary:
+        progress_path = Path(temporary) / "progress.log"
+        for fixture in cases:
+            assert isinstance(fixture, dict)
+            assert set(fixture) in (
+                {"name", "expected", "stream"},
+                {"name", "expected", "streamRecipe"},
+            )
+            name = fixture["name"]
+            names.append(name)
+            assert isinstance(name, str)
+            assert re.fullmatch(r"[a-z][a-z0-9-]{0,63}", name)
+            expected = fixture["expected"]
+            assert set(expected) in ({"accepted"}, {"accepted", "progressRecords"})
+            assert isinstance(expected["accepted"], bool)
+            if "stream" in fixture:
+                stream = fixture["stream"]
+                assert isinstance(stream, str) and stream
+                assert len(stream.encode()) <= 512 * 1024
+                progress_path.write_text(stream, encoding="utf-8")
+            else:
+                recipe = fixture["streamRecipe"]
+                assert set(recipe) == {"kind", "text", "count"}
+                assert recipe["kind"] == "repeat"
+                assert isinstance(recipe["text"], str) and 1 <= len(recipe["text"]) <= 256
+                assert isinstance(recipe["count"], int) and not isinstance(recipe["count"], bool)
+                assert 1 <= recipe["count"] <= MAX_PROGRESS_BYTES + 1
+                expanded_bytes = len(recipe["text"].encode()) * recipe["count"]
+                assert MAX_PROGRESS_BYTES < expanded_bytes <= MAX_PROGRESS_BYTES + 4096
+                with progress_path.open("w", encoding="utf-8") as output:
+                    output.write(recipe["text"] * recipe["count"])
+                assert progress_path.stat().st_size > MAX_PROGRESS_BYTES
+            try:
+                count = validate_progress(progress_path)
+            except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError):
+                accepted = False
+            else:
+                accepted = True
+                assert count == expected["progressRecords"]
+            assert accepted is expected["accepted"], name
+        assert len(names) == len(set(names))
+        assert set(names) == {
+            "indeterminate-heartbeats", "monotonic-bytes", "monotonic-items",
+            "phase-transition-reset", "attempt-advancement-reset",
+            "unknown-additive-fields", "unknown-phase-token",
+            "non-protocol-noise-ignored", "attempt-regression",
+            "completed-regression", "total-change", "unit-change",
+            "determinate-fields-on-indeterminate", "missing-determinate-fields",
+            "completed-exceeds-total", "zero-total", "unsupported-schema-version",
+            "invalid-phase-token", "malformed-json", "duplicate-json-key",
+            "non-finite-json", "oversized-line", "oversized-stream",
+            "no-progress-records",
+        }
+        progress_path.write_text(
+            "STEAMOS_NVIDIA_PROGRESS "
+            '{"schemaVersion":1,"attempt":1,"phase":"hashing",'
+            '"indeterminate":true}\n',
+            encoding="utf-8",
+        )
+        linked = Path(temporary) / "linked-progress.log"
+        linked.symlink_to(progress_path)
+        try:
+            validate_progress(linked)
+        except (OSError, ValueError):
+            pass
+        else:
+            raise AssertionError("linked installer-progress fixture was accepted")
+
+
 def validate_resolver_fixture(document):
     assert document["schemaVersion"] == 2
     assert document["status"] in {
@@ -306,6 +407,9 @@ def main():
     )
     validate_installer_result_compatibility_fixtures(
         ROOT / "lib/generate_installer_result_fixtures.py"
+    )
+    validate_installer_progress_compatibility_fixtures(
+        ROOT / "lib/generate_installer_progress_fixtures.py"
     )
 
     tag = "steamos-3.8.14-nvidia-575.64.05-k6.16.12-valve24.4-x86"
