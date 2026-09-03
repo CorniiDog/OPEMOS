@@ -1,0 +1,75 @@
+{
+  "$id": "https://corniidog.github.io/OPEMOS/contracts/installer-progress-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "indeterminate": {
+            "const": false
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "completed",
+          "total",
+          "unit"
+        ]
+      },
+      "else": {
+        "not": {
+          "anyOf": [
+            {"required": ["completed"]},
+            {"required": ["total"]},
+            {"required": ["unit"]}
+          ]
+        }
+      }
+    }
+  ],
+  "description": "One bounded STEAMOS_NVIDIA_PROGRESS record. Consumers must additionally enforce completed <= total and monotonicity per attempt/phase.",
+  "properties": {
+    "attempt": {
+      "maximum": 1000000,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "completed": {
+      "maximum": 9223372036854775807,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "indeterminate": {
+      "type": "boolean"
+    },
+    "phase": {
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]{0,63}$",
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "total": {
+      "maximum": 9223372036854775807,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "unit": {
+      "enum": [
+        "bytes",
+        "items"
+      ]
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "attempt",
+    "phase",
+    "indeterminate"
+  ],
+  "title": "OPEMOS installer progress record v1",
+  "type": "object",
+  "unevaluatedProperties": true
+}

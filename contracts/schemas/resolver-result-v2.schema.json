@@ -1,0 +1,114 @@
+{
+  "$id": "https://corniidog.github.io/OPEMOS/contracts/resolver-result-v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "asset": {
+      "properties": {
+        "name": {"maxLength": 255, "minLength": 1, "type": "string"},
+        "url": {"format": "uri", "maxLength": 2048, "type": "string"}
+      },
+      "required": ["name", "url"],
+      "type": "object"
+    },
+    "target": {
+      "properties": {
+        "architecture": {"maxLength": 64, "type": "string"},
+        "kernelVersion": {
+          "maxLength": 255,
+          "type": "string"
+        },
+        "steamosVersion": {
+          "maxLength": 64,
+          "type": "string"
+        }
+      },
+      "required": ["steamosVersion", "kernelVersion", "architecture"],
+      "type": "object"
+    }
+  },
+  "description": "Canonical additive result emitted by lib/resolve_target.py.",
+  "oneOf": [
+    {
+      "properties": {
+        "status": {"const": "compatible"},
+        "target": {
+          "allOf": [{"$ref": "#/$defs/target"}],
+          "properties": {
+            "architecture": {"const": "x86_64"},
+            "kernelVersion": {"pattern": "^[A-Za-z0-9._+~-]+$"},
+            "steamosVersion": {"pattern": "^[0-9]+(?:\\.[0-9]+){2}$"}
+          }
+        }
+      },
+      "required": ["artifact", "capabilities", "compatibility", "publication"]
+    },
+    {
+      "properties": {
+        "status": {
+          "enum": [
+            "invalid_target",
+            "no_compatible_artifact",
+            "resolver_error",
+            "unsupported_target"
+          ]
+        }
+      },
+      "required": ["message", "reason"]
+    }
+  ],
+  "properties": {
+    "artifact": {
+      "properties": {
+        "checksum": {
+          "allOf": [{"$ref": "#/$defs/asset"}],
+          "properties": {"algorithm": {"const": "sha256"}},
+          "required": ["algorithm"]
+        },
+        "name": {"maxLength": 255, "minLength": 1, "type": "string"},
+        "provenance": {"$ref": "#/$defs/asset"},
+        "trust": {
+          "properties": {
+            "classification": {"const": "pending-provenance-verification"},
+            "requiredVerification": {"type": "string"},
+            "source": {"maxLength": 255, "minLength": 1, "type": "string"}
+          },
+          "required": ["classification", "source", "requiredVerification"],
+          "type": "object"
+        },
+        "url": {"format": "uri", "maxLength": 2048, "type": "string"}
+      },
+      "required": ["name", "url", "checksum", "provenance", "trust"],
+      "type": "object"
+    },
+    "capabilities": {"type": "object"},
+    "compatibility": {"enum": ["exact", "same_series_fallback"]},
+    "message": {"maxLength": 2048, "minLength": 1, "type": "string"},
+    "publication": {
+      "properties": {
+        "kernelVersion": {"type": "string"},
+        "nvidiaVersion": {"pattern": "^[0-9]+(?:\\.[0-9]+){1,2}$", "type": "string"},
+        "publishedAt": {"type": ["string", "null"]},
+        "steamosVersion": {"pattern": "^[0-9]+(?:\\.[0-9]+){2}$", "type": "string"},
+        "tag": {"maxLength": 1024, "minLength": 1, "type": "string"}
+      },
+      "required": ["tag", "steamosVersion", "kernelVersion", "nvidiaVersion", "publishedAt"],
+      "type": "object"
+    },
+    "reason": {"maxLength": 128, "minLength": 1, "pattern": "^[a-z][a-z0-9_]*$", "type": "string"},
+    "schemaVersion": {"const": 2},
+    "status": {
+      "enum": [
+        "compatible",
+        "invalid_target",
+        "no_compatible_artifact",
+        "resolver_error",
+        "unsupported_target"
+      ]
+    },
+    "target": {"$ref": "#/$defs/target"}
+  },
+  "required": ["schemaVersion", "status", "target"],
+  "title": "OPEMOS target resolver result v2",
+  "type": "object",
+  "unevaluatedProperties": true
+}

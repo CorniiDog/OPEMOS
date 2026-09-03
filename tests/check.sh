@@ -76,6 +76,8 @@ python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/validate_interstitial_binary.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/installer_bundle_manifest.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     tests/interstitial_demo_server.py
 printf 'Checking crash-safe desktop update generations...\n'
 python3 tests/desktop_update_generations.py
@@ -86,6 +88,8 @@ python3 tests/interstitial.py
 cargo test --locked --manifest-path interstitial/Cargo.toml
 cargo clippy --locked --manifest-path interstitial/Cargo.toml --all-targets -- -D warnings
 cargo fmt --manifest-path interstitial/Cargo.toml -- --check
+printf 'Checking canonical cross-frontend contracts...\n'
+python3 tests/consumer_contracts.py
 
 printf 'Checking immutable installer input snapshots...\n'
 SNAPSHOT_FIXTURE="$(mktemp -d /tmp/installer-input-snapshot.XXXXXX)"
