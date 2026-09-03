@@ -135,10 +135,14 @@ signatures, authority, exact target, lineage, and every payload size/hash before
 create-only publication under `downloads/<manifest-sha256>`. It does not change
 active, last-known-good, health-pending, or high-water state. Partial staging is
 removed on failure, timeout, and catchable cancellation; abandoned confined
-staging is removed by the next locked lifecycle operation. Linux validation of
-transport-child containment after an uncatchable parent SIGKILL remains a
-production gate. This injected surface is disabled unless the explicit
-development trust override is active.
+staging is removed by the next locked lifecycle operation. A separate Core
+watchdog owns the isolated transport process group and monitors a close-on-exec
+control pipe held only by the lifecycle process. If that owner is terminated by
+SIGKILL, pipe EOF makes the watchdog terminate and reap the transport group;
+the next locked operation removes its uncommitted staging tree. A transport may
+not daemonize or escape its assigned process group. Real SteamOS observation
+remains a production gate. This injected surface is disabled unless the
+explicit development trust override is active.
 
 Results follow
 [`device-generation-result-v1.schema.json`](https://github.com/CorniiDog/OPEMOS/blob/main/contracts/schemas/device-generation-result-v1.schema.json).

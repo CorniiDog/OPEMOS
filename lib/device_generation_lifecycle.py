@@ -1434,6 +1434,23 @@ def transport_timeout():
     return int(value)
 
 
+def terminate_transport_watchdog(process):
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    try:
+        process.wait(timeout=4)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    process.wait()
+
+
 def run_injected_transport(arguments, destination):
     if not development_override() or not arguments.transport:
         fail(
@@ -1458,25 +1475,38 @@ def run_injected_transport(arguments, destination):
     )
     executable = destination / ".transport"
     write_exclusive(executable, executable_payload, 0o700)
+    watchdog = Path(__file__).with_name("device_generation_transport_watchdog.py")
+    control_read = control_write = None
     try:
+        control_read, control_write = os.pipe()
         process = subprocess.Popen(
-            [str(executable), "--destination", str(destination)],
+            [sys.executable, str(watchdog), "--control-fd", str(control_read),
+             "--transport", str(executable), "--destination", str(destination)],
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL, start_new_session=True,
             env={"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"},
+            close_fds=True, pass_fds=(control_read,),
         )
     except OSError:
+        if control_write is not None:
+            os.close(control_write)
+            control_write = None
         executable.unlink(missing_ok=True)
         fail("device_generation_transport_unavailable", "generation transport could not start")
+    finally:
+        if control_read is not None:
+            os.close(control_read)
     try:
         process.wait(timeout=transport_timeout())
     except subprocess.TimeoutExpired:
-        terminate_process(process)
+        terminate_transport_watchdog(process)
         fail("device_generation_transport_unavailable", "generation transport timed out")
     except BaseException:
-        terminate_process(process)
+        terminate_transport_watchdog(process)
         raise
     finally:
+        if control_write is not None:
+            os.close(control_write)
         executable.unlink(missing_ok=True)
         fsync_directory(destination)
     if process.returncode == 69:

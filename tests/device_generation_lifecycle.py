@@ -152,6 +152,33 @@ def create_transport(path, source=None, exit_code=0, pause=False):
     write(path, payload, 0o700)
 
 
+def create_containment_transport(path, pid_file):
+    payload = (
+        f"#!{sys.executable}\n"
+        "import os, pathlib, subprocess, time\n"
+        "child = subprocess.Popen(['/bin/sleep', '30'])\n"
+        f"pathlib.Path({str(pid_file)!r}).write_text("
+        "f'{os.getpid()} {child.pid}\\n')\n"
+        "time.sleep(30)\n"
+    ).encode()
+    write(path, payload, 0o700)
+
+
+def process_alive(pid):
+    if sys.platform.startswith("linux"):
+        try:
+            fields = Path(f"/proc/{pid}/stat").read_text().split()
+        except FileNotFoundError:
+            return False
+        if len(fields) >= 3 and fields[2] == "Z":
+            return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+
+
 def invoke(environment, store, policy, keyring, checkpoint, command,
            arguments=None, success=True):
     process = subprocess.run([
@@ -427,6 +454,39 @@ def main():
         assert cancelled_download.returncode == 130 and stderr == ""
         assert json.loads(stdout)["status"] == "cancelled"
         assert not list((store / "downloads").glob(".acquire-*"))
+
+        if sys.platform.startswith("linux"):
+            containment_transport = root / "containment-transport"
+            containment_pids = root / "containment-pids"
+            create_containment_transport(containment_transport, containment_pids)
+            killed_owner_command = [
+                sys.executable, str(TOOL), "--store", str(store),
+                "--policy", str(policy), "--keyring", str(keyring),
+                "--checkpoint", str(checkpoint), "update", "--transport",
+                str(containment_transport), *TARGET_ARGUMENTS,
+            ]
+            killed_owner = subprocess.Popen(
+                killed_owner_command, cwd="/", env=environment,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            )
+            deadline = time.time() + 5
+            while not containment_pids.exists() and time.time() < deadline:
+                time.sleep(0.02)
+            assert containment_pids.exists()
+            transport_pids = [
+                int(value) for value in containment_pids.read_text().split()
+            ]
+            assert all(process_alive(pid) for pid in transport_pids)
+            killed_owner.kill()
+            killed_owner.communicate(timeout=5)
+            assert killed_owner.returncode == -signal.SIGKILL
+            deadline = time.time() + 5
+            while (any(process_alive(pid) for pid in transport_pids)
+                   and time.time() < deadline):
+                time.sleep(0.02)
+            assert not any(process_alive(pid) for pid in transport_pids)
+            invoke(environment, store, policy, keyring, checkpoint, "prune")
+            assert not list((store / "downloads").glob(".acquire-*"))
 
         timed_out = invoke(
             {

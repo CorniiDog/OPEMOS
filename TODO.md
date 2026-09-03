@@ -1458,6 +1458,12 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   cache. Cover outage, timeout, ENOSPC, cancellation, partial/stale staging
   cleanup, repeat download, and the invariant that acquisition never activates
   a generation. Production transport remains unconfigured and fail-closed.
+* [x] Contain injected transport descendants with a separate Core watchdog and
+  close-on-exec owner-liveness pipe. Parent SIGKILL closes the pipe; the
+  watchdog terminates and reaps the isolated transport process group before
+  stale output can be consumed. Cover portable pipe-loss/descendant teardown,
+  normal exit propagation, catchable cancellation, and a conditional Linux
+  lifecycle-parent SIGKILL integration case with restart cleanup.
 * [ ] Specify a stable canonical discovery location without placing URLs or
   redirects inside the signed descriptor. OPEMOS.EXE owns host transport and
   its cache; installed Core/CLI owns device transport and its separate cache.
@@ -1469,8 +1475,8 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   boot-critical paths. The production CLI still fails these commands closed.
 * [ ] Validate the device lifecycle under Fedora and real SteamOS, including
   inode exhaustion, power loss at every durable boundary, health timeout,
-  filesystem corruption, transport-child containment after an uncatchable
-  parent SIGKILL, and service/recovery integration.
+  filesystem corruption, kernel-observed watchdog behavior, and service/
+  recovery integration.
 * [ ] Keep the legacy embedded/pinned userspace-lock path until Core unit,
   Fedora/SteamOS integration, cancellation, cleanup, fault-injection,
   last-known-good rollback, and cross-repository equivalence tests all pass.

@@ -75,6 +75,8 @@ python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/device_generation_lifecycle.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/device_generation_transport_watchdog.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/device_generation_contract.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/generate_device_generation_fixtures.py
@@ -101,6 +103,8 @@ printf 'Checking reviewed userspace-lock generation contracts...\n'
 python3 tests/userspace_lock_generation_contract.py
 printf 'Checking inactive installed-device generation lifecycle...\n'
 python3 tests/device_generation_lifecycle.py
+printf 'Checking installed-device transport containment...\n'
+python3 tests/device_generation_transport_watchdog.py
 printf 'Checking installed-device generation compatibility contracts...\n'
 python3 tests/device_generation_contract.py
 printf 'Checking immutable installer-bundle publisher...\n'

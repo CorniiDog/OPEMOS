@@ -36,6 +36,7 @@ FILES = (
     ("lib/recovery_status.py", "runtime-helper", "0755"),
     ("lib/desktop_update_generations.py", "runtime-helper", "0755"),
     ("lib/device_generation_lifecycle.py", "runtime-helper", "0755"),
+    ("lib/device_generation_transport_watchdog.py", "runtime-helper", "0755"),
     ("lib/device_generation_contract.py", "contract-validator", "0755"),
     ("lib/interstitial_progress.py", "runtime-helper", "0755"),
     ("lib/validate_interstitial_binary.py", "runtime-helper", "0755"),
