@@ -223,6 +223,7 @@ printf 'Checking rootfs payload receipt contract...\n'
 python3 tests/payload_receipt.py
 printf 'Checking installed-system recovery contract...\n'
 python3 tests/recovery_status.py
+python3 tests/recovery_state_stress.py
 
 printf 'Checking target-owned execution trust...\n'
 python3 tests/target_execution_trust.py

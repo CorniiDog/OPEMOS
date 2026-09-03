@@ -629,6 +629,12 @@ kernel, NVIDIA version, and support revision; it is idempotent for the same
 restored record and rejects cancellation or any identity mismatch. A new
 transaction first removes any validated orphan release plan, preventing stale
 publication identity from being inherited after interrupted cleanup.
+Each transaction and release-plan operation has a closed argument set; fields
+belonging to another operation are rejected rather than ignored. Concurrent
+readers either return the same canonical record or fail on the nonblocking
+descriptor lock. Kernel-released locks after process death do not authorize any
+state change, and the next operation must still validate the complete durable
+record before proceeding.
 
 All mutating recovery control operations also hold one recovery-operation
 lock. This serializes guardian fallback, repair, cancellation, and manual

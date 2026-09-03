@@ -1069,13 +1069,22 @@ def main():
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         )
         deadline = time.time() + 5
-        while (not list((store / "downloads").glob(".acquire-*"))
+        # Wait for the injected transport to publish its first output and enter
+        # the deliberate pause. Merely observing the parent acquisition
+        # directory races setup and can send SIGTERM before this test reaches
+        # the cancellation boundary it intends to exercise.
+        while (not list((store / "downloads").glob(
+                   ".acquire-*/.transport-phase-*/partial"))
                and time.time() < deadline):
             time.sleep(0.02)
-        assert list((store / "downloads").glob(".acquire-*"))
+        assert list((store / "downloads").glob(
+            ".acquire-*/.transport-phase-*/partial"
+        ))
         cancelled_download.send_signal(signal.SIGTERM)
         stdout, stderr = cancelled_download.communicate(timeout=5)
-        assert cancelled_download.returncode == 130 and stderr == ""
+        assert cancelled_download.returncode == 130 and stderr == "", (
+            cancelled_download.returncode, stdout, stderr,
+        )
         assert json.loads(stdout)["status"] == "cancelled"
         assert not list((store / "downloads").glob(".acquire-*"))
 

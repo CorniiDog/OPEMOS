@@ -316,6 +316,9 @@ def main():
     args.state = safe_parent(args.state) / args.state.name
     with transaction_lock(args.state):
         if args.operation == "show":
+            if any((args.kernel, args.nvidia, args.support_revision,
+                    args.phase, args.reason)):
+                fail("show does not accept transaction fields")
             document = load(args.state)
             print(json.dumps(document or {"schemaVersion": 1, "phase": "restored", "active": False},
                              sort_keys=True, separators=(",", ":")))
@@ -381,8 +384,9 @@ def main():
             print(json.dumps(document, sort_keys=True, separators=(",", ":")))
             return
         if args.operation == "begin":
-            if not (args.kernel and args.nvidia and args.support_revision and args.phase):
-                raise SystemExit("begin requires exact target, support revision, and phase")
+            if not (args.kernel and args.nvidia and args.support_revision
+                    and args.phase and args.reason):
+                fail("begin requires exact target, support revision, phase, and reason")
             if args.phase != "offline_waiting":
                 fail("a recovery transaction must begin in offline_waiting")
             document = {
@@ -398,6 +402,9 @@ def main():
             if document is None:
                 raise SystemExit("no recovery transaction exists")
             if args.operation == "cancel":
+                if any((args.kernel, args.nvidia, args.support_revision,
+                        args.phase, args.reason)):
+                    fail("cancel does not accept transaction fields")
                 if document["phase"] == "restored":
                     fail("a restored recovery transaction cannot be cancelled")
                 if document["phase"] != "cancelled":
@@ -408,8 +415,9 @@ def main():
                     })
                     write(args.state, document)
             else:
-                if not args.phase:
-                    raise SystemExit("set requires --phase")
+                if (args.kernel or args.nvidia or args.support_revision
+                        or not args.phase or not args.reason):
+                    fail("set requires only a phase and reason")
                 current_phase = document["phase"]
                 if args.phase not in TRANSITIONS[current_phase]:
                     fail(f"invalid recovery transition from {current_phase} to {args.phase}")
@@ -419,7 +427,7 @@ def main():
                 document["reason"] = args.reason
                 document["attempt"] += 1
                 document["active"] = args.phase in ACTIVE_PHASES
-                if args.phase == "cancelled":
+                if args.phase in {"cancelled", "restored"}:
                     document["automaticRetry"] = False
                 document["updatedAt"] = timestamp
                 write(args.state, document)

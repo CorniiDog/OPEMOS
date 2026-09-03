@@ -320,6 +320,8 @@ def main():
             remove_plan(plan)
             return
         if args.operation == "create":
+            if args.archive is not None:
+                fail("create does not accept a release archive")
             value = {
                 "schemaVersion": 1,
                 "steamosVersion": args.steamos,
@@ -332,8 +334,11 @@ def main():
             validate(value)
             write(plan, value, create_only=True)
         elif args.operation == "bind-archive":
-            if args.archive is None:
-                fail("bind-archive requires a release archive")
+            if (args.archive is None or any((
+                    args.steamos, args.nvidia, args.kernel_tag,
+                    args.release_tag, args.asset_name,
+            ))):
+                fail("bind-archive requires only a release archive")
             value, plan_identity = read(plan)
             digest = hash_archive(args.archive)
             if value["archiveSha256"] not in (None, digest):
@@ -342,6 +347,9 @@ def main():
                 value["archiveSha256"] = digest
                 write(plan, value, expected_identity=plan_identity)
         else:
+            if any((args.steamos, args.nvidia, args.kernel_tag,
+                    args.release_tag, args.asset_name, args.archive)):
+                fail("show does not accept release identity arguments")
             value, _plan_identity = read(plan)
     print("\t".join(str(value[key] or "") for key in (
         "steamosVersion", "nvidiaVersion", "kernelTag", "releaseTag",
