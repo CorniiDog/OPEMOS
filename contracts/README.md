@@ -63,6 +63,11 @@ publisher evidence, and installed-device lifecycle.
   bootstrap policy and independently authenticated discovery, manifest,
   detached signatures, and payload identities. The planner performs no network
   access and accepts no caller-selected URL.
+- `schemas/userspace-lock-verifier-evidence-v1.schema.json` describes the
+  bounded audit record created when Core invokes a detached-signature verifier
+  over exact immutable snapshots. The record is inspectable contract data but
+  is never an authorization token and cannot recreate the in-process verifier
+  capability required by the request planner.
 - `schemas/device-generation-result-v1.schema.json` describes bounded results
   and durable state from the inactive installed-device generation lifecycle.
 - `schemas/device-generation-health-v1.schema.json` describes the closed,

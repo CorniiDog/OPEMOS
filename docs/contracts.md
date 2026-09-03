@@ -184,6 +184,15 @@ URLs, hashes, sizes, order, origin, and `redirects=false`; it is a pure planner,
 not an HTTP client. The matching deterministic hostile matrix is emitted by
 `lib/generate_userspace_lock_request_plan_fixtures.py`.
 
+The authentication handoff uses
+`lib/userspace_lock_verifier_evidence.py`: Core invokes a trusted detached-
+signature verifier with the exact policy-bound keyring, document, and signature
+snapshots, validates its bounded exit/status result, and returns an immutable
+in-process capability. `userspace-lock-verifier-evidence-v1.schema.json` covers
+the corresponding audit record only. Parsing or fabricating that JSON never
+creates the capability. The deterministic matrix is emitted by
+`lib/generate_userspace_lock_verifier_evidence_fixtures.py`.
+
 ## Build result
 
 Pass `--result-json FILE` to `build_for_target.sh`. Schema 1 has a stable

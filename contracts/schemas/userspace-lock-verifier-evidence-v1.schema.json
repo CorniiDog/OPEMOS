@@ -1,0 +1,70 @@
+{
+  "$id": "https://corniidog.github.io/OPEMOS/contracts/userspace-lock-verifier-evidence-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "document": {
+      "additionalProperties": false,
+      "properties": {
+        "hashAlgorithmId": {"enum": [8, 9, 10]},
+        "payloadSha256": {"$ref": "#/$defs/hash"},
+        "payloadSize": {"maximum": 2097152, "minimum": 1, "type": "integer"},
+        "primarySigningFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "role": {"enum": ["discovery", "generation-manifest"]},
+        "signatureSha256": {"$ref": "#/$defs/hash"},
+        "signatureSize": {"maximum": 1048576, "minimum": 1, "type": "integer"},
+        "signingFingerprint": {"$ref": "#/$defs/fingerprint"}
+      },
+      "required": ["role", "payloadSha256", "payloadSize", "signatureSha256", "signatureSize", "signingFingerprint", "primarySigningFingerprint", "hashAlgorithmId"],
+      "type": "object"
+    },
+    "discoveryDocument": {
+      "allOf": [
+        {"$ref": "#/$defs/document"},
+        {
+          "properties": {
+            "payloadSize": {"maximum": 262144, "minimum": 1, "type": "integer"},
+            "role": {"const": "discovery"}
+          }
+        }
+      ]
+    },
+    "fingerprint": {"pattern": "^(?:[0-9A-F]{40}|[0-9A-F]{64})$", "type": "string"},
+    "hash": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "manifestDocument": {
+      "allOf": [
+        {"$ref": "#/$defs/document"},
+        {
+          "properties": {
+            "payloadSize": {"maximum": 2097152, "minimum": 1, "type": "integer"},
+            "role": {"const": "generation-manifest"}
+          }
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "description": "Bounded audit record emitted while a trusted verifier creates an in-process capability over exact immutable snapshots. Parsing this JSON never recreates that capability and never authorizes request planning.",
+  "properties": {
+    "documents": {
+      "items": false,
+      "maxItems": 2,
+      "minItems": 2,
+      "prefixItems": [
+        {"$ref": "#/$defs/discoveryDocument"},
+        {"$ref": "#/$defs/manifestDocument"}
+      ],
+      "type": "array"
+    },
+    "keyringFilename": {"const": "opemos-userspace-lock-generations.gpg"},
+    "keyringSha256": {"$ref": "#/$defs/hash"},
+    "kind": {"const": "opemos-userspace-lock-verifier-evidence"},
+    "policySha256": {"$ref": "#/$defs/hash"},
+    "primarySigningFingerprint": {"$ref": "#/$defs/fingerprint"},
+    "schemaVersion": {"const": 1},
+    "status": {"const": "authenticated"},
+    "verificationProfile": {"const": "openpgp-detached-validsig-v1"}
+  },
+  "required": ["schemaVersion", "kind", "status", "verificationProfile", "policySha256", "keyringFilename", "keyringSha256", "primarySigningFingerprint", "documents"],
+  "title": "OPEMOS userspace-lock verifier evidence audit record v1",
+  "type": "object"
+}

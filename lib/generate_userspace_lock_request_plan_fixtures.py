@@ -6,7 +6,11 @@ import hashlib
 import json
 import sys
 
-from generate_userspace_lock_bootstrap_fixtures import base_documents
+from generate_openpgp_status_fixtures import valid as valid_openpgp_status
+from generate_userspace_lock_bootstrap_fixtures import (
+    KEYRING_PAYLOAD,
+    base_documents,
+)
 from generate_userspace_lock_generation_fixtures import refresh
 from userspace_lock_generation_contract import canonical
 from userspace_lock_request_plan import (
@@ -16,6 +20,7 @@ from userspace_lock_request_plan import (
     MAX_URL_BYTES,
     build_request_plan,
 )
+from userspace_lock_verifier_evidence import verify_generation_snapshots
 
 
 MAX_OUTPUT_BYTES = 1024 * 1024
@@ -46,32 +51,43 @@ def base_inputs():
     policy_payload = canonical(policy)
     discovery_payload = canonical(discovery)
     manifest_payload = canonical(manifest)
-    authentication = {
-        "schemaVersion": 1,
-        "status": "authenticated",
-        "policySha256": digest(policy_payload),
-        "keyringSha256": policy["authority"]["keyringSha256"],
-        "primarySigningFingerprint": policy["authority"][
-            "primarySigningFingerprint"
-        ],
-        "discoveryPayloadSha256": digest(discovery_payload),
-        "discoverySignatureSha256": digest(DISCOVERY_SIGNATURE),
-        "discoveryHashAlgorithmId": 10,
-        "manifestPayloadSha256": digest(manifest_payload),
-        "manifestSignatureSha256": digest(MANIFEST_SIGNATURE),
-        "manifestHashAlgorithmId": 8,
-    }
-    return {
+    result = {
         "policy": policy,
+        "keyringPayload": KEYRING_PAYLOAD.decode(),
         "discovery": discovery,
         "discoverySignature": DISCOVERY_SIGNATURE.decode(),
         "manifest": manifest,
         "manifestSignature": MANIFEST_SIGNATURE.decode(),
-        "authentication": authentication,
+        "verifier": {
+            "discoveryExitStatus": 0,
+            "discoveryStatus": valid_openpgp_status(10),
+            "manifestExitStatus": 0,
+            "manifestStatus": valid_openpgp_status(8),
+        },
         "payloads": {
             name: payload.decode() for name, payload in payloads.items()
         },
     }
+    result["evidenceRecord"] = evidence_for(result).record()
+    return result
+
+
+def evidence_for(inputs):
+    verifier = inputs["verifier"]
+
+    def verify_detached(_payload, _signature, _keyring, role):
+        prefix = "discovery" if role == "discovery" else "manifest"
+        return {
+            "exitStatus": verifier[prefix + "ExitStatus"],
+            "status": verifier[prefix + "Status"].encode(),
+        }
+
+    return verify_generation_snapshots(
+        canonical(inputs["policy"]), inputs["keyringPayload"].encode(),
+        canonical(inputs["discovery"]), inputs["discoverySignature"].encode(),
+        canonical(inputs["manifest"]), inputs["manifestSignature"].encode(),
+        verify_detached,
+    )
 
 
 def arguments(inputs):
@@ -81,7 +97,7 @@ def arguments(inputs):
         inputs["discoverySignature"].encode(),
         canonical(inputs["manifest"]),
         inputs["manifestSignature"].encode(),
-        inputs["authentication"],
+        evidence_for(inputs),
         {name: payload.encode() for name, payload in inputs["payloads"].items()},
     )
 
@@ -118,37 +134,41 @@ def matrix():
     base_plan = build_request_plan(*arguments(base))
     cases = [fixture("valid-canonical-plan", base, plan=base_plan)]
 
-    for name, field in (
-            ("unauthenticated-policy", "policySha256"),
-            ("unauthenticated-discovery", "discoveryPayloadSha256"),
-            ("unauthenticated-discovery-signature", "discoverySignatureSha256"),
-            ("unauthenticated-manifest", "manifestPayloadSha256"),
-            ("unauthenticated-manifest-signature", "manifestSignatureSha256")):
-        inputs = changed(base, lambda value, key=field: value[
-            "authentication"
-        ].__setitem__(key, "f" * 64))
-        cases.append(fixture(name, inputs, inputs_accepted=False))
     cases.append(fixture(
-        "unauthenticated-status",
-        changed(base, lambda value: value["authentication"].update(
-            status="unverified"
+        "unauthenticated-policy",
+        changed(base, lambda value: value["policy"]["authority"].update(
+            keyringSha256="f" * 64
         )), inputs_accepted=False,
     ))
     cases.append(fixture(
-        "missing-authentication-evidence",
-        changed(base, lambda value: value.__setitem__("authentication", None)),
-        inputs_accepted=False,
-    ))
-    cases.append(fixture(
-        "unknown-authentication-field",
-        changed(base, lambda value: value["authentication"].update(future=True)),
-        inputs_accepted=False,
-    ))
-    cases.append(fixture(
-        "weak-signature-hash",
-        changed(base, lambda value: value["authentication"].update(
-            manifestHashAlgorithmId=2
+        "unauthenticated-keyring",
+        changed(base, lambda value: value.__setitem__(
+            "keyringPayload", "different-keyring\n"
         )), inputs_accepted=False,
+    ))
+    cases.append(fixture(
+        "discovery-verifier-failed",
+        changed(base, lambda value: value["verifier"].update(
+            discoveryExitStatus=1
+        )), inputs_accepted=False,
+    ))
+    cases.append(fixture(
+        "manifest-weak-signature-hash",
+        changed(base, lambda value: value["verifier"].update(
+            manifestStatus=valid_openpgp_status(2)
+        )), inputs_accepted=False,
+    ))
+    cases.append(fixture(
+        "manifest-wrong-primary",
+        changed(base, lambda value: value["verifier"].update(
+            manifestStatus=valid_openpgp_status(8, primary="C" * 40)
+        )), inputs_accepted=False,
+    ))
+    cases.append(fixture(
+        "forged-json-evidence-ignored",
+        changed(base, lambda value: value["evidenceRecord"].update(
+            status="authenticated", policySha256="f" * 64
+        )), plan=base_plan,
     ))
     cases.append(fixture(
         "missing-payload",

@@ -100,13 +100,20 @@ future contracts.
 
 `userspace-lock-generation-request-plan-v1.schema.json` and
 `lib/userspace_lock_request_plan.py` define the transport-neutral request plan.
-The planner runs only after a caller has independently authenticated the exact
-canonical discovery and generation-manifest bytes and both detached signatures
-against the installed policy/keyring. The closed authentication evidence binds
-the policy, keyring, primary signer, both signed payload hashes, both signature
-hashes, and the accepted OpenPGP hash-algorithm IDs. A caller-provided
-`status=authenticated` string is not proof: the preceding verifier owns creating
-this evidence from its verified, immutable snapshots.
+The planner accepts only the immutable in-process capability returned by
+`lib/userspace_lock_verifier_evidence.py`. That helper invokes a trusted
+detached-signature verifier over the exact canonical discovery and manifest,
+their exact signatures, and the policy-bound keyring; it then validates the
+bounded exit/status result and OpenPGP primary/subkey semantics. The capability
+binds the policy, keyring, signer, signed-payload and signature hashes/sizes,
+and accepted hash-algorithm IDs. It cannot be constructed by parsing JSON.
+
+`userspace-lock-verifier-evidence-v1.schema.json` describes a bounded audit
+record exposed by the capability. The audit record is useful for diagnostics
+and cross-consumer fixtures, but is deliberately not proof or authorization:
+neither a caller-provided `status=authenticated` string nor a structurally valid
+record may be fed back into the planner. The verifier invocation and capability
+must remain within one trusted consumer process.
 
 Core then derives, rather than accepts, the discovery and discovery-signature
 locations and the immutable release root. The plan contains four metadata
@@ -114,6 +121,11 @@ requests followed by every manifest payload in manifest order. Each request
 fixes its role, portable filename, exact HTTPS URL, size, and SHA-256. The plan
 also fixes the policy hash, release tag and sequence, origin, request count,
 aggregate expected bytes, bounded URL metadata, and `redirects=false`.
+`requestCount` is exactly four plus the manifest file count;
+`aggregateExpectedBytes` is the sum of every request's `expectedSize`; and
+`aggregateMetadataBytes` is the sum of the ASCII byte lengths of `filename`,
+`path`, and `url` across every request. No consumer may reinterpret these as
+character counts, payload-only totals, or post-redirect locations.
 Traversal, percent encoding, queries/fragments, mutable refs, alternate origins,
 case collisions, missing/extra/duplicate requests, unauthenticated documents,
 and any caller-edited URL fail exact recomputation. This contract performs no

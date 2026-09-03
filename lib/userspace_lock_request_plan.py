@@ -2,7 +2,6 @@
 """Deterministically plan immutable userspace-lock generation requests."""
 
 import hashlib
-import re
 from urllib.parse import urlsplit
 
 from userspace_lock_bootstrap_contract import (
@@ -21,6 +20,10 @@ from userspace_lock_generation_contract import (
     strict_json,
     validate_pair,
 )
+from userspace_lock_verifier_evidence import (
+    VerifierEvidenceError,
+    validate_evidence_capability,
+)
 
 
 MAX_REQUESTS = MAX_FILES + 4
@@ -28,13 +31,6 @@ MAX_URL_BYTES = 2048
 MAX_REQUEST_METADATA_BYTES = 16 * 1024 * 1024
 MAX_PLAN_BYTES = 32 * 1024 * 1024
 PLAN_KIND = "opemos-userspace-lock-generation-request-plan"
-AUTHENTICATION_FIELDS = {
-    "schemaVersion", "status", "policySha256", "keyringSha256",
-    "primarySigningFingerprint", "discoveryPayloadSha256",
-    "discoverySignatureSha256", "discoveryHashAlgorithmId",
-    "manifestPayloadSha256", "manifestSignatureSha256",
-    "manifestHashAlgorithmId",
-}
 PLAN_FIELDS = {
     "schemaVersion", "kind", "policySha256", "keyringSha256",
     "primarySigningFingerprint", "discoveryHashAlgorithmId",
@@ -46,8 +42,6 @@ REQUEST_FIELDS = {
     "requestKind", "assetRole", "filename", "path", "url", "expectedSize",
     "expectedSha256",
 }
-SHA256 = re.compile(r"[0-9a-f]{64}")
-FINGERPRINT = re.compile(r"(?:[0-9A-F]{40}|[0-9A-F]{64})")
 
 
 class RequestPlanError(ValueError):
@@ -67,44 +61,6 @@ def parse_generation(payload, maximum, label):
         return strict_json(payload, maximum, label)
     except GenerationContractError as error:
         fail(str(error))
-
-
-def validate_authentication(authentication, policy, policy_payload,
-                            discovery_payload, discovery_signature,
-                            manifest_payload, manifest_signature):
-    authority = policy["authority"]
-    if (not isinstance(authentication, dict)
-            or set(authentication) != AUTHENTICATION_FIELDS
-            or authentication.get("schemaVersion") != 1
-            or authentication.get("status") != "authenticated"
-            or authentication.get("policySha256") != sha256(policy_payload)
-            or authentication.get("keyringSha256") != authority["keyringSha256"]
-            or authentication.get("primarySigningFingerprint")
-            != authority["primarySigningFingerprint"]
-            or authentication.get("discoveryPayloadSha256")
-            != sha256(discovery_payload)
-            or authentication.get("discoverySignatureSha256")
-            != sha256(discovery_signature)
-            or authentication.get("manifestPayloadSha256")
-            != sha256(manifest_payload)
-            or authentication.get("manifestSignatureSha256")
-            != sha256(manifest_signature)
-            or type(authentication.get("discoveryHashAlgorithmId")) is not int
-            or authentication.get("discoveryHashAlgorithmId")
-            not in authority["allowedHashAlgorithmIds"]
-            or type(authentication.get("manifestHashAlgorithmId")) is not int
-            or authentication.get("manifestHashAlgorithmId")
-            not in authority["allowedHashAlgorithmIds"]):
-        fail("request inputs lack exact authenticated-document evidence")
-    if any(SHA256.fullmatch(authentication[field]) is None for field in (
-            "policySha256", "keyringSha256", "discoveryPayloadSha256",
-            "discoverySignatureSha256", "manifestPayloadSha256",
-            "manifestSignatureSha256")):
-        fail("request authentication hashes are malformed")
-    if FINGERPRINT.fullmatch(
-            authentication["primarySigningFingerprint"]) is None:
-        fail("request authentication signer is malformed")
-    return authentication
 
 
 def request_record(request_kind, asset_role, filename, url, payload):
@@ -130,7 +86,7 @@ def request_record(request_kind, asset_role, filename, url, payload):
 
 
 def build_request_plan(policy_payload, discovery_payload, discovery_signature,
-                       manifest_payload, manifest_signature, authentication,
+                       manifest_payload, manifest_signature, verified_evidence,
                        payloads):
     try:
         policy = parse_policy(policy_payload)
@@ -171,10 +127,17 @@ def build_request_plan(policy_payload, discovery_payload, discovery_signature,
     if (generation["signatureSize"] != len(manifest_signature)
             or generation["signatureSha256"] != sha256(manifest_signature)):
         fail("manifest signature differs from authenticated discovery")
-    validate_authentication(
-        authentication, policy, policy_payload, discovery_payload,
-        discovery_signature, manifest_payload, manifest_signature,
-    )
+    try:
+        evidence = validate_evidence_capability(
+            verified_evidence, policy_payload, discovery_payload,
+            discovery_signature, manifest_payload, manifest_signature,
+        )
+    except VerifierEvidenceError as error:
+        fail(str(error))
+    if (evidence["keyringSha256"] != policy["authority"]["keyringSha256"]
+            or evidence["primarySigningFingerprint"]
+            != policy["authority"]["primarySigningFingerprint"]):
+        fail("verifier evidence authority differs from bootstrap policy")
     if not isinstance(payloads, dict) or set(payloads) != {
             record["filename"] for record in manifest["files"]}:
         fail("generation payload set differs from authenticated manifest")
@@ -238,14 +201,16 @@ def build_request_plan(policy_payload, discovery_payload, discovery_signature,
         "schemaVersion": 1,
         "kind": PLAN_KIND,
         "policySha256": sha256(policy_payload),
-        "keyringSha256": authentication["keyringSha256"],
-        "primarySigningFingerprint": authentication[
+        "keyringSha256": evidence["keyringSha256"],
+        "primarySigningFingerprint": evidence[
             "primarySigningFingerprint"
         ],
-        "discoveryHashAlgorithmId": authentication[
-            "discoveryHashAlgorithmId"
+        "discoveryHashAlgorithmId": evidence["documents"][0][
+            "hashAlgorithmId"
         ],
-        "manifestHashAlgorithmId": authentication["manifestHashAlgorithmId"],
+        "manifestHashAlgorithmId": evidence["documents"][1][
+            "hashAlgorithmId"
+        ],
         "sequence": discovery["sequence"],
         "releaseTag": generation["releaseTag"],
         "origin": origin,

@@ -21,6 +21,10 @@ from userspace_lock_request_plan import (  # noqa: E402
     build_request_plan,
     parse_request_plan,
 )
+from userspace_lock_verifier_evidence import (  # noqa: E402
+    VerifierEvidenceError,
+    verify_generation_snapshots,
+)
 
 
 GENERATOR = LIB / "generate_userspace_lock_request_plan_fixtures.py"
@@ -36,13 +40,28 @@ def generate():
 
 
 def arguments(inputs):
+    verifier = inputs["verifier"]
+
+    def verify_detached(_payload, _signature, _keyring, role):
+        prefix = "discovery" if role == "discovery" else "manifest"
+        return {
+            "exitStatus": verifier[prefix + "ExitStatus"],
+            "status": verifier[prefix + "Status"].encode(),
+        }
+
+    evidence = verify_generation_snapshots(
+        canonical(inputs["policy"]), inputs["keyringPayload"].encode(),
+        canonical(inputs["discovery"]), inputs["discoverySignature"].encode(),
+        canonical(inputs["manifest"]), inputs["manifestSignature"].encode(),
+        verify_detached,
+    )
     return (
         canonical(inputs["policy"]),
         canonical(inputs["discovery"]),
         inputs["discoverySignature"].encode(),
         canonical(inputs["manifest"]),
         inputs["manifestSignature"].encode(),
-        inputs["authentication"],
+        evidence,
         {name: payload.encode() for name, payload in inputs["payloads"].items()},
     )
 
@@ -50,7 +69,7 @@ def arguments(inputs):
 def accepted(callback, *args):
     try:
         callback(*args)
-    except RequestPlanError:
+    except (RequestPlanError, VerifierEvidenceError):
         return False
     return True
 
@@ -101,10 +120,15 @@ def main():
         assert re.fullmatch(r"[a-z][a-z0-9-]{0,63}", case["name"])
         assert set(case["expected"]) == {"inputsAccepted", "planAccepted"}
         assert all(type(value) is bool for value in case["expected"].values())
-        args = arguments(case["inputs"])
-        input_ok = accepted(build_request_plan, *args)
+        try:
+            args = arguments(case["inputs"])
+            input_ok = accepted(build_request_plan, *args)
+        except VerifierEvidenceError:
+            args = None
+            input_ok = False
         assert input_ok is case["expected"]["inputsAccepted"], case["name"]
         if "plan" in case or "rawPlan" in case or "rawPlanRecipe" in case:
+            assert args is not None
             plan_ok = accepted(parse_request_plan, raw_plan(case), *args)
             assert plan_ok is case["expected"]["planAccepted"], case["name"]
     assert len(names) == len(set(names))
@@ -127,6 +151,7 @@ def main():
     assert plan["discoveryHashAlgorithmId"] == 10
     assert plan["manifestHashAlgorithmId"] == 8
     assert plan["requestCount"] == len(plan["requests"])
+    assert plan["requestCount"] == len(inputs["manifest"]["files"]) + 4
     assert [record["assetRole"] for record in plan["requests"][:4]] == [
         "discovery", "discovery-signature", "generation-manifest",
         "generation-manifest-signature",
@@ -155,6 +180,12 @@ def main():
         + len(record["path"].encode("ascii"))
         + len(record["url"].encode("ascii")) for record in plan["requests"]
     )
+    forged = next(
+        case for case in cases if case["name"] == "forged-json-evidence-ignored"
+    )
+    forged_args = list(arguments(forged["inputs"]))
+    forged_args[5] = forged["inputs"]["evidenceRecord"]
+    assert not accepted(build_request_plan, *forged_args)
 
 
 if __name__ == "__main__":

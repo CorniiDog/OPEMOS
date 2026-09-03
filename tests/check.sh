@@ -91,6 +91,10 @@ python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/generate_userspace_lock_request_plan_fixtures.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/userspace_lock_verifier_evidence.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/generate_userspace_lock_verifier_evidence_fixtures.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/interstitial_progress.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/validate_interstitial_binary.py
@@ -117,6 +121,8 @@ printf 'Checking userspace-lock bootstrap compatibility contracts...\n'
 python3 tests/userspace_lock_bootstrap_contract.py
 printf 'Checking immutable userspace-lock request planning...\n'
 python3 tests/userspace_lock_request_plan.py
+printf 'Checking snapshot-bound verifier evidence...\n'
+python3 tests/userspace_lock_verifier_evidence.py
 printf 'Checking inactive installed-device generation lifecycle...\n'
 python3 tests/device_generation_lifecycle.py
 printf 'Checking installed-device transport containment...\n'

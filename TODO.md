@@ -1439,6 +1439,12 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   plus exact independently authenticated bytes; pin origin, release sequence,
   names, hashes, sizes, ordering, redirects=false, and aggregate bounds without
   implementing an HTTP client or configuring production trust.
+* [x] Replace caller-asserted authentication JSON at the planner boundary with
+  a verifier-created, immutable, non-serializable capability bound to the exact
+  policy, keyring, discovery, manifest, signatures, OpenPGP primary/subkey
+  identities, and accepted hash algorithms. Publish its bounded JSON audit
+  record schema and hostile matrix while explicitly forbidding deserialization
+  from recreating authorization.
 * [ ] Create a dedicated reviewed data-generation signer policy and binary
   verification keyring. Do not reuse Arch, Valve, NVIDIA, commit-signing, or
   desktop-binary update keys.
