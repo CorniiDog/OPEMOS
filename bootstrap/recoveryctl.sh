@@ -13,6 +13,8 @@ JSON=0
 YES=0
 ROOT="${PROJECT_TEST_ROOT:-/}"
 RECOVERY_OPERATION_LOCK_HELD=0
+RO_WAS_ENABLED=0
+ACTIVE_PROCESS_GROUP=""
 
 usage()
 {
@@ -177,6 +179,49 @@ restore_readonly()
     fi
 }
 
+terminate_active_process_group()
+{
+    local attempt
+    [[ -n "$ACTIVE_PROCESS_GROUP" ]] || return 0
+    kill -TERM -- "-${ACTIVE_PROCESS_GROUP}" 2>/dev/null ||
+        kill -TERM "$ACTIVE_PROCESS_GROUP" 2>/dev/null || true
+    for attempt in 1 2 3 4 5 6 7 8 9 10; do
+        if ! kill -0 -- "-${ACTIVE_PROCESS_GROUP}" 2>/dev/null &&
+           ! kill -0 "$ACTIVE_PROCESS_GROUP" 2>/dev/null; then
+            wait "$ACTIVE_PROCESS_GROUP" 2>/dev/null || true
+            return 0
+        fi
+        sleep 0.1
+    done
+    kill -KILL -- "-${ACTIVE_PROCESS_GROUP}" 2>/dev/null || true
+    kill -KILL "$ACTIVE_PROCESS_GROUP" 2>/dev/null || true
+    wait "$ACTIVE_PROCESS_GROUP" 2>/dev/null || true
+}
+
+run_cancellable()
+{
+    local rc
+    python3 "$SUPPORT_ROOT/lib/run_in_process_group.py" "$@" &
+    ACTIVE_PROCESS_GROUP=$!
+    set +e
+    wait "$ACTIVE_PROCESS_GROUP"
+    rc=$?
+    set -e
+    ACTIVE_PROCESS_GROUP=""
+    return "$rc"
+}
+
+cancel_recovery()
+{
+    trap - HUP INT TERM
+    terminate_active_process_group
+    restore_readonly
+    exit 130
+}
+
+trap restore_readonly EXIT
+trap cancel_recovery HUP INT TERM
+
 has_valid_igpu()
 {
     local vendor boot
@@ -214,7 +259,6 @@ enable_fallback()
     acquire_recovery_operation_lock
     acquire_lifecycle_lock
     with_writable_root
-    trap restore_readonly EXIT INT TERM
     local install_cmd=(install) move_cmd=(mv)
     if [[ "$ROOT" == / ]]; then install_cmd=(sudo install); move_cmd=(sudo mv); fi
     "${install_cmd[@]}" -d -m 0755 "$STATE_ROOT" "$(dirname "$RECOVERY_CONFIG")"
@@ -246,17 +290,16 @@ enable_fallback()
         [[ -e "$STATE_ROOT/grub.before-fallback" ]] ||
             sudo install -o root -g root -m 0600 /etc/default/grub "$STATE_ROOT/grub.before-fallback"
         sudo python3 "$SUPPORT_ROOT/lib/update_recovery_grub_args.py" --config /etc/default/grub
-        command -v update-grub >/dev/null 2>&1 && sudo update-grub
+        command -v update-grub >/dev/null 2>&1 && run_cancellable sudo update-grub
     fi
     python3 "$FALLBACK_STATE_TOOL" write \
         --state "$STATE_ROOT/state.json" --profile "$PROFILE"
     if [[ "$ROOT" == / ]]; then
         sudo systemctl set-default "$([[ "$PROFILE" == console ]] && echo multi-user.target || echo graphical.target)"
-        command -v mkinitcpio >/dev/null 2>&1 && sudo mkinitcpio -P
+        command -v mkinitcpio >/dev/null 2>&1 && run_cancellable sudo mkinitcpio -P
         sudo systemctl stop display-manager.service >/dev/null 2>&1 || true
     fi
     restore_readonly
-    trap - EXIT INT TERM
     emit_result fallback-active fallback_enabled "$PROFILE"
 }
 
@@ -271,7 +314,6 @@ disable_fallback()
     acquire_recovery_operation_lock
     acquire_lifecycle_lock
     with_writable_root
-    trap restore_readonly EXIT INT TERM
     local remove_cmd=(rm -f) move_cmd=(mv)
     if [[ "$ROOT" == / ]]; then remove_cmd=(sudo rm -f); move_cmd=(sudo mv); fi
     "${remove_cmd[@]}" "$RECOVERY_CONFIG"
@@ -283,13 +325,12 @@ disable_fallback()
         if [[ -f "$STATE_ROOT/grub.before-fallback" ]]; then
             sudo install -o root -g root -m 0644 "$STATE_ROOT/grub.before-fallback" /etc/default/grub
             sudo rm -f "$STATE_ROOT/grub.before-fallback"
-            command -v update-grub >/dev/null 2>&1 && sudo update-grub
+            command -v update-grub >/dev/null 2>&1 && run_cancellable sudo update-grub
         fi
-        command -v mkinitcpio >/dev/null 2>&1 && sudo mkinitcpio -P
+        command -v mkinitcpio >/dev/null 2>&1 && run_cancellable sudo mkinitcpio -P
         sudo systemctl set-default graphical.target
     fi
     restore_readonly
-    trap - EXIT INT TERM
     emit_result healthy fallback_disabled graphical.target
 }
 
@@ -382,7 +423,7 @@ case "$COMMAND" in
         transaction_tool set --phase installing --reason canonical_exact_kernel_install >/dev/null
         if ! SUPPORT_REVISION="$revision" OPEMOS_PINNED_NVIDIA_VERSION="$nvidia" \
              OPEMOS_RECOVERY_PLAN_FILE="$RELEASE_PLAN" \
-             "$SUPPORT_ROOT/bootstrap/online_install.sh" -y; then
+             run_cancellable "$SUPPORT_ROOT/bootstrap/online_install.sh" -y; then
             transaction_tool set --phase retry_scheduled --reason exact_repair_failed >/dev/null
             emit_result retry_scheduled exact_repair_failed timer_and_connectivity
             exit 75

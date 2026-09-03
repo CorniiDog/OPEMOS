@@ -571,6 +571,12 @@ alone cannot disable fallback or finalize repair. The lower-level status helper
 retains an explicit non-receipt mode for compatibility; installed recovery
 policy never uses that weaker mode. This stronger decision does not add or
 remove recovery-status fields.
+Recovery mutation installs its termination and readonly-restoration handlers
+before any command can make the live root writable. Long-running `mkinitcpio`,
+GRUB regeneration, and canonical online-repair children run in isolated process
+groups. INT, TERM, or HUP terminates and reaps that group, restores readonly
+state, releases lifecycle locks through process exit, and returns status 130;
+the signal handler never returns into a partially cancelled mutation.
 Persistent fallback state is a closed canonical schema-1 record containing
 only `active=true` and one enumerated profile. Duplicate keys, extra fields,
 non-boolean activation, unknown profiles, non-finite values, or noncanonical

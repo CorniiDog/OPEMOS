@@ -1057,6 +1057,9 @@ This remains a major future area, represented by three distinct gates:
   release plan before publishing the replacement transaction.
 * [x] Make cancellation disable retries without disabling recovery graphics or
   mutating a verified slot.
+* [x] Install recovery cancellation/readonly traps before live-root mutation,
+  terminate and reap isolated long-running GRUB, initramfs, and online-repair
+  process groups, and exit 130 instead of returning into a cancelled mutation.
 * [x] Serialize guardian, fallback, repair, and cancellation workflows without
   deadlocking the nested canonical installer. Keep delayed-repair state closed,
   bounded, canonical, single-linked, mode-0600, descriptor-locked, fsync-backed,
