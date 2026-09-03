@@ -21,6 +21,12 @@ reimplement compatibility, package-selection, signer, or mutation policy.
 Unknown additive fields are permitted. Removing a required field, changing its
 meaning, or tightening a previously valid value requires a new schema version.
 
+`fixtures/resolver-compatibility-v2.json` is the bounded, strict-JSON
+cross-frontend compatibility corpus for resolver schema 2. Consumers run every
+case and compare the stable `expected` subset while requiring each listed
+`absentFields` member to be absent. Human-readable messages are intentionally
+outside the frozen subset.
+
 When resolution returns `no_compatible_artifact` with reason
 `no_compatible_release`, `nextAction` explicitly authorizes only the existing
 exact-kernel `bootstrap/build_for_target.sh` contract and includes a

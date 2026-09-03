@@ -5,6 +5,7 @@ import copy
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -37,6 +38,90 @@ def expect_failure(function, *arguments):
     except (ContractError, OSError):
         return
     raise AssertionError("unsafe contract input was accepted")
+
+
+def assert_expected(actual, expected):
+    """Compare a fixture's intentional stable subset without freezing messages."""
+    assert isinstance(actual, dict) and isinstance(expected, dict)
+    for key, value in expected.items():
+        if isinstance(value, dict):
+            assert_expected(actual[key], value)
+        else:
+            assert actual[key] == value
+
+
+def validate_resolver_compatibility_fixtures(path):
+    payload = resolver_module.read_bounded_regular(path, 512 * 1024)
+    document = resolver_module.strict_json(payload)
+    assert set(document) == {
+        "schemaVersion", "kind", "repository", "resolverSchemaVersion", "cases"
+    }
+    assert document["schemaVersion"] == 1
+    assert document["kind"] == "opemos-resolver-compatibility-fixtures"
+    assert document["repository"] == "CorniiDog/OPEMOS"
+    assert document["resolverSchemaVersion"] == 2
+    cases = document["cases"]
+    assert isinstance(cases, list) and 1 <= len(cases) <= 64
+    names = []
+    for case in cases:
+        assert isinstance(case, dict) and set(case) == {
+            "name", "target", "releases", "expected", "absentFields"
+        }
+        names.append(case["name"])
+        assert isinstance(case["name"], str)
+        assert re.fullmatch(r"[a-z][a-z0-9-]{0,63}", case["name"])
+        assert isinstance(case["releases"], list) and len(case["releases"]) <= 2000
+        assert isinstance(case["expected"], dict) and case["expected"]
+        assert isinstance(case["absentFields"], list)
+        assert case["absentFields"] == sorted(set(case["absentFields"]))
+        assert len(case["absentFields"]) <= 16
+        assert all(
+            isinstance(field, str) and re.fullmatch(r"[A-Za-z][A-Za-z0-9]{0,63}", field)
+            for field in case["absentFields"]
+        )
+        target = case["target"]
+        assert set(target) == {"steamosVersion", "kernelVersion", "architecture"}
+        actual = resolve_target(
+            target["steamosVersion"], target["kernelVersion"],
+            target["architecture"], case["releases"], document["repository"],
+        )
+        assert actual == resolve_target(
+            target["steamosVersion"], target["kernelVersion"],
+            target["architecture"], copy.deepcopy(case["releases"]),
+            document["repository"],
+        )
+        assert actual["schemaVersion"] == document["resolverSchemaVersion"]
+        assert_expected(actual, case["expected"])
+        assert all(field not in actual for field in case["absentFields"])
+        validate_resolver_fixture(actual)
+    assert len(names) == len(set(names))
+    assert set(names) == {
+        "invalid-steamos", "invalid-kernel", "unsupported-architecture",
+        "malformed-release-metadata", "duplicate-release-metadata",
+        "incomplete-canonical-assets", "duplicate-canonical-asset",
+        "unreviewed-exact-target", "reviewed-exact-target-build",
+    }
+
+    with tempfile.TemporaryDirectory(prefix="opemos-fixture-confinement-") as temporary:
+        root = Path(temporary)
+        duplicate = root / "duplicate.json"
+        duplicate.write_text('{"schemaVersion":1,"schemaVersion":1}', encoding="utf-8")
+        try:
+            resolver_module.strict_json(
+                resolver_module.read_bounded_regular(duplicate, 512 * 1024)
+            )
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("duplicate fixture JSON key was accepted")
+        linked = root / "linked.json"
+        linked.symlink_to(path)
+        try:
+            resolver_module.read_bounded_regular(linked, 512 * 1024)
+        except (OSError, ValueError):
+            pass
+        else:
+            raise AssertionError("linked fixture document was accepted")
 
 
 def validate_resolver_fixture(document):
@@ -118,6 +203,10 @@ def main():
         "modules"
     ]["minItems"] == 5
     assert result_schema["unevaluatedProperties"] is True
+
+    validate_resolver_compatibility_fixtures(
+        ROOT / "contracts/fixtures/resolver-compatibility-v2.json"
+    )
 
     tag = "steamos-3.8.14-nvidia-575.64.05-k6.16.12-valve24.4-x86"
     archive = f"nvidia-open-{tag}-x86_64.tar.gz"

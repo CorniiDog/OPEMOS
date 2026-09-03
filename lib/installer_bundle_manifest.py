@@ -69,6 +69,7 @@ FILES = (
     ("contracts/schemas/resolver-result-v2.schema.json", "contract-schema", "0644"),
     ("contracts/schemas/installer-progress-v1.schema.json", "contract-schema", "0644"),
     ("contracts/schemas/installer-result-v1.schema.json", "contract-schema", "0644"),
+    ("contracts/fixtures/resolver-compatibility-v2.json", "contract-fixture", "0644"),
     ("policies/exact-target-builds-v1.json", "build-policy", "0644"),
     ("trust/nvidia-userspace-package-signers.json", "trust-policy", "0644"),
     ("trust/keyrings/archlinux-nvidia-userspace-2025-08-01.gpg", "trust-keyring", "0644"),

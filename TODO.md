@@ -76,6 +76,10 @@ index in the same commit.
   build-plan policy carrying the NVIDIA version, source repository/ref/commit,
   and known-good baseline hashes. Unreviewed targets and malformed/incomplete/
   duplicate publications expose no build authorization.
+* [x] Publish a bounded strict-JSON resolver schema-2 compatibility corpus for
+  malformed targets/publications, incomplete or duplicate assets, unreviewed
+  exact targets, and the reviewed exact-target build action. Include it in the
+  canonical Core bundle and execute every case in Core consumer tests.
 * [ ] Publish the remaining validation, verification-record, receipt, and
   gaming-payload schemas from OPEMOS. The additive installer-result schema 1
   envelope and mandatory success proofs are now published. Generate or

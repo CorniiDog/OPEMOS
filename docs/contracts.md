@@ -74,11 +74,18 @@ no reviewed plan returns `no_reviewed_exact_target_build_plan` without an
 action. Missing, duplicate, or otherwise invalid release assets also receive no
 fallback because they represent publication-integrity failures.
 
+The canonical cross-frontend corpus is
+[`resolver-compatibility-v2.json`](https://github.com/CorniiDog/OPEMOS/blob/main/contracts/fixtures/resolver-compatibility-v2.json).
+It covers malformed targets, malformed and duplicate release metadata,
+incomplete and duplicate canonical assets, an unreviewed target, and the exact
+reviewed build authorization. Core executes all cases during its local suite;
+consumers use the same bundle-authenticated bytes for parity tests.
+
 ## Installer consumer bundle
 
 `lib/installer_bundle_manifest.py` replaces consumer-maintained copies of the
 support file inventory. Given an exact 40-character support commit, it reads
-all 55 required blobs and executable bits directly from Git, then emits
+all required blobs and executable bits directly from Git, then emits
 canonical JSON containing their paths, roles, modes, sizes, hashes, and a
 deterministic bundle ID. It never derives trusted bytes from the mutable
 working tree.

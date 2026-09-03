@@ -1,0 +1,141 @@
+{
+  "cases": [
+    {
+      "absentFields": ["artifact", "nextAction"],
+      "expected": {"reason": "invalid_steamos_version", "status": "invalid_target"},
+      "name": "invalid-steamos",
+      "releases": [],
+      "target": {"architecture": "x86_64", "kernelVersion": "kernel-a", "steamosVersion": "3.8"}
+    },
+    {
+      "absentFields": ["artifact", "nextAction"],
+      "expected": {"reason": "invalid_kernel_version", "status": "invalid_target"},
+      "name": "invalid-kernel",
+      "releases": [],
+      "target": {"architecture": "x86_64", "kernelVersion": "../kernel", "steamosVersion": "3.8.14"}
+    },
+    {
+      "absentFields": ["artifact", "nextAction"],
+      "expected": {"reason": "unsupported_architecture", "status": "unsupported_target"},
+      "name": "unsupported-architecture",
+      "releases": [],
+      "target": {"architecture": "aarch64", "kernelVersion": "kernel-a", "steamosVersion": "3.8.14"}
+    },
+    {
+      "absentFields": ["artifact", "nextAction"],
+      "expected": {"reason": "release_metadata_invalid", "status": "resolver_error"},
+      "name": "malformed-release-metadata",
+      "releases": ["not-an-object"],
+      "target": {"architecture": "x86_64", "kernelVersion": "kernel-a", "steamosVersion": "3.8.14"}
+    },
+    {
+      "absentFields": ["artifact", "nextAction"],
+      "expected": {"reason": "release_metadata_ambiguous", "status": "resolver_error"},
+      "name": "duplicate-release-metadata",
+      "releases": [
+        {"assets": [], "draft": false, "prerelease": false, "published_at": "2026-01-01T00:00:00Z", "tag_name": "steamos-3.8.14-nvidia-575.64.05-kkernel-a"},
+        {"assets": [], "draft": false, "prerelease": false, "published_at": "2026-01-01T00:00:00Z", "tag_name": "steamos-3.8.14-nvidia-575.64.05-kkernel-a"}
+      ],
+      "target": {"architecture": "x86_64", "kernelVersion": "kernel-a", "steamosVersion": "3.8.14"}
+    },
+    {
+      "absentFields": ["artifact", "nextAction"],
+      "expected": {
+        "missingAssets": [
+          "nvidia-open-steamos-3.8.14-nvidia-575.64.05-kkernel-a-x86_64.tar.gz.sha256",
+          "nvidia-open-steamos-3.8.14-nvidia-575.64.05-kkernel-a-x86_64.provenance.json"
+        ],
+        "reason": "release_assets_missing",
+        "status": "no_compatible_artifact"
+      },
+      "name": "incomplete-canonical-assets",
+      "releases": [
+        {
+          "assets": [{"name": "nvidia-open-steamos-3.8.14-nvidia-575.64.05-kkernel-a-x86_64.tar.gz"}],
+          "draft": false,
+          "prerelease": false,
+          "published_at": "2026-01-01T00:00:00Z",
+          "tag_name": "steamos-3.8.14-nvidia-575.64.05-kkernel-a"
+        }
+      ],
+      "target": {"architecture": "x86_64", "kernelVersion": "kernel-a", "steamosVersion": "3.8.14"}
+    },
+    {
+      "absentFields": ["artifact", "nextAction"],
+      "expected": {
+        "ambiguousAssets": ["nvidia-open-steamos-3.8.14-nvidia-575.64.05-kkernel-a-x86_64.tar.gz"],
+        "reason": "release_assets_ambiguous",
+        "status": "no_compatible_artifact"
+      },
+      "name": "duplicate-canonical-asset",
+      "releases": [
+        {
+          "assets": [
+            {"name": "nvidia-open-steamos-3.8.14-nvidia-575.64.05-kkernel-a-x86_64.tar.gz"},
+            {"name": "nvidia-open-steamos-3.8.14-nvidia-575.64.05-kkernel-a-x86_64.tar.gz"},
+            {"name": "nvidia-open-steamos-3.8.14-nvidia-575.64.05-kkernel-a-x86_64.tar.gz.sha256"},
+            {"name": "nvidia-open-steamos-3.8.14-nvidia-575.64.05-kkernel-a-x86_64.provenance.json"}
+          ],
+          "draft": false,
+          "prerelease": false,
+          "published_at": "2026-01-01T00:00:00Z",
+          "tag_name": "steamos-3.8.14-nvidia-575.64.05-kkernel-a"
+        }
+      ],
+      "target": {"architecture": "x86_64", "kernelVersion": "kernel-a", "steamosVersion": "3.8.14"}
+    },
+    {
+      "absentFields": ["artifact", "nextAction"],
+      "expected": {"reason": "no_reviewed_exact_target_build_plan", "status": "no_compatible_artifact"},
+      "name": "unreviewed-exact-target",
+      "releases": [],
+      "target": {"architecture": "x86_64", "kernelVersion": "unreviewed-kernel", "steamosVersion": "3.8.14"}
+    },
+    {
+      "absentFields": ["artifact"],
+      "expected": {
+        "nextAction": {
+          "buildPlan": {
+            "baseline": {
+              "archiveSha256": "3e41bb0ff43afced28765dd949f9f534527d7bfc44188027faf04a506c98d1eb",
+              "provenanceSha256": "349398cedcea25d3d5ec43b6315d7559e7cbbd5d669c267c3f35dea164299b8a",
+              "releaseTag": "steamos-3.8.16-nvidia-575.64.05-k6.16.12-valve24.5-1-neptune-616-gb2f7cfe85e45",
+              "trust": "locally-built-verified"
+            },
+            "policy": {"name": "exact-target-builds-v1.json", "sha256": "3c43dd181aa36cf74a009c7a211a9ec60c7d81a5596af0870b023f281f0edecc"},
+            "schemaVersion": 1,
+            "source": {
+              "commit": "40bd1b5d6d39ae4e4180b7a665df144b08854d14",
+              "ref": "refs/heads/nvidia/575.64.05",
+              "repository": "CorniiDog/open-gpu-kernel-modules-steamos"
+            },
+            "target": {
+              "architecture": "x86_64",
+              "kernelVersion": "6.16.12-valve24.4-1-neptune-616-gfe145653a794",
+              "nvidiaVersion": "575.64.05",
+              "steamosVersion": "3.8.14"
+            }
+          },
+          "entrypoint": "bootstrap/build_for_target.sh",
+          "executionArchitecture": "x86_64",
+          "kernelPolicy": "exact",
+          "kind": "build_exact_target",
+          "schemaVersion": 1
+        },
+        "reason": "no_compatible_release",
+        "status": "no_compatible_artifact"
+      },
+      "name": "reviewed-exact-target-build",
+      "releases": [],
+      "target": {
+        "architecture": "x86_64",
+        "kernelVersion": "6.16.12-valve24.4-1-neptune-616-gfe145653a794",
+        "steamosVersion": "3.8.14"
+      }
+    }
+  ],
+  "kind": "opemos-resolver-compatibility-fixtures",
+  "repository": "CorniiDog/OPEMOS",
+  "resolverSchemaVersion": 2,
+  "schemaVersion": 1
+}
