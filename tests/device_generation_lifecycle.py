@@ -325,7 +325,7 @@ def invoke(environment, store, policy, keyring, checkpoint, command,
         "--policy", str(policy), "--keyring", str(keyring),
         "--checkpoint", str(checkpoint),
     ]
-    if (command in {"acknowledge-health", "rollback"}
+    if (command in {"acknowledge-health", "rollback", "check"}
             and environment.get("OPEMOS_GENERATION_TEST_TARGET_ROOT")):
         global_arguments.extend([
             "--target-root", environment["OPEMOS_GENERATION_TEST_TARGET_ROOT"]
@@ -368,6 +368,15 @@ def acknowledge(environment, store, policy, keyring, checkpoint, success=True):
     state = invoke(
         environment, store, policy, keyring, checkpoint, "status"
     )["state"]
+    evidence = write_health_evidence(checkpoint, state)
+    return invoke(
+        environment, store, policy, keyring, checkpoint,
+        "acknowledge-health", ["--evidence", str(evidence)],
+        success,
+    )
+
+
+def write_health_evidence(checkpoint, state):
     evidence = checkpoint.parent / "health-evidence.json"
     write(evidence, canonical({
         "schemaVersion": 1,
@@ -376,11 +385,16 @@ def acknowledge(environment, store, policy, keyring, checkpoint, success=True):
         "generation": state["active"],
         "checks": ["generation-integrity", "recovery-ready"],
     }))
-    return invoke(
-        environment, store, policy, keyring, checkpoint,
-        "acknowledge-health", ["--evidence", str(evidence)],
-        success,
-    )
+    return evidence
+
+
+def health_command(store, policy, keyring, checkpoint, target_root, evidence):
+    return [
+        sys.executable, str(TOOL), "--store", str(store),
+        "--policy", str(policy), "--keyring", str(keyring),
+        "--checkpoint", str(checkpoint), "--target-root", str(target_root),
+        "acknowledge-health", "--evidence", str(evidence),
+    ]
 
 
 def main():
@@ -496,7 +510,9 @@ def main():
         )
         write(installed_state / "nvidia-version", b"575.64.05\n")
         receipt_evidence = root / "target-receipt-evidence"
-        install_target_receipt(target_root, receipt_evidence, TARGET)
+        target_receipt = install_target_receipt(
+            target_root, receipt_evidence, TARGET
+        )
         environment["OPEMOS_GENERATION_TEST_TARGET_ROOT"] = str(target_root)
         production_override = subprocess.run([
             sys.executable, str(TOOL), "--store", str(store),
@@ -674,9 +690,97 @@ def main():
         )
         assert healthy_7["state"]["lastKnownGood"] == healthy_7["state"]["active"]
         assert healthy_7["state"]["healthPending"] is False
+        health_marker = store / "health-acknowledgement.json"
+        health_record = json.loads(health_marker.read_text(encoding="utf-8"))
+        assert health_record == {
+            "schemaVersion": 1,
+            "generation": healthy_7["state"]["active"],
+            "target": TARGET,
+            "receiptId": target_receipt["receiptId"],
+        }
 
         generation_8 = root / "generation-8"
         hash_8 = create_source(generation_8, 8, hash_7, authority, signature)
+        health_crash_store = root / "health-crash-store"
+        activate(
+            environment, health_crash_store, policy, keyring, checkpoint,
+            generation_7,
+        )
+        acknowledge(
+            environment, health_crash_store, policy, keyring, checkpoint
+        )
+        activate(
+            environment, health_crash_store, policy, keyring, checkpoint,
+            generation_8,
+        )
+        health_pending_state = invoke(
+            environment, health_crash_store, policy, keyring, checkpoint,
+            "status",
+        )["state"]
+        health_evidence = write_health_evidence(
+            checkpoint, health_pending_state
+        )
+        cancelled_health = subprocess.Popen(
+            health_command(
+                health_crash_store, policy, keyring, checkpoint,
+                target_root, health_evidence,
+            ),
+            cwd="/",
+            env={
+                **environment,
+                "OPEMOS_GENERATION_TEST_PAUSE_AFTER_HEALTH_INTENT": "30",
+            },
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        pending_health = health_crash_store / "pending-health-acknowledgement.json"
+        deadline = time.time() + 5
+        while not pending_health.exists() and time.time() < deadline:
+            time.sleep(0.02)
+        assert pending_health.exists()
+        cancelled_health.send_signal(signal.SIGTERM)
+        stdout, stderr = cancelled_health.communicate(timeout=5)
+        assert cancelled_health.returncode == 130 and stderr == ""
+        assert json.loads(stdout)["status"] == "cancelled"
+        assert not pending_health.exists()
+        assert durable_state(health_crash_store) == health_pending_state
+
+        killed_health = subprocess.Popen(
+            health_command(
+                health_crash_store, policy, keyring, checkpoint,
+                target_root, health_evidence,
+            ),
+            cwd="/",
+            env={
+                **environment,
+                "OPEMOS_GENERATION_TEST_PAUSE_AFTER_STATE": "30",
+            },
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        deadline = time.time() + 5
+        while (durable_state(health_crash_store)["healthPending"]
+               and time.time() < deadline):
+            time.sleep(0.02)
+        assert durable_state(health_crash_store)["healthPending"] is False
+        assert pending_health.exists()
+        killed_health.kill()
+        killed_health.communicate(timeout=5)
+        unreconciled_health = invoke(
+            environment, health_crash_store, policy, keyring, checkpoint,
+            "status", success=False,
+        )
+        assert unreconciled_health["reason"] == (
+            "device_generation_state_reconciliation_required"
+        )
+        recovered_health = invoke(
+            environment, health_crash_store, policy, keyring, checkpoint,
+            "check",
+        )
+        assert recovered_health["state"]["lastKnownGood"] == {
+            "sequence": 8, "manifestSha256": hash_8,
+        }
+        assert recovered_health["state"]["highWaterSequence"] == 8
+        assert recovered_health["state"]["healthPending"] is False
+        assert not pending_health.exists()
         wrong_target = invoke(
             environment, store, policy, keyring, checkpoint, "activate",
             ["--source", str(generation_8), "--steamos", "3.8.15",
@@ -701,6 +805,29 @@ def main():
         )
         write(policy, policy_payload)
         write(checkpoint, checkpoint_payload)
+        health_payload = health_marker.read_bytes()
+        health_marker.unlink()
+        missing_health_rollback = invoke(
+            environment, store, policy, keyring, checkpoint, "rollback",
+            success=False,
+        )
+        assert missing_health_rollback["reason"] == "device_generation_health_invalid"
+        missing_health_status = invoke(
+            environment, store, policy, keyring, checkpoint, "status",
+            success=False,
+        )
+        assert missing_health_status["reason"] == "device_generation_health_invalid"
+        assert durable_state(store) == activated_8["state"]
+        write(health_marker, health_payload)
+        invalid_health = json.loads(health_payload)
+        invalid_health["receiptId"] = "0" * 64
+        write(health_marker, canonical(invalid_health))
+        stale_health_rollback = invoke(
+            environment, store, policy, keyring, checkpoint, "rollback",
+            success=False,
+        )
+        assert stale_health_rollback["reason"] == "device_generation_health_invalid"
+        write(health_marker, health_payload)
         transitioned_target = {
             **TARGET,
             "kernelVersion": "6.16.13-valve25-neptune",

@@ -1522,7 +1522,9 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   NVIDIA identity separately from health evidence, rejects ambiguous or unsafe
   observations, verifies the current rootfs's six-file payload receipt rather
   than trusting a persistent `/var` marker alone, and requires an exact target
-  lock before LKG advancement or rollback. The schema-1 health record remains
+  lock before LKG advancement or rollback. A private two-phase health marker
+  durably binds LKG to that target and receipt across cancellation, SIGKILL,
+  restart, and A/B transitions. The schema-1 health record remains
   generation-only evidence.
 * [ ] Validate the device lifecycle under Fedora and real SteamOS, including
   inode exhaustion, power loss at every durable boundary, health timeout,

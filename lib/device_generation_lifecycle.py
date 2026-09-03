@@ -50,6 +50,7 @@ from userspace_lock_generation_contract import (
     validate_discovery,
     validate_openpgp_status,
     validate_pair,
+    validate_target,
 )
 from userspace_lock_request_plan import (
     MAX_PLAN_BYTES,
@@ -83,11 +84,19 @@ KERNEL = re.compile(r"[A-Za-z0-9._+\-]{1,192}")
 STATE_MARKER_FIELDS = {"schemaVersion", "revision", "stateSha256", "state"}
 STATE_MARKERS = ("state-a.json", "state-b.json")
 PENDING_ACTIVATION = "pending-activation.json"
+HEALTH_ACKNOWLEDGEMENT = "health-acknowledgement.json"
+PENDING_HEALTH_ACKNOWLEDGEMENT = "pending-health-acknowledgement.json"
 PENDING_ACTIVATION_FIELDS = {
     "schemaVersion", "candidate", "priorRevision", "priorStateSha256",
 }
+HEALTH_ACKNOWLEDGEMENT_FIELDS = {
+    "schemaVersion", "generation", "target", "receiptId",
+}
 STATE_TEMP_PREFIXES = tuple(
-    f".{name}.tmp-" for name in (*STATE_MARKERS, PENDING_ACTIVATION)
+    f".{name}.tmp-" for name in (
+        *STATE_MARKERS, PENDING_ACTIVATION, HEALTH_ACKNOWLEDGEMENT,
+        PENDING_HEALTH_ACKNOWLEDGEMENT,
+    )
 )
 MAX_STORE_ROOT_ENTRIES = 16
 MAX_CACHE_TREE_NODES = MAX_FILES + 16
@@ -373,6 +382,7 @@ def validate_store_layout(store):
         fail("device_generation_store_excessive", "device generation store has too many entries")
     allowed = {
         "generations", ".generation.lock", "state.json", PENDING_ACTIVATION,
+        HEALTH_ACKNOWLEDGEMENT, PENDING_HEALTH_ACKNOWLEDGEMENT,
         "downloads", *STATE_MARKERS,
     }
     for entry in entries:
@@ -635,6 +645,7 @@ def lifecycle_lock(store, create=False):
             prune_generations(downloads, empty_state())
         ensure_state_marker(store, generations)
         reconcile_pending_activation(store, generations)
+        reconcile_pending_health_acknowledgement(store)
         reconcile_state_markers(store, generations)
         try:
             yield generations
@@ -644,6 +655,7 @@ def lifecycle_lock(store, create=False):
             if downloads is not None:
                 cleanup_staging(downloads)
             reconcile_pending_activation(store, generations)
+            reconcile_pending_health_acknowledgement(store)
             raise
 
 
@@ -893,6 +905,208 @@ def reconcile_pending_activation(store, generations):
         fsync_directory(generations)
         remove_confined_generation_tree(tombstone)
     clear_pending_activation(store)
+
+
+def validate_health_acknowledgement(document, label):
+    if (not isinstance(document, dict)
+            or set(document) != HEALTH_ACKNOWLEDGEMENT_FIELDS
+            or document.get("schemaVersion") != 1
+            or not isinstance(document.get("receiptId"), str)
+            or HASH.fullmatch(document["receiptId"]) is None):
+        fail(
+            "device_generation_state_reconciliation_required",
+            f"{label} is invalid",
+        )
+    try:
+        validate_generation_identity(document.get("generation"))
+        validate_target(document.get("target"))
+    except (DeviceGenerationContractError, GenerationContractError):
+        fail(
+            "device_generation_state_reconciliation_required",
+            f"{label} is invalid",
+        )
+    return document
+
+
+def read_health_acknowledgement(store, pending=False, optional=False):
+    name = PENDING_HEALTH_ACKNOWLEDGEMENT if pending else HEALTH_ACKNOWLEDGEMENT
+    path = store / name
+    if not path.exists() and not path.is_symlink():
+        if optional:
+            return None
+        fail(
+            "device_generation_health_invalid",
+            "target-bound health acknowledgement is unavailable",
+        )
+    payload = snapshot_regular(
+        path, MAX_STATE_BYTES, "target-bound health acknowledgement",
+        "device_generation_state_reconciliation_required",
+        "device_generation_state_reconciliation_required",
+        os.geteuid(), 0o600,
+    )
+    try:
+        document = strict_json(
+            payload, MAX_STATE_BYTES, "target-bound health acknowledgement"
+        )
+    except GenerationContractError:
+        fail(
+            "device_generation_state_reconciliation_required",
+            "target-bound health acknowledgement is invalid",
+        )
+    return validate_health_acknowledgement(
+        document, "target-bound health acknowledgement"
+    )
+
+
+def remove_pending_health_acknowledgement(store):
+    path = store / PENDING_HEALTH_ACKNOWLEDGEMENT
+    if not path.exists() and not path.is_symlink():
+        return
+    snapshot_regular(
+        path, MAX_STATE_BYTES, "pending health acknowledgement",
+        "device_generation_state_reconciliation_required",
+        "device_generation_state_reconciliation_required",
+        os.geteuid(), 0o600,
+    )
+    try:
+        path.unlink()
+        fsync_directory(store)
+    except OSError:
+        fail(
+            "device_generation_state_reconciliation_required",
+            "pending health acknowledgement could not be removed",
+        )
+
+
+def promote_pending_health_acknowledgement(store):
+    pending = read_health_acknowledgement(store, pending=True)
+    current = read_health_acknowledgement(store, optional=True)
+    if current is not None and current == pending:
+        remove_pending_health_acknowledgement(store)
+        return
+    try:
+        os.replace(
+            store / PENDING_HEALTH_ACKNOWLEDGEMENT,
+            store / HEALTH_ACKNOWLEDGEMENT,
+        )
+        fsync_directory(store)
+    except OSError:
+        fail(
+            "device_generation_state_reconciliation_required",
+            "health acknowledgement could not be committed",
+        )
+    if read_health_acknowledgement(store) != pending:
+        fail(
+            "device_generation_state_reconciliation_required",
+            "committed health acknowledgement differs from its intent",
+        )
+
+
+def write_pending_health_acknowledgement(store, state, revision, observation):
+    if (state["active"] is None
+            or not 0 <= revision < MAX_SEQUENCE):
+        fail("device_generation_state_invalid", "health transition is invalid")
+    document = {
+        "schemaVersion": 1,
+        "generation": dict(state["active"]),
+        "target": dict(observation["target"]),
+        "receiptId": observation["receiptId"],
+    }
+    validate_health_acknowledgement(document, "health acknowledgement intent")
+    # The state revision and hash are encoded in the transaction envelope
+    # so a same-generation acknowledgement cannot be confused across a crash.
+    envelope = {
+        **document,
+        "priorRevision": revision,
+        "priorStateSha256": sha256(canonical(state)),
+    }
+    durable_write(
+        store / PENDING_HEALTH_ACKNOWLEDGEMENT, canonical(envelope)
+    )
+
+
+def reconcile_pending_health_acknowledgement(store):
+    path = store / PENDING_HEALTH_ACKNOWLEDGEMENT
+    if not path.exists() and not path.is_symlink():
+        return
+    payload = snapshot_regular(
+        path, MAX_STATE_BYTES, "pending health acknowledgement",
+        "device_generation_state_reconciliation_required",
+        "device_generation_state_reconciliation_required",
+        os.geteuid(), 0o600,
+    )
+    try:
+        envelope = strict_json(
+            payload, MAX_STATE_BYTES, "pending health acknowledgement"
+        )
+    except GenerationContractError:
+        fail(
+            "device_generation_state_reconciliation_required",
+            "pending health acknowledgement is invalid",
+        )
+    fields = HEALTH_ACKNOWLEDGEMENT_FIELDS | {
+        "priorRevision", "priorStateSha256",
+    }
+    if (not isinstance(envelope, dict) or set(envelope) != fields
+            or type(envelope.get("priorRevision")) is not int
+            or not 0 <= envelope["priorRevision"] < MAX_SEQUENCE
+            or not isinstance(envelope.get("priorStateSha256"), str)
+            or HASH.fullmatch(envelope["priorStateSha256"]) is None):
+        fail(
+            "device_generation_state_reconciliation_required",
+            "pending health acknowledgement is invalid",
+        )
+    document = {
+        field: envelope[field] for field in HEALTH_ACKNOWLEDGEMENT_FIELDS
+    }
+    validate_health_acknowledgement(document, "pending health acknowledgement")
+    state, revision = read_state_record(store)
+    if revision == envelope["priorRevision"]:
+        if sha256(canonical(state)) != envelope["priorStateSha256"]:
+            fail(
+                "device_generation_state_reconciliation_required",
+                "pending health acknowledgement differs from durable state",
+            )
+        remove_pending_health_acknowledgement(store)
+        return
+    if (revision != envelope["priorRevision"] + 1
+            or state["healthPending"]
+            or state["active"] != document["generation"]
+            or state["lastKnownGood"] != document["generation"]):
+        fail(
+            "device_generation_state_reconciliation_required",
+            "pending health acknowledgement has ambiguous durable state",
+        )
+    durable_write(store / PENDING_HEALTH_ACKNOWLEDGEMENT, canonical(document))
+    promote_pending_health_acknowledgement(store)
+
+
+def require_health_acknowledgement(store, generation, observation=None):
+    document = read_health_acknowledgement(store, optional=generation is None)
+    if generation is None:
+        if document is not None:
+            fail(
+                "device_generation_health_invalid",
+                "health acknowledgement exists without a last-known-good generation",
+            )
+        return
+    if document["generation"] != generation:
+        fail(
+            "device_generation_health_invalid",
+            "health acknowledgement does not bind the last-known-good generation",
+        )
+    if (observation is not None
+            and (document["target"] != observation["target"]
+                 or document["receiptId"] != observation["receiptId"])):
+        fail(
+            "device_generation_health_invalid",
+            "health acknowledgement does not bind the current target and receipt",
+        )
+
+
+def require_state_health_acknowledgement(store, state):
+    expected = state["lastKnownGood"] if state["healthPending"] else state["active"]
+    require_health_acknowledgement(store, expected)
 
 
 def cleanup_state_temporaries(store):
@@ -1512,12 +1726,12 @@ def observe_current_target(arguments):
             "current target differs from its rootfs payload receipt",
         )
     require_observation_root(root, guard)
-    return observed
+    return {"target": observed, "receiptId": receipt["receiptId"]}
 
 
 def require_observed_target(pair, observed):
     if not any(
-            record["target"] == observed
+            record["target"] == observed["target"]
             for record in pair["manifest"]["targetLocks"]):
         fail(
             "device_generation_target_mismatch",
@@ -2515,6 +2729,7 @@ def acquire(arguments):
 def activate_loaded(store, generations, state, prior_revision, source, pair,
                     lineage_pairs, policy, authority, checkpoint,
                     requested_target, source_guards=()):
+    require_state_health_acknowledgement(store, state)
     current_identity = pair["discovery"]["generation"]["manifestSha256"]
     if (state["active"] is not None
             and state["active"]["manifestSha256"] == current_identity):
@@ -2669,7 +2884,7 @@ def acknowledge(arguments):
     store = absolute_path(arguments.store)
     policy, authority, keyring, _checkpoint = active_policy(arguments)
     with lifecycle_lock(store) as generations:
-        state = read_state(store)
+        state, prior_revision = read_state_record(store)
         if state["active"] is None:
             fail("device_generation_no_active", "no active generation exists")
         identity = state["active"]["manifestSha256"]
@@ -2689,16 +2904,31 @@ def acknowledge(arguments):
         validate_health_evidence(arguments, state["active"])
         require_trust_guards(policy)
         require_observation_unchanged(arguments, observed_target)
-        state = {
+        write_pending_health_acknowledgement(
+            store, state, prior_revision, observed_target
+        )
+        if (development_override() and os.environ.get(
+                "OPEMOS_GENERATION_TEST_PAUSE_AFTER_HEALTH_INTENT")):
+            time.sleep(float(os.environ[
+                "OPEMOS_GENERATION_TEST_PAUSE_AFTER_HEALTH_INTENT"
+            ]))
+        acknowledged_state = {
             **state,
             "lastKnownGood": dict(state["active"]),
             "healthPending": False,
         }
-        pruned, cancellation_after_commit = commit_state_and_prune(
-            store, generations, state
-        )
+        try:
+            require_trust_guards(policy)
+            require_observation_unchanged(arguments, observed_target)
+            pruned, cancellation_after_commit = commit_state_and_prune(
+                store, generations, acknowledged_state
+            )
+            reconcile_pending_health_acknowledgement(store)
+        except (DeviceGenerationCancelled, DeviceGenerationError, OSError):
+            reconcile_pending_health_acknowledgement(store)
+            raise
         return result(
-            "ok", "health_acknowledged", state=state,
+            "ok", "health_acknowledged", state=acknowledged_state,
             details={
                 "prunedGenerations": pruned,
                 "cancellationAfterCommit": cancellation_after_commit,
@@ -2722,6 +2952,9 @@ def rollback(arguments):
         require_pair_authority(pair, authority)
         observed_target = observe_current_target(arguments)
         require_observed_target(pair, observed_target)
+        require_health_acknowledgement(
+            store, state["lastKnownGood"], observed_target
+        )
         require_trust_guards(policy)
         require_observation_unchanged(arguments, observed_target)
         state = {
@@ -2744,6 +2977,7 @@ def rollback(arguments):
 def status(arguments, check=False):
     store = absolute_path(arguments.store)
     if check:
+        policy, authority, keyring, _checkpoint = active_policy(arguments)
         with lifecycle_lock(store) as generations:
             state = read_state(store)
             for identity in (state["active"], state["lastKnownGood"]):
@@ -2752,14 +2986,31 @@ def status(arguments, check=False):
                         generations / identity["manifestSha256"],
                         identity["manifestSha256"],
                     )
+            if state["active"] is not None and not state["healthPending"]:
+                identity = state["active"]["manifestSha256"]
+                pair = load_authenticated_pair(
+                    generations / identity, keyring,
+                    policy["signingKeyFingerprint"], cached=True,
+                )
+                require_pair_authority(pair, authority)
+                observed_target = observe_current_target(arguments)
+                require_observed_target(pair, observed_target)
+                require_health_acknowledgement(
+                    store, state["active"], observed_target
+                )
+                require_trust_guards(policy)
+                require_observation_unchanged(arguments, observed_target)
             return result("ok", "checked", state=state)
     safe_store(store, create=False)
-    if read_pending_activation(store) is not None:
+    if (read_pending_activation(store) is not None
+            or (store / PENDING_HEALTH_ACKNOWLEDGEMENT).exists()
+            or (store / PENDING_HEALTH_ACKNOWLEDGEMENT).is_symlink()):
         fail(
             "device_generation_state_reconciliation_required",
-            "an interrupted activation requires locked reconciliation",
+            "an interrupted lifecycle transition requires locked reconciliation",
         )
     state = read_state(store)
+    require_state_health_acknowledgement(store, state)
     return result("ok", "status", state=state)
 
 

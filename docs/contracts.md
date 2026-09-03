@@ -183,6 +183,15 @@ caller. A separate `--target-root` exists only behind the explicit development
 trust override so confined synthetic roots can exercise A/B transitions. It is
 rejected before any lifecycle command when production policy is active.
 
+Core persists the accepted `{generation,target,receiptId}` as a private health
+marker. A pending marker records the prior state revision and hash before the
+shared state advances; after the state commit, Core atomically promotes it.
+Locked restart reconciliation discards an uncommitted intent or completes a
+committed one. Consequently cancellation or power loss cannot silently bind an
+old LKG acknowledgement to a new slot, and `status` refuses a healthy/LKG state
+whose internal marker is absent or inconsistent. This marker is device-local
+transaction state, not a shared frontend schema.
+
 Local activation also uses a private internal intent record between immutable
 generation publication and the alternating durable state markers. A locked
 restart binds that intent to the exact prior state revision and hash. It removes
