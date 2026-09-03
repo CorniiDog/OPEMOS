@@ -118,6 +118,27 @@ def fsync_directory(path):
         os.close(descriptor)
 
 
+def directory_guard(path, expected_mode, label):
+    try:
+        info = path.lstat()
+    except OSError:
+        fail("device_generation_input_changed", f"{label} is unavailable")
+    if (not stat.S_ISDIR(info.st_mode) or path.is_symlink()
+            or info.st_uid != os.geteuid()
+            or stat.S_IMODE(info.st_mode) != expected_mode):
+        fail("device_generation_input_changed", f"{label} metadata changed")
+    return (
+        info.st_dev, info.st_ino, info.st_mtime_ns, info.st_ctime_ns,
+        info.st_uid, stat.S_IMODE(info.st_mode),
+    )
+
+
+def require_directory_guards(guards):
+    for path, mode, label, expected in guards:
+        if directory_guard(path, mode, label) != expected:
+            fail("device_generation_input_changed", f"{label} identity changed")
+
+
 def snapshot_regular(path, maximum, label,
                      reason="device_generation_input_invalid",
                      changed_reason="device_generation_input_changed",
@@ -1617,7 +1638,7 @@ def acquire(arguments):
 
 def activate_loaded(store, generations, state, prior_revision, source, pair,
                     lineage_pairs, policy, authority, checkpoint,
-                    requested_target):
+                    requested_target, source_guards=()):
     current_identity = pair["discovery"]["generation"]["manifestSha256"]
     if (state["active"] is not None
             and state["active"]["manifestSha256"] == current_identity):
@@ -1639,6 +1660,7 @@ def activate_loaded(store, generations, state, prior_revision, source, pair,
     except GenerationContractError as error:
         fail("device_generation_not_authorized", str(error))
     payload_root, payload_records = source_payload_records(source, pair["manifest"])
+    require_directory_guards(source_guards)
     pruned_before = prune_generations(
         generations, state, limit=MAX_GENERATIONS - 1
     )
@@ -1661,6 +1683,7 @@ def activate_loaded(store, generations, state, prior_revision, source, pair,
             generations, pair, payload_root, payload_records, policy, authority
         )
         verify_cached_generation(destination, current_identity)
+        require_directory_guards(source_guards)
         if (development_override() and os.environ.get(
                 "OPEMOS_GENERATION_TEST_PAUSE_AFTER_PUBLISH")):
             time.sleep(float(os.environ["OPEMOS_GENERATION_TEST_PAUSE_AFTER_PUBLISH"]))
@@ -1720,6 +1743,12 @@ def activate_downloaded(arguments):
         if not source.exists() and not source.is_symlink():
             fail("device_generation_input_invalid", "downloaded generation is unavailable")
         verify_cached_generation(source, identity)
+        source_guards = (
+            (downloads, 0o700, "device download cache",
+             directory_guard(downloads, 0o700, "device download cache")),
+            (source, 0o500, "downloaded generation",
+             directory_guard(source, 0o500, "downloaded generation")),
+        )
         pair = load_authenticated_pair(
             source, keyring, policy["signingKeyFingerprint"], cached=True
         )
@@ -1728,10 +1757,12 @@ def activate_downloaded(arguments):
             downloads, arguments.lineage_manifest_sha256, keyring,
             policy["signingKeyFingerprint"],
         )
+        require_directory_guards(source_guards)
         state, prior_revision = read_state_record(store)
         return activate_loaded(
             store, generations, state, prior_revision, source, pair,
             lineage_pairs, policy, authority, checkpoint, requested_target,
+            source_guards,
         )
 
 

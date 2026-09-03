@@ -5,6 +5,7 @@ import fcntl
 import hashlib
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -1091,6 +1092,37 @@ def main():
         assert json.loads(stdout)["status"] == "cancelled"
         assert not list((promotion_store / "generations").glob(".stage-*"))
         assert (promotion_store / "downloads" / hash_8).is_dir()
+
+        raced_promotion = subprocess.Popen(
+            promotion_command, cwd="/", env={
+                **environment, "OPEMOS_GENERATION_TEST_PAUSE_AFTER_STAGE": "1",
+            }, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        deadline = time.time() + 5
+        while (not list((promotion_store / "generations").glob(".stage-*"))
+               and time.time() < deadline):
+            time.sleep(0.02)
+        downloaded_8 = promotion_store / "downloads" / hash_8
+        download_backup = promotion_store / "downloads/.acquire-race-backup"
+        downloaded_8.rename(download_backup)
+        shutil.copytree(download_backup, downloaded_8)
+        stdout, stderr = raced_promotion.communicate(timeout=5)
+        assert raced_promotion.returncode == 1 and stderr == ""
+        assert json.loads(stdout)["reason"] == "device_generation_input_changed"
+        for directory in sorted(
+                (item for item in downloaded_8.rglob("*") if item.is_dir()),
+                key=lambda item: len(item.parts), reverse=True):
+            directory.chmod(0o700)
+        downloaded_8.chmod(0o700)
+        shutil.rmtree(downloaded_8)
+        download_backup.rename(downloaded_8)
+        assert invoke(
+            environment, promotion_store, policy, keyring, checkpoint, "check"
+        )["state"]["active"] == {
+            "sequence": 7, "manifestSha256": hash_7,
+        }
+        assert not (promotion_store / "pending-activation.json").exists()
+        assert not list((promotion_store / "generations").glob(".stage-*"))
 
         killed_promotion = subprocess.Popen(
             promotion_command, cwd="/", env={

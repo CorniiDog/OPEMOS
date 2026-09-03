@@ -227,7 +227,10 @@ reauthenticates both signatures against the currently installed policy, and
 reruns target, lineage, checkpoint, replay, and high-water authorization before
 publishing into the activation cache. Optional cached lineage is named only by
 repeated `--lineage-manifest-sha256` identities. Downloaded bytes remain
-separate and immutable; cancellation, insufficient space, or a crash cannot
+separate and immutable. Core binds both the download-cache directory and the
+selected generation's device, inode, ownership, mode, and directory metadata
+across copy and publication; a replacement or mutation aborts and reconciles
+the pending transaction. Cancellation, insufficient space, or a crash cannot
 make them active, and locked restart reconciliation removes an uncommitted
 activation while retaining the authenticated download for a safe retry.
 Durable selection uses two alternating revisioned state markers whose embedded
