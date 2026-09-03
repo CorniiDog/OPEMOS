@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 VALIDATOR = ROOT / "lib/validate_install_contract.py"
 sys.path.insert(0, str(ROOT / "lib"))
 from validate_install_contract import read_bounded_regular  # noqa: E402
+from payload_receipt import receipt_id  # noqa: E402
 from write_install_result import validate_module_verification_binding  # noqa: E402
 
 
@@ -133,11 +134,15 @@ def main():
                     "offline-install/receipt.json"
                 ),
                 "records": [{
-                    "role": role, "filename": f"{role}.json",
+                    "role": role, "filename": filename,
                     "sizeBytes": 1, "sha256": str(index) * 64,
-                } for index, role in enumerate((
-                    "buildInfo", "provenance", "validation", "moduleVerification",
-                    "userspaceVerification", "initramfsVerification",
+                } for index, (role, filename) in enumerate((
+                    ("buildInfo", "BUILD-INFO.txt"),
+                    ("provenance", "PROVENANCE.json"),
+                    ("validation", "validation.json"),
+                    ("moduleVerification", "module-verification.json"),
+                    ("userspaceVerification", "userspace-verification.json"),
+                    ("initramfsVerification", "initramfs-verification.json"),
                 ), 1)],
             },
             "initramfsVerification": {
@@ -170,6 +175,10 @@ def main():
             },
             "futureAdditiveField": {"accepted": True},
         }
+        document["payloadReceipt"]["receiptId"] = receipt_id(
+            document["payloadReceipt"]["target"],
+            document["payloadReceipt"]["records"],
+        )
         result.write_text(json.dumps(document))
         progress.write_text(
             'noise\nSTEAMOS_NVIDIA_PROGRESS {"schemaVersion":1,"attempt":7,"phase":"modules","indeterminate":false,"unit":"items","completed":0,"total":5,"future":true}\n'

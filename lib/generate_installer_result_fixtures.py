@@ -5,6 +5,8 @@ import copy
 import json
 import sys
 
+from payload_receipt import MAX_INPUTS as PAYLOAD_RECEIPT_INPUTS, receipt_id
+
 
 MAX_OUTPUT_BYTES = 512 * 1024
 KERNEL = "6.16.12-valve24.4-1-neptune-616-gfe145653a794"
@@ -251,28 +253,27 @@ def initramfs_verification():
 
 
 def payload_receipt():
-    roles = (
-        "buildInfo", "provenance", "validation", "moduleVerification",
-        "userspaceVerification", "initramfsVerification",
-    )
-    return {
+    target = {
+        "steamosVersion": "3.8.14", "kernelVersion": KERNEL,
+        "nvidiaVersion": NVIDIA, "architecture": "x86_64",
+    }
+    records = [
+        {"role": role, "filename": PAYLOAD_RECEIPT_INPUTS[role][0],
+         "sizeBytes": 1, "sha256": str(index) * 64}
+        for index, role in enumerate(PAYLOAD_RECEIPT_INPUTS, 1)
+    ]
+    document = {
         "schemaVersion": 1, "status": "verified",
         "reason": "payload_receipt_verified",
-        "target": {
-            "steamosVersion": "3.8.14", "kernelVersion": KERNEL,
-            "nvidiaVersion": NVIDIA, "architecture": "x86_64",
-        },
-        "receiptId": "8" * 64,
+        "target": target,
         "rootfsRelativePath": (
             "usr/lib/open-gpu-kernel-modules-steamos-support/"
             "offline-install/receipt.json"
         ),
-        "records": [
-            {"role": role, "filename": f"{role}.json", "sizeBytes": 1,
-             "sha256": str(index) * 64}
-            for index, role in enumerate(roles, 1)
-        ],
+        "records": records,
     }
+    document["receiptId"] = receipt_id(target, records)
+    return document
 
 
 def success_document():

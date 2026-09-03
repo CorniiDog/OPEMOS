@@ -1,0 +1,68 @@
+{
+  "$id": "https://corniidog.github.io/OPEMOS/contracts/installer-payload-receipt-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "hash": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "record": {
+      "additionalProperties": false,
+      "properties": {
+        "filename": {"type": "string"},
+        "role": {"type": "string"},
+        "sha256": {"$ref": "#/$defs/hash"},
+        "sizeBytes": {"minimum": 1, "type": "integer"}
+      },
+      "required": ["role", "filename", "sizeBytes", "sha256"],
+      "type": "object"
+    },
+    "target": {
+      "additionalProperties": false,
+      "properties": {
+        "architecture": {"const": "x86_64"},
+        "kernelVersion": {
+          "maxLength": 255,
+          "pattern": "^(?!unknown$)[A-Za-z0-9._+~-]+$",
+          "type": "string"
+        },
+        "nvidiaVersion": {
+          "maxLength": 64,
+          "pattern": "^(?!unknown$)[0-9]+\\.[0-9]+(?:\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "steamosVersion": {
+          "maxLength": 64,
+          "pattern": "^(?!unknown$)[0-9]+\\.[0-9]+(?:\\.[0-9]+)?$",
+          "type": "string"
+        }
+      },
+      "required": ["steamosVersion", "kernelVersion", "nvidiaVersion", "architecture"],
+      "type": "object"
+    }
+  },
+  "description": "Rootfs-resident six-document payload receipt proof. Core recomputes receiptId from the exact target and ordered records; mounted-image verification authenticates each recorded file hash.",
+  "properties": {
+    "reason": {"const": "payload_receipt_verified"},
+    "receiptId": {"$ref": "#/$defs/hash"},
+    "records": {
+      "items": false,
+      "maxItems": 6,
+      "minItems": 6,
+      "prefixItems": [
+        {"allOf": [{"$ref": "#/$defs/record"}], "properties": {"filename": {"const": "BUILD-INFO.txt"}, "role": {"const": "buildInfo"}, "sizeBytes": {"maximum": 1048576}}},
+        {"allOf": [{"$ref": "#/$defs/record"}], "properties": {"filename": {"const": "PROVENANCE.json"}, "role": {"const": "provenance"}, "sizeBytes": {"maximum": 1048576}}},
+        {"allOf": [{"$ref": "#/$defs/record"}], "properties": {"filename": {"const": "validation.json"}, "role": {"const": "validation"}, "sizeBytes": {"maximum": 16777216}}},
+        {"allOf": [{"$ref": "#/$defs/record"}], "properties": {"filename": {"const": "module-verification.json"}, "role": {"const": "moduleVerification"}, "sizeBytes": {"maximum": 1048576}}},
+        {"allOf": [{"$ref": "#/$defs/record"}], "properties": {"filename": {"const": "userspace-verification.json"}, "role": {"const": "userspaceVerification"}, "sizeBytes": {"maximum": 262144}}},
+        {"allOf": [{"$ref": "#/$defs/record"}], "properties": {"filename": {"const": "initramfs-verification.json"}, "role": {"const": "initramfsVerification"}, "sizeBytes": {"maximum": 262144}}}
+      ],
+      "type": "array"
+    },
+    "rootfsRelativePath": {"const": "usr/lib/open-gpu-kernel-modules-steamos-support/offline-install/receipt.json"},
+    "schemaVersion": {"const": 1},
+    "status": {"const": "verified"},
+    "target": {"$ref": "#/$defs/target"}
+  },
+  "required": ["schemaVersion", "status", "reason", "target", "receiptId", "rootfsRelativePath", "records"],
+  "title": "OPEMOS installer payload receipt v1",
+  "type": "object",
+  "unevaluatedProperties": true
+}

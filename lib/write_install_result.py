@@ -6,6 +6,12 @@ import json
 import re
 from pathlib import Path
 from atomic_output import atomic_write_bytes
+from payload_receipt import (
+    MANIFEST_NAME as PAYLOAD_RECEIPT_NAME,
+    MAX_INPUTS as PAYLOAD_RECEIPT_INPUTS,
+    RECEIPT_RELATIVE as PAYLOAD_RECEIPT_RELATIVE,
+    receipt_id,
+)
 
 
 MAX_VALIDATION_BYTES = 16 * 1024 * 1024
@@ -669,43 +675,69 @@ def load_payload_receipt(path):
                 or not 0 < path.stat().st_size <= MAX_PAYLOAD_RECEIPT_BYTES):
             raise OSError
         document = json.loads(
-            path.read_text(encoding="utf-8"), object_pairs_hook=unique_object
+            path.read_text(encoding="utf-8"), object_pairs_hook=unique_object,
+            parse_constant=reject_json_constant,
         )
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
         raise SystemExit("Payload receipt verification is unreadable or excessive.")
-    roles = [
-        "buildInfo", "provenance", "validation", "moduleVerification",
-        "userspaceVerification", "initramfsVerification",
-    ]
+    return validate_payload_receipt_record(document)
+
+
+def validate_payload_receipt_record(document):
+    """Validate a self-contained rootfs payload receipt proof."""
+    roles = list(PAYLOAD_RECEIPT_INPUTS)
     records = document.get("records") if isinstance(document, dict) else None
     if (not isinstance(document, dict)
+            or not {"schemaVersion", "status", "reason", "target", "receiptId",
+                    "rootfsRelativePath", "records"} <= set(document)
             or document.get("schemaVersion") != 1
             or document.get("status") != "verified"
             or document.get("reason") != "payload_receipt_verified"
             or not isinstance(document.get("receiptId"), str)
             or HEX_SHA256.fullmatch(document["receiptId"]) is None
             or document.get("rootfsRelativePath")
-            != "usr/lib/open-gpu-kernel-modules-steamos-support/offline-install/receipt.json"
+            != str(PAYLOAD_RECEIPT_RELATIVE / PAYLOAD_RECEIPT_NAME)
             or not isinstance(document.get("target"), dict)
+            or set(document["target"]) != {
+                "steamosVersion", "kernelVersion", "nvidiaVersion", "architecture"
+            }
+            or not VERSION.fullmatch(document["target"].get("steamosVersion", ""))
+            or document["target"].get("steamosVersion") == "unknown"
+            or not KERNEL.fullmatch(document["target"].get("kernelVersion", ""))
+            or document["target"].get("kernelVersion") == "unknown"
+            or not VERSION.fullmatch(document["target"].get("nvidiaVersion", ""))
+            or document["target"].get("nvidiaVersion") == "unknown"
+            or document["target"].get("architecture") != "x86_64"
             or not isinstance(records, list)
             or len(records) != len(roles)
             or [record.get("role") for record in records
                if isinstance(record, dict)] != roles):
         raise SystemExit("Payload receipt verification is malformed.")
-    filenames = set()
-    for record in records:
+    for role, record in zip(roles, records):
+        filename, maximum, _structured = PAYLOAD_RECEIPT_INPUTS[role]
         if (not isinstance(record, dict)
                 or set(record) != {"role", "filename", "sizeBytes", "sha256"}
-                or not plain_name(record.get("filename", ""))
-                or record["filename"] in filenames
+                or record.get("role") != role
+                or record.get("filename") != filename
                 or not isinstance(record.get("sizeBytes"), int)
                 or isinstance(record["sizeBytes"], bool)
-                or not 0 < record["sizeBytes"] <= 16 * 1024 * 1024
+                or not 0 < record["sizeBytes"] <= maximum
                 or not isinstance(record.get("sha256"), str)
                 or HEX_SHA256.fullmatch(record["sha256"]) is None):
             raise SystemExit("Payload receipt verification records are malformed.")
-        filenames.add(record["filename"])
+    if document["receiptId"] != receipt_id(document["target"], records):
+        raise SystemExit("Payload receipt identity is inconsistent.")
     return document
+
+
+def validate_payload_receipt_binding(receipt, target):
+    expected = {
+        field: target[field] for field in (
+            "steamosVersion", "kernelVersion", "nvidiaVersion", "architecture"
+        )
+    }
+    if receipt.get("target") != expected:
+        raise SystemExit("Payload receipt does not match the exact target identity.")
 
 
 def load_target_execution_failure(path):
@@ -1457,13 +1489,9 @@ def main():
         raise SystemExit("A successful installation requires exact initramfs verification metadata.")
     if args.payload_receipt:
         payload_receipt = load_payload_receipt(args.payload_receipt)
-        receipt_target = payload_receipt["target"]
-        if (args.status != "success"
-                or receipt_target.get("steamosVersion") != args.steamos
-                or receipt_target.get("kernelVersion") != args.kernel
-                or receipt_target.get("nvidiaVersion") != args.nvidia
-                or receipt_target.get("architecture") != "x86_64"):
+        if args.status != "success":
             raise SystemExit("Payload receipt verification does not match the result.")
+        validate_payload_receipt_binding(payload_receipt, document["target"])
         document["payloadReceipt"] = payload_receipt
     elif args.status == "success":
         raise SystemExit(

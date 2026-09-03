@@ -11,6 +11,8 @@ from pathlib import Path
 from write_install_result import (
     validate_initramfs_verification_binding,
     validate_initramfs_verification_record,
+    validate_payload_receipt_binding,
+    validate_payload_receipt_record,
 )
 
 
@@ -316,37 +318,11 @@ def validate_success_proofs(document, target):
         raise ValueError("success initramfs verification is malformed") from error
 
     receipt = document["payloadReceipt"]
-    receipt_records = receipt.get("records") if isinstance(receipt, dict) else None
-    receipt_roles = [
-        "buildInfo", "provenance", "validation", "moduleVerification",
-        "userspaceVerification", "initramfsVerification",
-    ]
-    if (receipt.get("schemaVersion") != 1
-            or receipt.get("status") != "verified"
-            or receipt.get("reason") != "payload_receipt_verified"
-            or receipt.get("target") != {
-                field: target[field] for field in (
-                    "steamosVersion", "kernelVersion", "nvidiaVersion", "architecture"
-                )
-            }
-            or not isinstance(receipt.get("receiptId"), str)
-            or HEX_SHA256.fullmatch(receipt["receiptId"]) is None
-            or receipt.get("rootfsRelativePath")
-            != "usr/lib/open-gpu-kernel-modules-steamos-support/offline-install/receipt.json"
-            or not isinstance(receipt_records, list)
-            or len(receipt_records) != len(receipt_roles)
-            or [record.get("role") for record in receipt_records
-               if isinstance(record, dict)] != receipt_roles
-            or any(not isinstance(record, dict)
-                   or not plain_filename(record.get("filename"))
-                   or record.get("filename") is None
-                   or not isinstance(record.get("sha256"), str)
-                   or HEX_SHA256.fullmatch(record["sha256"]) is None
-                   or not isinstance(record.get("sizeBytes"), int)
-                   or isinstance(record["sizeBytes"], bool)
-                   or record["sizeBytes"] <= 0
-                   for record in receipt_records)):
-        raise ValueError("success payload receipt is malformed")
+    try:
+        validate_payload_receipt_record(receipt)
+        validate_payload_receipt_binding(receipt, target)
+    except SystemExit as error:
+        raise ValueError("success payload receipt is malformed") from error
 
 
 def validate_result(path):

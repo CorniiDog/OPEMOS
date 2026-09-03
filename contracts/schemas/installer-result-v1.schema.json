@@ -2,11 +2,6 @@
   "$id": "https://corniidog.github.io/OPEMOS/contracts/installer-result-v1.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$defs": {
-    "boundedCount": {
-      "maximum": 9223372036854775807,
-      "minimum": 0,
-      "type": "integer"
-    },
     "cleanup": {
       "properties": {
         "compressionPolicyRestored": {"type": "boolean"},
@@ -27,53 +22,10 @@
       "pattern": "^[A-Za-z0-9@._+~:-]+$",
       "type": "string"
     },
-    "hash": {
-      "pattern": "^[0-9a-f]{64}$",
-      "type": "string"
-    },
     "kernelVersion": {
       "maxLength": 255,
       "pattern": "^[A-Za-z0-9._+~-]+$",
       "type": "string"
-    },
-    "payloadReceipt": {
-      "properties": {
-        "reason": {"const": "payload_receipt_verified"},
-        "receiptId": {"$ref": "#/$defs/hash"},
-        "records": {
-          "items": {
-            "properties": {
-              "filename": {"$ref": "#/$defs/filename"},
-              "role": {
-                "enum": ["buildInfo", "provenance", "validation", "moduleVerification", "userspaceVerification", "initramfsVerification"]
-              },
-              "sha256": {"$ref": "#/$defs/hash"},
-              "sizeBytes": {"minimum": 1, "type": "integer"}
-            },
-            "required": ["role", "filename", "sizeBytes", "sha256"],
-            "type": "object"
-          },
-          "maxItems": 6,
-          "minItems": 6,
-          "type": "array"
-        },
-        "rootfsRelativePath": {"const": "usr/lib/open-gpu-kernel-modules-steamos-support/offline-install/receipt.json"},
-        "schemaVersion": {"const": 1},
-        "status": {"const": "verified"},
-        "target": {"$ref": "#/$defs/receiptTarget"}
-      },
-      "required": ["schemaVersion", "status", "reason", "target", "receiptId", "rootfsRelativePath", "records"],
-      "type": "object"
-    },
-    "receiptTarget": {
-      "properties": {
-        "architecture": {"const": "x86_64"},
-        "kernelVersion": {"$ref": "#/$defs/kernelVersion"},
-        "nvidiaVersion": {"$ref": "#/$defs/version"},
-        "steamosVersion": {"$ref": "#/$defs/version"}
-      },
-      "required": ["steamosVersion", "kernelVersion", "nvidiaVersion", "architecture"],
-      "type": "object"
     },
     "target": {
       "properties": {
@@ -118,7 +70,7 @@
           "initramfsVerification": {"$ref": "installer-initramfs-verification-v1.schema.json"},
           "initramfsWorkspace": {"$ref": "#/$defs/workspace"},
           "moduleVerification": {"$ref": "installer-module-verification-v1.schema.json"},
-          "payloadReceipt": {"$ref": "#/$defs/payloadReceipt"},
+          "payloadReceipt": {"$ref": "installer-payload-receipt-v1.schema.json"},
           "phase": {"const": "complete"},
           "reason": {"const": "install_complete"},
           "userspaceVerification": {"$ref": "installer-userspace-verification-v1.schema.json"},
@@ -165,7 +117,7 @@
     },
     "message": {"maxLength": 2048, "minLength": 1, "type": "string"},
     "moduleVerification": {"$ref": "installer-module-verification-v1.schema.json"},
-    "payloadReceipt": {"type": "object"},
+    "payloadReceipt": {"$ref": "installer-payload-receipt-v1.schema.json"},
     "phase": {"maxLength": 64, "pattern": "^[a-z][a-z0-9_]{0,63}$", "type": "string"},
     "reason": {"maxLength": 64, "pattern": "^[a-z][a-z0-9_]{0,63}$", "type": "string"},
     "schemaVersion": {"const": 1},

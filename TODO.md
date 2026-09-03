@@ -106,7 +106,7 @@ index in the same commit.
   hashes, dependency/provider arrays, reviewed lock/provenance identities,
   pacman consistency, payload confinement/hash/mode/ownership/link proofs, and
   exact-version GSP firmware to authenticated validation.
-* [ ] Publish the remaining workspace-verification, receipt, and gaming-payload
+* [ ] Publish the remaining workspace-verification and gaming-payload
   schemas from OPEMOS. The additive installer-result schema
   1 envelope and mandatory success proofs are now published. Generate or
   fixture-test OPEMOS.EXE's
@@ -1583,6 +1583,10 @@ signing policy.
 * [x] Publish the standalone bounded initramfs-verification schema-1 contract
   and deterministic cross-frontend matrix, including exact target binding,
   early-boot/rootfs-only separation, path confinement, and hostile inputs.
+* [x] Publish the standalone bounded payload-receipt schema-1 contract and
+  deterministic cross-frontend matrix. Require the exact six role-specific
+  records, recomputed canonical receipt identity, exact target binding, and
+  mounted-root evidence verification before final-image trust.
 * [x] Verify the target Holo pacman database after mutation, including package
   records, ownership, dependency state, and database consistency.
 

@@ -33,6 +33,12 @@ reimplement compatibility, package-selection, signer, or mutation policy.
   diagnostics. Package records are closed and bind filenames, versions,
   hashes, dependencies/providers, payload invariants, pacman consistency, and
   GSP firmware back to the reviewed lock and provenance.
+- `schemas/installer-initramfs-verification-v1.schema.json` describes the
+  success-only exact-kernel initramfs proof, including authenticated tools,
+  configuration, images, listings, and the early-boot/rootfs-only module split.
+- `schemas/installer-payload-receipt-v1.schema.json` describes the success-only
+  six-document rootfs receipt, canonical receipt identity, exact target, and
+  role-specific filenames and byte ceilings.
 
 Unknown additive fields are permitted. Removing a required field, changing its
 meaning, or tightening a previously valid value requires a new schema version.
@@ -99,6 +105,15 @@ early-boot set, rootfs-only `nvidia-peermem`, confined module paths, safe
 additive top-level metadata, and hostile JSON. Generation or inspection errors
 remain typed failures in the outer installer result; Core does not emit a
 failed nested initramfs proof.
+
+`lib/generate_installer_payload_receipt_fixtures.py` deterministically emits
+the bounded success-only payload-receipt schema-1 matrix. It requires the exact
+ordered six-document inventory, canonical role-specific filenames and byte
+ceilings, a closed exact target identity, and a receipt ID recomputed from the
+canonical `{schemaVersion,target,records}` identity. Structural acceptance is
+separate from terminal target binding. Recorded evidence hashes are verified
+against the rootfs-resident files by `lib/payload_receipt.py verify`, including
+during independent final-image inspection.
 
 When resolution returns `no_compatible_artifact` with reason
 `no_compatible_release`, `nextAction` explicitly authorizes only the existing
