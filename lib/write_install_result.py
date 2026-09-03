@@ -282,20 +282,23 @@ def load_initramfs_workspace(path):
         if (path.is_symlink() or not path.is_file()
                 or not 0 < path.stat().st_size <= MAX_WORKSPACE_VERIFICATION_BYTES):
             raise OSError
-        document = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError):
+        document = json.loads(
+            path.read_text(encoding="utf-8"), object_pairs_hook=unique_object,
+            parse_constant=reject_json_constant,
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
         raise SystemExit("Initramfs workspace metadata is unreadable or excessive.")
+    return validate_initramfs_workspace_record(document)
+
+
+def validate_initramfs_workspace_record(document):
+    """Validate one bounded workspace state independently of terminal context."""
     common = {
         "schemaVersion", "status", "reason", "phase", "condition",
         "requiredBytes", "requiredInodes",
     }
-    optional = {
-        "message", "availableBytes", "availableInodes", "mode",
-        "expectedMode", "actualMode", "inodeCapacityMode",
-    }
     if (not isinstance(document, dict)
             or not common <= set(document)
-            or not set(document) <= common | optional
             or document.get("schemaVersion") != 1
             or document.get("reason") not in {
                 "initramfs_workspace_available", "initramfs_workspace_unavailable",
@@ -324,11 +327,22 @@ def load_initramfs_workspace(path):
                 not isinstance(value, int) or isinstance(value, bool)
                 or not 0 <= value <= 2**63 - 1):
             raise SystemExit("Initramfs workspace capacity metadata is malformed.")
+    if document["requiredInodes"] > 65536:
+        raise SystemExit("Initramfs workspace inode requirement is excessive.")
     for field in ("mode", "expectedMode", "actualMode"):
         value = document.get(field)
         if value is not None and (
                 not isinstance(value, str) or re.fullmatch(r"[0-7]{4}", value) is None):
             raise SystemExit("Initramfs workspace permission metadata is malformed.")
+    if ((inode_capacity_mode == "finite-statvfs"
+         and document.get("availableInodes") is None)
+            or (inode_capacity_mode in {
+                "dynamic-probed", "dynamic-probe-failed",
+                "not-applicable-bind-target",
+            } and document.get("availableInodes") is not None)
+            or (inode_capacity_mode == "dynamic-probe-failed"
+                and document.get("status") != "failed")):
+        raise SystemExit("Initramfs workspace inode metadata is inconsistent.")
     if document["status"] == "verified":
         verified_shape = (
             document["reason"] == "initramfs_workspace_available"
@@ -346,6 +360,8 @@ def load_initramfs_workspace(path):
                 or inode_capacity_mode is None
                 or not (finite_capacity or dynamic_capacity
                         or bind_target_capacity)
+                or document.get("availableBytes") is None
+                or document["availableBytes"] < document["requiredBytes"]
                 or (finite_capacity and (
                     document.get("availableInodes") is None
                     or document["availableInodes"] < document["requiredInodes"]
@@ -366,17 +382,58 @@ def load_initramfs_workspace(path):
                 or document["phase"] != "target_directory"
                 or document["condition"] != "missing_directory"
                 or document.get("mode") is not None
+                or inode_capacity_mode not in {
+                    "finite-statvfs", "not-applicable-bind-target"
+                }
+                or document.get("availableBytes") is None
+                or document["availableBytes"] < document["requiredBytes"]
+                or (inode_capacity_mode == "finite-statvfs" and (
+                    document.get("availableInodes") is None
+                    or document["availableInodes"] < document["requiredInodes"]
+                ))
+                or (inode_capacity_mode == "not-applicable-bind-target"
+                    and document.get("availableInodes") is not None)
                 or "message" in document):
             raise SystemExit("Target workspace preparation metadata is inconsistent.")
     elif document["status"] == "failed":
         if (document["reason"] != "initramfs_workspace_unavailable"
                 or document["condition"] == "available"
                 or not isinstance(document.get("message"), str)
-                or not bounded_message(document["message"])):
+                or not bounded_message(document["message"])
+                or (document["condition"] == "insufficient_bytes" and (
+                    document.get("availableBytes") is None
+                    or document["availableBytes"] >= document["requiredBytes"]
+                ))
+                or (document["condition"] == "insufficient_inodes" and (
+                    document.get("availableInodes") is not None
+                    and document["availableInodes"] >= document["requiredInodes"]
+                ))):
             raise SystemExit("Failed initramfs workspace metadata is inconsistent.")
     else:
         raise SystemExit("Initramfs workspace status is unsupported.")
     return document
+
+
+def validate_initramfs_workspace_binding(workspace, terminal_status, validation):
+    """Bind a valid workspace state to validation-only or mutation success."""
+    if terminal_status == "validated":
+        if (workspace["status"] not in {"verified", "preparation-required"}
+                or workspace["phase"] != "target_directory"
+                or workspace["requiredBytes"] != 4096
+                or workspace["requiredInodes"] != 1):
+            raise SystemExit(
+                "Validation-only workspace metadata does not match its preflight."
+            )
+    elif terminal_status == "success":
+        reserve = validation.get("storage", {}).get("initramfsReserveBytes")
+        if (workspace["status"] != "verified"
+                or workspace["reason"] != "initramfs_workspace_available"
+                or workspace["phase"] != "mounted_workspace"
+                or workspace["requiredBytes"] != reserve
+                or workspace["requiredInodes"] != 4096):
+            raise SystemExit(
+                "Mounted workspace metadata does not match validated storage policy."
+            )
 
 
 def load_initramfs_verification(path):
@@ -1457,11 +1514,9 @@ def main():
         )
     if args.initramfs_workspace:
         workspace = load_initramfs_workspace(args.initramfs_workspace)
-        if (args.status == "success"
-                and (workspace["status"] != "verified"
-                     or workspace["phase"] != "mounted_workspace")):
-            raise SystemExit(
-                "A successful installation requires a verified mounted initramfs workspace."
+        if args.status in {"success", "validated"}:
+            validate_initramfs_workspace_binding(
+                workspace, args.status, document.get("validation", {})
             )
         if (workspace["status"] == "failed"
                 and (args.status != "failed"
@@ -1471,11 +1526,6 @@ def main():
                              and args.phase == "cleanup")
                      ))):
             raise SystemExit("Failed workspace metadata does not match result status.")
-        if (workspace["status"] == "preparation-required"
-                and args.status != "validated"):
-            raise SystemExit(
-                "Workspace preparation metadata is valid only for validation results."
-            )
         document["initramfsWorkspace"] = workspace
     elif args.status == "success":
         raise SystemExit("A successful installation requires workspace verification metadata.")

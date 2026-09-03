@@ -45,6 +45,7 @@ def main():
             "cleanup": {"mountsReleased": True, "runtimeMountsExpected": 4,
                         "runtimeMountsReleased": 4, "compressionPolicyRestored": True},
             "validation": {"status": "verified", "provenanceSha256": "b" * 64,
+                           "storage": {"initramfsReserveBytes": 160_000_000},
                            "userspaceLock": {"sha256": "c" * 64}, "packages": [
                 {"name": "nvidia-utils", "filename": "nvidia-utils.pkg.tar.zst",
                  "fullVersion": "575.64.05-2", "sha256": "1" * 64,
@@ -119,7 +120,10 @@ def main():
             "initramfsWorkspace": {
                 "schemaVersion": 1, "status": "verified",
                 "reason": "initramfs_workspace_available",
-                "phase": "mounted_workspace", "condition": "available", "mode": "1777",
+                "phase": "mounted_workspace", "condition": "available",
+                "requiredBytes": 160_000_000, "requiredInodes": 4096,
+                "availableBytes": 200_000_000, "availableInodes": 100_000,
+                "inodeCapacityMode": "finite-statvfs", "mode": "1777",
             },
             "payloadReceipt": {
                 "schemaVersion": 1, "status": "verified",

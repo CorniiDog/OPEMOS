@@ -1,0 +1,83 @@
+{
+  "$id": "https://corniidog.github.io/OPEMOS/contracts/installer-initramfs-workspace-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "mode": {"pattern": "^[0-7]{4}$", "type": "string"},
+    "nonnegative": {"maximum": 9223372036854775807, "minimum": 0, "type": "integer"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"inodeCapacityMode": {"const": "finite-statvfs"}}, "required": ["inodeCapacityMode"]},
+      "then": {"properties": {"availableInodes": {"$ref": "#/$defs/nonnegative"}}, "required": ["availableInodes"]}
+    },
+    {
+      "if": {"properties": {"inodeCapacityMode": {"enum": ["dynamic-probed", "not-applicable-bind-target"]}}, "required": ["inodeCapacityMode"]},
+      "then": {"properties": {"availableInodes": {"type": "null"}}, "required": ["availableInodes"]}
+    }
+  ],
+  "description": "Bounded target /var/tmp and private appliance-backed initramfs workspace state. Terminal consumers separately bind preflight or mounted state to the validated storage reserve.",
+  "oneOf": [
+    {
+      "properties": {
+        "condition": {"const": "available"},
+        "mode": {"const": "1777"},
+        "phase": {"const": "target_directory"},
+        "reason": {"const": "initramfs_workspace_target_available"},
+        "status": {"const": "verified"}
+      },
+      "required": ["availableBytes", "availableInodes", "inodeCapacityMode", "mode"],
+      "not": {"required": ["message"]}
+    },
+    {
+      "properties": {
+        "condition": {"const": "missing_directory"},
+        "mode": {"type": "null"},
+        "phase": {"const": "target_directory"},
+        "reason": {"const": "initramfs_workspace_target_missing"},
+        "status": {"const": "preparation-required"}
+      },
+      "required": ["availableBytes", "availableInodes", "inodeCapacityMode", "mode"],
+      "not": {"required": ["message"]}
+    },
+    {
+      "properties": {
+        "condition": {"const": "available"},
+        "mode": {"const": "1777"},
+        "phase": {"enum": ["backing_capacity", "mounted_workspace"]},
+        "reason": {"const": "initramfs_workspace_available"},
+        "status": {"const": "verified"}
+      },
+      "required": ["availableBytes", "availableInodes", "inodeCapacityMode", "mode"],
+      "not": {"required": ["message"]}
+    },
+    {
+      "properties": {
+        "condition": {"enum": ["missing_directory", "invalid_type", "permissions", "insufficient_bytes", "insufficient_inodes"]},
+        "phase": {"enum": ["target_directory", "backing_directory", "backing_capacity", "mounted_workspace", "target_capacity"]},
+        "reason": {"const": "initramfs_workspace_unavailable"},
+        "status": {"const": "failed"}
+      },
+      "required": ["message"]
+    }
+  ],
+  "properties": {
+    "actualMode": {"$ref": "#/$defs/mode"},
+    "availableBytes": {"anyOf": [{"$ref": "#/$defs/nonnegative"}, {"type": "null"}]},
+    "availableInodes": {"anyOf": [{"$ref": "#/$defs/nonnegative"}, {"type": "null"}]},
+    "condition": {"enum": ["available", "missing_directory", "invalid_type", "permissions", "insufficient_bytes", "insufficient_inodes"]},
+    "expectedMode": {"$ref": "#/$defs/mode"},
+    "inodeCapacityMode": {"enum": ["finite-statvfs", "dynamic-probed", "dynamic-probe-failed", "not-applicable-bind-target"]},
+    "message": {"maxLength": 2048, "minLength": 1, "type": "string"},
+    "mode": {"anyOf": [{"$ref": "#/$defs/mode"}, {"type": "null"}]},
+    "phase": {"enum": ["target_directory", "backing_directory", "backing_capacity", "mounted_workspace", "target_capacity"]},
+    "reason": {"enum": ["initramfs_workspace_available", "initramfs_workspace_unavailable", "initramfs_workspace_target_available", "initramfs_workspace_target_missing"]},
+    "requiredBytes": {"$ref": "#/$defs/nonnegative"},
+    "requiredInodes": {"maximum": 65536, "minimum": 0, "type": "integer"},
+    "schemaVersion": {"const": 1},
+    "status": {"enum": ["verified", "preparation-required", "failed"]}
+  },
+  "required": ["schemaVersion", "status", "reason", "phase", "condition", "requiredBytes", "requiredInodes"],
+  "title": "OPEMOS installer initramfs workspace v1",
+  "type": "object",
+  "unevaluatedProperties": true
+}

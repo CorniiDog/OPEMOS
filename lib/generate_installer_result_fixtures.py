@@ -285,9 +285,9 @@ def success_document():
         "initramfsWorkspace": {
             "schemaVersion": 1, "status": "verified",
             "reason": "initramfs_workspace_available", "phase": "mounted_workspace",
-            "condition": "available", "requiredBytes": 64_000_000,
+            "condition": "available", "requiredBytes": 160_000_000,
             "requiredInodes": 4096, "availableBytes": 200_000_000,
-            "availableInodes": 100_000, "inodeCapacityMode": "reported",
+            "availableInodes": 100_000, "inodeCapacityMode": "finite-statvfs",
             "mode": "1777",
         },
         "initramfsVerification": initramfs_verification(),
@@ -309,10 +309,10 @@ def matrix():
     validated["validation"] = validation_proof()
     validated["initramfsWorkspace"] = {
         "schemaVersion": 1, "status": "verified",
-        "reason": "initramfs_workspace_available", "phase": "target_workspace",
-        "condition": "available", "requiredBytes": 64_000_000,
-        "requiredInodes": 4096, "availableBytes": 200_000_000,
-        "availableInodes": 100_000, "inodeCapacityMode": "reported",
+        "reason": "initramfs_workspace_target_available", "phase": "target_directory",
+        "condition": "available", "requiredBytes": 4096,
+        "requiredInodes": 1, "availableBytes": 200_000_000,
+        "availableInodes": 100_000, "inodeCapacityMode": "finite-statvfs",
         "mode": "1777",
     }
     success = success_document()

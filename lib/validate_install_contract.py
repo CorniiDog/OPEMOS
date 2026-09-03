@@ -11,6 +11,8 @@ from pathlib import Path
 from write_install_result import (
     validate_initramfs_verification_binding,
     validate_initramfs_verification_record,
+    validate_initramfs_workspace_binding,
+    validate_initramfs_workspace_record,
     validate_payload_receipt_binding,
     validate_payload_receipt_record,
 )
@@ -301,12 +303,11 @@ def validate_success_proofs(document, target):
         raise ValueError("success userspace verification is inconsistent")
 
     workspace = document["initramfsWorkspace"]
-    if (workspace.get("schemaVersion") != 1
-            or workspace.get("reason") != "initramfs_workspace_available"
-            or workspace.get("phase") != "mounted_workspace"
-            or workspace.get("condition") != "available"
-            or workspace.get("mode") != "1777"):
-        raise ValueError("success workspace verification is malformed")
+    try:
+        validate_initramfs_workspace_record(workspace)
+        validate_initramfs_workspace_binding(workspace, "success", validation)
+    except SystemExit as error:
+        raise ValueError("success workspace verification is malformed") from error
 
     initramfs = document["initramfsVerification"]
     try:
@@ -397,8 +398,6 @@ def validate_result(path):
             if not isinstance(value, dict) or value.get("status") != status:
                 raise ValueError(f"success lacks {field}")
         validate_success_proofs(document, target)
-        if document["initramfsWorkspace"].get("phase") != "mounted_workspace":
-            raise ValueError("success workspace phase is invalid")
     elif document["status"] == "validated":
         if document["reason"] != "validation_complete" or document["phase"] != "validated":
             raise ValueError("validated terminal state is inconsistent")
@@ -409,6 +408,17 @@ def validate_result(path):
                 }
                 or any(inputs[field] is None for field in input_keys)):
             raise ValueError("validated result lacks exact target or input identity")
+        workspace = document.get("initramfsWorkspace")
+        if workspace is not None:
+            try:
+                validate_initramfs_workspace_record(workspace)
+                validate_initramfs_workspace_binding(
+                    workspace, "validated", document.get("validation", {})
+                )
+            except SystemExit as error:
+                raise ValueError(
+                    "validated workspace verification is malformed"
+                ) from error
     elif document["status"] == "cancelled" and document["reason"] != "cancelled":
         raise ValueError("cancelled terminal state is inconsistent")
     return document

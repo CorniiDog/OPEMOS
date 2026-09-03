@@ -42,18 +42,6 @@
       "maxLength": 64,
       "pattern": "^(?:unknown|[0-9]+\\.[0-9]+(?:\\.[0-9]+)?)$",
       "type": "string"
-    },
-    "workspace": {
-      "properties": {
-        "condition": {"const": "available"},
-        "mode": {"const": "1777"},
-        "phase": {"const": "mounted_workspace"},
-        "reason": {"const": "initramfs_workspace_available"},
-        "schemaVersion": {"const": 1},
-        "status": {"const": "verified"}
-      },
-      "required": ["schemaVersion", "status", "reason", "phase", "condition", "mode"],
-      "type": "object"
     }
   },
   "allOf": [
@@ -68,7 +56,7 @@
             }
           },
           "initramfsVerification": {"$ref": "installer-initramfs-verification-v1.schema.json"},
-          "initramfsWorkspace": {"$ref": "#/$defs/workspace"},
+          "initramfsWorkspace": {"$ref": "installer-initramfs-workspace-v1.schema.json"},
           "moduleVerification": {"$ref": "installer-module-verification-v1.schema.json"},
           "payloadReceipt": {"$ref": "installer-payload-receipt-v1.schema.json"},
           "phase": {"const": "complete"},
@@ -104,7 +92,7 @@
   "properties": {
     "cleanup": {"$ref": "#/$defs/cleanup"},
     "initramfsVerification": {"$ref": "installer-initramfs-verification-v1.schema.json"},
-    "initramfsWorkspace": {"type": "object"},
+    "initramfsWorkspace": {"$ref": "installer-initramfs-workspace-v1.schema.json"},
     "inputs": {
       "properties": {
         "archive": {"anyOf": [{"$ref": "#/$defs/filename"}, {"type": "null"}]},

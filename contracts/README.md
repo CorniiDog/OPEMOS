@@ -36,6 +36,9 @@ reimplement compatibility, package-selection, signer, or mutation policy.
 - `schemas/installer-initramfs-verification-v1.schema.json` describes the
   success-only exact-kernel initramfs proof, including authenticated tools,
   configuration, images, listings, and the early-boot/rootfs-only module split.
+- `schemas/installer-initramfs-workspace-v1.schema.json` describes target
+  `/var/tmp` preflight, preparation-required, private backing, mounted success,
+  and bounded failure states with explicit byte/inode capacity semantics.
 - `schemas/installer-payload-receipt-v1.schema.json` describes the success-only
   six-document rootfs receipt, canonical receipt identity, exact target, and
   role-specific filenames and byte ceilings.
@@ -105,6 +108,14 @@ early-boot set, rootfs-only `nvidia-peermem`, confined module paths, safe
 additive top-level metadata, and hostile JSON. Generation or inspection errors
 remain typed failures in the outer installer result; Core does not emit a
 failed nested initramfs proof.
+
+`lib/generate_installer_initramfs_workspace_fixtures.py` deterministically
+emits the bounded workspace schema-1 matrix. Structural acceptance is separate
+from terminal binding: validation-only records use the 4096-byte/one-inode
+target-directory probe, while mutation success requires a mounted workspace
+whose byte requirement equals validated `initramfsReserveBytes` and whose inode
+requirement is 4096. Finite, dynamically probed, and bind-target inode modes
+remain distinct and contradictory capacity states fail closed.
 
 `lib/generate_installer_payload_receipt_fixtures.py` deterministically emits
 the bounded success-only payload-receipt schema-1 matrix. It requires the exact

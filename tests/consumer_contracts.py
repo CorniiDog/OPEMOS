@@ -36,11 +36,14 @@ from write_install_result import (  # noqa: E402
     MAX_MODULE_VERIFICATION_BYTES,
     MAX_PAYLOAD_RECEIPT_BYTES,
     MAX_USERSPACE_VERIFICATION_BYTES,
+    MAX_WORKSPACE_VERIFICATION_BYTES,
     load_initramfs_verification,
+    load_initramfs_workspace,
     load_module_verification,
     load_payload_receipt,
     load_userspace_verification,
     validate_initramfs_verification_binding,
+    validate_initramfs_workspace_binding,
     validate_module_verification_binding,
     validate_payload_receipt_binding,
     validate_userspace_verification_binding,
@@ -765,6 +768,11 @@ def main():
             encoding="utf-8"
         )
     )
+    workspace_schema = json.loads(
+        (schema_root / "installer-initramfs-workspace-v1.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
     assert resolver_schema["$schema"].endswith("2020-12/schema")
     assert resolver_schema["properties"]["schemaVersion"]["const"] == 2
     assert resolver_schema["unevaluatedProperties"] is True
@@ -826,6 +834,10 @@ def main():
     assert payload_receipt_schema["properties"]["records"]["maxItems"] == 6
     assert payload_receipt_schema["$defs"]["record"]["additionalProperties"] is False
     assert payload_receipt_schema["$defs"]["target"]["additionalProperties"] is False
+    assert workspace_schema["$schema"].endswith("2020-12/schema")
+    assert workspace_schema["unevaluatedProperties"] is True
+    assert workspace_schema["properties"]["requiredInodes"]["maximum"] == 65536
+    assert len(workspace_schema["oneOf"]) == 4
     assert result_schema["properties"]["validation"]["$ref"] == (
         "installer-validation-v1.schema.json"
     )
@@ -853,6 +865,12 @@ def main():
     assert result_schema["allOf"][0]["then"]["properties"][
         "payloadReceipt"
     ]["$ref"] == "installer-payload-receipt-v1.schema.json"
+    assert result_schema["properties"]["initramfsWorkspace"]["$ref"] == (
+        "installer-initramfs-workspace-v1.schema.json"
+    )
+    assert result_schema["allOf"][0]["then"]["properties"][
+        "initramfsWorkspace"
+    ]["$ref"] == "installer-initramfs-workspace-v1.schema.json"
 
     validate_resolver_compatibility_fixtures(
         ROOT / "contracts/fixtures/resolver-compatibility-v2.json"
@@ -877,6 +895,9 @@ def main():
     )
     validate_installer_payload_receipt_compatibility_fixtures(
         ROOT / "lib/generate_installer_payload_receipt_fixtures.py"
+    )
+    validate_installer_initramfs_workspace_compatibility_fixtures(
+        ROOT / "lib/generate_installer_initramfs_workspace_fixtures.py"
     )
 
     tag = "steamos-3.8.14-nvidia-575.64.05-k6.16.12-valve24.4-x86"
@@ -1261,6 +1282,148 @@ def validate_installer_payload_receipt_compatibility_fixtures(generator):
         for prefix in ("maximum", "excessive") for slug in role_slugs
     }
     assert set(names) == static_names | bound_names
+
+
+def validate_installer_initramfs_workspace_compatibility_fixtures(generator):
+    outputs = []
+    for _ in range(2):
+        completed = subprocess.run(
+            [sys.executable, str(generator)], cwd="/", check=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        assert completed.stderr == b""
+        assert 1 <= len(completed.stdout) <= 512 * 1024
+        outputs.append(completed.stdout)
+    assert outputs[0] == outputs[1] and outputs[0].endswith(b"\n")
+    matrix = json.loads(
+        outputs[0], object_pairs_hook=resolver_module.unique_object,
+        parse_constant=resolver_module.reject_json_constant,
+    )
+    assert set(matrix) == {
+        "schemaVersion", "kind", "initramfsWorkspaceSchemaVersion",
+        "validationStorage", "unfrozenFields", "limits", "cases",
+    }
+    assert matrix["schemaVersion"] == 1
+    assert matrix["kind"] == (
+        "opemos-installer-initramfs-workspace-compatibility-fixtures"
+    )
+    assert matrix["initramfsWorkspaceSchemaVersion"] == 1
+    assert matrix["unfrozenFields"] == ["message"]
+    assert matrix["limits"] == {
+        "maxDocumentBytes": MAX_WORKSPACE_VERIFICATION_BYTES,
+        "maxCapacity": 2**63 - 1,
+        "maxRequiredInodes": 65536,
+    }
+    validation = {"storage": matrix["validationStorage"]}
+    cases = matrix["cases"]
+    assert isinstance(cases, list) and 1 <= len(cases) <= 64
+    base_cases = {
+        fixture["name"]: fixture["document"]
+        for fixture in cases if "document" in fixture
+    }
+    names = []
+    with tempfile.TemporaryDirectory(prefix="opemos-workspace-fixtures-") as temporary:
+        root = Path(temporary)
+        candidate_path = root / "workspace.json"
+        for fixture in cases:
+            assert isinstance(fixture, dict)
+            assert set(fixture) in (
+                {"name", "expected", "document"},
+                {"name", "expected", "rawDocument"},
+                {"name", "expected", "documentRecipe"},
+            )
+            name = fixture["name"]
+            names.append(name)
+            assert isinstance(name, str)
+            assert re.fullmatch(r"[a-z][a-z0-9-]{0,63}", name)
+            expected = fixture["expected"]
+            assert set(expected) == {
+                "recordAccepted", "validatedResultAccepted",
+                "mutationSuccessAccepted",
+            }
+            assert all(isinstance(value, bool) for value in expected.values())
+            if "document" in fixture:
+                payload = json.dumps(
+                    fixture["document"], sort_keys=True, separators=(",", ":")
+                ) + "\n"
+            elif "rawDocument" in fixture:
+                payload = fixture["rawDocument"]
+                assert isinstance(payload, str) and payload
+            else:
+                recipe = fixture["documentRecipe"]
+                assert recipe == {
+                    "kind": "top-level-padding",
+                    "baseCase": "valid-target-finite",
+                    "paddingBytes": MAX_WORKSPACE_VERIFICATION_BYTES,
+                }
+                candidate = copy.deepcopy(base_cases[recipe["baseCase"]])
+                candidate["padding"] = "x" * recipe["paddingBytes"]
+                payload = json.dumps(candidate, sort_keys=True, separators=(",", ":"))
+                assert (MAX_WORKSPACE_VERIFICATION_BYTES < len(payload.encode())
+                        <= MAX_WORKSPACE_VERIFICATION_BYTES + 16384)
+            candidate_path.write_text(payload, encoding="utf-8")
+            try:
+                parsed = load_initramfs_workspace(candidate_path)
+            except SystemExit:
+                record_accepted = False
+                validated_accepted = False
+                mutation_accepted = False
+            else:
+                record_accepted = True
+                try:
+                    validate_initramfs_workspace_binding(
+                        parsed, "validated", validation
+                    )
+                except SystemExit:
+                    validated_accepted = False
+                else:
+                    validated_accepted = True
+                try:
+                    validate_initramfs_workspace_binding(
+                        parsed, "success", validation
+                    )
+                except SystemExit:
+                    mutation_accepted = False
+                else:
+                    mutation_accepted = True
+            assert record_accepted is expected["recordAccepted"], name
+            assert validated_accepted is expected["validatedResultAccepted"], name
+            assert mutation_accepted is expected["mutationSuccessAccepted"], name
+
+        linked = root / "linked-workspace.json"
+        linked.symlink_to(candidate_path)
+        try:
+            load_initramfs_workspace(linked)
+        except SystemExit:
+            pass
+        else:
+            raise AssertionError("linked workspace fixture was accepted")
+
+    assert len(names) == len(set(names))
+    assert set(names) == {
+        "valid-target-finite", "valid-target-bind-inodes",
+        "valid-preparation-finite", "valid-preparation-bind-inodes",
+        "valid-mounted-finite", "valid-mounted-dynamic",
+        "valid-backing-finite", "safe-additive-top-level",
+        "valid-failure-insufficient-bytes", "valid-failure-insufficient-inodes",
+        "valid-failure-dynamic-probe", "storage-reserve-binding-mismatch",
+        "mutation-inode-binding-mismatch", "validation-byte-binding-mismatch",
+        "validation-inode-binding-mismatch", "maximum-capacity-and-inodes",
+        "negative-required-bytes", "excessive-required-bytes",
+        "excessive-required-inodes", "boolean-required-inodes",
+        "negative-available-bytes", "nested-available-bytes",
+        "finite-missing-inodes", "finite-null-inodes",
+        "finite-insufficient-inodes-verified", "insufficient-bytes-verified",
+        "dynamic-with-reported-inodes", "dynamic-target-state",
+        "bind-mode-mounted-state", "probe-failure-verified", "missing-mode",
+        "wrong-mode", "verified-message", "preparation-nonnull-mode",
+        "preparation-message", "preparation-insufficient-bytes",
+        "failure-missing-message", "failure-available-condition",
+        "failure-contradictory-bytes", "failure-contradictory-inodes",
+        "target-reason-contradiction", "mounted-phase-contradiction",
+        "unknown-phase", "missing-required-field", "malformed-json",
+        "duplicate-json-key", "non-finite-json", "oversized-document",
+    }
 
 
 if __name__ == "__main__":
