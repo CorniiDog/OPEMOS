@@ -69,6 +69,9 @@ ports, query/fragment state, path traversal, ambiguous separators, and mutable
 segments such as `latest`, `main`, `HEAD`, or branch refs are rejected. Redirects
 are disabled: consumers derive discovery and immutable-asset URLs only from the
 pinned origin, path namespace, release tag, and canonical asset filename.
+Unicode/IDNA/punycode hosts, IP literals, percent encoding, and path segments
+with portable-filesystem ambiguity (leading/trailing dots or Windows device
+names) are also rejected rather than normalized differently by consumers.
 
 `userspace-lock-bootstrap-checkpoint-v1.schema.json` is a separate closed
 document binding the SHA-256 of those exact canonical policy bytes to
@@ -84,6 +87,14 @@ add an algorithm, change an endpoint, or lower the checkpoint/high-water.
 deterministic cross-consumer matrix. Its URLs and hashes are test-only values
 under the reserved `.invalid` namespace. The repository deliberately ships no
 actual policy file, keyring, checkpoint, endpoint, or production activation.
+Policy/keyring/signer rotation and checkpoint advancement require one atomic,
+independently authenticated binary or configuration update that installs a new
+canonical policy, matching keyring, and matching checkpoint. Schema 1 defines
+no in-band rotation or checkpoint-replacement message. Discovery and generation
+assets can neither request such a transition nor authorize an older policy.
+Consumers retain their monotonic high-water state across an authorized policy
+update; emergency downgrade and state-loss recovery remain separately reviewed
+future contracts.
 
 The schema-1 descriptor is a closed canonical JSON object with exactly these
 top-level fields:

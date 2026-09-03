@@ -2,7 +2,7 @@
   "$id": "https://corniidog.github.io/OPEMOS/contracts/userspace-lock-bootstrap-policy-v1.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$defs": {
-    "canonicalPath": {"maxLength": 1024, "pattern": "^/(?!.*//)(?!.*(?:^|/)(?:latest|main|master|head|refs|heads)(?:/|$))[a-z0-9._~-]+(?:/[a-z0-9._~-]+)*$", "type": "string"},
+    "canonicalPath": {"maxLength": 1024, "pattern": "^/(?!.*//)(?!.*(?:^|/)(?:latest|main|master|head|refs|heads|con|prn|aux|nul|com[1-9]|lpt[1-9])(?:[.]|/|$))[a-z0-9](?:[a-z0-9._~-]*[a-z0-9])?(?:/[a-z0-9](?:[a-z0-9._~-]*[a-z0-9])?)*$", "type": "string"},
     "hash": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
     "schemaVersions": {"items": {"const": 1}, "maxItems": 1, "minItems": 1, "type": "array", "uniqueItems": true}
   },
@@ -28,8 +28,8 @@
         "discoveryFilename": {"const": "opemos-userspace-lock-discovery-v1.json"},
         "discoveryPath": {"$ref": "#/$defs/canonicalPath"},
         "discoverySignatureFilename": {"const": "opemos-userspace-lock-discovery-v1.json.sig"},
-        "immutableReleasePathPrefix": {"maxLength": 1024, "pattern": "^/(?!.*//)(?!.*(?:^|/)(?:latest|main|master|head|refs|heads)(?:/|$))[a-z0-9._~-]+(?:/[a-z0-9._~-]+)*/$", "type": "string"},
-        "origin": {"maxLength": 512, "pattern": "^https://(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$", "type": "string"},
+        "immutableReleasePathPrefix": {"maxLength": 1024, "pattern": "^/(?!.*//)(?!.*(?:^|/)(?:latest|main|master|head|refs|heads|con|prn|aux|nul|com[1-9]|lpt[1-9])(?:[.]|/|$))[a-z0-9](?:[a-z0-9._~-]*[a-z0-9])?(?:/[a-z0-9](?:[a-z0-9._~-]*[a-z0-9])?)*/$", "type": "string"},
+        "origin": {"maxLength": 512, "pattern": "^https://(?!(?:[a-z0-9-]+\\.)*xn--)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+(?=[a-z0-9-]*[a-z](?:$))[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$", "type": "string"},
         "releaseTagPrefix": {"const": "opemos-userspace-lock-generation-v1-s"}
       },
       "required": ["origin", "discoveryPath", "discoveryFilename", "discoverySignatureFilename", "immutableReleasePathPrefix", "releaseTagPrefix", "allowRedirects"],

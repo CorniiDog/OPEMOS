@@ -196,6 +196,30 @@ def matrix():
     policy_case("invalid-origin-label", lambda value: value["channel"].update(
         origin="https://updates..example.invalid"
     ))
+    policy_case("punycode-origin", lambda value: value["channel"].update(
+        origin="https://xn--updates-9za.example.invalid"
+    ))
+    policy_case("unicode-origin", lambda value: value["channel"].update(
+        origin="https://updatés.example.invalid"
+    ))
+    policy_case("ipv4-origin", lambda value: value["channel"].update(
+        origin="https://192.0.2.1"
+    ))
+    policy_case("ipv6-origin", lambda value: value["channel"].update(
+        origin="https://[2001:db8::1]"
+    ))
+    policy_case("trailing-dot-origin", lambda value: value["channel"].update(
+        origin="https://updates.example.invalid."
+    ))
+    policy_case("single-label-origin", lambda value: value["channel"].update(
+        origin="https://localhost"
+    ))
+    policy_case("numeric-top-level-origin", lambda value: value[
+        "channel"
+    ].update(origin="https://updates.example.123"))
+    policy_case("uppercase-origin", lambda value: value["channel"].update(
+        origin="https://Updates.example.invalid"
+    ))
     policy_case("redirect-policy-enabled", lambda value: value["channel"].update(
         allowRedirects=True
     ))
@@ -207,9 +231,23 @@ def matrix():
     policy_case("mutable-release-ref", lambda value: value["channel"].update(
         immutableReleasePathPrefix="/opemos/refs/heads/main/"
     ))
+    policy_case("percent-encoded-path", lambda value: value["channel"].update(
+        immutableReleasePathPrefix="/opemos/%72eleases/generations/"
+    ))
+    policy_case("portable-path-trailing-dot", lambda value: value[
+        "channel"
+    ].update(immutableReleasePathPrefix="/opemos/releases./generations/"))
+    policy_case("portable-path-device-name", lambda value: value[
+        "channel"
+    ].update(immutableReleasePathPrefix="/opemos/con/generations/"))
     policy_case("wrong-discovery-name", lambda value: value["channel"].update(
         discoveryFilename="discovery.json"
     ))
+    policy_case("wrong-discovery-signature-name", lambda value: value[
+        "channel"
+    ].update(discoverySignatureFilename=(
+        "OPEMOS-userspace-lock-discovery-v1.json.sig"
+    )))
     policy_case("future-discovery-schema", lambda value: value[
         "compatibility"
     ].update(discoverySchemaVersions=[1, 2]))
@@ -247,6 +285,14 @@ def matrix():
     refresh(wrong_authority[2], wrong_authority[3])
     cases.append(document_case(
         "generation-authority-mismatch", wrong_authority, activation_ok=False
+    ))
+    signer_rotation = copy.deepcopy(base)
+    signer_rotation[2]["authority"]["signingKeyFingerprint"] = "B" * 40
+    signer_rotation[3]["authority"]["signingKeyFingerprint"] = "B" * 40
+    refresh(signer_rotation[2], signer_rotation[3])
+    cases.append(document_case(
+        "generation-requests-signer-rotation", signer_rotation,
+        activation_ok=False,
     ))
     wrong_compatibility = copy.deepcopy(base)
     wrong_compatibility[2]["compatibility"]["userspaceLockSchemaVersion"] = 2

@@ -2,6 +2,7 @@
 """Inactive trust/bootstrap contract for reviewed userspace-lock generations."""
 
 import hashlib
+import ipaddress
 import re
 from urllib.parse import urlsplit
 
@@ -32,6 +33,11 @@ FINGERPRINT = re.compile(r"(?:[0-9A-F]{40}|[0-9A-F]{64})")
 ORIGIN_LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
 URL_SEGMENT = re.compile(r"[a-z0-9._~-]{1,128}")
 MUTABLE_SEGMENTS = {"head", "latest", "main", "master", "refs", "heads"}
+WINDOWS_RESERVED_NAMES = {
+    "con", "prn", "aux", "nul",
+    *(f"com{index}" for index in range(1, 10)),
+    *(f"lpt{index}" for index in range(1, 10)),
+}
 
 
 class BootstrapContractError(ValueError):
@@ -54,11 +60,20 @@ def validate_origin(value):
         port = parsed.port
     except ValueError:
         fail("channel origin is invalid")
+    labels = [] if not parsed.hostname else parsed.hostname.split(".")
+    try:
+        ipaddress.ip_address(parsed.hostname or "")
+        is_ip_literal = True
+    except ValueError:
+        is_ip_literal = False
     if (parsed.scheme != "https" or not parsed.hostname
             or parsed.hostname != parsed.hostname.lower()
             or len(parsed.hostname) > 253
-            or any(ORIGIN_LABEL.fullmatch(label) is None
-                   for label in parsed.hostname.split("."))
+            or is_ip_literal
+            or len(labels) < 2
+            or re.search(r"[a-z]", labels[-1]) is None
+            or any(ORIGIN_LABEL.fullmatch(label) is None for label in labels)
+            or any(label.startswith("xn--") for label in labels)
             or parsed.username is not None or parsed.password is not None
             or port is not None or parsed.path or parsed.query or parsed.fragment
             or value != f"https://{parsed.hostname}"):
@@ -75,6 +90,9 @@ def validate_channel_path(value, label, filename=None, prefix=False):
     segments = value[1:-1].split("/") if prefix else value[1:].split("/")
     if (not segments or any(URL_SEGMENT.fullmatch(item) is None for item in segments)
             or any(item in {".", ".."} for item in segments)
+            or any(item.startswith(".") or item.endswith(".") for item in segments)
+            or any(item.split(".", 1)[0].lower() in WINDOWS_RESERVED_NAMES
+                   for item in segments)
             or any(item.lower() in MUTABLE_SEGMENTS for item in segments)):
         fail(f"{label} is unsafe or mutable")
     if filename is not None and segments[-1] != filename:
