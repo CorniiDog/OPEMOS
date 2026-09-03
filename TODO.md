@@ -1433,6 +1433,12 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   Separate stable binary trust/endpoint/schema/replay policy from mutable
   active/LKG/high-water generation state. Test endpoints use `.invalid`; no
   production key, keyring, checkpoint, endpoint, or activation is configured.
+* [x] Publish a deterministic immutable request-plan schema, semantic planner,
+  and hostile compatibility matrix. Derive discovery, detached-signature,
+  manifest, and every payload request only from the installed bootstrap policy
+  plus exact independently authenticated bytes; pin origin, release sequence,
+  names, hashes, sizes, ordering, redirects=false, and aggregate bounds without
+  implementing an HTTP client or configuring production trust.
 * [ ] Create a dedicated reviewed data-generation signer policy and binary
   verification keyring. Do not reuse Arch, Valve, NVIDIA, commit-signing, or
   desktop-binary update keys.

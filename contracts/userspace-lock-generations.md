@@ -96,6 +96,34 @@ Consumers retain their monotonic high-water state across an authorized policy
 update; emergency downgrade and state-loss recovery remain separately reviewed
 future contracts.
 
+## Deterministic immutable request plan
+
+`userspace-lock-generation-request-plan-v1.schema.json` and
+`lib/userspace_lock_request_plan.py` define the transport-neutral request plan.
+The planner runs only after a caller has independently authenticated the exact
+canonical discovery and generation-manifest bytes and both detached signatures
+against the installed policy/keyring. The closed authentication evidence binds
+the policy, keyring, primary signer, both signed payload hashes, both signature
+hashes, and the accepted OpenPGP hash-algorithm IDs. A caller-provided
+`status=authenticated` string is not proof: the preceding verifier owns creating
+this evidence from its verified, immutable snapshots.
+
+Core then derives, rather than accepts, the discovery and discovery-signature
+locations and the immutable release root. The plan contains four metadata
+requests followed by every manifest payload in manifest order. Each request
+fixes its role, portable filename, exact HTTPS URL, size, and SHA-256. The plan
+also fixes the policy hash, release tag and sequence, origin, request count,
+aggregate expected bytes, bounded URL metadata, and `redirects=false`.
+Traversal, percent encoding, queries/fragments, mutable refs, alternate origins,
+case collisions, missing/extra/duplicate requests, unauthenticated documents,
+and any caller-edited URL fail exact recomputation. This contract performs no
+network access, follows no redirects, carries no credentials, and does not
+configure a production endpoint or signer.
+
+`lib/generate_userspace_lock_request_plan_fixtures.py` emits the deterministic
+cross-consumer acceptance matrix. Its payloads, signatures, hashes, and
+`.invalid` origin are synthetic test data.
+
 The schema-1 descriptor is a closed canonical JSON object with exactly these
 top-level fields:
 

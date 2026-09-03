@@ -58,6 +58,11 @@ publisher evidence, and installed-device lifecycle.
   inactive, closed immutable generation inventory. Core additionally enforces
   authority, sequence/predecessor, target-lock, manifest-hash, and total-size
   invariants across both documents.
+- `schemas/userspace-lock-generation-request-plan-v1.schema.json` describes the
+  deterministic, redirects-disabled request set derived only from the installed
+  bootstrap policy and independently authenticated discovery, manifest,
+  detached signatures, and payload identities. The planner performs no network
+  access and accepts no caller-selected URL.
 - `schemas/device-generation-result-v1.schema.json` describes bounded results
   and durable state from the inactive installed-device generation lifecycle.
 - `schemas/device-generation-health-v1.schema.json` describes the closed,

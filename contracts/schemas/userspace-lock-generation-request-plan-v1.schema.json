@@ -1,0 +1,58 @@
+{
+  "$id": "https://corniidog.github.io/OPEMOS/contracts/userspace-lock-generation-request-plan-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "filename": {
+      "maxLength": 255,
+      "pattern": "^(?!.*[.]$)(?!(?:[Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Mm][1-9]|[Ll][Pp][Tt][1-9])(?:[.]|$))[A-Za-z0-9@._+~-]+$",
+      "type": "string"
+    },
+    "hash": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "request": {
+      "additionalProperties": false,
+      "properties": {
+        "assetRole": {
+          "enum": ["discovery", "discovery-signature", "gaming-profile", "generation-manifest", "generation-manifest-signature", "keyring", "package", "package-signature", "provenance", "signer-policy", "target-policy", "userspace-lock"]
+        },
+        "expectedSha256": {"$ref": "#/$defs/hash"},
+        "expectedSize": {"maximum": 2147483648, "minimum": 1, "type": "integer"},
+        "filename": {"$ref": "#/$defs/filename"},
+        "path": {
+          "maxLength": 2048,
+          "pattern": "^/[^?#%]*$",
+          "type": "string"
+        },
+        "requestKind": {"enum": ["metadata", "payload"]},
+        "url": {
+          "maxLength": 2048,
+          "pattern": "^https://[^/?#]+/[^?#]+$",
+          "type": "string"
+        }
+      },
+      "required": ["requestKind", "assetRole", "filename", "path", "url", "expectedSize", "expectedSha256"],
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Deterministic non-network request plan derived from an installed bootstrap policy and independently authenticated discovery and generation bytes. Semantic Core validation binds exact ordering, roles, origin, release namespace, assets, hashes, sizes, and redirects=false.",
+  "properties": {
+    "aggregateExpectedBytes": {"maximum": 8594456576, "minimum": 1, "type": "integer"},
+    "aggregateMetadataBytes": {"maximum": 16777216, "minimum": 1, "type": "integer"},
+    "discoveryHashAlgorithmId": {"enum": [8, 9, 10]},
+    "kind": {"const": "opemos-userspace-lock-generation-request-plan"},
+    "keyringSha256": {"$ref": "#/$defs/hash"},
+    "manifestHashAlgorithmId": {"enum": [8, 9, 10]},
+    "origin": {"maxLength": 512, "pattern": "^https://[a-z0-9.-]+$", "type": "string"},
+    "policySha256": {"$ref": "#/$defs/hash"},
+    "primarySigningFingerprint": {"pattern": "^(?:[0-9A-F]{40}|[0-9A-F]{64})$", "type": "string"},
+    "redirects": {"const": false},
+    "releaseTag": {"pattern": "^opemos-userspace-lock-generation-v1-s[1-9][0-9]{0,19}$", "type": "string"},
+    "requestCount": {"maximum": 4100, "minimum": 5, "type": "integer"},
+    "requests": {"items": {"$ref": "#/$defs/request"}, "maxItems": 4100, "minItems": 5, "type": "array"},
+    "schemaVersion": {"const": 1},
+    "sequence": {"maximum": 18446744073709551615, "minimum": 1, "type": "integer"}
+  },
+  "required": ["schemaVersion", "kind", "policySha256", "keyringSha256", "primarySigningFingerprint", "discoveryHashAlgorithmId", "manifestHashAlgorithmId", "sequence", "releaseTag", "origin", "redirects", "requestCount", "aggregateExpectedBytes", "aggregateMetadataBytes", "requests"],
+  "title": "OPEMOS userspace-lock immutable generation request plan v1",
+  "type": "object"
+}

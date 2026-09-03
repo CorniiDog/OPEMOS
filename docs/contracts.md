@@ -176,6 +176,14 @@ hash. `lib/generate_userspace_lock_bootstrap_fixtures.py` provides the bounded
 deterministic acceptance matrix; its `.invalid` endpoints and synthetic hashes
 are not production configuration.
 
+After those inputs are independently authenticated,
+`lib/userspace_lock_request_plan.py` derives the closed immutable request plan
+described by `userspace-lock-generation-request-plan-v1.schema.json`. It fixes
+canonical discovery/signature requests plus manifest/signature/payload release
+URLs, hashes, sizes, order, origin, and `redirects=false`; it is a pure planner,
+not an HTTP client. The matching deterministic hostile matrix is emitted by
+`lib/generate_userspace_lock_request_plan_fixtures.py`.
+
 ## Build result
 
 Pass `--result-json FILE` to `build_for_target.sh`. Schema 1 has a stable
