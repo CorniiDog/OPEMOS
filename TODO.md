@@ -1034,6 +1034,11 @@ This remains a major future area, represented by three distinct gates:
   fallback without making network availability a boot dependency.
 * [x] Make cancellation disable retries without disabling recovery graphics or
   mutating a verified slot.
+* [x] Serialize guardian, fallback, repair, and cancellation workflows without
+  deadlocking the nested canonical installer. Keep delayed-repair state closed,
+  bounded, canonical, single-linked, mode-0600, descriptor-locked, fsync-backed,
+  and constrained to reviewed phase transitions; reject concurrent or unsafe
+  state without replacing the last durable record.
 * [ ] Connect the reviewed authenticated-cache bundle to on-device repair and
   test exact cached repair with GitHub, Valve, and Arch endpoints unavailable.
 * [ ] Run delayed-network fault injection for absent/flapping connectivity,

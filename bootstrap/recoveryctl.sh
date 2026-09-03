@@ -12,6 +12,7 @@ ALLOW_NOUVEAU=0
 JSON=0
 YES=0
 ROOT="${PROJECT_TEST_ROOT:-/}"
+RECOVERY_OPERATION_LOCK_HELD=0
 
 usage()
 {
@@ -78,6 +79,28 @@ transaction_tool()
     python3 "$SUPPORT_ROOT/lib/recovery_transaction.py" "$@" --state "$TRANSACTION"
 }
 
+acquire_recovery_operation_lock()
+{
+    [[ "$RECOVERY_OPERATION_LOCK_HELD" == 0 ]] || return 0
+    need_cmd flock
+
+    local lock_file
+    lock_file="$(project_system_path "/run/lock/${PROJECT_ID}-recovery.lock")"
+    if [[ "$ROOT" == / ]]; then
+        sudo install -d -o root -g root -m 0755 "$(dirname "$lock_file")"
+        sudo touch "$lock_file"
+        sudo chown root:root "$lock_file"
+        sudo chmod 0600 "$lock_file"
+    else
+        install -d -m 0755 "$(dirname "$lock_file")"
+        touch "$lock_file"
+        chmod 0600 "$lock_file"
+    fi
+    exec 8>"$lock_file"
+    flock -n 8 || die "Another ${PROJECT_NAME} recovery operation is already running."
+    RECOVERY_OPERATION_LOCK_HELD=1
+}
+
 emit_result()
 {
     local status="$1" reason="$2" action="$3"
@@ -141,6 +164,7 @@ enable_fallback()
     esac
     confirm "Enable the ${PROFILE} recovery profile?"
     [[ "$ROOT" != / ]] || sudo -v
+    acquire_recovery_operation_lock
     acquire_lifecycle_lock
     with_writable_root
     trap restore_readonly EXIT INT TERM
@@ -206,6 +230,7 @@ disable_fallback()
         die "Exact NVIDIA verification has not succeeded; fallback remains enabled."
     confirm "Disable recovery fallback and restore NVIDIA graphical boot?"
     [[ "$ROOT" != / ]] || sudo -v
+    acquire_recovery_operation_lock
     acquire_lifecycle_lock
     with_writable_root
     trap restore_readonly EXIT INT TERM
@@ -248,6 +273,7 @@ case "$COMMAND" in
     disable-fallback) disable_fallback ;;
     repair-online|repair-auto)
         [[ "$ROOT" == / ]] || die "Online repair is supported only on the running SteamOS system."
+        acquire_recovery_operation_lock
         [[ -r "$SUPPORT_ROOT/support-revision" ]] || die "Pinned support revision is missing; rerun the canonical installer."
         revision="$(tr -d '[:space:]' < "$SUPPORT_ROOT/support-revision")"
         [[ "$revision" =~ ^[0-9a-f]{40}$ ]] || die "Pinned support revision is malformed."
@@ -259,7 +285,7 @@ case "$COMMAND" in
             exit 0
         fi
         if [[ "$recovery_status" == fallback-active && "$modules_status" == verified ]]; then
-            "$0" disable-fallback -y
+            YES=1 disable_fallback
             emit_result restored exact_nvidia_restored fallback_disabled
             exit 0
         fi
@@ -310,10 +336,11 @@ PY
             transaction_tool set --phase failed --reason post_install_verification_failed >/dev/null
             die "Installed repair did not pass exact module verification; fallback remains active."
         }
-        "$0" disable-fallback -y
+        YES=1 disable_fallback
         transaction_tool set --phase restored --reason exact_nvidia_restored >/dev/null
         ;;
     cancel-repair)
+        acquire_recovery_operation_lock
         transaction_tool cancel
         rm -f "$RELEASE_PLAN"
         ;;

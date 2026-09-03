@@ -569,6 +569,18 @@ Delayed repair state is stored atomically outside the replaceable rootfs and
 uses these UI phases: `offline_waiting`, `retry_scheduled`, `downloading`,
 `verifying`, `rebuilding`, `installing`, `restored`, `cancelled`, and `failed`.
 The transaction binds the exact kernel, NVIDIA version, and support commit.
+Its schema-1 state is closed, bounded to 64 KiB, canonical JSON with unique
+keys, root-owned mode `0600`, single-linked, and protected by its own
+descriptor-bound lock. Phase changes follow a closed transition graph and the
+attempt counter is bounded. Publication fsyncs both the replacement file and
+its parent directory. A second begin, unsafe state object, invalid transition,
+or concurrent writer fails without replacing the prior state.
+
+All mutating recovery control operations also hold one recovery-operation
+lock. This serializes guardian fallback, repair, cancellation, and manual
+fallback changes across the complete workflow. Target mutation separately
+takes the ordinary installer lifecycle lock; the two locks remain distinct so the nested canonical
+installer can take its own lifecycle lock without self-deadlocking.
 NetworkManager connectivity events trigger an immediate retry where available;
 a bounded systemd timer is the fallback. Network loss, DNS/TLS failure, captive
 portals, reboots, and flapping connectivity never block boot or disable the

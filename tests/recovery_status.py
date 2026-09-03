@@ -2,8 +2,10 @@
 """Installed-system recovery status and fail-closed profile tests."""
 
 import json
+import fcntl
 import os
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -89,6 +91,9 @@ assert "moduleVerification" in control
 assert "SUPPORT_REVISION" in control
 assert "rollback-plan" in control
 assert "set-default multi-user.target" not in control  # selected through the profile expression
+assert "acquire_recovery_operation_lock" in control
+assert 'exec 8>"$lock_file"' in control
+assert 'flock -n 8' in control
 
 with tempfile.TemporaryDirectory(prefix="opemos-recovery-grub-") as temporary:
     grub = Path(temporary) / "grub"
@@ -104,7 +109,7 @@ with tempfile.TemporaryDirectory(prefix="opemos-recovery-grub-") as temporary:
 
 with tempfile.TemporaryDirectory(prefix="opemos-recovery-transaction-") as temporary:
     state = Path(temporary) / "transaction.json"
-    base = ["python3", str(TRANSACTION)]
+    base = [sys.executable, str(TRANSACTION)]
     begin = subprocess.run(base + [
         "begin", "--state", str(state), "--kernel", KERNEL,
         "--nvidia", NVIDIA, "--support-revision", "a" * 40,
@@ -114,6 +119,20 @@ with tempfile.TemporaryDirectory(prefix="opemos-recovery-transaction-") as tempo
     assert document["automaticRetry"] is True and document["attempt"] == 0
     stat_mode = state.stat().st_mode & 0o777
     assert stat_mode == 0o600
+    original = state.read_bytes()
+    duplicate_begin = subprocess.run(base + [
+        "begin", "--state", str(state), "--kernel", KERNEL,
+        "--nvidia", NVIDIA, "--support-revision", "a" * 40,
+        "--phase", "offline_waiting", "--reason", "network_not_verified",
+    ], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert duplicate_begin.returncode != 0
+    assert state.read_bytes() == original
+    invalid_transition = subprocess.run(base + [
+        "set", "--state", str(state), "--phase", "restored",
+        "--reason", "exact_nvidia_restored",
+    ], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert invalid_transition.returncode != 0
+    assert state.read_bytes() == original
     scheduled = subprocess.run(base + [
         "set", "--state", str(state), "--phase", "retry_scheduled",
         "--reason", "network_unavailable_or_untrusted",
@@ -124,6 +143,97 @@ with tempfile.TemporaryDirectory(prefix="opemos-recovery-transaction-") as tempo
     document = json.loads(cancelled.stdout)
     assert document["phase"] == "cancelled"
     assert document["active"] is False and document["automaticRetry"] is False
+    repeated = subprocess.run(base + ["cancel", "--state", str(state)],
+                              text=True, stdout=subprocess.PIPE, check=True)
+    assert json.loads(repeated.stdout) == document
+    terminal_set = subprocess.run(base + [
+        "set", "--state", str(state), "--phase", "downloading",
+        "--reason", "exact_artifact_resolution",
+    ], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert terminal_set.returncode != 0
+
+    canonical = state.read_text(encoding="utf-8")
+    parsed = json.loads(canonical)
+    parsed["unexpected"] = True
+    state.write_text(json.dumps(parsed, sort_keys=True, separators=(",", ":")) + "\n")
+    state.chmod(0o600)
+    extra = subprocess.run(base + ["show", "--state", str(state)],
+                           text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert extra.returncode != 0
+
+    state.write_text(canonical.replace('"active":false', '"active":false,"active":false'))
+    state.chmod(0o600)
+    duplicate = subprocess.run(base + ["show", "--state", str(state)],
+                               text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert duplicate.returncode != 0
+    assert "duplicate JSON key" in duplicate.stderr
+
+    state.write_text(json.dumps(document, indent=2) + "\n")
+    state.chmod(0o600)
+    noncanonical = subprocess.run(base + ["show", "--state", str(state)],
+                                  text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert noncanonical.returncode != 0
+    assert "canonical JSON" in noncanonical.stderr
+
+    state.write_text(canonical)
+    state.chmod(0o644)
+    unsafe_mode = subprocess.run(base + ["show", "--state", str(state)],
+                                 text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert unsafe_mode.returncode != 0
+    state.chmod(0o600)
+
+    hardlink = Path(temporary) / "transaction-copy.json"
+    os.link(state, hardlink)
+    linked = subprocess.run(base + ["show", "--state", str(state)],
+                            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert linked.returncode != 0
+    hardlink.unlink()
+
+    lock = Path(temporary) / ".transaction.json.lock"
+    lock.touch(mode=0o600, exist_ok=True)
+    lock.chmod(0o600)
+    with lock.open("r+") as stream:
+        fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        contended = subprocess.run(base + ["show", "--state", str(state)],
+                                   text=True, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE)
+        assert contended.returncode != 0
+        assert "another recovery transaction operation" in contended.stderr
+
+    success_state = Path(temporary) / "successful.json"
+    subprocess.run(base + [
+        "begin", "--state", str(success_state), "--kernel", KERNEL,
+        "--nvidia", NVIDIA, "--support-revision", "b" * 40,
+        "--phase", "offline_waiting", "--reason", "network_not_verified",
+    ], stdout=subprocess.PIPE, check=True)
+    route = (
+        ("downloading", "exact_artifact_resolution"),
+        ("installing", "canonical_exact_kernel_install"),
+        ("verifying", "exact_module_verification"),
+        ("restored", "exact_nvidia_restored"),
+    )
+    for phase, reason in route:
+        completed = subprocess.run(base + [
+            "set", "--state", str(success_state), "--phase", phase,
+            "--reason", reason,
+        ], text=True, stdout=subprocess.PIPE, check=True)
+    successful = json.loads(completed.stdout)
+    assert successful["phase"] == "restored" and successful["active"] is False
+    assert successful["attempt"] == len(route)
+
+    hostile_state = Path(temporary) / "hostile.json"
+    hostile_state.write_text('{"schemaVersion":NaN}\n')
+    hostile_state.chmod(0o600)
+    nonfinite = subprocess.run(base + ["show", "--state", str(hostile_state)],
+                               text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert nonfinite.returncode != 0
+    assert "non-finite" in nonfinite.stderr
+    hostile_state.write_bytes(b"{" + b" " * (64 * 1024) + b"}\n")
+    hostile_state.chmod(0o600)
+    oversized = subprocess.run(base + ["show", "--state", str(hostile_state)],
+                               text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert oversized.returncode != 0
+    assert "excessive" in oversized.stderr
 
 with tempfile.TemporaryDirectory(prefix="opemos-recovery-plan-") as temporary:
     plan = Path(temporary) / "plan.json"

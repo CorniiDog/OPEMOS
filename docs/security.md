@@ -184,6 +184,13 @@ automatic retries without changing either slot. An authenticated offline cache
 may be used only after its exact target and hashes are revalidated; dynamic or
 nearest-version cache substitution remains forbidden.
 
+Recovery, cancellation, guardian fallback, and manual fallback changes are
+serialized by a recovery-operation lock. The transaction record rejects
+duplicate or noncanonical JSON, unsafe ownership/mode/link state, invalid phase
+transitions, concurrent writers, and non-durable replacement. The separate
+installer lifecycle lock continues to serialize root mutation; recovery does
+not hold that lock while invoking the nested canonical installer.
+
 ## Optional CUDA omission
 
 `gaming-no-cuda-v1` is a support-owned, exact-target package profile. It omits
