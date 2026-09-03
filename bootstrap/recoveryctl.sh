@@ -80,7 +80,7 @@ status_json()
     nvidia="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["nvidiaVersion"])' "$policy")"
     status_code=0
     base="$(python3 "$STATUS_TOOL" --root "$ROOT" --kernel "$(get_kernel_version)" \
-        --expected-nvidia "$nvidia")" || status_code=$?
+        --expected-nvidia "$nvidia" --require-payload-receipt)" || status_code=$?
     if [[ "$status_code" != 0 ]]; then
         printf '%s\n' "$base"
         return "$status_code"

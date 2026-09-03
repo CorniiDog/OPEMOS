@@ -3,13 +3,17 @@
 
 import json
 import fcntl
+import hashlib
 import os
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "lib"))
+import payload_receipt  # noqa: E402
 STATUS = ROOT / "lib/recovery_status.py"
 POLICY = ROOT / "lib/recovery_policy.py"
 CONTROL = ROOT / "bootstrap/recoveryctl.sh"
@@ -24,12 +28,14 @@ KERNEL = "6.16.12-valve24.5-1-neptune-616-test"
 NVIDIA = "575.64.05"
 
 
-def run(root, path, expected=None):
+def run(root, path, expected=None, require_receipt=False):
     arguments = [
         "python3", str(STATUS), "--root", str(root), "--kernel", KERNEL,
     ]
     if expected is not None:
         arguments.extend(("--expected-nvidia", expected))
+    if require_receipt:
+        arguments.append("--require-payload-receipt")
     result = subprocess.run(
         arguments,
         text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -40,7 +46,10 @@ def run(root, path, expected=None):
 
 with tempfile.TemporaryDirectory(prefix="opemos-recovery-") as temporary:
     root = Path(temporary) / "root"
-    modules = root / "usr/lib/modules" / KERNEL / "updates/opemos"
+    modules = (
+        root / "usr/lib/modules" / KERNEL
+        / "updates/open-gpu-kernel-modules-steamos"
+    )
     state = root / "var/lib/open-gpu-kernel-modules-steamos-support"
     mockbin = Path(temporary) / "bin"
     modules.mkdir(parents=True)
@@ -75,6 +84,97 @@ esac
     assert len(document["moduleVerification"]["records"]) == 5
     assert all(item["exactKernel"] and item["exactUserspace"]
                for item in document["moduleVerification"]["records"])
+
+    code, document = run(root, mockbin, require_receipt=True)
+    assert code == 0
+    assert document["status"] == "recovery-required"
+    assert document["reason"] == "payload_receipt_invalid"
+
+    raw_payloads = {}
+    for name in names:
+        raw = f"authenticated {name} module fixture\n".encode()
+        raw_payloads[name] = raw
+        source = Path(temporary) / f"{name}.ko"
+        source.write_bytes(raw)
+        subprocess.run(
+            ["zstd", "-q", "-f", str(source), "-o", str(modules / f"{name}.ko.zst")],
+            check=True,
+        )
+    evidence_root = Path(temporary) / "receipt-evidence"
+    evidence_root.mkdir()
+    evidence = {
+        name: evidence_root / filename for name, filename in (
+            ("build_info", "BUILD-INFO.txt"),
+            ("provenance", "PROVENANCE.json"),
+            ("validation", "validation.json"),
+            ("module_verification", "module-verification.json"),
+            ("userspace_verification", "userspace-verification.json"),
+            ("initramfs_verification", "initramfs-verification.json"),
+        )
+    }
+    target = {
+        "steamosVersion": "3.8.14", "kernelVersion": KERNEL,
+        "nvidiaVersion": NVIDIA, "architecture": "x86_64",
+    }
+    evidence["build_info"].write_text("fixture=1\n", encoding="utf-8")
+    evidence["provenance"].write_text(json.dumps({
+        "schemaVersion": 1, "target": target,
+        "trust": "locally-built-verified",
+    }, sort_keys=True, separators=(",", ":")) + "\n")
+    evidence["validation"].write_text(json.dumps({
+        "schemaVersion": 1, "status": "verified", "target": target,
+        "userspaceLock": {"name": "reviewed-userspace-lock.json", "sha256": "a" * 64},
+    }, sort_keys=True, separators=(",", ":")) + "\n")
+    module_records = []
+    for name in names:
+        module_name = name + ".ko"
+        digest = hashlib.sha256(raw_payloads[name]).hexdigest()
+        installed = modules / f"{module_name}.zst"
+        module_records.append({
+            "moduleName": module_name,
+            "targetRelativePath": str(installed.relative_to(root)),
+            "representation": ".ko.zst",
+            "expectedPayloadSha256": digest,
+            "actualPayloadSha256": digest,
+            "expectedMode": "0644", "actualMode": "0644",
+            "expectedUid": 0, "actualUid": 0,
+            "expectedGid": 0, "actualGid": 0,
+            "compressedSizeBytes": installed.stat().st_size,
+            "decompressionStatus": "verified", "invalidFields": [],
+        })
+    evidence["module_verification"].write_text(json.dumps({
+        "schemaVersion": 1, "status": "verified",
+        "reason": "installed_modules_verified", "modules": module_records,
+    }, sort_keys=True, separators=(",", ":")) + "\n")
+    evidence["userspace_verification"].write_text(json.dumps({
+        "schemaVersion": 1, "status": "verified",
+        "packages": [{"packageName": "nvidia-utils"}],
+    }, sort_keys=True, separators=(",", ":")) + "\n")
+    evidence["initramfs_verification"].write_text(json.dumps({
+        "schemaVersion": 1, "status": "verified", "kernelVersion": KERNEL,
+    }, sort_keys=True, separators=(",", ":")) + "\n")
+    payload_receipt.commit_receipt(SimpleNamespace(
+        root=root, **evidence,
+    ))
+    code, document = run(root, mockbin, require_receipt=True)
+    assert code == 0
+    assert document["status"] == "healthy"
+
+    changed_source = Path(temporary) / "changed-nvidia.ko"
+    changed_source.write_bytes(b"different but metadata-compatible module\n")
+    subprocess.run([
+        "zstd", "-q", "-f", str(changed_source),
+        "-o", str(modules / "nvidia.ko.zst"),
+    ], check=True)
+    code, document = run(root, mockbin, require_receipt=True)
+    assert code == 0
+    assert document["status"] == "recovery-required"
+    assert document["reason"] == "module_payload_mismatch"
+    source = Path(temporary) / "nvidia.ko"
+    subprocess.run([
+        "zstd", "-q", "-f", str(source),
+        "-o", str(modules / "nvidia.ko.zst"),
+    ], check=True)
 
     duplicate_directory = modules / "duplicate"
     duplicate_directory.mkdir()
@@ -146,7 +246,7 @@ esac
     installed_marker.write_text(marker_payload)
 
     policy = root / "usr/lib/open-gpu-kernel-modules-steamos-support/nvidia-version"
-    policy.parent.mkdir(parents=True)
+    policy.parent.mkdir(parents=True, exist_ok=True)
     policy.write_text(NVIDIA + "\n")
     policy_result = subprocess.run(
         [

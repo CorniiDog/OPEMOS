@@ -1032,6 +1032,11 @@ This remains a major future area, represented by three distinct gates:
   when the live depmod identity cannot be resolved.
 * [x] Add a bounded UI-neutral recovery status/action contract shared by the
   canonical one-line install and image-builder deployments.
+* [x] Require installed recovery health, repair completion, and fallback
+  disablement to revalidate the rootfs payload receipt and freshly hash all
+  five canonical compressed module payloads. Reject a missing, mismatched,
+  replaced, noncanonical, or metadata-only module set instead of trusting
+  `modinfo` version/vermagic alone.
 * [x] Add mutually exclusive console, validated-iGPU, and explicitly authorized
   experimental Nouveau fallback profiles; never select Nouveau automatically.
   Treat persistent fallback state as a closed canonical record and reject

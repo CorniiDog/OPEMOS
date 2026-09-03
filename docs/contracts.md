@@ -562,7 +562,15 @@ The default recovery action is `console`; it blacklists both driver families.
 `igpu-desktop` requires a validated boot-VGA Intel/AMD device.
 `nouveau-experimental` requires `--allow-nouveau` and is never returned as an
 automatic action. `disable-fallback` refuses to mutate until
-`moduleVerification.status` is `verified`.
+`moduleVerification.status` is `verified`. The installed `recoveryctl` always
+requests strict payload-receipt verification. A healthy result then also
+requires an exact receipt target, the canonical five `.ko.zst` destinations,
+root-owned mode 0644 metadata, and fresh decompressed payload hashes equal to
+the installer-committed module verification evidence. Version/vermagic metadata
+alone cannot disable fallback or finalize repair. The lower-level status helper
+retains an explicit non-receipt mode for compatibility; installed recovery
+policy never uses that weaker mode. This stronger decision does not add or
+remove recovery-status fields.
 Persistent fallback state is a closed canonical schema-1 record containing
 only `active=true` and one enumerated profile. Duplicate keys, extra fields,
 non-boolean activation, unknown profiles, non-finite values, or noncanonical

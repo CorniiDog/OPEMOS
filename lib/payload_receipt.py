@@ -379,6 +379,17 @@ def verify_receipt_userspace_lock(root, allow_live_root=False):
     }
 
 
+def verify_receipt_evidence(root, allow_live_root=False):
+    """Return the verified receipt plus its immutable evidence documents.
+
+    Recovery health must re-check the installed payload against the exact
+    module-verification evidence committed by the installer.  Keep the public
+    receipt result stable while providing that stronger internal view to other
+    Core-owned device lifecycle code.
+    """
+    return _verify_receipt(root, allow_live_root=allow_live_root)
+
+
 def arguments():
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="operation", required=True)

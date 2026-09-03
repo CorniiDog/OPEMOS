@@ -2,6 +2,7 @@
 """Bounded, machine-readable installed-system NVIDIA recovery status."""
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -9,6 +10,8 @@ import stat
 import subprocess
 import sys
 from pathlib import Path
+
+from payload_receipt import verify_receipt_evidence
 
 SCHEMA_VERSION = 1
 MODULES = (
@@ -22,6 +25,7 @@ VERSION = re.compile(r"^[0-9]+\.[0-9]+(?:\.[0-9]+)?$")
 KERNEL = re.compile(r"^[A-Za-z0-9._+\-]{1,192}$")
 MAX_CONFIG_BYTES = 1024 * 1024
 MAX_MODULE_BYTES = 256 * 1024 * 1024
+MAX_EXPANDED_MODULE_BYTES = 1024 * 1024 * 1024
 RECOVERY_STATE_FIELDS = {"schemaVersion", "active", "profile"}
 RECOVERY_PROFILES = {"console", "igpu-desktop", "nouveau-experimental"}
 
@@ -212,6 +216,118 @@ def modinfo(path: Path, field: str) -> str:
     return result.stdout.splitlines()[0].strip() if result.stdout else ""
 
 
+def module_payload_sha256(root: Path, path: Path) -> str:
+    if not path.name.endswith(".ko.zst"):
+        raise ValueError("receipt-bound module representation is unsupported")
+    process = None
+    descriptor = None
+    digest = hashlib.sha256()
+    expanded = 0
+    try:
+        before = module_identity(root, path)
+        descriptor = os.open(
+            path, os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0),
+        )
+        if module_identity(root, path) != before:
+            raise ValueError("receipt-bound module changed before inspection")
+        process = subprocess.Popen(
+            ["zstd", "-q", "-d", "-c"],
+            stdin=descriptor, stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        assert process.stdout is not None
+        with process.stdout:
+            for chunk in iter(lambda: process.stdout.read(1024 * 1024), b""):
+                expanded += len(chunk)
+                if expanded > MAX_EXPANDED_MODULE_BYTES:
+                    process.kill()
+                    raise ValueError("receipt-bound module payload is excessive")
+                digest.update(chunk)
+        if process.wait(timeout=20) != 0 or expanded == 0:
+            raise ValueError("receipt-bound module decompression failed")
+        current = module_identity(root, path)
+        opened = os.fstat(descriptor)
+        opened_identity = (
+            opened.st_dev, opened.st_ino, opened.st_size, opened.st_mtime_ns,
+            opened.st_ctime_ns, opened.st_uid, opened.st_gid,
+            stat.S_IMODE(opened.st_mode), opened.st_nlink,
+        )
+        if before != opened_identity or before != current:
+            raise ValueError("receipt-bound module changed during inspection")
+        return digest.hexdigest()
+    except (OSError, subprocess.SubprocessError) as error:
+        raise ValueError("receipt-bound module decompression failed") from error
+    finally:
+        if process is not None and process.poll() is None:
+            process.kill()
+            process.wait()
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+def verify_receipt_modules(root, kernel, expected_version, installed_paths):
+    try:
+        receipt, evidence = verify_receipt_evidence(
+            root, allow_live_root=root == Path("/"),
+        )
+    except (OSError, UnicodeError, ValueError) as error:
+        raise ValueError("installed payload receipt is unavailable or invalid") from error
+    target = receipt["target"]
+    if (target.get("kernelVersion") != kernel
+            or target.get("nvidiaVersion") != expected_version
+            or target.get("architecture") != "x86_64"):
+        raise ValueError("installed payload receipt targets another system")
+    verification = evidence.get("moduleVerification")
+    records = verification.get("modules") if isinstance(verification, dict) else None
+    if (not isinstance(records, list) or len(records) != len(MODULES)
+            or verification.get("schemaVersion") != 1
+            or verification.get("status") != "verified"
+            or verification.get("reason") != "installed_modules_verified"):
+        raise ValueError("payload receipt module evidence is incomplete")
+    expected_names = {filename + ".ko" for _, filename in MODULES}
+    by_name = {
+        record.get("moduleName"): record
+        for record in records if isinstance(record, dict)
+    }
+    if set(by_name) != expected_names or len(by_name) != len(records):
+        raise ValueError("payload receipt module evidence is ambiguous")
+    destination = (
+        Path("usr/lib/modules") / kernel
+        / "updates/open-gpu-kernel-modules-steamos"
+    )
+    for _name, filename in MODULES:
+        module_name = filename + ".ko"
+        record = by_name[module_name]
+        path = installed_paths.get(module_name)
+        expected_path = destination / f"{module_name}.zst"
+        expected_hash = record.get("actualPayloadSha256")
+        if (path is None or path.relative_to(root) != expected_path
+                or record.get("targetRelativePath") != str(expected_path)
+                or record.get("representation") != ".ko.zst"
+                or record.get("expectedPayloadSha256") != expected_hash
+                or not isinstance(expected_hash, str)
+                or re.fullmatch(r"[0-9a-f]{64}", expected_hash) is None
+                or record.get("expectedMode") != "0644"
+                or record.get("actualMode") != "0644"
+                or record.get("expectedUid") != 0
+                or record.get("actualUid") != 0
+                or record.get("expectedGid") != 0
+                or record.get("actualGid") != 0
+                or record.get("decompressionStatus") != "verified"
+                or record.get("invalidFields") != []):
+            raise ValueError("payload receipt module evidence is inconsistent")
+        metadata = path.lstat()
+        expected_owner = 0 if root == Path("/") else os.geteuid()
+        if (stat.S_IMODE(metadata.st_mode) != 0o644
+                or metadata.st_uid != expected_owner
+                or root == Path("/") and metadata.st_gid != 0
+                or record.get("compressedSizeBytes") != metadata.st_size
+                or module_payload_sha256(root, path) != expected_hash):
+            raise ValueError("installed module differs from its payload receipt")
+    return receipt["receiptId"]
+
+
 def installed_nvidia(root: Path) -> str:
     records = []
     for relative in (
@@ -274,6 +390,7 @@ def inspect(args):
         raise ValueError("expected NVIDIA policy is malformed")
     records = []
     reasons = []
+    installed_paths = {}
     if ((args.expected_nvidia or expected_file_version)
             and installed_version != expected_version):
         reasons.append("module_userspace_mismatch")
@@ -283,6 +400,7 @@ def inspect(args):
         if path is None:
             reasons.append("missing_exact_modules")
         else:
+            installed_paths[filename + ".ko"] = path
             identity = module_identity(root, path)
             vermagic = modinfo(path, "vermagic").split(" ", 1)[0]
             version = modinfo(path, "version")
@@ -300,6 +418,17 @@ def inspect(args):
             if not expected_version or version != expected_version:
                 reasons.append("module_userspace_mismatch")
         records.append(record)
+
+    if args.require_payload_receipt:
+        try:
+            verify_receipt_modules(root, kernel, expected_version, installed_paths)
+        except ValueError as error:
+            reason = (
+                "module_payload_mismatch"
+                if str(error) == "installed module differs from its payload receipt"
+                else "payload_receipt_invalid"
+            )
+            reasons.append(reason)
 
     healthy = not reasons
     if fallback:
@@ -334,6 +463,7 @@ def main():
     parser.add_argument("--kernel")
     parser.add_argument("--expected-nvidia")
     parser.add_argument("--expected-nvidia-file")
+    parser.add_argument("--require-payload-receipt", action="store_true")
     parser.add_argument("--output")
     args = parser.parse_args()
     try:
