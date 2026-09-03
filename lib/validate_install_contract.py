@@ -152,8 +152,18 @@ def validate_success_proofs(document, target):
             or len(module_records) != len(EXPECTED_MODULES)):
         raise ValueError("success module verification is malformed")
     seen_modules = set()
+    module_record_keys = {
+        "moduleName", "targetRelativePath", "representation",
+        "expectedPayloadSha256", "actualPayloadSha256", "expectedMode",
+        "actualMode", "expectedUid", "actualUid", "expectedGid", "actualGid",
+        "compressedSizeBytes", "decompressionStatus", "invalidFields",
+    }
+    destination = (
+        f"usr/lib/modules/{target['kernelVersion']}/updates/"
+        "open-gpu-kernel-modules-steamos"
+    )
     for record in module_records:
-        if not isinstance(record, dict):
+        if not isinstance(record, dict) or set(record) != module_record_keys:
             raise ValueError("success module verification is malformed")
         name = record.get("moduleName")
         representation = record.get("representation")
@@ -163,13 +173,9 @@ def validate_success_proofs(document, target):
         compressed_size = record.get("compressedSizeBytes")
         if (not isinstance(name, str)
                 or name not in EXPECTED_MODULES or name in seen_modules
-                or representation not in {".ko", ".ko.zst"}
+                or representation != ".ko.zst"
                 or not isinstance(relative, str)
-                or Path(relative).is_absolute() or ".." in Path(relative).parts
-                or not relative.startswith(
-                    f"usr/lib/modules/{target['kernelVersion']}/updates/"
-                )
-                or Path(relative).name != name + (".zst" if representation == ".ko.zst" else "")
+                or relative != f"{destination}/{name}.zst"
                 or not isinstance(expected_hash, str)
                 or HEX_SHA256.fullmatch(expected_hash) is None
                 or expected_hash != expected_module_hashes[name]
@@ -179,12 +185,10 @@ def validate_success_proofs(document, target):
                 or record.get("expectedUid") != 0 or record.get("actualUid") != 0
                 or record.get("expectedGid") != 0 or record.get("actualGid") != 0
                 or record.get("invalidFields") != []
-                or record.get("decompressionStatus") != (
-                    "verified" if representation == ".ko.zst" else "not-required"
-                )
+                or record.get("decompressionStatus") != "verified"
                 or not isinstance(compressed_size, int)
                 or isinstance(compressed_size, bool)
-                or not 0 < compressed_size <= 1024 * 1024 * 1024):
+                or not 1 <= compressed_size <= 1024 * 1024 * 1024):
             raise ValueError("success module verification is malformed")
         seen_modules.add(name)
     if seen_modules != EXPECTED_MODULES:

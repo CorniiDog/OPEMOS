@@ -1,0 +1,132 @@
+{
+  "$id": "https://corniidog.github.io/OPEMOS/contracts/installer-module-verification-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "decompressionStatus": {
+      "enum": ["verified", "not-required", "failed", "timeout", "size-limit", "empty", "not-attempted", "missing", "ambiguous", "unreadable"]
+    },
+    "hash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "invalidField": {
+      "enum": ["presence", "representation", "payloadSha256", "mode", "uid", "gid", "decompression"]
+    },
+    "moduleName": {
+      "enum": ["nvidia.ko", "nvidia-drm.ko", "nvidia-modeset.ko", "nvidia-peermem.ko", "nvidia-uvm.ko"]
+    },
+    "nullableHash": {
+      "oneOf": [{"$ref": "#/$defs/hash"}, {"type": "null"}]
+    },
+    "nullableMode": {
+      "oneOf": [{"pattern": "^[0-7]{4}$", "type": "string"}, {"type": "null"}]
+    },
+    "nullableUnsigned": {
+      "oneOf": [{"maximum": 4294967295, "minimum": 0, "type": "integer"}, {"type": "null"}]
+    },
+    "targetRelativePath": {
+      "maxLength": 512,
+      "pattern": "^usr/lib/modules/(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._+~/-]+$",
+      "type": "string"
+    },
+    "verifiedRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "actualGid": {"const": 0},
+        "actualMode": {"const": "0644"},
+        "actualPayloadSha256": {"$ref": "#/$defs/hash"},
+        "actualUid": {"const": 0},
+        "compressedSizeBytes": {"maximum": 1073741824, "minimum": 1, "type": "integer"},
+        "decompressionStatus": {"const": "verified"},
+        "expectedGid": {"const": 0},
+        "expectedMode": {"const": "0644"},
+        "expectedPayloadSha256": {"$ref": "#/$defs/hash"},
+        "expectedUid": {"const": 0},
+        "invalidFields": {"const": []},
+        "moduleName": {"$ref": "#/$defs/moduleName"},
+        "representation": {"const": ".ko.zst"},
+        "targetRelativePath": {"$ref": "#/$defs/targetRelativePath"}
+      },
+      "required": ["moduleName", "targetRelativePath", "representation", "expectedPayloadSha256", "actualPayloadSha256", "expectedMode", "actualMode", "expectedUid", "actualUid", "expectedGid", "actualGid", "compressedSizeBytes", "decompressionStatus", "invalidFields"],
+      "type": "object"
+    },
+    "mismatchRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "actualGid": {"$ref": "#/$defs/nullableUnsigned"},
+        "actualMode": {"$ref": "#/$defs/nullableMode"},
+        "actualPayloadSha256": {"$ref": "#/$defs/nullableHash"},
+        "actualUid": {"$ref": "#/$defs/nullableUnsigned"},
+        "compressedSizeBytes": {"oneOf": [{"maximum": 1073741824, "minimum": 0, "type": "integer"}, {"type": "null"}]},
+        "decompressionStatus": {"$ref": "#/$defs/decompressionStatus"},
+        "expectedGid": {"$ref": "#/$defs/nullableUnsigned"},
+        "expectedMode": {"$ref": "#/$defs/nullableMode"},
+        "expectedPayloadSha256": {"$ref": "#/$defs/nullableHash"},
+        "expectedUid": {"$ref": "#/$defs/nullableUnsigned"},
+        "invalidFields": {
+          "items": {"$ref": "#/$defs/invalidField"},
+          "maxItems": 7,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "moduleName": {"oneOf": [{"$ref": "#/$defs/moduleName"}, {"const": "unexpected"}]},
+        "representation": {"enum": [null, ".ko", ".ko.zst"]},
+        "targetRelativePath": {"$ref": "#/$defs/targetRelativePath"},
+        "unexpectedEntries": {
+          "items": {"maxLength": 255, "pattern": "^[A-Za-z0-9@._+~:-]+$", "type": "string"},
+          "maxItems": 16,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": ["moduleName", "targetRelativePath", "representation", "expectedPayloadSha256", "actualPayloadSha256", "expectedMode", "actualMode", "expectedUid", "actualUid", "expectedGid", "actualGid", "compressedSizeBytes", "decompressionStatus", "invalidFields"],
+      "type": "object"
+    }
+  },
+  "description": "Bounded module-verification record emitted by the offline installer. Exact kernel paths and payload-hash equality with installer validation are cross-record invariants enforced by Core.",
+  "oneOf": [
+    {
+      "properties": {
+        "modules": {
+          "allOf": [
+            {"contains": {"properties": {"moduleName": {"const": "nvidia.ko"}}, "required": ["moduleName"]}},
+            {"contains": {"properties": {"moduleName": {"const": "nvidia-drm.ko"}}, "required": ["moduleName"]}},
+            {"contains": {"properties": {"moduleName": {"const": "nvidia-modeset.ko"}}, "required": ["moduleName"]}},
+            {"contains": {"properties": {"moduleName": {"const": "nvidia-peermem.ko"}}, "required": ["moduleName"]}},
+            {"contains": {"properties": {"moduleName": {"const": "nvidia-uvm.ko"}}, "required": ["moduleName"]}}
+          ],
+          "items": {"$ref": "#/$defs/verifiedRecord"},
+          "maxItems": 5,
+          "minItems": 5,
+          "type": "array"
+        },
+        "reason": {"const": "installed_modules_verified"},
+        "schemaVersion": {"const": 1},
+        "status": {"const": "verified"}
+      },
+      "required": ["schemaVersion", "status", "reason", "modules"],
+      "type": "object"
+    },
+    {
+      "properties": {
+        "message": {"maxLength": 2048, "minLength": 1, "type": "string"},
+        "moduleMismatches": {
+          "items": {"$ref": "#/$defs/mismatchRecord"},
+          "maxItems": 6,
+          "minItems": 1,
+          "type": "array"
+        },
+        "reason": {"const": "installed_module_mismatch"},
+        "schemaVersion": {"const": 1},
+        "status": {"const": "failed"}
+      },
+      "required": ["schemaVersion", "status", "reason", "message", "moduleMismatches"],
+      "type": "object"
+    }
+  ],
+  "title": "OPEMOS installer module verification v1",
+  "type": "object",
+  "unevaluatedProperties": true
+}

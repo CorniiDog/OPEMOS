@@ -130,12 +130,19 @@ def unique_object(pairs):
     return result
 
 
+def reject_json_constant(value):
+    raise ValueError(f"non-standard JSON constant: {value}")
+
+
 def load_validation(path):
     try:
         if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_VALIDATION_BYTES:
             raise OSError
-        document = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError):
+        document = json.loads(
+            path.read_text(encoding="utf-8"), object_pairs_hook=unique_object,
+            parse_constant=reject_json_constant,
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
         raise SystemExit("Result validation metadata is unreadable or exceeds its size limit.")
     if not isinstance(document, dict) or document.get("schemaVersion") != 1:
         raise SystemExit("Result validation metadata has an unsupported schema.")
@@ -147,8 +154,11 @@ def load_module_verification(path):
         if (path.is_symlink() or not path.is_file()
                 or not 0 < path.stat().st_size <= MAX_MODULE_VERIFICATION_BYTES):
             raise OSError
-        document = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError):
+        document = json.loads(
+            path.read_text(encoding="utf-8"), object_pairs_hook=unique_object,
+            parse_constant=reject_json_constant,
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
         raise SystemExit("Module verification metadata is unreadable or excessive.")
     if not isinstance(document, dict) or document.get("schemaVersion") != 1:
         raise SystemExit("Module verification metadata is malformed.")
@@ -222,15 +232,30 @@ def load_module_verification(path):
                        for value in unexpected)):
             raise SystemExit("Module verification records are malformed.")
     if status == "verified":
-        if (set(document) != {"schemaVersion", "status", "reason", "modules"}
+        if (not {"schemaVersion", "status", "reason", "modules"} <= set(document)
+                or "moduleMismatches" in document or "message" in document
                 or document.get("reason") != "installed_modules_verified"
                 or len(records) != len(EXPECTED_MODULES)
                 or {record["moduleName"] for record in records} != EXPECTED_MODULES
-                or any(record["invalidFields"] for record in records)):
+                or any(
+                    record["invalidFields"]
+                    or record["representation"] != ".ko.zst"
+                    or record["expectedPayloadSha256"]
+                    != record["actualPayloadSha256"]
+                    or record["actualMode"] != "0644"
+                    or record["actualUid"] != 0
+                    or record["actualGid"] != 0
+                    or not isinstance(record["compressedSizeBytes"], int)
+                    or isinstance(record["compressedSizeBytes"], bool)
+                    or not 1 <= record["compressedSizeBytes"] <= 1024 * 1024 * 1024
+                    or record["decompressionStatus"] != "verified"
+                    for record in records
+                )):
             raise SystemExit("Successful module verification metadata is inconsistent.")
     elif status == "failed":
-        if (set(document) != {"schemaVersion", "status", "reason", "message",
-                             "moduleMismatches"}
+        if (not {"schemaVersion", "status", "reason", "message",
+                 "moduleMismatches"} <= set(document)
+                or "modules" in document
                 or document.get("reason") != "installed_module_mismatch"
                 or not isinstance(document.get("message"), str)
                 or not bounded_message(document["message"])
@@ -1067,7 +1092,8 @@ def validate_measurement_failure(detail):
         raise SystemExit("Measurement failure diagnostics are malformed or excessive.")
 
 
-def validate_module_verification_binding(validated_modules, module_verification):
+def validate_module_verification_binding(
+        validated_modules, module_verification, kernel_version=None):
     """Require verification expectations to come from authenticated validation."""
     if validated_modules is None:
         return
@@ -1086,6 +1112,34 @@ def validate_module_verification_binding(validated_modules, module_verification)
             raise SystemExit(
                 "Module verification does not match validated module payloads."
             )
+    if module_verification.get("status") == "verified" and kernel_version is not None:
+        by_name = {record["moduleName"]: record for record in records}
+        if set(by_name) != EXPECTED_MODULES:
+            raise SystemExit("Verified module set is incomplete.")
+        destination = (
+            f"usr/lib/modules/{kernel_version}/updates/"
+            "open-gpu-kernel-modules-steamos"
+        )
+        for name, expected_hash in expected_hashes.items():
+            record = by_name[name]
+            if (record.get("targetRelativePath") != f"{destination}/{name}.zst"
+                    or record.get("representation") != ".ko.zst"
+                    or record.get("expectedPayloadSha256") != expected_hash
+                    or record.get("actualPayloadSha256") != expected_hash
+                    or record.get("expectedMode") != "0644"
+                    or record.get("actualMode") != "0644"
+                    or record.get("expectedUid") != 0
+                    or record.get("actualUid") != 0
+                    or record.get("expectedGid") != 0
+                    or record.get("actualGid") != 0
+                    or not isinstance(record.get("compressedSizeBytes"), int)
+                    or isinstance(record["compressedSizeBytes"], bool)
+                    or not 1 <= record["compressedSizeBytes"] <= 1024 * 1024 * 1024
+                    or record.get("decompressionStatus") != "verified"
+                    or record.get("invalidFields") != []):
+                raise SystemExit(
+                    "Module verification does not prove the normalized installed payload."
+                )
 
 
 def main():
@@ -1219,7 +1273,8 @@ def main():
                 "Failed module verification metadata does not match result phase."
             )
         validate_module_verification_binding(
-            document.get("validation", {}).get("modules"), module_verification
+            document.get("validation", {}).get("modules"), module_verification,
+            args.kernel,
         )
         document["moduleVerification"] = module_verification
     elif args.status == "success":

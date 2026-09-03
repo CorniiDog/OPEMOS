@@ -24,6 +24,10 @@ reimplement compatibility, package-selection, signer, or mutation policy.
   optional reviewed gaming-payload metadata. Security-critical package,
   keyring, dependency, module, and reviewed-profile records remain closed;
   explicitly additive containers permit bounded future fields.
+- `schemas/installer-module-verification-v1.schema.json` describes both the
+  mandatory five-module success proof and bounded failed mismatch diagnostics.
+  Module records are closed; exact-kernel destination and authenticated
+  validation-hash binding remain authoritative Core cross-record checks.
 
 Unknown additive fields are permitted. Removing a required field, changing its
 meaning, or tightening a previously valid value requires a new schema version.
@@ -64,6 +68,13 @@ missing identities and policy records, inconsistent input-source identities,
 unsafe filenames, boot/dependency/storage mismatches, duplicate package
 identities, bounded closure overflow, and hostile JSON. Human messages are not
 part of its frozen expectations.
+
+`lib/generate_installer_module_verification_fixtures.py` deterministically
+emits the bounded module-verification schema-1 matrix. It covers the exact five
+normalized modules, payload-hash binding, representation, target path,
+ownership, mode and decompression invariants, bounded failure diagnostics,
+safe top-level additions, and hostile JSON/document inputs. Human-readable
+failure messages are intentionally unfrozen.
 
 When resolution returns `no_compatible_artifact` with reason
 `no_compatible_release`, `nextAction` explicitly authorizes only the existing

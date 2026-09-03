@@ -31,7 +31,12 @@ from validate_install_contract import (  # noqa: E402
     validate_progress,
     validate_result,
 )
-from write_install_result import validate_verified_metadata  # noqa: E402
+from write_install_result import (  # noqa: E402
+    MAX_MODULE_VERIFICATION_BYTES,
+    load_module_verification,
+    validate_module_verification_binding,
+    validate_verified_metadata,
+)
 import resolve_target as resolver_module  # noqa: E402
 from resolve_target import resolve_target  # noqa: E402
 
@@ -411,6 +416,123 @@ def validate_installer_validation_compatibility_fixtures(generator):
     }
 
 
+def validate_installer_module_verification_compatibility_fixtures(generator):
+    outputs = []
+    for _ in range(2):
+        completed = subprocess.run(
+            [sys.executable, str(generator)], cwd="/", check=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        assert completed.stderr == b""
+        assert 1 <= len(completed.stdout) <= 512 * 1024
+        outputs.append(completed.stdout)
+    assert outputs[0] == outputs[1] and outputs[0].endswith(b"\n")
+    matrix = json.loads(
+        outputs[0], object_pairs_hook=resolver_module.unique_object,
+        parse_constant=resolver_module.reject_json_constant,
+    )
+    assert set(matrix) == {
+        "schemaVersion", "kind", "moduleVerificationSchemaVersion",
+        "targetKernel", "validationModules", "unfrozenFields", "limits", "cases",
+    }
+    assert matrix["schemaVersion"] == 1
+    assert matrix["kind"] == (
+        "opemos-installer-module-verification-compatibility-fixtures"
+    )
+    assert matrix["moduleVerificationSchemaVersion"] == 1
+    assert matrix["unfrozenFields"] == ["message"]
+    assert matrix["limits"] == {
+        "maxDocumentBytes": MAX_MODULE_VERIFICATION_BYTES
+    }
+    assert isinstance(matrix["validationModules"], list)
+    cases = matrix["cases"]
+    assert isinstance(cases, list) and 1 <= len(cases) <= 64
+    base_cases = {
+        fixture["name"]: fixture["document"]
+        for fixture in cases if "document" in fixture
+    }
+    names = []
+    with tempfile.TemporaryDirectory(prefix="opemos-module-fixtures-") as temporary:
+        root = Path(temporary)
+        candidate_path = root / "module-verification.json"
+        for fixture in cases:
+            assert isinstance(fixture, dict)
+            assert set(fixture) in (
+                {"name", "expected", "document"},
+                {"name", "expected", "rawDocument"},
+                {"name", "expected", "documentRecipe"},
+            )
+            name = fixture["name"]
+            names.append(name)
+            assert isinstance(name, str)
+            assert re.fullmatch(r"[a-z][a-z0-9-]{0,63}", name)
+            expected = fixture["expected"]
+            assert set(expected) == {"recordAccepted", "successProofAccepted"}
+            assert all(isinstance(value, bool) for value in expected.values())
+            if "document" in fixture:
+                payload = json.dumps(
+                    fixture["document"], sort_keys=True, separators=(",", ":")
+                ) + "\n"
+            elif "rawDocument" in fixture:
+                payload = fixture["rawDocument"]
+                assert isinstance(payload, str) and payload
+            else:
+                recipe = fixture["documentRecipe"]
+                assert recipe == {
+                    "kind": "top-level-padding",
+                    "baseCase": "valid-normalized-success",
+                    "paddingBytes": MAX_MODULE_VERIFICATION_BYTES,
+                }
+                candidate = copy.deepcopy(base_cases[recipe["baseCase"]])
+                candidate["padding"] = "x" * recipe["paddingBytes"]
+                payload = json.dumps(candidate, sort_keys=True, separators=(",", ":"))
+                assert (MAX_MODULE_VERIFICATION_BYTES < len(payload.encode())
+                        <= MAX_MODULE_VERIFICATION_BYTES + 16384)
+            candidate_path.write_text(payload, encoding="utf-8")
+            try:
+                parsed = load_module_verification(candidate_path)
+            except SystemExit:
+                record_accepted = False
+                success_accepted = False
+            else:
+                record_accepted = True
+                try:
+                    if parsed["status"] != "verified":
+                        raise SystemExit("failure diagnostics are not success proofs")
+                    validate_module_verification_binding(
+                        matrix["validationModules"], parsed, matrix["targetKernel"]
+                    )
+                except SystemExit:
+                    success_accepted = False
+                else:
+                    success_accepted = True
+            assert record_accepted is expected["recordAccepted"], name
+            assert success_accepted is expected["successProofAccepted"], name
+
+        linked = root / "linked-module-verification.json"
+        linked.symlink_to(candidate_path)
+        try:
+            load_module_verification(linked)
+        except SystemExit:
+            pass
+        else:
+            raise AssertionError("linked module-verification fixture was accepted")
+
+    assert len(names) == len(set(names))
+    assert set(names) == {
+        "valid-normalized-success", "safe-additive-top-level",
+        "valid-failure-diagnostic", "missing-module",
+        "duplicate-module-identity", "unknown-module-identity",
+        "oversized-module-set", "payload-hash-binding-mismatch",
+        "actual-payload-hash-mismatch", "raw-representation",
+        "wrong-kernel-path", "path-traversal", "mode-mismatch",
+        "uid-mismatch", "gid-mismatch", "decompression-mismatch",
+        "zero-compressed-size", "missing-required-field",
+        "unknown-record-field", "malformed-json", "duplicate-json-key",
+        "non-finite-json", "oversized-document",
+    }
+
+
 def validate_resolver_fixture(document):
     assert document["schemaVersion"] == 2
     assert document["status"] in {
@@ -475,6 +597,11 @@ def main():
             encoding="utf-8"
         )
     )
+    module_verification_schema = json.loads(
+        (schema_root / "installer-module-verification-v1.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
     assert resolver_schema["$schema"].endswith("2020-12/schema")
     assert resolver_schema["properties"]["schemaVersion"]["const"] == 2
     assert resolver_schema["unevaluatedProperties"] is True
@@ -491,9 +618,9 @@ def main():
         "validation", "moduleVerification", "userspaceVerification",
         "initramfsWorkspace", "initramfsVerification", "payloadReceipt",
     ]
-    assert result_schema["$defs"]["moduleVerification"]["properties"][
-        "modules"
-    ]["minItems"] == 5
+    assert result_schema["properties"]["moduleVerification"]["$ref"] == (
+        "installer-module-verification-v1.schema.json"
+    )
     assert result_schema["unevaluatedProperties"] is True
     assert validation_schema["$schema"].endswith("2020-12/schema")
     assert validation_schema["properties"]["inputSource"]["required"] == [
@@ -509,12 +636,23 @@ def main():
         "maxItems"
     ] == 4096
     assert validation_schema["unevaluatedProperties"] is True
+    assert module_verification_schema["$schema"].endswith("2020-12/schema")
+    assert module_verification_schema["unevaluatedProperties"] is True
+    verified_contract = module_verification_schema["oneOf"][0]
+    assert verified_contract["properties"]["modules"]["minItems"] == 5
+    assert verified_contract["properties"]["modules"]["maxItems"] == 5
+    assert module_verification_schema["$defs"]["verifiedRecord"][
+        "additionalProperties"
+    ] is False
     assert result_schema["properties"]["validation"]["$ref"] == (
         "installer-validation-v1.schema.json"
     )
     assert result_schema["allOf"][0]["then"]["properties"]["validation"][
         "$ref"
     ] == "installer-validation-v1.schema.json"
+    assert result_schema["allOf"][0]["then"]["properties"][
+        "moduleVerification"
+    ]["$ref"] == "installer-module-verification-v1.schema.json"
 
     validate_resolver_compatibility_fixtures(
         ROOT / "contracts/fixtures/resolver-compatibility-v2.json"
@@ -527,6 +665,9 @@ def main():
     )
     validate_installer_validation_compatibility_fixtures(
         ROOT / "lib/generate_installer_validation_fixtures.py"
+    )
+    validate_installer_module_verification_compatibility_fixtures(
+        ROOT / "lib/generate_installer_module_verification_fixtures.py"
     )
 
     tag = "steamos-3.8.14-nvidia-575.64.05-k6.16.12-valve24.4-x86"

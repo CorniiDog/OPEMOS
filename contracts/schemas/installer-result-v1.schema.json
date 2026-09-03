@@ -113,67 +113,6 @@
       "pattern": "^[A-Za-z0-9._+~-]+$",
       "type": "string"
     },
-    "moduleName": {
-      "enum": ["nvidia.ko", "nvidia-drm.ko", "nvidia-modeset.ko", "nvidia-peermem.ko", "nvidia-uvm.ko"]
-    },
-    "moduleProof": {
-      "properties": {
-        "actualGid": {"const": 0},
-        "actualMode": {"const": "0644"},
-        "actualPayloadSha256": {"$ref": "#/$defs/hash"},
-        "actualUid": {"const": 0},
-        "compressedSizeBytes": {"maximum": 1073741824, "minimum": 1, "type": "integer"},
-        "decompressionStatus": {"enum": ["verified", "not-required"]},
-        "expectedGid": {"const": 0},
-        "expectedMode": {"const": "0644"},
-        "expectedPayloadSha256": {"$ref": "#/$defs/hash"},
-        "expectedUid": {"const": 0},
-        "invalidFields": {"maxItems": 0, "type": "array"},
-        "moduleName": {"$ref": "#/$defs/moduleName"},
-        "representation": {"enum": [".ko", ".ko.zst"]},
-        "targetRelativePath": {"$ref": "#/$defs/targetRelativePath"}
-      },
-      "required": [
-        "moduleName",
-        "targetRelativePath",
-        "representation",
-        "expectedPayloadSha256",
-        "actualPayloadSha256",
-        "expectedMode",
-        "actualMode",
-        "expectedUid",
-        "actualUid",
-        "expectedGid",
-        "actualGid",
-        "compressedSizeBytes",
-        "decompressionStatus",
-        "invalidFields"
-      ],
-      "type": "object"
-    },
-    "moduleVerification": {
-      "properties": {
-        "modules": {
-          "allOf": [
-            {"contains": {"properties": {"moduleName": {"const": "nvidia.ko"}}, "required": ["moduleName"]}},
-            {"contains": {"properties": {"moduleName": {"const": "nvidia-drm.ko"}}, "required": ["moduleName"]}},
-            {"contains": {"properties": {"moduleName": {"const": "nvidia-modeset.ko"}}, "required": ["moduleName"]}},
-            {"contains": {"properties": {"moduleName": {"const": "nvidia-peermem.ko"}}, "required": ["moduleName"]}},
-            {"contains": {"properties": {"moduleName": {"const": "nvidia-uvm.ko"}}, "required": ["moduleName"]}}
-          ],
-          "items": {"$ref": "#/$defs/moduleProof"},
-          "maxItems": 5,
-          "minItems": 5,
-          "type": "array",
-          "uniqueItems": true
-        },
-        "reason": {"const": "installed_modules_verified"},
-        "schemaVersion": {"const": 1},
-        "status": {"const": "verified"}
-      },
-      "required": ["schemaVersion", "status", "reason", "modules"],
-      "type": "object"
-    },
     "packageProof": {
       "properties": {
         "directories": {"maximum": 250000, "minimum": 0, "type": "integer"},
@@ -344,7 +283,7 @@
           },
           "initramfsVerification": {"$ref": "#/$defs/initramfsVerification"},
           "initramfsWorkspace": {"$ref": "#/$defs/workspace"},
-          "moduleVerification": {"$ref": "#/$defs/moduleVerification"},
+          "moduleVerification": {"$ref": "installer-module-verification-v1.schema.json"},
           "payloadReceipt": {"$ref": "#/$defs/payloadReceipt"},
           "phase": {"const": "complete"},
           "reason": {"const": "install_complete"},
@@ -391,7 +330,7 @@
       "type": "object"
     },
     "message": {"maxLength": 2048, "minLength": 1, "type": "string"},
-    "moduleVerification": {"type": "object"},
+    "moduleVerification": {"$ref": "installer-module-verification-v1.schema.json"},
     "payloadReceipt": {"type": "object"},
     "phase": {"maxLength": 64, "pattern": "^[a-z][a-z0-9_]{0,63}$", "type": "string"},
     "reason": {"maxLength": 64, "pattern": "^[a-z][a-z0-9_]{0,63}$", "type": "string"},

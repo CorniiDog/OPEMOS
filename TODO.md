@@ -95,9 +95,14 @@ index in the same commit.
   source identity through the terminal result and enforce closed records for
   cryptographic identities, packages, dependencies, modules, and reviewed
   gaming payloads.
-* [ ] Publish the remaining validation, verification-record, receipt, and
-  gaming-payload schemas from OPEMOS. The additive installer-result schema 1
-  envelope and mandatory success proofs are now published. Generate or
+* [x] Publish the mandatory module-verification schema-1 record and its bounded
+  deterministic fixture matrix. Require the exact five normalized `.ko.zst`
+  destinations, root-owned mode 0644, decompression proof, and payload-hash
+  binding to the authenticated validation record; retain bounded failed
+  mismatch records without accepting them as success proofs.
+* [ ] Publish the remaining userspace/initramfs/workspace verification, receipt,
+  and gaming-payload schemas from OPEMOS. The additive installer-result schema
+  1 envelope and mandatory success proofs are now published. Generate or
   fixture-test OPEMOS.EXE's
   Rust consumers against all schemas while retaining builder-owned session
   binding, bounds, cleanup checks, transfer validation, and independent
