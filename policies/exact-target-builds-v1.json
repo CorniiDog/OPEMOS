@@ -1,0 +1,24 @@
+{
+  "plans": [
+    {
+      "baseline": {
+        "archiveSha256": "3e41bb0ff43afced28765dd949f9f534527d7bfc44188027faf04a506c98d1eb",
+        "provenanceSha256": "349398cedcea25d3d5ec43b6315d7559e7cbbd5d669c267c3f35dea164299b8a",
+        "releaseTag": "steamos-3.8.16-nvidia-575.64.05-k6.16.12-valve24.5-1-neptune-616-gb2f7cfe85e45",
+        "trust": "locally-built-verified"
+      },
+      "source": {
+        "commit": "40bd1b5d6d39ae4e4180b7a665df144b08854d14",
+        "ref": "refs/heads/nvidia/575.64.05",
+        "repository": "CorniiDog/open-gpu-kernel-modules-steamos"
+      },
+      "target": {
+        "architecture": "x86_64",
+        "kernelVersion": "6.16.12-valve24.4-1-neptune-616-gfe145653a794",
+        "nvidiaVersion": "575.64.05",
+        "steamosVersion": "3.8.14"
+      }
+    }
+  ],
+  "schemaVersion": 1
+}

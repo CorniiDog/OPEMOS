@@ -65,8 +65,14 @@ consumers validate this result but must not independently select a release.
 
 When no valid release matches, reason `no_compatible_release` includes a
 bounded `nextAction` authorizing the managed x86_64 exact-target build entry
-point. Missing, duplicate, or otherwise invalid release assets do not receive
-that fallback because they represent publication-integrity failures.
+point. Its additive `buildPlan` is bound to
+`policies/exact-target-builds-v1.json` and pins the exact NVIDIA version,
+source repository/ref/commit, and authenticated known-good baseline identity.
+The consumer must verify the policy file through the immutable Core bundle and
+pass the source commit to `build_for_target.sh --source-commit`. A target with
+no reviewed plan returns `no_reviewed_exact_target_build_plan` without an
+action. Missing, duplicate, or otherwise invalid release assets also receive no
+fallback because they represent publication-integrity failures.
 
 ## Installer consumer bundle
 

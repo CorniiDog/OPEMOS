@@ -69,6 +69,7 @@ FILES = (
     ("contracts/schemas/resolver-result-v2.schema.json", "contract-schema", "0644"),
     ("contracts/schemas/installer-progress-v1.schema.json", "contract-schema", "0644"),
     ("contracts/schemas/installer-result-v1.schema.json", "contract-schema", "0644"),
+    ("policies/exact-target-builds-v1.json", "build-policy", "0644"),
     ("trust/nvidia-userspace-package-signers.json", "trust-policy", "0644"),
     ("trust/keyrings/archlinux-nvidia-userspace-2025-08-01.gpg", "trust-keyring", "0644"),
     ("locks/userspace/steamos-3.8.14-nvidia-575.64.05.json", "userspace-lock", "0644"),

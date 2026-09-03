@@ -107,6 +107,50 @@
     "message": {"maxLength": 2048, "minLength": 1, "type": "string"},
     "nextAction": {
       "properties": {
+        "buildPlan": {
+          "properties": {
+            "baseline": {
+              "properties": {
+                "archiveSha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+                "provenanceSha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+                "releaseTag": {"maxLength": 1024, "minLength": 1, "type": "string"},
+                "trust": {"enum": ["locally-built-verified", "certified-published"]}
+              },
+              "required": ["releaseTag", "archiveSha256", "provenanceSha256", "trust"],
+              "type": "object"
+            },
+            "policy": {
+              "properties": {
+                "name": {"const": "exact-target-builds-v1.json"},
+                "sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"}
+              },
+              "required": ["name", "sha256"],
+              "type": "object"
+            },
+            "schemaVersion": {"const": 1},
+            "source": {
+              "properties": {
+                "commit": {"pattern": "^[0-9a-f]{40}$", "type": "string"},
+                "ref": {"pattern": "^refs/heads/nvidia/[0-9]+(?:\\.[0-9]+){1,2}$", "type": "string"},
+                "repository": {"pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", "type": "string"}
+              },
+              "required": ["repository", "ref", "commit"],
+              "type": "object"
+            },
+            "target": {
+              "properties": {
+                "architecture": {"const": "x86_64"},
+                "kernelVersion": {"maxLength": 255, "pattern": "^[A-Za-z0-9._+~-]+$", "type": "string"},
+                "nvidiaVersion": {"pattern": "^[0-9]+(?:\\.[0-9]+){1,2}$", "type": "string"},
+                "steamosVersion": {"pattern": "^[0-9]+(?:\\.[0-9]+){2}$", "type": "string"}
+              },
+              "required": ["steamosVersion", "kernelVersion", "nvidiaVersion", "architecture"],
+              "type": "object"
+            }
+          },
+          "required": ["schemaVersion", "policy", "target", "source", "baseline"],
+          "type": "object"
+        },
         "entrypoint": {"const": "bootstrap/build_for_target.sh"},
         "executionArchitecture": {"const": "x86_64"},
         "kernelPolicy": {"const": "exact"},

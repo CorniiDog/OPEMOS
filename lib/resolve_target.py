@@ -2,8 +2,11 @@
 """Resolve a published NVIDIA artifact for an offline SteamOS target image."""
 
 import argparse
+import hashlib
 import json
+import os
 import re
+import stat
 import sys
 from pathlib import Path
 
@@ -17,8 +20,64 @@ MAX_RELEASES = 2_000
 MAX_RELEASE_ASSETS = 2_000
 SUPPORTED_ARCHITECTURES = {"x86_64"}
 VERSION_PATTERN = re.compile(r"^[0-9]+(?:\.[0-9]+){2}$")
+NVIDIA_VERSION_PATTERN = re.compile(r"^[0-9]+(?:\.[0-9]+){1,2}$")
 KERNEL_PATTERN = re.compile(r"^[A-Za-z0-9._+~-]+$")
 REPOSITORY_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+BUILD_PLAN_POLICY = (
+    Path(__file__).resolve().parent.parent / "policies/exact-target-builds-v1.json"
+)
+
+
+def unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON key")
+        result[key] = value
+    return result
+
+
+def reject_json_constant(value):
+    raise ValueError(f"non-standard JSON constant: {value}")
+
+
+def strict_json(payload):
+    return json.loads(
+        payload,
+        object_pairs_hook=unique_object,
+        parse_constant=reject_json_constant,
+    )
+
+
+def read_bounded_regular(path, maximum):
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0)
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor = os.open(path, flags)
+    try:
+        before = os.fstat(descriptor)
+        if (not stat.S_ISREG(before.st_mode) or not 1 <= before.st_size <= maximum):
+            raise ValueError("input is unsafe or exceeds its size limit")
+        payload = bytearray()
+        while len(payload) <= maximum:
+            chunk = os.read(descriptor, min(64 * 1024, maximum + 1 - len(payload)))
+            if not chunk:
+                break
+            payload.extend(chunk)
+        after = os.fstat(descriptor)
+        path_after = os.stat(path, follow_symlinks=False)
+        if (len(payload) > maximum or after.st_size != len(payload)
+                or (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino)
+                or (after.st_dev, after.st_ino) != (path_after.st_dev, path_after.st_ino)
+                or before.st_size != after.st_size
+                or before.st_mtime_ns != after.st_mtime_ns
+                or before.st_ctime_ns != after.st_ctime_ns):
+            raise ValueError("input changed while it was being read")
+        return bytes(payload)
+    finally:
+        os.close(descriptor)
 
 
 def result(status, target, **fields):
@@ -27,14 +86,86 @@ def result(status, target, **fields):
     return document
 
 
-def exact_target_build_action():
-    """Describe the sole safe fallback when no published release matches."""
+def load_exact_target_build_plan(steamos, kernel, architecture):
+    """Return one reviewed, hash-addressed build plan for an exact target."""
+    try:
+        payload = read_bounded_regular(BUILD_PLAN_POLICY, 1024 * 1024)
+        policy = strict_json(payload)
+    except (OSError, ValueError, json.JSONDecodeError):
+        raise ProfileError("exact-target build policy is unreadable") from None
+    if not isinstance(policy, dict):
+        raise ProfileError("exact-target build policy is malformed")
+    plans = policy.get("plans")
+    if (set(policy) != {"schemaVersion", "plans"} or policy["schemaVersion"] != 1
+            or not isinstance(plans, list) or len(plans) > 128):
+        raise ProfileError("exact-target build policy is malformed")
+    matches = []
+    seen = set()
+    for plan in plans:
+        if not isinstance(plan, dict) or set(plan) != {"target", "source", "baseline"}:
+            raise ProfileError("exact-target build policy is malformed")
+        target = plan["target"]
+        source = plan["source"]
+        baseline = plan["baseline"]
+        identity = tuple(target.get(field) for field in (
+            "steamosVersion", "kernelVersion", "architecture"
+        )) if isinstance(target, dict) else ()
+        if (not isinstance(target, dict) or set(target) != {
+                "steamosVersion", "kernelVersion", "nvidiaVersion", "architecture"}
+                or not VERSION_PATTERN.fullmatch(target.get("steamosVersion", ""))
+                or not NVIDIA_VERSION_PATTERN.fullmatch(target.get("nvidiaVersion", ""))
+                or not KERNEL_PATTERN.fullmatch(target.get("kernelVersion", ""))
+                or target.get("architecture") not in SUPPORTED_ARCHITECTURES
+                or identity in seen
+                or not isinstance(source, dict) or set(source) != {
+                    "repository", "ref", "commit"}
+                or source.get("repository")
+                != "CorniiDog/open-gpu-kernel-modules-steamos"
+                or source.get("ref") != f"refs/heads/nvidia/{target.get('nvidiaVersion')}"
+                or not COMMIT_PATTERN.fullmatch(source.get("commit", ""))
+                or not isinstance(baseline, dict) or set(baseline) != {
+                    "releaseTag", "archiveSha256", "provenanceSha256", "trust"}
+                or not isinstance(baseline.get("releaseTag"), str)
+                or len(baseline["releaseTag"]) > 1024
+                or f"-nvidia-{target.get('nvidiaVersion')}-"
+                not in baseline["releaseTag"]
+                or not SHA256_PATTERN.fullmatch(baseline.get("archiveSha256", ""))
+                or not SHA256_PATTERN.fullmatch(baseline.get("provenanceSha256", ""))
+                or baseline.get("trust") not in {
+                    "locally-built-verified", "certified-published"}):
+            raise ProfileError("exact-target build policy is malformed")
+        seen.add(identity)
+        if identity == (steamos, kernel, architecture):
+            matches.append(plan)
+    if not matches:
+        return None
+    if len(matches) != 1:
+        raise ProfileError("exact-target build policy is ambiguous")
+    return matches[0], hashlib.sha256(payload).hexdigest()
+
+
+def exact_target_build_action(steamos, kernel, architecture):
+    """Describe the sole reviewed fallback when no published release matches."""
+    selected = load_exact_target_build_plan(steamos, kernel, architecture)
+    if selected is None:
+        return None
+    plan, policy_sha256 = selected
     return {
         "schemaVersion": 1,
         "kind": "build_exact_target",
         "entrypoint": "bootstrap/build_for_target.sh",
         "executionArchitecture": "x86_64",
         "kernelPolicy": "exact",
+        "buildPlan": {
+            "schemaVersion": 1,
+            "policy": {
+                "name": BUILD_PLAN_POLICY.name,
+                "sha256": policy_sha256,
+            },
+            "target": plan["target"],
+            "source": plan["source"],
+            "baseline": plan["baseline"],
+        },
     }
 
 
@@ -88,11 +219,25 @@ def resolve_target(steamos, kernel, architecture, releases, repository):
 
     selected = select_release(steamos, kernel, releases)
     if not selected:
+        try:
+            action = exact_target_build_action(steamos, kernel, architecture)
+        except ProfileError:
+            return result(
+                "resolver_error", target, reason="build_plan_policy_invalid",
+                message="The support-owned exact-target build policy is invalid.",
+            )
+        if action is None:
+            return result(
+                "no_compatible_artifact", target,
+                reason="no_reviewed_exact_target_build_plan",
+                message=("No published release or reviewed exact-target build plan "
+                         "matches this target."),
+            )
         return result(
             "no_compatible_artifact", target, reason="no_compatible_release",
             message=("No published release matches the exact target kernel "
                      "within the permitted SteamOS compatibility range."),
-            nextAction=exact_target_build_action(),
+            nextAction=action,
         )
 
     published_steamos, nvidia, selected_kernel, tag = selected
@@ -236,10 +381,7 @@ def parse_args():
 def main():
     args = parse_args()
     try:
-        if args.releases.is_symlink() or args.releases.stat().st_size > MAX_RELEASES_BYTES:
-            raise ValueError("releases document is unsafe or exceeds the size limit")
-        with args.releases.open(encoding="utf-8") as release_file:
-            releases = json.load(release_file)
+        releases = strict_json(read_bounded_regular(args.releases, MAX_RELEASES_BYTES))
         if not isinstance(releases, list):
             raise ValueError("releases document must be a JSON array")
     except (OSError, ValueError, json.JSONDecodeError) as error:

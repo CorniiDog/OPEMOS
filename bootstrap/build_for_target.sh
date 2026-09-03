@@ -10,6 +10,7 @@ KERNEL_VERSION=""
 NVIDIA_VERSION=""
 ARCHITECTURE="x86_64"
 SOURCE_DIR=""
+EXPECTED_SOURCE_COMMIT=""
 HEADERS_PACKAGE=""
 HEADERS_URL=""
 HEADERS_SIGNATURE=""
@@ -65,6 +66,8 @@ Required:
 Source and headers:
       --source DIR            Existing NVIDIA source checkout. If omitted, clone
                               project branch nvidia/VERSION.
+      --source-commit COMMIT  Require the source checkout or cloned branch to
+                              resolve to this exact 40-character commit
       --headers-package FILE  Exact local Valve headers package
       --headers-url URL       Exact Valve HTTPS headers-package URL
       --headers-signature FILE
@@ -94,6 +97,7 @@ while [[ $# -gt 0 ]]; do
         --nvidia) [[ $# -ge 2 ]] || fail_argument invalid_target "$1 requires a value."; NVIDIA_VERSION="$2"; shift 2 ;;
         --architecture) [[ $# -ge 2 ]] || fail_argument invalid_target "$1 requires a value."; ARCHITECTURE="$2"; shift 2 ;;
         --source) [[ $# -ge 2 ]] || fail_argument invalid_target "$1 requires a directory."; SOURCE_DIR="$2"; shift 2 ;;
+        --source-commit) [[ $# -ge 2 ]] || fail_argument invalid_target "$1 requires a commit."; EXPECTED_SOURCE_COMMIT="$2"; shift 2 ;;
         --headers-package) [[ $# -ge 2 ]] || fail_argument invalid_target "$1 requires a file."; HEADERS_PACKAGE="$2"; shift 2 ;;
         --headers-url) [[ $# -ge 2 ]] || fail_argument invalid_target "$1 requires a URL."; HEADERS_URL="$2"; shift 2 ;;
         --headers-signature) [[ $# -ge 2 ]] || fail_argument invalid_target "$1 requires a file."; HEADERS_SIGNATURE="$2"; shift 2 ;;
@@ -115,6 +119,8 @@ done
     fail_argument invalid_target "--kernel contains unsupported characters."
 [[ "$NVIDIA_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] ||
     fail_argument invalid_target "--nvidia is not a valid NVIDIA version."
+[[ -z "$EXPECTED_SOURCE_COMMIT" || "$EXPECTED_SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] ||
+    fail_argument invalid_target "--source-commit must be an exact lowercase commit ID."
 [[ "$ARCHITECTURE" == "x86_64" ]] ||
     fail_argument unsupported_architecture "Only x86_64 target builds are currently supported."
 [[ -n "$OUTPUT_DIR" || "$RESOLVE_ONLY" == "1" ]] ||
@@ -335,6 +341,10 @@ BUILD_PHASE=source_version_mismatch
 SOURCE_VERSION="$(sed -n 's/^NVIDIA_VERSION[[:space:]]*=[[:space:]]*//p' "$SOURCE_DIR/version.mk" | head -n1 | tr -d '[:space:]')"
 [[ "$SOURCE_VERSION" == "$NVIDIA_VERSION" ]] ||
     die "Source version ${SOURCE_VERSION:-unknown} does not match ${NVIDIA_VERSION}."
+SOURCE_HEAD="$(git -C "$SOURCE_DIR" rev-parse HEAD 2>/dev/null || true)"
+if [[ -n "$EXPECTED_SOURCE_COMMIT" && "$SOURCE_HEAD" != "$EXPECTED_SOURCE_COMMIT" ]]; then
+    die "Source checkout does not match the reviewed exact commit."
+fi
 
 BUILD_PHASE=headers_not_found
 if [[ -z "$HEADERS_PACKAGE" ]]; then

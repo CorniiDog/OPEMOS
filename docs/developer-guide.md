@@ -43,6 +43,7 @@ build input:
   --steamos 3.8.14 \
   --kernel 6.16.12-valve24.4-1-neptune-616-gfe145653a794 \
   --nvidia 575.64.05 \
+  --source-commit 40bd1b5d6d39ae4e4180b7a665df144b08854d14 \
   --install-dependencies \
   --output /shared/artifacts \
   --result-json /shared/build-result.json
@@ -66,6 +67,9 @@ For authenticated local headers, supply all three values:
 Success produces the archive, checksum, build information, provenance, and a
 schema-1 result. Compiler-major mismatch lowers trust unless
 `--require-compiler-major-match` makes it fatal.
+Production consumers obtain `--nvidia` and `--source-commit` from the
+resolver's authenticated `nextAction.buildPlan`; they do not select a nearby
+driver branch or follow a moving ref independently.
 
 ## Resolve an artifact
 

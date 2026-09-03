@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,6 +23,7 @@ from installer_bundle_manifest import (  # noqa: E402
     validate_manifest,
     write_create_only,
 )
+import resolve_target as resolver_module  # noqa: E402
 from resolve_target import resolve_target  # noqa: E402
 
 
@@ -55,13 +57,24 @@ def validate_resolver_fixture(document):
     else:
         assert isinstance(document["reason"], str) and isinstance(document["message"], str)
         if document["reason"] == "no_compatible_release":
-            assert document["nextAction"] == {
+            action = document["nextAction"]
+            assert {key: action[key] for key in (
+                "schemaVersion", "kind", "entrypoint",
+                "executionArchitecture", "kernelPolicy",
+            )} == {
                 "schemaVersion": 1,
                 "kind": "build_exact_target",
                 "entrypoint": "bootstrap/build_for_target.sh",
                 "executionArchitecture": "x86_64",
                 "kernelPolicy": "exact",
             }
+            plan = action["buildPlan"]
+            assert plan["schemaVersion"] == 1
+            assert plan["target"]["kernelVersion"] == target["kernelVersion"]
+            assert plan["target"]["nvidiaVersion"] == "575.64.05"
+            assert plan["source"]["ref"] == "refs/heads/nvidia/575.64.05"
+            assert len(plan["source"]["commit"]) == 40
+            assert len(plan["policy"]["sha256"]) == 64
         else:
             assert "nextAction" not in document
 
@@ -129,8 +142,35 @@ def main():
     )
     validate_resolver_fixture(unavailable)
     assert unavailable["status"] == "no_compatible_artifact"
-    assert unavailable["nextAction"]["kind"] == "build_exact_target"
-    assert unavailable["nextAction"]["kernelPolicy"] == "exact"
+    assert unavailable["reason"] == "no_reviewed_exact_target_build_plan"
+    assert "nextAction" not in unavailable
+    reviewed_build = resolve_target(
+        "3.8.14",
+        "6.16.12-valve24.4-1-neptune-616-gfe145653a794",
+        "x86_64", [], "CorniiDog/OPEMOS",
+    )
+    validate_resolver_fixture(reviewed_build)
+    assert reviewed_build["nextAction"]["kind"] == "build_exact_target"
+    assert reviewed_build["nextAction"]["buildPlan"]["source"]["commit"] == (
+        "40bd1b5d6d39ae4e4180b7a665df144b08854d14"
+    )
+    with tempfile.TemporaryDirectory(prefix="opemos-build-policy-") as temporary:
+        malformed_policy = Path(temporary) / "policy.json"
+        for payload in (
+            '{"schemaVersion":1,"plans":{}}',
+            '{"schemaVersion":1,"schemaVersion":1,"plans":[]}',
+            '{"schemaVersion":NaN,"plans":[]}',
+        ):
+            malformed_policy.write_text(payload, encoding="utf-8")
+            with mock.patch.object(resolver_module, "BUILD_PLAN_POLICY", malformed_policy):
+                invalid_policy = resolve_target(
+                    "3.8.14",
+                    "6.16.12-valve24.4-1-neptune-616-gfe145653a794",
+                    "x86_64", [], "CorniiDog/OPEMOS",
+                )
+            assert invalid_policy["status"] == "resolver_error"
+            assert invalid_policy["reason"] == "build_plan_policy_invalid"
+            assert "nextAction" not in invalid_policy
     incomplete = copy.deepcopy(releases)
     incomplete[0]["assets"] = []
     incomplete_result = resolve_target(
@@ -139,6 +179,14 @@ def main():
     )
     assert incomplete_result["reason"] == "release_assets_missing"
     assert "nextAction" not in incomplete_result
+    duplicate_asset = copy.deepcopy(releases)
+    duplicate_asset[0]["assets"].append(copy.deepcopy(duplicate_asset[0]["assets"][0]))
+    duplicate_result = resolve_target(
+        "3.8.14", "6.16.12-valve24.4-x86", "x86_64", duplicate_asset,
+        "CorniiDog/OPEMOS",
+    )
+    assert duplicate_result["reason"] == "release_assets_ambiguous"
+    assert "nextAction" not in duplicate_result
     invalid = resolve_target(
         "3.8", "kernel", "x86_64", releases, "CorniiDog/OPEMOS"
     )

@@ -72,6 +72,10 @@ index in the same commit.
   in the builder.
 * [x] Publish additive canonical schemas and fixtures for resolver schema 2 and
   installer-progress schema 1, including documented cross-record monotonicity.
+* [x] Bind resolver exact-target build fallback to a reviewed, bundle-owned
+  build-plan policy carrying the NVIDIA version, source repository/ref/commit,
+  and known-good baseline hashes. Unreviewed targets and malformed/incomplete/
+  duplicate publications expose no build authorization.
 * [ ] Publish the remaining validation, verification-record, receipt, and
   gaming-payload schemas from OPEMOS. The additive installer-result schema 1
   envelope and mandatory success proofs are now published. Generate or

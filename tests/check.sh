@@ -533,7 +533,9 @@ assert result["reason"] == "release_metadata_ambiguous"
 PY
 
 RESOLVED="$(python3 "$PROJECT_ROOT/lib/resolve_target.py" \
-    --steamos 3.8.16 --kernel absent-kernel --architecture x86_64 \
+    --steamos 3.8.14 \
+    --kernel 6.16.12-valve24.4-1-neptune-616-gfe145653a794 \
+    --architecture x86_64 \
     --releases "$POLICY_FIXTURE")"
 python3 - "$RESOLVED" <<'PY' || fail "no-artifact target JSON contract is invalid"
 import json
@@ -542,13 +544,44 @@ result = json.loads(sys.argv[1])
 assert result["status"] == "no_compatible_artifact"
 assert result["reason"] == "no_compatible_release"
 assert "artifact" not in result
-assert result["nextAction"] == {
+action = result["nextAction"]
+assert {key: action[key] for key in (
+    "schemaVersion", "kind", "entrypoint", "executionArchitecture", "kernelPolicy"
+)} == {
     "schemaVersion": 1,
     "kind": "build_exact_target",
     "entrypoint": "bootstrap/build_for_target.sh",
     "executionArchitecture": "x86_64",
     "kernelPolicy": "exact",
 }
+plan = action["buildPlan"]
+assert plan["schemaVersion"] == 1
+assert plan["target"] == {
+    "steamosVersion": "3.8.14",
+    "kernelVersion": "6.16.12-valve24.4-1-neptune-616-gfe145653a794",
+    "nvidiaVersion": "575.64.05",
+    "architecture": "x86_64",
+}
+assert plan["source"] == {
+    "repository": "CorniiDog/open-gpu-kernel-modules-steamos",
+    "ref": "refs/heads/nvidia/575.64.05",
+    "commit": "40bd1b5d6d39ae4e4180b7a665df144b08854d14",
+}
+assert len(plan["policy"]["sha256"]) == 64
+assert len(plan["baseline"]["archiveSha256"]) == 64
+assert len(plan["baseline"]["provenanceSha256"]) == 64
+PY
+
+RESOLVED="$(python3 "$PROJECT_ROOT/lib/resolve_target.py" \
+    --steamos 3.8.16 --kernel absent-kernel --architecture x86_64 \
+    --releases "$POLICY_FIXTURE")"
+python3 - "$RESOLVED" <<'PY' || fail "unreviewed build target was authorized"
+import json
+import sys
+result = json.loads(sys.argv[1])
+assert result["status"] == "no_compatible_artifact"
+assert result["reason"] == "no_reviewed_exact_target_build_plan"
+assert "nextAction" not in result
 PY
 
 RESOLVED="$(python3 "$PROJECT_ROOT/lib/resolve_target.py" \

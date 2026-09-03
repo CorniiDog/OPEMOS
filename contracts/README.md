@@ -23,8 +23,11 @@ meaning, or tightening a previously valid value requires a new schema version.
 
 When resolution returns `no_compatible_artifact` with reason
 `no_compatible_release`, `nextAction` explicitly authorizes only the existing
-exact-kernel `bootstrap/build_for_target.sh` contract. Publication-integrity
-failures never advertise a build fallback.
+exact-kernel `bootstrap/build_for_target.sh` contract and includes a
+hash-addressed reviewed build plan. The plan pins the NVIDIA version, source
+repository/ref/commit, and known-good baseline artifact identity. Targets with
+no reviewed plan return `no_reviewed_exact_target_build_plan`; publication-
+integrity failures never advertise a build fallback.
 
 ## Installer bundle manifest
 
