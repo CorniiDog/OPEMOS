@@ -1,0 +1,117 @@
+{
+  "$id": "https://corniidog.github.io/OPEMOS/contracts/userspace-lock-discovery-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "authority": {
+      "additionalProperties": false,
+      "properties": {
+        "keyringFilename": {"$ref": "#/$defs/plainFilename"},
+        "keyringSha256": {"$ref": "#/$defs/hash"},
+        "policyId": {"const": "opemos-userspace-lock-generations"},
+        "policySchemaVersion": {"const": 1},
+        "policySha256": {"$ref": "#/$defs/hash"},
+        "signingKeyFingerprint": {
+          "pattern": "^(?:[0-9A-F]{40}|[0-9A-F]{64})$",
+          "type": "string"
+        }
+      },
+      "required": ["policyId", "policySchemaVersion", "policySha256", "keyringFilename", "keyringSha256", "signingKeyFingerprint"],
+      "type": "object"
+    },
+    "hash": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "lock": {
+      "additionalProperties": false,
+      "properties": {
+        "filename": {
+          "maxLength": 255,
+          "pattern": "^(?!(?:[Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Mm][1-9]|[Ll][Pp][Tt][1-9])(?:[.]|$))[A-Za-z0-9@._+~-]+\\.json$",
+          "type": "string"
+        },
+        "schemaVersion": {"const": 1},
+        "sha256": {"$ref": "#/$defs/hash"},
+        "size": {"maximum": 1048576, "minimum": 1, "type": "integer"}
+      },
+      "required": ["filename", "schemaVersion", "sha256", "size"],
+      "type": "object"
+    },
+    "plainFilename": {
+      "maxLength": 255,
+      "pattern": "^(?!.*[.]$)(?!(?:[Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Mm][1-9]|[Ll][Pp][Tt][1-9])(?:[.]|$))[A-Za-z0-9@._+~-]+$",
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": false,
+      "properties": {
+        "architecture": {"const": "x86_64"},
+        "kernelVersion": {"maxLength": 255, "pattern": "^[A-Za-z0-9._+~-]+$", "type": "string"},
+        "nvidiaVersion": {"pattern": "^[0-9]+\\.[0-9]+(?:\\.[0-9]+)?$", "type": "string"},
+        "steamosVersion": {"pattern": "^[0-9]+\\.[0-9]+(?:\\.[0-9]+)?$", "type": "string"}
+      },
+      "required": ["steamosVersion", "kernelVersion", "nvidiaVersion", "architecture"],
+      "type": "object"
+    },
+    "targetLock": {
+      "additionalProperties": false,
+      "properties": {
+        "lock": {"$ref": "#/$defs/lock"},
+        "target": {"$ref": "#/$defs/target"}
+      },
+      "required": ["target", "lock"],
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Inactive closed schema-1 discovery identity for reviewed userspace-lock data generations. Signature verification and sequence/lineage activation remain mandatory semantic checks.",
+  "properties": {
+    "authority": {"$ref": "#/$defs/authority"},
+    "channel": {"const": "reviewed"},
+    "compatibility": {
+      "additionalProperties": false,
+      "properties": {
+        "discoverySchemaVersion": {"const": 1},
+        "generationManifestSchemaVersion": {"const": 1},
+        "minimumInstallerResultSchemaVersion": {"const": 1},
+        "userspaceLockSchemaVersion": {"const": 1}
+      },
+      "required": ["discoverySchemaVersion", "generationManifestSchemaVersion", "userspaceLockSchemaVersion", "minimumInstallerResultSchemaVersion"],
+      "type": "object"
+    },
+    "generation": {
+      "additionalProperties": false,
+      "properties": {
+        "manifestFilename": {"$ref": "#/$defs/plainFilename"},
+        "manifestSha256": {"$ref": "#/$defs/hash"},
+        "manifestSize": {"maximum": 2097152, "minimum": 1, "type": "integer"},
+        "previousManifestSha256": {
+          "oneOf": [{"$ref": "#/$defs/hash"}, {"type": "null"}]
+        },
+        "releaseTag": {
+          "pattern": "^opemos-userspace-lock-generation-v1-s[1-9][0-9]{0,19}$",
+          "type": "string"
+        },
+        "signatureFilename": {"$ref": "#/$defs/plainFilename"},
+        "signatureSha256": {"$ref": "#/$defs/hash"},
+        "signatureSize": {"maximum": 1048576, "minimum": 1, "type": "integer"}
+      },
+      "required": ["releaseTag", "manifestFilename", "manifestSha256", "manifestSize", "signatureFilename", "signatureSha256", "signatureSize", "previousManifestSha256"],
+      "type": "object"
+    },
+    "kind": {"const": "opemos-userspace-lock-discovery"},
+    "publishedAt": {
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+      "type": "string"
+    },
+    "schemaVersion": {"const": 1},
+    "sequence": {"maximum": 18446744073709551615, "minimum": 1, "type": "integer"},
+    "targets": {
+      "items": {"$ref": "#/$defs/targetLock"},
+      "maxItems": 256,
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    }
+  },
+  "required": ["schemaVersion", "kind", "channel", "sequence", "publishedAt", "authority", "compatibility", "generation", "targets"],
+  "title": "OPEMOS reviewed userspace-lock discovery v1",
+  "type": "object"
+}

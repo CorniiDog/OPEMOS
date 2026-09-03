@@ -91,6 +91,8 @@ cargo clippy --locked --manifest-path interstitial/Cargo.toml --all-targets -- -
 cargo fmt --manifest-path interstitial/Cargo.toml -- --check
 printf 'Checking canonical cross-frontend contracts...\n'
 python3 tests/consumer_contracts.py
+printf 'Checking reviewed userspace-lock generation contracts...\n'
+python3 tests/userspace_lock_generation_contract.py
 printf 'Checking immutable installer-bundle publisher...\n'
 python3 tests/installer_bundle_publisher.py
 

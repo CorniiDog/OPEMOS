@@ -106,8 +106,12 @@ Both consumers apply the same semantic order:
 
 1. Snapshot and authenticate the discovery descriptor with the installed trust
    root before parsing identities.
-2. Require a supported closed schema, exact authority and compatibility, a
-   sequence above the durable high-water mark, and a valid predecessor chain.
+2. Require a supported closed schema, exact authority and compatibility, and a
+   sequence above the durable high-water mark. A fresh consumer with high-water
+   zero and no active generation requires a locally installed bootstrap
+   checkpoint containing a minimum sequence and exact manifest hash. It may
+   activate that exact signed manifest or traverse forward from it. Every
+   existing consumer starts from its active authenticated manifest.
 3. Select an exact target without fallback or approximation.
 4. Download only the named manifest/signature and selected manifest-owned files.
 5. Reauthenticate the manifest and verify every file's name, role, size, hash,
@@ -118,11 +122,46 @@ Both consumers apply the same semantic order:
 7. Acknowledge health only after that consumer's full validation succeeds;
    otherwise restore the independently revalidated last-known-good generation.
 
+The predecessor always names the immediately preceding *published* generation;
+sequence values themselves may have gaps. A consumer that missed published
+generations obtains their immutable discovery/manifest/signature records and
+authenticates a chain from its active manifest (or bootstrap checkpoint) to the
+current manifest. Each record must have a strictly increasing sequence, exact
+authority, a matching discovery/manifest pair, and a predecessor hash equal to
+the preceding manifest. One activation evaluates at most 64 intermediate
+generations. A larger gap is processed in bounded authenticated segments and
+never authorizes the newest generation directly. Missing, tampered, forked, or
+excessive lineage fails closed.
+
+Consumer-local durable state records both `sequence` and `manifestSha256` for
+the active and last-known-good generations, plus a separate monotonic
+high-water sequence. Successful activation advances the high-water mark and
+retains the prior healthy active identity as last known good. Rollback may move
+the active identity back, but never lowers the high-water mark. Consequently a
+rolled-back generation and every older sequence remain replay-rejected; a later
+generation may be reached through its authenticated lineage without treating a
+failed generation as healthy. Core defines these state transitions, while each
+consumer owns its own atomic persistence and compare-and-swap implementation.
+
 Unknown authority/schema, replay or downgrade, target mismatch, partial or
 changed input, ENOSPC/inode exhaustion, cancellation, failed health validation,
 or cleanup failure cannot modify the active generation or high-water mark.
 Network unavailability is never permission to weaken trust or discard a valid
 cached generation.
+
+A detached signature and `publishedAt` alone do not prove freshness to a new
+consumer: a mirror can replay an older correctly signed descriptor. The local
+bootstrap checkpoint is therefore part of the installed trust policy, not data
+supplied by discovery. No production checkpoint is configured by this inactive
+contract.
+
+Every manifest-owned filename is its cross-platform identity. Schema 1 permits
+only portable ASCII basenames, rejects colons, trailing dots, path separators,
+and case-insensitive Windows device names such as `CON`, `NUL`, `COM1`, and
+`LPT1` (including names with extensions). Filenames are also unique under
+case-insensitive comparison, and payload names cannot collide with the
+generation manifest or its signature. Consumers must not create an unbound
+host-specific filename mapping.
 
 ## Migration gate
 

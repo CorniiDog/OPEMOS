@@ -8,8 +8,8 @@ reimplement compatibility, package-selection, signer, or mutation policy.
 The planned two-consumer reviewed-lock data channel is described in
 [`userspace-lock-generations.md`](userspace-lock-generations.md). It freezes the
 schema-1 discovery/manifest field handoff for implementation planning while
-remaining explicitly inactive until Core publishes the schemas, fixtures,
-dedicated trust root, publisher evidence, and installed-device lifecycle.
+remaining explicitly inactive until Core publishes a dedicated trust root,
+publisher evidence, and installed-device lifecycle.
 
 ## Schemas
 
@@ -52,8 +52,15 @@ dedicated trust root, publisher evidence, and installed-device lifecycle.
   `gaming-no-cuda-v1` selection embedded in validation. A reviewed record is
   only terminally authoritative when Core also binds it to the exact reviewed
   target, profile and policy hashes, userspace lock, and derived package set.
+- `schemas/userspace-lock-discovery-v1.schema.json` describes the inactive,
+  closed signed-discovery identity for reviewed userspace-lock data generations.
+- `schemas/userspace-lock-generation-manifest-v1.schema.json` describes the
+  inactive, closed immutable generation inventory. Core additionally enforces
+  authority, sequence/predecessor, target-lock, manifest-hash, and total-size
+  invariants across both documents.
 
-Unknown additive fields are permitted. Removing a required field, changing its
+Unknown additive fields are permitted only where a schema explicitly allows
+them. Closed objects reject them. Removing a required field, changing its
 meaning, or tightening a previously valid value requires a new schema version.
 
 `fixtures/resolver-compatibility-v2.json` is the bounded, strict-JSON
@@ -143,6 +150,23 @@ and package binding failures, capability and package-set contradictions, and
 hostile JSON/document inputs. Structural record acceptance is separate from
 terminal authority binding. This security-critical record does not permit
 additive schema-1 fields; a future representation requires a new schema.
+
+`lib/generate_userspace_lock_generation_fixtures.py` deterministically emits
+the bounded inactive discovery/manifest compatibility matrix consumed by
+`lib/userspace_lock_generation_contract.py`. It distinguishes structural
+document validity, discovery-to-manifest equality, and activation authority.
+Accepted cases include a fresh signed bootstrap anchor, an exact next
+generation, a publisher sequence gap with direct predecessor continuity, and
+bounded authenticated catch-up across missed published generations. Fresh
+activation requires an installed exact bootstrap checkpoint; an old signed
+mirror response is not treated as fresh. Unknown schemas/policies,
+replay/downgrade, missing/tampered/forked/excessive lineage, target or lock
+mismatch, nonportable filenames, duplicate identities, hostile JSON, and
+oversized documents or inventories fail closed. The authorized opaque host
+cache identity is the authenticated generation manifest SHA-256; cache and
+network lifecycle remain consumer-owned. Consumers durably retain the paired
+sequence and manifest hash for active and last-known-good identities plus a
+monotonic high-water sequence that rollback cannot decrease.
 
 When resolution returns `no_compatible_artifact` with reason
 `no_compatible_release`, `nextAction` explicitly authorizes only the existing

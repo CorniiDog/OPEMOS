@@ -150,7 +150,9 @@ def main() -> None:
     for invariant in (
         "last-known-good generation", "durable high-water mark",
         "contains no URL", "separate signing policies",
-        "does not activate them",
+        "does not activate them", "bootstrap checkpoint",
+        "64 intermediate", "Windows device names",
+        "never lowers the high-water mark",
     ):
         assert invariant in handoff
     assert "actions/workflows/shell.yml" in readme

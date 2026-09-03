@@ -1404,21 +1404,21 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
 * [x] Keep dependency-closure discovery in the maintainer-only Core audit and
   require create-only candidate/final review before a lock becomes production
   input.
+* [x] Publish the inactive closed schema-1 discovery and generation-manifest
+  structures, Core semantic validator, and bounded deterministic compatibility
+  matrix. Cover exact authority/compatibility, fresh bootstrap, active
+  predecessor continuity, bounded authenticated catch-up, replay/downgrade,
+  targets, lock/file equality, portable filenames, aggregate bounds, strict
+  canonical JSON, durable active/last-known-good identities, rollback-stable
+  high-water state, and hostile inputs without configuring a production
+  signer, bootstrap checkpoint, or network path.
 * [ ] Create a dedicated reviewed data-generation signer policy and binary
   verification keyring. Do not reuse Arch, Valve, NVIDIA, commit-signing, or
   desktop-binary update keys.
-* [ ] Publish the closed schema-1 discovery descriptor and immutable generation
-  manifest described by the handoff, including canonical JSON, strict bounds,
-  detached signatures, monotonically increasing sequence, predecessor
-  identity, exact targets, and complete file hashes/sizes/roles.
 * [ ] Implement a deterministic create-only publisher that emits the descriptor,
   descriptor signature, manifest, manifest signature, and every manifest-owned
   asset in canonical order. Record release/tag/asset digests and signer
   evidence without mutating an existing generation.
-* [ ] Add compatibility fixtures for same-authority lock additions, multiple
-  exact targets, unknown schema/authority/policy, duplicate targets/files,
-  malformed identities, unsafe names, excessive records, replay, downgrade,
-  broken predecessor chains, and signature/hash mismatch.
 
 ### Two independent consumers
 
@@ -1450,6 +1450,9 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
 * [ ] Choose and review the dedicated data-generation signing key and rotation/
   revocation process. An unknown key or policy version fails closed and key
   rotation is not a routine data update.
+* [ ] Pin an initial signed generation checkpoint in each consumer's installed
+  trust policy and define checkpoint advancement. A fresh consumer must not
+  infer freshness from `publishedAt` or accept any historically valid signature.
 * [ ] Define authoritative sequence allocation, state-loss recovery, and an
   explicitly signed emergency downgrade procedure. Ordinary discovery never
   permits an equal or lower sequence than the consumer's durable high-water
