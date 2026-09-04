@@ -110,6 +110,12 @@ never falls back to a different mode. The deterministic fixture generator
 defines malformed, unsupported, unreviewed and successful outcomes without
 freezing human text.
 
+`intentSha256` is the SHA-256 of the canonical intent bytes: recursively sorted
+JSON object keys, compact separators, JSON ASCII escaping (including `\uXXXX`
+for non-ASCII code points), and one trailing newline. JSON numeric types remain
+distinct: schema version `1.0` is invalid even though Python numeric comparison
+would otherwise consider it equal to integer `1`.
+
 ## Installer consumer bundle
 
 `lib/installer_bundle_manifest.py` replaces consumer-maintained copies of the

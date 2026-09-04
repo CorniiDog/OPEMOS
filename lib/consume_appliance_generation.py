@@ -32,6 +32,7 @@ from userspace_lock_generation_contract import (
     MANIFEST_MAX_BYTES,
     MAX_FILE_BYTES,
     MAX_FILES,
+    MAX_GENERATION_STORAGE_BYTES,
     MAX_OPENPGP_STATUS_BYTES,
     MAX_SIGNATURE_BYTES,
     canonical,
@@ -62,6 +63,11 @@ PACKAGE_FIELDS = {
     "name", "filename", "signatureFilename", "version", "architecture",
     "packageSha256", "signatureSha256", "signerFingerprint",
     "installedSize", "dependencies", "provides",
+}
+WINDOWS_RESERVED_NAMES = {
+    "CON", "PRN", "AUX", "NUL",
+    *(f"COM{index}" for index in range(1, 10)),
+    *(f"LPT{index}" for index in range(1, 10)),
 }
 
 
@@ -142,8 +148,10 @@ def parse_json(payload, maximum, label, canonical_required=False):
 
 
 def safe_portable_name(value):
-    return (isinstance(value, str) and PORTABLE.fullmatch(value) is not None
-            and value not in {".", ".."} and not value.endswith("."))
+    if (not isinstance(value, str) or PORTABLE.fullmatch(value) is None
+            or value in {".", ".."} or value.endswith(".")):
+        return False
+    return value.split(".", 1)[0].upper() not in WINDOWS_RESERVED_NAMES
 
 
 def safe_package_name(value):
@@ -184,6 +192,7 @@ def validate_handoff(document, expected_operation, expected_target):
         fail("appliance handoff file set is invalid")
     previous = ""
     records = {}
+    total_size = 0
     for record in files:
         if (not isinstance(record, dict)
                 or set(record) != {"filename", "size", "sha256"}
@@ -198,7 +207,50 @@ def validate_handoff(document, expected_operation, expected_target):
             fail("appliance handoff file record is invalid")
         previous = record["filename"]
         records[record["filename"]] = record
+        total_size += record["size"]
+        if total_size > MAX_GENERATION_STORAGE_BYTES:
+            fail("appliance handoff aggregate size is excessive")
     return identity, records
+
+
+def hash_regular(path, maximum, label):
+    try:
+        before = path.lstat()
+    except OSError:
+        fail(f"{label} is unavailable")
+    if (path.is_symlink() or not stat.S_ISREG(before.st_mode)
+            or before.st_nlink != 1 or before.st_uid != os.geteuid()
+            or stat.S_IMODE(before.st_mode) & 0o022
+            or not 1 <= before.st_size <= maximum):
+        fail(f"{label} is unsafe or excessive")
+    value = hashlib.sha256()
+    size = 0
+    try:
+        descriptor = os.open(
+            path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_CLOEXEC", 0),
+        )
+        with os.fdopen(descriptor, "rb") as source:
+            opened = os.fstat(source.fileno())
+            while True:
+                chunk = source.read(1024 * 1024)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > maximum:
+                    fail(f"{label} is unsafe or excessive")
+                value.update(chunk)
+            after = os.fstat(source.fileno())
+    except OSError:
+        fail(f"{label} is unreadable")
+    identity = lambda item: (
+        item.st_dev, item.st_ino, item.st_size, item.st_mtime_ns,
+        item.st_ctime_ns, item.st_uid, stat.S_IMODE(item.st_mode),
+    )
+    if (identity(before) != identity(opened) or identity(opened) != identity(after)
+            or size != before.st_size):
+        fail(f"{label} changed while read")
+    return size, value.hexdigest()
 
 
 def verify_inventory(root, records):
@@ -209,13 +261,22 @@ def verify_inventory(root, records):
     expected = sorted([*records, HANDOFF_FILENAME])
     if names != expected:
         fail("appliance handoff inventory is not exact")
-    payloads = {}
     for name, record in records.items():
-        payload = read_regular(root / name, record["size"], "handoff file")
-        if len(payload) != record["size"] or digest(payload) != record["sha256"]:
+        size, payload_hash = hash_regular(
+            root / name, record["size"], "handoff file"
+        )
+        if size != record["size"] or payload_hash != record["sha256"]:
             fail("appliance handoff file differs from its receipt")
-        payloads[name] = payload
-    return payloads
+
+
+def read_received_payload(root, records, name, maximum, label):
+    record = records.get(name)
+    if record is None or record["size"] > maximum:
+        fail(f"{label} is absent or excessive")
+    payload = read_regular(root / name, maximum, label)
+    if len(payload) != record["size"] or digest(payload) != record["sha256"]:
+        fail(f"{label} differs from its receipt")
+    return payload
 
 
 def verify_signature(gpgv, keyring, payload, signature, fingerprint, label):
@@ -473,7 +534,7 @@ def prepare(arguments):
         handoff_payload, HANDOFF_MAX_BYTES, "appliance handoff record", True
     )
     identity, records = validate_handoff(handoff, arguments.operation_id, target)
-    payloads = verify_inventory(root, records)
+    verify_inventory(root, records)
 
     policy_payload = read_regular(arguments.policy, 64 * 1024, "generation policy")
     keyring_payload = read_regular(
@@ -494,10 +555,13 @@ def prepare(arguments):
 
     discovery_name = policy["channel"]["discoveryFilename"]
     discovery_signature_name = policy["channel"]["discoverySignatureFilename"]
-    if discovery_name not in payloads or discovery_signature_name not in payloads:
-        fail("generation discovery pair is absent from handoff")
-    discovery_payload = payloads[discovery_name]
-    discovery_signature = payloads[discovery_signature_name]
+    discovery_payload = read_received_payload(
+        root, records, discovery_name, DISCOVERY_MAX_BYTES, "generation discovery"
+    )
+    discovery_signature = read_received_payload(
+        root, records, discovery_signature_name, MAX_SIGNATURE_BYTES,
+        "generation discovery signature",
+    )
     verify_signature(
         arguments.gpgv, keyring_payload, discovery_payload,
         discovery_signature,
@@ -507,14 +571,18 @@ def prepare(arguments):
     generation = discovery["generation"]
     manifest_name = generation["manifestFilename"]
     signature_name = generation["signatureFilename"]
-    if manifest_name not in payloads or signature_name not in payloads:
-        fail("generation manifest pair is absent from handoff")
+    manifest_payload = read_received_payload(
+        root, records, manifest_name, MANIFEST_MAX_BYTES, "generation manifest"
+    )
+    manifest_signature = read_received_payload(
+        root, records, signature_name, MAX_SIGNATURE_BYTES,
+        "generation manifest signature",
+    )
     verify_signature(
-        arguments.gpgv, keyring_payload, payloads[manifest_name],
-        payloads[signature_name],
+        arguments.gpgv, keyring_payload, manifest_payload, manifest_signature,
         policy["authority"]["primarySigningFingerprint"], "manifest",
     )
-    manifest = strict_json(payloads[manifest_name], MANIFEST_MAX_BYTES, "manifest")
+    manifest = strict_json(manifest_payload, MANIFEST_MAX_BYTES, "manifest")
     try:
         validate_pair(discovery, manifest)
         validate_activation(
@@ -530,12 +598,13 @@ def prepare(arguments):
             or identity["manifestSha256"] != generation["manifestSha256"]):
         fail("handoff identity differs from authenticated generation")
 
-    if EVIDENCE_FILENAME not in payloads:
-        fail("verifier evidence is absent from handoff")
+    evidence_payload = read_received_payload(
+        root, records, EVIDENCE_FILENAME, MAX_EVIDENCE_BYTES, "verifier evidence"
+    )
     validate_verifier_evidence(
-        payloads[EVIDENCE_FILENAME], policy_payload, keyring_payload,
-        discovery_payload, discovery_signature, payloads[manifest_name],
-        payloads[signature_name],
+        evidence_payload, policy_payload, keyring_payload,
+        discovery_payload, discovery_signature, manifest_payload,
+        manifest_signature,
     )
 
     manifest_by_name = {record["filename"]: record for record in manifest["files"]}
@@ -561,7 +630,10 @@ def prepare(arguments):
     lock_record = manifest_by_name.get(lock_identity["filename"])
     if (lock_record is None or lock_record["role"] != "userspace-lock"):
         fail("exact target lock is absent from generation")
-    lock = parse_json(payloads[lock_record["filename"]], MAX_LOCK_BYTES, "userspace lock")
+    lock_payload = read_received_payload(
+        root, records, lock_record["filename"], MAX_LOCK_BYTES, "userspace lock"
+    )
+    lock = parse_json(lock_payload, MAX_LOCK_BYTES, "userspace lock")
     lock_keyring, packages = validate_lock(lock, target)
     package_keyring = record_by_hash(
         roles["keyring"], lock_keyring["sha256"], "package keyring"
@@ -571,9 +643,12 @@ def prepare(arguments):
     if len(roles["signer-policy"]) != 1:
         fail("generation does not contain one package signer policy")
     signer_policy = roles["signer-policy"][0]
-    signer_policy_document = parse_json(
-        payloads[signer_policy["filename"]], 256 * 1024,
+    signer_policy_payload = read_received_payload(
+        root, records, signer_policy["filename"], 256 * 1024,
         "package signer policy",
+    )
+    signer_policy_document = parse_json(
+        signer_policy_payload, 256 * 1024, "package signer policy"
     )
     validate_signer_policy(signer_policy_document, packages)
 

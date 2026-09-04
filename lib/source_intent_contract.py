@@ -28,6 +28,7 @@ STEAMOS = re.compile(r"[0-9]+(?:\.[0-9]+){2}")
 KERNEL = re.compile(r"[A-Za-z0-9._+~-]{1,255}")
 COMMIT = re.compile(r"[0-9a-f]{40}")
 TAG = re.compile(r"[A-Za-z0-9._+~-]{1,1024}")
+REPOSITORY = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 
 
 class SourceIntentError(ValueError):
@@ -42,11 +43,18 @@ def canonical(value):
     return (json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True) + "\n").encode()
 
 
+def matches(pattern, value):
+    return isinstance(value, str) and pattern.fullmatch(value) is not None
+
+
 def validate_source(source, repository=None, reference=None):
     if (not isinstance(source, dict) or set(source) != {"repository", "ref", "commit"}
             or not isinstance(source.get("repository"), str)
             or not isinstance(source.get("ref"), str)
-            or not COMMIT.fullmatch(source.get("commit", ""))
+            or len(source["repository"]) > 255
+            or not matches(REPOSITORY, source["repository"])
+            or not 1 <= len(source["ref"]) <= 1024
+            or not matches(COMMIT, source.get("commit"))
             or repository is not None and source["repository"] != repository
             or reference is not None and source["ref"] != reference):
         fail("source identity is invalid")
@@ -56,15 +64,17 @@ def validate_source(source, repository=None, reference=None):
 def validate_intent(intent):
     if (not isinstance(intent, dict) or set(intent) != {
             "schemaVersion", "kind", "mode", "target", "selection"}
-            or intent.get("schemaVersion") != 1
+            or type(intent.get("schemaVersion")) is not int
+            or intent["schemaVersion"] != 1
             or intent.get("kind") != "opemos-source-intent"
-            or intent.get("mode") not in MODES):
+            or not isinstance(intent.get("mode"), str)
+            or intent["mode"] not in MODES):
         fail("source intent identity is invalid")
     target = intent["target"]
     if (not isinstance(target, dict) or set(target) != {
             "steamosVersion", "kernelVersion", "architecture"}
-            or STEAMOS.fullmatch(target.get("steamosVersion", "")) is None
-            or KERNEL.fullmatch(target.get("kernelVersion", "")) is None
+            or not matches(STEAMOS, target.get("steamosVersion"))
+            or not matches(KERNEL, target.get("kernelVersion"))
             or target.get("architecture") != "x86_64"):
         fail("source intent target is invalid")
     mode = intent["mode"]
@@ -74,21 +84,21 @@ def validate_intent(intent):
             fail("automatic source intent cannot contain a selection")
     elif mode == "exact-published-artifact":
         if (not isinstance(selection, dict) or set(selection) != {"releaseTag"}
-                or TAG.fullmatch(selection.get("releaseTag", "")) is None):
+                or not matches(TAG, selection.get("releaseTag"))):
             fail("published source selection is invalid")
     elif mode == "exact-target-local-build":
         if (not isinstance(selection, dict) or set(selection) != {"nvidiaVersion"}
-                or VERSION.fullmatch(selection.get("nvidiaVersion", "")) is None):
+                or not matches(VERSION, selection.get("nvidiaVersion"))):
             fail("exact-target build selection is invalid")
     elif mode == "reviewed-project-source":
         if (not isinstance(selection, dict) or set(selection) != {"nvidiaVersion", "source"}
-                or VERSION.fullmatch(selection.get("nvidiaVersion", "")) is None):
+                or not matches(VERSION, selection.get("nvidiaVersion"))):
             fail("reviewed project selection is invalid")
         validate_source(selection["source"])
     else:
         if (not isinstance(selection, dict) or set(selection) != {
                 "nvidiaVersion", "source", "developmentAcknowledged"}
-                or VERSION.fullmatch(selection.get("nvidiaVersion", "")) is None
+                or not matches(VERSION, selection.get("nvidiaVersion"))
                 or type(selection.get("developmentAcknowledged")) is not bool):
             fail("upstream development selection is invalid")
         validate_source(selection["source"])

@@ -57,12 +57,17 @@ def matrix():
         case("exact-unreviewed-version", intent("exact-target-local-build", {"nvidiaVersion": "580.119.02"}), [], "rejected", "reviewed_build_plan_unavailable"),
         case("reviewed-project-source", intent("reviewed-project-source", {"nvidiaVersion": "575.64.05", "source": copy.deepcopy(PROJECT_SOURCE)}), [], "authorized", "reviewed_project_source_authorized", "build_exact_target"),
         case("unreviewed-project-source", intent("reviewed-project-source", {"nvidiaVersion": "575.64.05", "source": {**PROJECT_SOURCE, "commit": "2" * 40}}), [], "rejected", "reviewed_project_source_mismatch"),
+        case("malformed-project-source", intent("reviewed-project-source", {"nvidiaVersion": "575.64.05", "source": {**PROJECT_SOURCE, "repository": "invalid repository"}}), [], "rejected", "source_intent_invalid"),
         case("explicit-upstream-development", intent("upstream-development", {"nvidiaVersion": "575.64.05", "source": copy.deepcopy(UPSTREAM_SOURCE), "developmentAcknowledged": True}), [], "authorized", "upstream_development_authorized", "build_upstream_development"),
         case("upstream-not-acknowledged", intent("upstream-development", {"nvidiaVersion": "575.64.05", "source": copy.deepcopy(UPSTREAM_SOURCE), "developmentAcknowledged": False}), [], "rejected", "explicit_development_acknowledgement_required"),
         case("upstream-source-substitution", intent("upstream-development", {"nvidiaVersion": "575.64.05", "source": {**UPSTREAM_SOURCE, "repository": "example/other"}, "developmentAcknowledged": True}), [], "rejected", "unsupported_development_source"),
         case("malformed-automatic-selection", intent("automatic", {}), [], "rejected", "source_intent_invalid"),
+        case("floating-schema-version", {**intent("automatic", None), "schemaVersion": 1.0}, [], "rejected", "source_intent_invalid"),
+        case("fractional-selection-version", intent("exact-target-local-build", {"nvidiaVersion": 575.64}), [], "rejected", "source_intent_invalid"),
+        case("non-scalar-mode", intent(["automatic"], None), [], "rejected", "source_intent_invalid"),
         case("unknown-mode", intent("nearest", None), [], "rejected", "source_intent_invalid"),
         case("unsupported-architecture", {**intent("automatic", None), "target": {**TARGET, "architecture": "aarch64"}}, [], "rejected", "source_intent_invalid"),
+        case("duplicate-publication-identity", intent("exact-published-artifact", {"releaseTag": TAG}), release() * 2, "rejected", "resolver_failed"),
     ]
     return {"schemaVersion": 1, "kind": "opemos-source-intent-compatibility-fixtures", "maxCases": 32, "cases": cases}
 

@@ -289,6 +289,10 @@ name/size/SHA-256 of every transferred file. The inventory is exactly the
 canonical discovery pair, manifest pair, verifier audit record, and every
 manifest-owned payload. It carries transport integrity only.
 
+Core enforces the generation-wide storage ceiling before opening payloads and
+hashes payloads as bounded streams; the receipt cannot require buffering the
+complete generation in memory.
+
 Inside the managed appliance, `lib/consume_appliance_generation.py` snapshots
 the installed bootstrap policy, checkpoint and generation keyring; verifies
 both detached signatures again; validates authority, checkpoint, lineage,

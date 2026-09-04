@@ -15,6 +15,11 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "lib"))
+from consume_appliance_generation import (  # noqa: E402
+    MAX_GENERATION_STORAGE_BYTES,
+    validate_handoff,
+)
 GENERATOR = ROOT / "lib/generate_development_appliance_generation.py"
 CONSUMER = ROOT / "lib/consume_appliance_generation.py"
 HANDOFF_NAME = "opemos-core-generation-handoff-v1.json"
@@ -106,6 +111,35 @@ def main():
         assert tree_identity(first) == tree_identity(second)
         assert first_summary["trust"] == "development-test-only"
 
+        handoff = json.loads((first / "handoff" / HANDOFF_NAME).read_text())
+        target = {
+            "steamosVersion": "3.8.14",
+            "kernelVersion": "6.16.12-valve24.4-1-neptune-616-gfe145653a794",
+            "nvidiaVersion": "575.64.05",
+            "architecture": "x86_64",
+        }
+        oversized = json.loads(json.dumps(handoff))
+        for record in oversized["files"][:5]:
+            record["size"] = 2 * 1024 * 1024 * 1024
+        assert sum(item["size"] for item in oversized["files"]) \
+            > MAX_GENERATION_STORAGE_BYTES
+        try:
+            validate_handoff(oversized, "development-generation-v1", target)
+        except ValueError as error:
+            assert "aggregate size is excessive" in str(error)
+        else:
+            raise AssertionError("excessive aggregate handoff was accepted")
+
+        reserved = json.loads(json.dumps(handoff))
+        reserved["files"][0]["filename"] = "CON.json"
+        reserved["files"].sort(key=lambda item: item["filename"])
+        try:
+            validate_handoff(reserved, "development-generation-v1", target)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("Windows-reserved handoff filename was accepted")
+
         output_parent = root / "outputs"
         output_parent.mkdir(mode=0o700)
         output = output_parent / "installer-inputs"
@@ -113,6 +147,17 @@ def main():
         assert result["status"] == "prepared"
         assert result["trust"] == "development-test-only"
         assert result["generation"] == first_summary["generation"]
+        assert {record["name"] for record in result["packages"]} == {
+            "egl-gbm", "egl-wayland", "egl-x11", "eglexternalplatform",
+            "lib32-nvidia-utils", "nvidia-utils",
+        }
+        expected_outputs = {
+            result["userspaceLock"], result["packageKeyring"],
+            result["packageSignerPolicy"], "installer-inputs-v1.json",
+            *(record[field] for record in result["packages"]
+              for field in ("filename", "signatureFilename")),
+        }
+        assert {item.name for item in output.iterdir()} == expected_outputs
         assert (output / "egl-wayland-4:1.1.19-1-x86_64.pkg.tar.zst").is_file()
         assert not (output / "egl-wayland-4@1.1.19-1-x86_64.pkg.tar.zst").exists()
         assert stat.S_IMODE(output.stat().st_mode) == 0o500
