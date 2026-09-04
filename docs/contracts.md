@@ -95,6 +95,12 @@ reviewed project source, or explicit upstream development. Core's
 release metadata and its own reviewed build policy, then returns
 `source-authorization-v1.schema.json`.
 
+```bash
+python3 lib/source_intent_contract.py \
+  --intent /shared/source-intent.json \
+  --releases /shared/releases.json
+```
+
 Automatic may select only the normal resolver's published artifact or reviewed
 exact-target action. Exact publication and project requests must match their
 requested immutable identity. Upstream development requires an explicit

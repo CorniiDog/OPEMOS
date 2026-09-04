@@ -192,6 +192,40 @@ package/signature; the host receipt never establishes trust. During the current
 inactive integration phase this command requires `--development-test`, and its
 result remains `development-test-only`.
 
+The current development-only guest invocation is:
+
+```bash
+install -d -m 0700 /appliance/work
+python3 lib/consume_appliance_generation.py \
+  --development-test \
+  --handoff /appliance/handoff \
+  --operation-id HOST_OPERATION_ID \
+  --policy /appliance/trust/policy.json \
+  --keyring /appliance/trust/opemos-userspace-lock-generations.gpg \
+  --checkpoint /appliance/trust/checkpoint.json \
+  --gpgv /appliance/trust/development-gpgv \
+  --steamos 3.8.14 \
+  --kernel 6.16.12-valve24.4-1-neptune-616-gfe145653a794 \
+  --nvidia 575.64.05 \
+  --architecture x86_64 \
+  --output /appliance/work/installer-inputs
+```
+
+The output directory must not already exist. On success it is mode `0500`,
+every input is mode `0400`, and `installer-inputs-v1.json` names the exact
+lock, package keyring, signer policy, package/signature pairs and generation
+identity. A failed or cancelled run removes its reserved output; a pre-existing
+output is never replaced. Generate the one synthetic fixture tree with:
+
+```bash
+python3 lib/generate_development_appliance_generation.py \
+  --development-test --output /appliance/test-generation
+```
+
+Those package bytes and signatures are deliberate fakes. They test transport,
+authentication control flow and normalization only; the real installer must
+reject them, and no production path may accept the fixture verifier.
+
 ## Validation and mutation
 
 Use identical staged inputs for `--validate-only` and mutation. The installer
