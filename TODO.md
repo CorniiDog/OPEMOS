@@ -974,17 +974,21 @@ standardize on raw `.ko` or `.ko.zst`; the installer accepts both safely.
 
 ## Mode-boundary regression tests
 
-* [ ] Test `--development` semantics:
+* [x] Test `--development` semantics:
 
   * resolves a newer explicitly requested NVIDIA userspace version,
   * leaves installed kernel modules unchanged,
   * does not fetch, build, or install pristine upstream modules.
+
+  * 2026-09-05: `tests/setup_nvidia_modes.py` runs the real setup script in an isolated support layout, resolves prefix `580` to exact `580.119.02`, performs one userspace transaction with read-only restoration, reports unchanged modules, and proves the upstream module entry point is never called. `heavy.sh python3 tests/setup_nvidia_modes.py` passed.
 * [ ] Test `--use-upstream` semantics:
 
   * resolves userspace matching the selected upstream NVIDIA version,
   * fetches pristine NVIDIA source at the exact tag/commit,
   * builds and installs the upstream modules,
   * records `source_provider=upstream` and `project_patches=0`.
+
+  * [x] 2026-09-05 bounded delegation coverage: the same real-entry-point fixture verifies userspace installation and read-only restoration complete before exactly one call to `install_upstream.sh` with resolved version `580.119.02` and `-y`. Full exact-tag/build/install metadata coverage remains open above.
 
 ---
 
