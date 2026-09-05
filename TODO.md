@@ -354,6 +354,17 @@ for `* [ ]` to enumerate them mechanically.
   2026-09-05. Bounded consumer handoff: EXE may provide the existing ordered
   `lineageManifestSha256` plus each named manifest and `.sig` receipt; Core
   remains the authority that authenticates and authorizes the chain.
+  * 2026-09-05 remote CI handoff: EXE requires immutable GitHub checkout of
+    Core `adf372b857cd348b6a18680b45ffcea790f04d4b`. Fetch confirmed
+    `origin/main` and `FETCH_HEAD` at `7f90e45c4c154fdfda81ff594611cf533e4fb894`;
+    the exact 55-commit range is a normal fast-forward to `adf372b`, targets
+    `https://github.com/CorniiDog/open-gpu-kernel-modules-steamos-support` branch
+    `main`, passes diff/path/binary/credential-filename hygiene review, and
+    passed focused lineage plus boundary tests through `heavy.sh`. The push was
+    attempted normally and stopped before remote mutation because the active
+    `CorniiDog` GitHub CLI token is invalid and HTTPS could not obtain a
+    username. Re-authentication is required; no remote, credentials, or refs
+    were altered.
 
 ## Current project phase
 
