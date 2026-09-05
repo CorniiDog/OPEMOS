@@ -375,6 +375,16 @@ for `* [ ]` to enumerate them mechanically.
     to `https://github.com/CorniiDog/OPEMOS.git`; the configured remote was not
     altered. No later local commits, tags, releases, assets, or other refs were
     pushed.
+  * 2026-09-05 canonical repository migration: the user explicitly approved
+    `CorniiDog/OPEMOS` as Core's publication identity and retained
+    `CorniiDog/open-gpu-kernel-modules-steamos-support` only as a legacy GitHub
+    redirect. PR https://github.com/CorniiDog/OPEMOS/pull/1 carries the
+    transition. Publisher tests enforce canonical manifest/plan output for both
+    canonical and legacy redirect origins and reject unrelated origins;
+    `heavy.sh python3 tests/installer_bundle_publisher.py` and
+    `heavy.sh python3 tests/documentation.py` passed. The resulting squash
+    commit and branch deletion are recorded in a later continuation after
+    required PR checks pass.
 
 ## Current project phase
 

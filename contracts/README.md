@@ -293,9 +293,11 @@ bootstrap/publish_installer_bundle.sh \
 Remove `--dry-run` only after reviewing the canonical plan. The release tag
 and asset name are both `opemos-installer-bundle-<full-commit>`. A consumer
 must pin the manifest SHA-256 independently; co-location in a GitHub release is
-not an independent trust signal. Production publication is fixed to
-`CorniiDog/open-gpu-kernel-modules-steamos-support` and fails before generating
-a plan when the checkout's `origin` does not normalize to that exact project.
+not an independent trust signal. Production publication is fixed to `CorniiDog/OPEMOS` and fails before
+generating a plan when the checkout's `origin` does not normalize to that exact
+project. The former `CorniiDog/open-gpu-kernel-modules-steamos-support` origin
+is accepted only as GitHub's legacy redirect; emitted manifests and plans always
+carry the canonical `CorniiDog/OPEMOS` identity.
 Only the explicit `--development-repository OWNER/REPO` option permits another
 release destination; it does not change the canonical repository identity
 embedded in the bundle manifest.
