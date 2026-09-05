@@ -2218,6 +2218,13 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   userspace verification, module extraction/compression/copy/verification,
   GRUB, depmod, mkinitcpio, state writing, compression restoration, and
   recursive mount cleanup.
+  * [x] Strengthen the malformed generated-initramfs listing failure boundary.
+    The fixture requires terminal phase/reason `initramfs_verification`, exactly
+    one indeterminate initramfs record with no false completion, no
+    installation-state progress, complete four-mount cleanup, and exact
+    compression-policy restoration. Required validation evidence is recorded
+    with the GitHub PR because this host's unchanged `bsdtar` limitation blocks
+    the monolithic integration suite before mutation.
   * [x] Strengthen the immediate mkinitcpio child-failure boundary. The fixture
     requires terminal phase/reason `initramfs`, exactly one indeterminate
     initramfs record with no false completion, no installation-state progress,

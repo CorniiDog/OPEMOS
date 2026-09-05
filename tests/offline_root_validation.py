@@ -2741,9 +2741,34 @@ def main():
             False,
             MOCK_BAD_INITRAMFS_LISTING="1",
         )
+        assert failed_verification["status"] == "failed"
         assert failed_verification["reason"] == "initramfs_verification"
+        assert failed_verification["phase"] == "initramfs_verification"
         assert failed_verification["cleanup"]["mountsReleased"] is True
         assert failed_verification["cleanup"]["runtimeMountsReleased"] == 4
+        assert failed_verification["cleanup"]["compressionPolicyRestored"] is True
+        verification_progress = parse_progress_records(
+            (
+                temporary / "install-initramfs-verification-failed.json.stderr"
+            ).read_text(encoding="utf-8")
+        )
+        assert [
+            record
+            for record in verification_progress
+            if record["phase"] == "initramfs"
+        ] == [
+            {
+                "attempt": 0,
+                "indeterminate": True,
+                "phase": "initramfs",
+                "schemaVersion": 1,
+            }
+        ]
+        assert not any(
+            record["phase"] == "installation_state"
+            for record in verification_progress
+        )
+        assert_item_progress(verification_progress, "mount_cleanup", 4)
 
         depmod_failed = run_installer(
             paths,
