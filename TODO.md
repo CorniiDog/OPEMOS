@@ -1047,7 +1047,9 @@ Desired design:
 * [x] Verify current system returned to:
 
   * `steamos-readonly status: enabled`
-* [ ] Test cleanup path if script receives SIGINT.
+* [x] Test cleanup path if script receives SIGINT.
+
+  * 2026-09-04: `tests/setup_nvidia_signal.py` interrupts the real setup entry point during a mocked `pacman -U`, verifies exit 130, exact disable/enable read-only restoration, and temporary-workspace removal. Focused validation passed via `heavy.sh python3 tests/setup_nvidia_signal.py`. The registered `heavy.sh ./tests/check.sh` run passed shell syntax and preceding contract checks, then stopped at the separately frozen post-owner-death transport cleanup approval case (`device_generation_store_invalid`: generation tree too deep). Commit recorded below.
 * [x] Test cleanup paths for injected install/uninstall failures in a fake root.
 * [ ] Test cleanup path on checksum failure.
 * [x] Test cleanup path after fake-root target replacement.
