@@ -402,6 +402,9 @@ case " $* " in
     if [ "${MOCK_CORRUPT_INSTALLED_PAYLOAD:-0}" != 0 ]; then
       printf corrupt > "$root/usr/lib/nvidia-utils/fixture"
     fi
+    if [ "${MOCK_REMOVE_GRUB_AFTER_PACMAN:-0}" != 0 ]; then
+      rm -f "$root/efi/EFI/steamos/grub.cfg"
+    fi
     ;;
   *" -Q nvidia-utils "*)
     if [ "${MOCK_WRONG_INSTALLED_VERSION:-0}" = 0 ]; then
@@ -2665,6 +2668,39 @@ def main():
         assert depmod_records[-1]["indeterminate"] is True
         assert not any(record["phase"] == "initramfs" for record in depmod_progress)
         assert_item_progress(depmod_progress, "mount_cleanup", 4)
+
+        grub_failed = run_installer(
+            paths,
+            binaries,
+            temporary / "grub-failed.json",
+            False,
+            MOCK_REMOVE_GRUB_AFTER_PACMAN="1",
+        )
+        assert grub_failed["status"] == "failed"
+        assert grub_failed["reason"] == "bootloader_config"
+        assert grub_failed["phase"] == "bootloader_config"
+        assert grub_failed["cleanup"]["mountsReleased"] is True
+        assert grub_failed["cleanup"]["runtimeMountsReleased"] == 4
+        grub_progress = parse_progress_records(
+            (temporary / "grub-failed.json.stderr").read_text(encoding="utf-8")
+        )
+        grub_records = [
+            record for record in grub_progress if record["phase"] == "grub_update"
+        ]
+        assert grub_records == [
+            {
+                "attempt": 0,
+                "indeterminate": True,
+                "phase": "grub_update",
+                "schemaVersion": 1,
+            }
+        ]
+        assert not any(
+            record["phase"] in {"depmod", "initramfs"}
+            for record in grub_progress
+        )
+        assert_item_progress(grub_progress, "mount_cleanup", 4)
+        grub_path.write_bytes(valid_grub)
 
         failed = run_installer(
             paths,
