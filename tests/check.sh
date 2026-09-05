@@ -14,6 +14,7 @@ fail()
 printf 'Checking shell syntax...\n'
 python3 tests/shell_nounset.py
 python3 tests/host_temp_storage.py
+python3 tests/setup_nvidia_prerequisites.py
 python3 tests/boundary_policy.py
 for script_file in bootstrap/*.sh lib/*.sh commit_myself.sh test_update_macos.sh tests/*.sh; do
     bash -n "$script_file"

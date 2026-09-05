@@ -967,7 +967,9 @@ standardize on raw `.ko` or `.ko.zst`; the installer accepts both safely.
 * [x] Successfully install 580.119.02 NVIDIA userspace.
 * [x] Keep userspace and kernel module exact-version matching.
 * [x] Configure NVIDIA DRM modeset/fbdev environment.
-* [ ] Audit fresh-machine prerequisites.
+* [x] Audit fresh-machine prerequisites.
+
+  * 2026-09-05: `setup_nvidia.sh` now preflights resolution commands before creating its workspace and mutation commands before privilege acquisition. `tests/setup_nvidia_prerequisites.py` freezes the exact inventory and ordering while preserving optional capability checks for SteamOS read-only mode, GRUB refresh, and systemd services. `docs/getting-started.md` maps the added executable names to SteamOS base providers. Focused shell syntax, prerequisite, and documentation validation passed through `heavy.sh`.
 * [x] Keep normal certified mode from silently falling back to upstream source.
 
 ## Mode-boundary regression tests

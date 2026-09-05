@@ -121,6 +121,10 @@ need_cmd python3
 need_cmd awk
 need_cmd sort
 need_cmd tar
+need_cmd grep
+need_cmd tail
+need_cmd mkdir
+need_cmd rm
 
 STEAMOS_VERSION="$(get_steamos_version)"
 KERNEL_VERSION="$(get_kernel_version)"
@@ -313,6 +317,10 @@ need_cmd sudo
 need_cmd pacman
 need_cmd ldconfig
 need_cmd modinfo
+need_cmd cp
+need_cmd install
+need_cmd sed
+need_cmd tee
 
 if [[ "$YES" != "1" ]]; then
     printf "\n"

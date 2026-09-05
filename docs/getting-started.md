@@ -37,7 +37,11 @@ zstd
 ```
 
 On SteamOS, `modinfo` is provided by the `kmod` package, `python3` by the
-`python` package, and `realpath` plus `sha256sum` by GNU coreutils.
+`python` package, and `realpath` plus `sha256sum` by GNU coreutils. NVIDIA
+userspace setup also preflights `awk`, `sort`, `tar`, `grep`, `tail`, `mkdir`,
+`rm`, `sudo`, `pacman`, `ldconfig`, `cp`, `install`, `sed`, and `tee` before the
+phase that uses them. The standard SteamOS base supplies these through its
+base shell/coreutils, pacman, kmod, and privilege packages.
 
 On a stock SteamOS image, use Valve's supported package-management workflow to
 restore a missing prerequisite. Do not paste an unreviewed command that disables
