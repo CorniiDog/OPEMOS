@@ -472,6 +472,16 @@ def remove_confined_generation_tree(root):
         for name in names:
             info = os.stat(name, dir_fd=root_descriptor, follow_symlinks=False)
             if stat.S_ISDIR(info.st_mode):
+                if (root.name.startswith(".acquire-")
+                        and re.fullmatch(
+                            r"\.transport-phase-[A-Za-z0-9_-]{1,64}", name
+                        ) is not None):
+                    remove_confined_transport_phase(
+                        root / name,
+                        (info.st_dev, info.st_ino, info.st_uid),
+                        (opened.st_dev, opened.st_ino, opened.st_uid),
+                    )
+                    continue
                 if name != "payload":
                     fail("device_generation_store_invalid", "generation tree is too deep")
                 child_descriptor = os.open(
@@ -528,7 +538,8 @@ def remove_confined_generation_tree(root):
             os.close(parent_descriptor)
 
 
-def remove_confined_transport_phase(root, expected_identity=None):
+def remove_confined_transport_phase(
+        root, expected_identity=None, expected_parent_identity=None):
     """Remove bounded untrusted transport output without following links."""
     if re.fullmatch(r"\.transport-phase-[A-Za-z0-9_-]{1,64}", root.name) is None:
         fail("device_generation_store_invalid", "transport cleanup target is unsafe")
@@ -538,6 +549,11 @@ def remove_confined_transport_phase(root, expected_identity=None):
             root.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
             | getattr(os, "O_NOFOLLOW", 0),
         )
+        parent_opened = os.fstat(parent_descriptor)
+        if (expected_parent_identity is not None
+                and (parent_opened.st_dev, parent_opened.st_ino,
+                     parent_opened.st_uid) != expected_parent_identity):
+            fail("device_generation_store_invalid", "transport cleanup parent changed")
         root_descriptor = os.open(
             root.name, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
             | getattr(os, "O_NOFOLLOW", 0), dir_fd=parent_descriptor,
@@ -563,6 +579,8 @@ def remove_confined_transport_phase(root, expected_identity=None):
                         "transport output has too many nodes",
                     )
                 root_entries.append((entry.name, entry.stat(follow_symlinks=False)))
+        directories = []
+        files = []
         for name, info in root_entries:
             if stat.S_ISDIR(info.st_mode):
                 child_descriptor = os.open(
@@ -577,7 +595,6 @@ def remove_confined_transport_phase(root, expected_identity=None):
                             "device_generation_store_invalid",
                             "transport cleanup directory changed",
                         )
-                    os.fchmod(child_descriptor, 0o700)
                     with os.scandir(child_descriptor) as child_entries:
                         children = []
                         for child_entry in child_entries:
@@ -587,37 +604,83 @@ def remove_confined_transport_phase(root, expected_identity=None):
                                     "device_generation_store_excessive",
                                     "transport output has too many nodes",
                                 )
-                            children.append((
-                                child_entry.name,
-                                child_entry.stat(follow_symlinks=False),
-                            ))
-                    for child_name, child_info in children:
-                        if stat.S_ISDIR(child_info.st_mode):
-                            fail(
-                                "device_generation_store_invalid",
-                                "transport output is too deep",
-                            )
-                        if stat.S_ISREG(child_info.st_mode):
+                            child_info = child_entry.stat(follow_symlinks=False)
+                            if (not stat.S_ISREG(child_info.st_mode)
+                                    or child_info.st_uid != os.geteuid()
+                                    or child_info.st_nlink != 1):
+                                fail(
+                                    "device_generation_store_invalid",
+                                    "transport cleanup entry is unsafe",
+                                )
                             logical_bytes += child_info.st_size
-                        if logical_bytes > MAX_CACHE_TREE_BYTES:
-                            fail(
-                                "device_generation_store_excessive",
-                                "transport output is too large",
-                            )
-                        os.unlink(child_name, dir_fd=child_descriptor)
-                    os.fsync(child_descriptor)
+                            if logical_bytes > MAX_CACHE_TREE_BYTES:
+                                fail(
+                                    "device_generation_store_excessive",
+                                    "transport output is too large",
+                                )
+                            children.append((child_entry.name, child_info))
+                    directories.append((name, info, children))
                 finally:
                     os.close(child_descriptor)
-                os.rmdir(name, dir_fd=root_descriptor)
             else:
-                if stat.S_ISREG(info.st_mode):
-                    logical_bytes += info.st_size
+                if (not stat.S_ISREG(info.st_mode)
+                        or info.st_uid != os.geteuid() or info.st_nlink != 1):
+                    fail(
+                        "device_generation_store_invalid",
+                        "transport cleanup entry is unsafe",
+                    )
+                logical_bytes += info.st_size
                 if logical_bytes > MAX_CACHE_TREE_BYTES:
                     fail(
                         "device_generation_store_excessive",
                         "transport output is too large",
                     )
-                os.unlink(name, dir_fd=root_descriptor)
+                files.append((name, info))
+
+        # No mutation occurs until the complete bounded shape has validated.
+        # Revalidate every recorded identity immediately before unlinking it.
+        for name, expected in files:
+            current = os.stat(name, dir_fd=root_descriptor, follow_symlinks=False)
+            if ((current.st_dev, current.st_ino, current.st_uid,
+                 current.st_nlink, current.st_mode, current.st_size)
+                    != (expected.st_dev, expected.st_ino, expected.st_uid,
+                        expected.st_nlink, expected.st_mode, expected.st_size)):
+                fail("device_generation_store_invalid", "transport cleanup entry changed")
+            os.unlink(name, dir_fd=root_descriptor)
+        for name, expected, children in directories:
+            child_descriptor = os.open(
+                name, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+                | getattr(os, "O_NOFOLLOW", 0), dir_fd=root_descriptor,
+            )
+            try:
+                current_directory = os.fstat(child_descriptor)
+                if ((current_directory.st_dev, current_directory.st_ino,
+                     current_directory.st_uid)
+                        != (expected.st_dev, expected.st_ino, expected.st_uid)):
+                    fail(
+                        "device_generation_store_invalid",
+                        "transport cleanup directory changed",
+                    )
+                if set(os.listdir(child_descriptor)) != {item[0] for item in children}:
+                    fail("device_generation_store_invalid", "transport cleanup entries changed")
+                for child_name, child_expected in children:
+                    current = os.stat(
+                        child_name, dir_fd=child_descriptor, follow_symlinks=False,
+                    )
+                    if ((current.st_dev, current.st_ino, current.st_uid,
+                         current.st_nlink, current.st_mode, current.st_size)
+                            != (child_expected.st_dev, child_expected.st_ino,
+                                child_expected.st_uid, child_expected.st_nlink,
+                                child_expected.st_mode, child_expected.st_size)):
+                        fail(
+                            "device_generation_store_invalid",
+                            "transport cleanup entry changed",
+                        )
+                    os.unlink(child_name, dir_fd=child_descriptor)
+                os.fsync(child_descriptor)
+            finally:
+                os.close(child_descriptor)
+            os.rmdir(name, dir_fd=root_descriptor)
         os.fsync(root_descriptor)
         os.close(root_descriptor)
         root_descriptor = None

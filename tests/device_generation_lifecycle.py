@@ -986,9 +986,33 @@ def main():
                 expected_reason = "device_generation_transport_failed"
             elif mode in {"replace-phase", "replace-acquisition"}:
                 expected_reason = "device_generation_input_changed"
+            elif mode in {"hardlink-output", "unsafe-entries"}:
+                expected_reason = "device_generation_store_invalid"
             else:
                 expected_reason = "device_generation_transport_output_invalid"
-            assert hostile["reason"] == expected_reason
+            assert hostile["reason"] == expected_reason, (mode, hostile)
+            acquisitions = list((store / "downloads").glob(".acquire-*"))
+            if mode == "hardlink-output":
+                assert len(acquisitions) == 1
+                phase = next(acquisitions[0].glob(".transport-phase-*"))
+                linked = [entry for entry in phase.iterdir()
+                          if entry.stat(follow_symlinks=False).st_nlink > 1]
+                assert len(linked) == 1
+                linked[0].unlink()
+                invoke(environment, store, policy, keyring, checkpoint, "prune")
+            elif mode == "unsafe-entries":
+                assert len(acquisitions) == 1
+                phase = next(acquisitions[0].glob(".transport-phase-*"))
+                unsafe_entries = (
+                    phase / "untrusted-link", phase / "untrusted-fifo",
+                    phase / "untrusted-directory/untrusted-file",
+                )
+                assert all(item.exists() or item.is_symlink()
+                           for item in unsafe_entries)
+                for unsafe in unsafe_entries:
+                    unsafe.unlink()
+                (phase / "untrusted-directory").rmdir()
+                invoke(environment, store, policy, keyring, checkpoint, "prune")
             assert not list((store / "downloads").glob(".acquire-*"))
 
         keyring_payload = keyring.read_bytes()
@@ -1138,6 +1162,45 @@ def main():
         write(abandoned_download / "partial", b"partial\n")
         invoke(environment, store, policy, keyring, checkpoint, "prune")
         assert not abandoned_download.exists()
+
+        abandoned_transport = store / "downloads/.acquire-owner-death"
+        transport_phase = abandoned_transport / ".transport-phase-bootstrap"
+        (transport_phase / "nested").mkdir(parents=True, mode=0o700)
+        write(transport_phase / "partial", b"partial metadata\n")
+        write(transport_phase / "nested/payload", b"partial payload\n")
+        invoke(environment, store, policy, keyring, checkpoint, "prune")
+        assert not abandoned_transport.exists()
+
+        ambiguous_transport = store / "downloads/.acquire-ambiguous"
+        ambiguous_phase = ambiguous_transport / ".transport-phase-bootstrap"
+        ambiguous_phase.mkdir(parents=True, mode=0o700)
+        ambiguous_source = root / "ambiguous-transport-source"
+        write(ambiguous_source, b"shared evidence\n")
+        os.link(ambiguous_source, ambiguous_phase / "shared")
+        ambiguous_cleanup = invoke(
+            environment, store, policy, keyring, checkpoint, "prune",
+            success=False,
+        )
+        assert ambiguous_cleanup["reason"] == "device_generation_store_invalid"
+        assert ambiguous_phase.exists() and (ambiguous_phase / "shared").exists()
+        (ambiguous_phase / "shared").unlink()
+        ambiguous_source.unlink()
+        ambiguous_phase.rmdir()
+        ambiguous_transport.rmdir()
+
+        linked_transport = store / "downloads/.acquire-linked"
+        linked_phase = linked_transport / ".transport-phase-bootstrap"
+        linked_phase.mkdir(parents=True, mode=0o700)
+        (linked_phase / "linked").symlink_to(root / "outside")
+        linked_cleanup = invoke(
+            environment, store, policy, keyring, checkpoint, "prune",
+            success=False,
+        )
+        assert linked_cleanup["reason"] == "device_generation_store_invalid"
+        assert (linked_phase / "linked").is_symlink()
+        (linked_phase / "linked").unlink()
+        linked_phase.rmdir()
+        linked_transport.rmdir()
 
         for field in (
                 "OPEMOS_GENERATION_TEST_AVAILABLE_BYTES",

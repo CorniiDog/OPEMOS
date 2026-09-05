@@ -1823,6 +1823,18 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   stale output can be consumed. Cover portable pipe-loss/descendant teardown,
   normal exit propagation, catchable cancellation, and a conditional Linux
   lifecycle-parent SIGKILL integration case with restart cleanup.
+  * 2026-09-05 authorized cleanup follow-up: restart cleanup now recognizes
+    only an exact Core-created `.acquire-*` wrapper containing an owned,
+    identity-revalidated `.transport-phase-*` child and routes that child
+    through the existing descriptor-confined transport remover before removing
+    the wrapper. Parent and child identities are revalidated; only owned,
+    single-link regular files within the bounded two-level shape are removed.
+    Hardlinks, symlinks, special entries, unknown depth, stale identity, and
+    ambiguous evidence fail safely and remain preserved. The lifecycle suite
+    covers normal abandonment, lifecycle-owner SIGKILL, valid nested transport
+    cleanup, complete preflight before mutation, and ambiguity preservation.
+    `heavy.sh
+    python3 tests/device_generation_lifecycle.py` passed.
 * [x] Bind installed generation trust snapshots to owner-controlled,
   non-writable files and containing trust directories for the complete
   lifecycle operation. Reject unsafe initial modes/owners and file or directory
