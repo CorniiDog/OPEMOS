@@ -393,6 +393,9 @@ then
     fail "setup_nvidia.sh accepted mutually exclusive modes"
 fi
 
+printf 'Checking CLI mode consistency...\n'
+python3 tests/cli_consistency.py
+
 printf 'Checking development-mode terminology...\n'
 if grep -RniE --exclude='TODO.md' --exclude-dir='.git' \
     -- '--driver|explicit:|DRIVER_SPEC|pristine-upstream|upstream-control' \

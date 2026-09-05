@@ -1379,7 +1379,7 @@ offline installer contract.
 * [x] Rename `--driver` to `--development`.
 * [x] Add proper `usage()` to `install_upstream.sh`.
 * [x] Make `--help` work everywhere.
-* [ ] Run one final CLI consistency audit so every mode uses standard formatting
+* [x] Run one final CLI consistency audit so every mode uses standard formatting
   and explains:
 
   * purpose,
@@ -1389,6 +1389,14 @@ offline installer contract.
   * whether project fixes are applied,
   * consistent `certified`, `development`, `upstream-development`, and
     `project-patched` terminology.
+
+  * 2026-09-05: mode-facing help and prompts consistently name
+    `upstream-development` while describing its modules as unmodified. The
+    default check suite now executes each mode-facing help path and requires
+    standard usage output, certified/development/upstream-development terms,
+    userspace and module behavior, source/project-fix disclosure, build-only
+    non-mutation, and rejection of legacy names. Focused CLI, mode, upstream
+    build, and shell-syntax tests passed through `heavy.sh`.
 * [x] Add examples in README for:
 
   * certified install

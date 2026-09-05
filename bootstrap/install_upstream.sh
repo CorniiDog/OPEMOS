@@ -14,7 +14,7 @@ usage()
     cat <<EOF
 Usage: install_upstream.sh [options] NVIDIA_VERSION
 
-Build pristine NVIDIA open kernel modules for the current SteamOS kernel.
+Build unmodified NVIDIA open kernel modules in upstream-development mode.
 
 Options:
       --build-only   Preserve the archive and checksum under the project cache;
@@ -118,9 +118,9 @@ printf "\n"
 
 if [[ "$YES" != "1" ]]; then
     if [[ "$BUILD_ONLY" == "1" ]]; then
-        PROMPT="Build pristine upstream modules without installing them?"
+        PROMPT="Build unmodified upstream-development modules without installing them?"
     else
-        PROMPT="Build and install pristine upstream modules?"
+        PROMPT="Build and install unmodified upstream-development modules?"
     fi
 
     read -r -p "[$PROJECT_NAME] ${PROMPT} [y/N]: " REPLY
@@ -166,7 +166,7 @@ upstream_commit=${UPSTREAM_COMMIT}
 source_provider=upstream
 EOF
 
-log "Building pristine upstream modules..."
+log "Building unmodified upstream-development modules..."
 "${SCRIPT_DIR}/build.sh"
 
 PACKAGE_DIR="${WORK_DIR}/package"

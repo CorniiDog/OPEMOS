@@ -23,8 +23,8 @@ Options:
                              patched-module development. Kernel modules are
                              not installed or replaced by this mode.
       --use-upstream PREFIX  Select/install matching NVIDIA userspace, then
-                             build and install pristine upstream modules as a
-                             control case. Project fixes are not applied.
+                             build and install unmodified modules in
+                             upstream-development mode. Project fixes are not applied.
       --offer-reboot         Offer to restart after --use-upstream installs
                              kernel modules. Disabled by default.
       --resolve-only         Resolve and describe the selection without making
@@ -212,8 +212,8 @@ MODULE_BEHAVIOR=""
 
 if [[ -n "$UPSTREAM_SPEC" ]]; then
     SELECTION_MODE="upstream-development"
-    SELECTION_PURPOSE="establish a pristine NVIDIA upstream control build"
-    MODULE_BEHAVIOR="build and install pristine upstream modules; project fixes are not applied"
+    SELECTION_PURPOSE="establish an unmodified NVIDIA upstream-development control build"
+    MODULE_BEHAVIOR="build and install unmodified upstream modules; project fixes are not applied"
 
     log "Resolving newest NVIDIA upstream driver matching ${UPSTREAM_SPEC}..."
 
