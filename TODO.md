@@ -385,6 +385,12 @@ for `* [ ]` to enumerate them mechanically.
     `heavy.sh python3 tests/documentation.py` passed. The resulting squash
     commit and branch deletion are recorded in a later continuation after
     required PR checks pass.
+    Completion: both required Shell checks passed, PR #1 was squash-merged at
+    `fb98cbba4c179f44f1985156b12c438447f0439a` on 2026-09-05, and the merged
+    local and remote `work/core-transition-heartbeats` branches were deleted.
+    Local `main` was updated from fetched `origin/main` at that exact squash
+    commit. The PR preserves the seven pre-squash commits plus the approved
+    canonical-identity migration commit and their detailed validation record.
 
 ## Current project phase
 
