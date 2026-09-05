@@ -119,9 +119,11 @@ already_installed()
     local archive="$1"
     local checksum="$2"
     local expected_sha actual_sha entry listing
-    local state_root="/var/lib/open-gpu-kernel-modules-steamos-support"
-    local installed_info="${state_root}/installed-build-info.txt"
-    local target_dir="/usr/lib/modules/${KERNEL_VERSION}/updates/open-gpu-kernel-modules-steamos"
+    local state_root
+    local installed_info target_dir
+    state_root="$(project_system_path "/var/lib/open-gpu-kernel-modules-steamos-support")"
+    installed_info="${state_root}/installed-build-info.txt"
+    target_dir="$(project_system_path "/usr/lib/modules/${KERNEL_VERSION}/updates/open-gpu-kernel-modules-steamos")"
     local check_dir="${TMP}/installed-check"
     local resolved resolved_real target_real module module_name installed module_sha installed_sha
     local installed_module_count
@@ -258,7 +260,7 @@ install_archive()
         return 0
     fi
 
-    if [[ -f "/var/lib/open-gpu-kernel-modules-steamos-support/installed-build-info.txt" ]]; then
+    if [[ -f "$(project_system_path "/var/lib/open-gpu-kernel-modules-steamos-support/installed-build-info.txt")" ]]; then
         log "Existing NVIDIA open kernel module installation requires update or repair."
     fi
 

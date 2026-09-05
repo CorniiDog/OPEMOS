@@ -4,6 +4,7 @@ import hashlib
 import os
 import shutil
 import subprocess
+import tarfile
 import tempfile
 from pathlib import Path
 
@@ -31,7 +32,21 @@ def main():
         system.mkdir(parents=True)
         (system / "os-release").write_text('ID=steamos\nNAME="SteamOS"\nVERSION_ID="3.8.14"\n')
         bundle = root / "nvidia-open-fixture.tar.gz"
-        bundle.write_bytes(b"changed local fixture")
+        package = root / "package"
+        modules = package / "modules"
+        modules.mkdir(parents=True)
+        build_info = (
+            "steamos_version=3.8.14\n"
+            "kernel_version=fixture-kernel\n"
+            "nvidia_version=580.119.02\n"
+        )
+        (package / "BUILD-INFO.txt").write_text(build_info)
+        names = ("nvidia", "nvidia-drm", "nvidia-modeset", "nvidia-peermem", "nvidia-uvm")
+        for module in names:
+            (modules / f"{module}.ko").write_text(f"canonical {module}\n")
+        with tarfile.open(bundle, "w:gz") as archive:
+            archive.add(package / "BUILD-INFO.txt", arcname="BUILD-INFO.txt")
+            archive.add(modules, arcname="modules")
         checksum = hashlib.sha256(bundle.read_bytes()).hexdigest()
         Path(str(bundle) + ".sha256").write_text(f"{checksum}  {bundle.name}\n")
         fake_bin = root / "bin"
@@ -44,6 +59,16 @@ fi
 exit 0
 ''')
         executable(fake_bin / "nvidia-smi", "echo 580.119.02\n")
+        target = root / "system/usr/lib/modules/fixture-kernel/updates/open-gpu-kernel-modules-steamos"
+        target.mkdir(parents=True)
+        for module in names:
+            payload = f"canonical {module}\n" if module != "nvidia-uvm" else "tampered payload\n"
+            (target / f"{module}.ko").write_text(payload)
+        state = root / "system/var/lib/open-gpu-kernel-modules-steamos-support"
+        state.mkdir(parents=True)
+        (state / "installed-build-info.txt").write_text(build_info)
+        executable(fake_bin / "uname", 'case "${1:-}" in -r) echo fixture-kernel;; *) echo Linux;; esac\n')
+        executable(fake_bin / "modinfo", f'if [ "${{1:-}}" = -n ]; then echo {target}/nvidia.ko; exit 0; fi\nexit 1\n')
         executable(fake_bin / "sudo", f"printf '%s\\n' \"$*\" >> {str(reboot_log)!r}\nexit 99\n")
         home = root / "home"
         environment = {
@@ -59,6 +84,7 @@ exit 0
         )
         assert completed.returncode == 0, (completed.stdout, completed.stderr)
         assert len(install_log.read_text().splitlines()) == 1
+        assert "requires update or repair" in completed.stdout
         assert guardian_log.read_text().splitlines() == ["called"]
         assert completed.stderr.splitlines().count("+ offer_reboot") == 1
         assert "Restart skipped." in completed.stdout

@@ -909,7 +909,9 @@ standardize on raw `.ko` or `.ko.zst`; the installer accepts both safely.
 * [x] Verify no module replacement occurs on the idempotent fast path.
 * [x] Verify no `mkinitcpio` on the idempotent fast path.
 * [x] Verify no reboot prompt on the idempotent fast path.
-* [ ] Verify a deliberately modified installed module causes repair path.
+* [x] Verify a deliberately modified installed module causes repair path.
+
+  * 2026-09-05: `tests/online_reboot.py` builds a valid five-module local archive and matching installed state, changes only the installed `nvidia-uvm.ko` payload, and runs the real online entry point. The health comparison rejects the fast path, reports update/repair, invokes the installer exactly once, retains single reboot ownership, and cleans its workspace. Installed-state reads now use the existing `project_system_path` adapter, preserving production `/` behavior while enabling confined fake-root validation. `heavy.sh python3 tests/online_reboot.py` passed.
 * [x] Verify altered module content causes the repair path.
 * [x] Verify a deliberately altered BUILD-INFO causes repair path.
 * [x] Verify an invalid checksum causes failure.
