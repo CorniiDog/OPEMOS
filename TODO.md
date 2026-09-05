@@ -1307,6 +1307,13 @@ This remains a major future area, represented by three distinct gates:
 * [ ] Test publication races: an exact release appearing during offline wait,
   wrong-kernel/version releases, mid-download publication, and a certified
   equivalent appearing after a locally-built verified repair.
+
+  * 2026-09-05 partial evidence: the dedicated immutable-plan stress test now
+    creates an exact unbound plan while its artifact is absent, proves a failed
+    bind preserves the plan byte-for-byte, binds the later exact artifact, and
+    retains existing rejection of different bytes at the same path. It passed
+    through `heavy.sh`. Wrong-target publication, replacement during download,
+    and certified-after-local-repair integration cases remain open.
 * [ ] Stage and independently verify the guardian assets and systemd enablement
   in OPEMOS.EXE-generated rootfs payloads.
 * [ ] Test a 3.8.x kernel upgrade, missing-release behavior, and rollback to the

@@ -116,7 +116,6 @@ with tempfile.TemporaryDirectory(prefix="opemos-recovery-stress-") as temporary:
 
     plan = root / "release-plan.json"
     archive = root / "artifact.tar.gz"
-    archive.write_bytes(b"immutable stress artifact")
     plan_command = [PLAN]
     create = [
         *plan_command, "create", "--plan", plan,
@@ -125,6 +124,10 @@ with tempfile.TemporaryDirectory(prefix="opemos-recovery-stress-") as temporary:
         "--asset-name", "stress-artifact-x86_64.tar.gz",
     ]
     run(create)
+    unbound_plan = plan.read_bytes()
+    run([*plan_command, "bind-archive", "--plan", plan, "--archive", archive], success=False)
+    assert plan.read_bytes() == unbound_plan
+    archive.write_bytes(b"immutable stress artifact")
     run([*plan_command, "bind-archive", "--plan", plan, "--archive", archive])
     canonical_plan = plan.read_bytes()
     for arguments in (
