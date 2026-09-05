@@ -152,6 +152,10 @@ index in the same commit.
   duplicate/non-finite, unknown-schema, future-phase, heartbeat, invalid-range,
   and boundary-fraction tests passed through `heavy.sh`. See
   `docs/progress-semantics-handoff.md`; unrelated cleanup approval remains open.
+  The adapter executable and output schema are now part of Core's immutable
+  consumer-bundle inventory and the focused suite is wired into `tests/check.sh`.
+  Adapter plus canonical bundle-contract tests passed through `heavy.sh` on
+  2026-09-04.
 
 * [ ] Hardware-validate the implemented no-input DRM/KMS boot interstitial on
   real SteamOS with simpledrm and intended iGPU paths, internal/external display

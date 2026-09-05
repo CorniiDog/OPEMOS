@@ -15,6 +15,10 @@ publisher evidence, and installed-device lifecycle.
 
 - `schemas/resolver-result-v2.schema.json` describes the additive resolver
   result emitted by `lib/resolve_target.py`.
+- `schemas/progress-semantics-v1.schema.json` describes the canonical Core
+  adapter output shared by consumers. Known phases receive bounded current and
+  overall semantics; future phases preserve current progress and make overall
+  progress indeterminate.
 - `schemas/installer-progress-v1.schema.json` describes one record following
   the `STEAMOS_NVIDIA_PROGRESS ` prefix. Cross-record monotonicity remains a
   stream property enforced by `lib/validate_install_contract.py`.

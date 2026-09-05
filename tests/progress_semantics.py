@@ -10,6 +10,9 @@ def reject(value):
  raise AssertionError(value)
 
 def main():
+ schema=json.loads((ROOT/"contracts/schemas/progress-semantics-v1.schema.json").read_text())
+ assert schema["additionalProperties"] is False
+ assert schema["properties"]["kind"]["const"]=="opemos-progress-semantics"
  first=adapt({"schemaVersion":1,"attempt":1,"phase":PHASES[0],"indeterminate":False,"completed":0,"total":5,"unit":"items"})
  assert first["overall"]["fractionMillionths"]==0 and first["currentOperation"]["fractionMillionths"]==0
  last=adapt({"schemaVersion":1,"attempt":1,"phase":PHASES[-1],"indeterminate":False,"completed":5,"total":5,"unit":"items"})

@@ -19,3 +19,8 @@ counters, and excessive input are rejected.
 
 Frontends choose labels, layout, animation, controls, accessibility, and other
 platform presentation. Test fixtures do not authorize production activation.
+
+The canonical installer bundle inventory includes both the adapter executable
+and its output schema. Consumers should pin the immutable Core commit plus
+bundle-manifest hash and verify the listed path, mode, size, and SHA-256 before
+execution.

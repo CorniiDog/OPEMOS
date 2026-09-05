@@ -121,6 +121,8 @@ python3 tests/interstitial.py
 cargo test --locked --manifest-path interstitial/Cargo.toml
 cargo clippy --locked --manifest-path interstitial/Cargo.toml --all-targets -- -D warnings
 cargo fmt --manifest-path interstitial/Cargo.toml -- --check
+printf 'Checking canonical progress semantics...\n'
+python3 tests/progress_semantics.py
 printf 'Checking canonical cross-frontend contracts...\n'
 python3 tests/consumer_contracts.py
 printf 'Checking reviewed userspace-lock generation contracts...\n'
