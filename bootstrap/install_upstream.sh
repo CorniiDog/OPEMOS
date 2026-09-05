@@ -166,9 +166,6 @@ upstream_commit=${UPSTREAM_COMMIT}
 source_provider=upstream
 EOF
 
-log "Preparing Fedora build environment..."
-"${SCRIPT_DIR}/setup_build_env.sh"
-
 log "Building pristine upstream modules..."
 "${SCRIPT_DIR}/build.sh"
 

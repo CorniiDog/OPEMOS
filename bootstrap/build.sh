@@ -19,6 +19,9 @@ if [[ $# -gt 0 ]]; then
     esac
 fi
 
+log "Preparing Fedora build environment..."
+"${SCRIPT_DIR}/setup_build_env.sh"
+
 need_cmd git
 need_cmd podman
 

@@ -759,8 +759,16 @@ standardize on raw `.ko` or `.ko.zst`; the installer accepts both safely.
   * pristine upstream records/accepts `source_branch=HEAD`,
   * an empty `git branch --show-current` result is treated as detached HEAD,
   * it must not fail with `Source branch is ; expected HEAD`.
-* [ ] Define one owner for build-environment preparation and remove duplicated
+* [x] Define one owner for build-environment preparation and remove duplicated
   setup between callers and `build.sh`.
+
+  * 2026-09-05: `build.sh` is the sole owner and prepares the validated rootless
+    Podman environment before requiring it; both `compile.sh` and
+    `install_upstream.sh` delegate through that path. The focused ownership
+    regression rejects missing, duplicate, late, or caller-owned preparation.
+    `heavy.sh bash -c 'bash -n bootstrap/build.sh bootstrap/install_upstream.sh
+    bootstrap/compile.sh && python3 tests/build_environment_owner.py && python3
+    tests/upstream_build_only.py'` passed.
 * [x] Verify no host-root temp writes remain for large data.
 
   * 2026-09-05: `tests/host_temp_storage.py` inventories every large host build/install/bootstrap workflow and rejects literal `/tmp`, direct `/tmp` mktemp, and `${TMPDIR:-/tmp}` staging. Negative cases freeze those failures and accept `$HOME/.cache` staging. The test separately requires `build.sh` to retain the documented Fedora-container `/tmp` exception and its rootless-Podman-under-`/home` rationale. Bounded publication metadata plus explicit-root recovery/appliance workspaces remain separately scoped. `heavy.sh python3 tests/host_temp_storage.py` passed.
