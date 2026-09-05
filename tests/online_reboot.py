@@ -92,5 +92,44 @@ exit 0
         cache = home / ".cache/open-gpu-kernel-modules-steamos-support"
         assert not list(cache.glob("online-install.*"))
 
+        # Freeze the known-good 575 representation boundary: release archives
+        # contain raw modules while SteamOS may store identical bytes as .ko.zst.
+        old_build_info = (
+            "steamos_version=3.8.14\n"
+            "kernel_version=fixture-kernel\n"
+            "nvidia_version=575.64.05\n"
+        )
+        (package / "BUILD-INFO.txt").write_text(old_build_info)
+        with tarfile.open(bundle, "w:gz") as archive:
+            archive.add(package / "BUILD-INFO.txt", arcname="BUILD-INFO.txt")
+            archive.add(modules, arcname="modules")
+        checksum = hashlib.sha256(bundle.read_bytes()).hexdigest()
+        Path(str(bundle) + ".sha256").write_text(f"{checksum}  {bundle.name}\n")
+        (state / "installed-build-info.txt").write_text(old_build_info)
+        executable(fake_bin / "nvidia-smi", "echo 575.64.05\n")
+        for module in names:
+            raw = target / f"{module}.ko"
+            raw.unlink()
+            compressed = subprocess.run(
+                ["zstd", "-q", "-c"], input=f"canonical {module}\n".encode(),
+                stdout=subprocess.PIPE, check=True,
+            ).stdout
+            (target / f"{module}.ko.zst").write_bytes(compressed)
+        install_log.unlink()
+        guardian_log.unlink()
+
+        old_release = subprocess.run(
+            ["bash", str(ENTRYPOINT), "--local", str(bundle)],
+            cwd="/", env=environment, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, text=True,
+        )
+        assert old_release.returncode == 0, (old_release.stdout, old_release.stderr)
+        assert "Already installed, healthy, and current." in old_release.stdout
+        assert "Nothing to do." in old_release.stdout
+        assert not install_log.exists(), "equivalent compressed 575 modules must not reinstall"
+        assert guardian_log.read_text().splitlines() == ["called"]
+        assert not reboot_log.exists(), "unchanged 575 installation must not offer reboot"
+        assert not list(cache.glob("online-install.*"))
+
 if __name__ == "__main__":
     main()

@@ -925,7 +925,14 @@ standardize on raw `.ko` or `.ko.zst`; the installer accepts both safely.
 * [x] Verify altered module content causes the repair path.
 * [x] Verify a deliberately altered BUILD-INFO causes repair path.
 * [x] Verify an invalid checksum causes failure.
-* [ ] Verify raw archive ↔ compressed installed comparison with old 575 release.
+* [x] Verify raw archive ↔ compressed installed comparison with old 575 release.
+
+  * 2026-09-05: `tests/online_reboot.py` now runs the real local online entry
+    point against the known-good 575.64.05 identity with five raw archive
+    modules and byte-equivalent installed `.ko.zst` modules. It takes the
+    healthy/current path, performs no module reinstall, offers no reboot,
+    invokes the guardian once, and cleans its workspace. The focused test
+    passed through `heavy.sh`.
 * [x] Verify compressed archive ↔ compressed installed comparison if future releases use compressed archives.
 * [x] Require exactly the five expected NVIDIA modules in install and health validation.
 
