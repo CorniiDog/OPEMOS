@@ -15,6 +15,9 @@ publisher evidence, and installed-device lifecycle.
 
 - `schemas/resolver-result-v2.schema.json` describes the additive resolver
   result emitted by `lib/resolve_target.py`.
+- `schemas/result-semantics-v1.schema.json` describes canonical terminal
+  semantics emitted only after complete authoritative installer-result
+  validation.
 - `schemas/progress-semantics-v1.schema.json` describes the canonical Core
   adapter output shared by consumers. Known phases receive bounded current and
   overall semantics; future phases preserve current progress and make overall

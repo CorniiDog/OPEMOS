@@ -37,12 +37,24 @@ def adapt(record):
  else:
   overall={"state":"indeterminate"}; disposition="future"
  return {"schemaVersion":1,"kind":"opemos-progress-semantics","attempt":attempt,"phase":phase,"phaseDisposition":disposition,"currentOperation":current,"overall":overall}
+def adapt_result(document):
+ status=document["status"]
+ state={"success":"succeeded","validated":"validated","failed":"failed","cancelled":"cancelled"}[status]
+ cleanup=document["cleanup"]
+ return {"schemaVersion":1,"kind":"opemos-result-semantics","state":state,
+         "phase":document["phase"],"reason":document["reason"],"trust":document["trust"],
+         "cleanupComplete":cleanup["mountsReleased"] and cleanup["compressionPolicyRestored"] and cleanup["runtimeMountsExpected"]==cleanup["runtimeMountsReleased"]}
+
 def main():
- ap=argparse.ArgumentParser(); ap.add_argument("--record",type=Path,required=True); a=ap.parse_args()
+ ap=argparse.ArgumentParser(); group=ap.add_mutually_exclusive_group(required=True); group.add_argument("--record",type=Path); group.add_argument("--result",type=Path); a=ap.parse_args()
  try:
-  data=a.record.read_bytes()
-  if not 1<=len(data)<=MAX: raise ContractError("record size invalid")
-  doc=strict(data.decode("utf-8")); out=adapt(doc)
- except (OSError,UnicodeError,ContractError) as e: raise SystemExit(f"progress semantics rejected: {e}")
+  if a.result:
+   from validate_install_contract import validate_result
+   out=adapt_result(validate_result(a.result))
+  else:
+   data=a.record.read_bytes()
+   if not 1<=len(data)<=MAX: raise ContractError("record size invalid")
+   doc=strict(data.decode("utf-8")); out=adapt(doc)
+ except (OSError,UnicodeError,ContractError,ValueError,TypeError) as e: raise SystemExit(f"progress semantics rejected: {e}")
  print(json.dumps(out,sort_keys=True,separators=(",",":")))
 if __name__=="__main__": main()

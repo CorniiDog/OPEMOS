@@ -2,7 +2,7 @@
 import json,sys
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]; sys.path.insert(0,str(ROOT/'lib'))
-from progress_semantics import ContractError, PHASES, adapt, strict
+from progress_semantics import ContractError, PHASES, adapt, adapt_result, strict
 
 def reject(value):
  try: adapt(value)
@@ -10,6 +10,17 @@ def reject(value):
  raise AssertionError(value)
 
 def main():
+ from generate_installer_result_fixtures import matrix
+ from validate_install_contract import validate_result
+ import tempfile
+ with tempfile.TemporaryDirectory() as name:
+  for case in matrix()["cases"]:
+   if not case["expected"]["accepted"]: continue
+   path=Path(name)/"result.json"; path.write_text(json.dumps(case["document"],sort_keys=True,separators=(",",":"))+"\n")
+   result=adapt_result(validate_result(path))
+   expected={"success":"succeeded","validated":"validated","failed":"failed","cancelled":"cancelled"}[case["expected"]["status"]]
+   assert result["state"]==expected
+   if expected in {"succeeded","validated"}: assert result["cleanupComplete"]
  schema=json.loads((ROOT/"contracts/schemas/progress-semantics-v1.schema.json").read_text())
  assert schema["additionalProperties"] is False
  assert schema["properties"]["kind"]["const"]=="opemos-progress-semantics"

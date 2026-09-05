@@ -99,6 +99,7 @@ FILES = (
     ("contracts/schemas/resolver-result-v2.schema.json", "contract-schema", "0644"),
     ("contracts/schemas/installer-progress-v1.schema.json", "contract-schema", "0644"),
     ("contracts/schemas/progress-semantics-v1.schema.json", "contract-schema", "0644"),
+    ("contracts/schemas/result-semantics-v1.schema.json", "contract-schema", "0644"),
     ("contracts/schemas/installer-result-v1.schema.json", "contract-schema", "0644"),
     ("contracts/schemas/installer-validation-v1.schema.json", "contract-schema", "0644"),
     ("contracts/schemas/installer-module-verification-v1.schema.json", "contract-schema", "0644"),

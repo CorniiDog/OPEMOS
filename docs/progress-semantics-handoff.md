@@ -24,3 +24,11 @@ The canonical installer bundle inventory includes both the adapter executable
 and its output schema. Consumers should pin the immutable Core commit plus
 bundle-manifest hash and verify the listed path, mode, size, and SHA-256 before
 execution.
+
+For terminal results, invoke `--result FILE`. Core first applies the complete
+authoritative installer-result validator, then emits schema-1
+`opemos-result-semantics` with normalized state, phase, reason, trust, and a
+computed cleanup-complete flag. Invalid or future unsupported result schemas
+produce no semantic record. The output schema is
+`contracts/schemas/result-semantics-v1.schema.json` and is included in the same
+immutable bundle.

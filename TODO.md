@@ -156,6 +156,11 @@ index in the same commit.
   consumer-bundle inventory and the focused suite is wired into `tests/check.sh`.
   Adapter plus canonical bundle-contract tests passed through `heavy.sh` on
   2026-09-04.
+  Terminal-result adaptation now reuses the complete authoritative validator
+  and emits normalized succeeded/validated/failed/cancelled state, phase,
+  reason, trust, and cleanup completeness. All accepted result-matrix cases and
+  bundle-contract tests passed through `heavy.sh`; malformed and unsupported
+  results produce no semantic output.
 
 * [ ] Hardware-validate the implemented no-input DRM/KMS boot interstitial on
   real SteamOS with simpledrm and intended iGPU paths, internal/external display
