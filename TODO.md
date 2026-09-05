@@ -1824,7 +1824,16 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
 * [x] Never leave a final-named archive after failure; publish staged output only
   after package construction and hashing succeed.
 * [x] Emit a machine-readable `cancelled` result after cleanup.
-* [ ] Preserve bounded diagnostic logs without credentials or private host paths.
+* [x] Preserve bounded diagnostic logs without credentials or private host paths.
+
+  * 2026-09-05: installer validation and Btrfs measurement now share the bundled
+    `diagnostic_safety.py` sanitizer. It bounds output, normalizes control and
+    non-ASCII bytes, removes absolute private paths and URLs, redacts simple
+    secret fields, and fully redacts Basic/Bearer authorization values rather
+    than leaving the credential suffix behind. Exact tests cover empty/benign
+    input, bytes, URL/path and credential combinations, invalid bounds, and
+    truncation; focused privacy, measurement, and immutable consumer-bundle
+    tests passed through `heavy.sh`.
 * [ ] Cache only authenticated headers/artifacts for normal reuse.
 * [ ] Key caches by exact header identity/hash, source commit, support commit,
   NVIDIA version, target kernel, architecture, and toolchain/appliance identity.

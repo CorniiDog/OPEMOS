@@ -55,6 +55,7 @@ FILES = (
     ("lib/resolve_authenticated_install_bundle.py", "installer-helper", "0755"),
     ("lib/write_install_result.py", "installer-helper", "0755"),
     ("lib/capture_bounded_command.py", "installer-helper", "0755"),
+    ("lib/diagnostic_safety.py", "installer-helper", "0644"),
     ("lib/measure_btrfs_payload.py", "installer-helper", "0755"),
     ("lib/atomic_output.py", "installer-helper", "0644"),
     ("lib/prepare_pacman_config.py", "installer-helper", "0644"),

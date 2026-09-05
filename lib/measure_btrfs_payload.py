@@ -11,8 +11,11 @@ import signal
 import subprocess
 import tarfile
 import tempfile
+
 from pathlib import Path
+
 from atomic_output import atomic_write_bytes
+from diagnostic_safety import sanitize_diagnostic
 
 
 PROFILE = "btrfs-zstd3"
@@ -64,19 +67,7 @@ def arguments():
 
 
 def sanitize_stderr(value):
-    if not value:
-        return None
-    if isinstance(value, bytes):
-        value = value.decode("utf-8", errors="replace")
-    value = re.sub(r"https?://\S+", "<url>", value)
-    value = re.sub(r"(?<![A-Za-z0-9_.-])/(?:[^\s/:]+/)*[^\s:]*", "<path>", value)
-    value = re.sub(
-        r"(?i)\b(token|password|secret|authorization|credential)\s*[:=]\s*\S+",
-        r"\1=<redacted>", value,
-    )
-    value = " ".join(value.replace("\x00", " ").split())
-    value = "".join(character if 32 <= ord(character) < 127 else "?" for character in value)
-    return value[:MAX_FAILURE_STDERR] or None
+    return sanitize_diagnostic(value, MAX_FAILURE_STDERR)
 
 
 def failure_for_command(phase, identity, status, stderr):

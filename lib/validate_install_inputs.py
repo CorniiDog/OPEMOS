@@ -14,6 +14,8 @@ import tempfile
 import time
 from pathlib import Path, PurePosixPath
 
+from diagnostic_safety import sanitize_diagnostic
+
 sys.dont_write_bytecode = True
 from update_grub_nvidia_args import REQUIRED as REQUIRED_KERNEL_ARGUMENTS
 from gaming_payload_profiles import ProfileError, validate_profile
@@ -171,17 +173,7 @@ def fail(reason, message, **details):
 
 
 def sanitized_measurement_stderr(value):
-    if not value:
-        return None
-    value = re.sub(r"https?://\S+", "<url>", value)
-    value = re.sub(r"(?<![A-Za-z0-9_.-])/(?:[^\s/:]+/)*[^\s:]*", "<path>", value)
-    value = re.sub(
-        r"(?i)\b(token|password|secret|authorization|credential)\s*[:=]\s*\S+",
-        r"\1=<redacted>", value,
-    )
-    value = " ".join(value.replace("\x00", " ").split())
-    value = "".join(character if 32 <= ord(character) < 127 else "?" for character in value)
-    return value[:MAX_MEASUREMENT_STDERR_CHARS] or None
+    return sanitize_diagnostic(value, MAX_MEASUREMENT_STDERR_CHARS)
 
 
 def safe_lock_string(value, pattern=r"[A-Za-z0-9@._+<>=:-]+"):

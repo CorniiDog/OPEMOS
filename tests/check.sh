@@ -393,6 +393,9 @@ then
     fail "setup_nvidia.sh accepted mutually exclusive modes"
 fi
 
+printf 'Checking bounded diagnostic safety...\n'
+python3 tests/diagnostic_safety.py
+
 printf 'Checking CLI mode consistency...\n'
 python3 tests/cli_consistency.py
 python3 tests/implementation_hygiene.py
