@@ -1296,8 +1296,18 @@ This remains a major future area, represented by three distinct gates:
   plus SIGTERM/SIGKILL lock-owner death without corrupting durable state.
 * [ ] Connect the reviewed authenticated-cache bundle to on-device repair and
   test exact cached repair with GitHub, Valve, and Arch endpoints unavailable.
-* [ ] Run delayed-network fault injection for absent/flapping connectivity,
+* [x] Run delayed-network fault injection for absent/flapping connectivity,
   captive portal, DNS/TLS failure, reboot mid-wait/download, and identity drift.
+
+  * 2026-09-05: `tests/recovery_state_stress.py` now enforces the fail-safe
+    `network_unavailable_or_untrusted` branch before download for absent,
+    captive, DNS, and TLS failures; persists exact-target wait/download state
+    across fresh processes; exercises three download/retry flaps with exact
+    attempt accounting; and proves active identity drift atomically resets to a
+    new exact-target offline transaction. The bounded GitHub Meta validator
+    rejects empty, HTML portal, malformed, duplicate-key, invalid-network, and
+    oversized responses while accepting future additive fields. `heavy.sh
+    python3 tests/recovery_state_stress.py` passed.
 * [x] Freeze the selected release identity and first downloaded archive hash for
   an active recovery transaction so a publication cannot be spliced into it.
   Keep that plan closed, canonical, size-bounded, mode-0600, single-linked,

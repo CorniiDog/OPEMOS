@@ -463,7 +463,8 @@ case "$COMMAND" in
             python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["target"] == {"kernelVersion":sys.argv[2],"nvidiaVersion":sys.argv[3]}; assert d["supportRevision"] == sys.argv[4]; assert d.get("automaticRetry") is not False' \
                 "$existing" "$kernel" "$nvidia" "$revision"
         fi
-        if ! curl -fsS --connect-timeout 10 --max-time 20 https://api.github.com/meta >/dev/null; then
+        if ! curl -fsS --connect-timeout 10 --max-time 20 https://api.github.com/meta \
+            | python3 "$SUPPORT_ROOT/lib/validate_github_meta.py"; then
             transaction_tool set --phase retry_scheduled --reason network_unavailable_or_untrusted >/dev/null
             emit_result offline_waiting network_unavailable retry_scheduled
             exit 75

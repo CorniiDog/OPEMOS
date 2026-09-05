@@ -103,6 +103,7 @@ sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/desktop_update_generatio
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/update_recovery_grub_args.py" "$DEST/lib/update_recovery_grub_args.py"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/recovery_transaction.py" "$DEST/lib/recovery_transaction.py"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/recovery_release_plan.py" "$DEST/lib/recovery_release_plan.py"
+sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/validate_github_meta.py" "$DEST/lib/validate_github_meta.py"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/open_opemos_contract.py" "$DEST/lib/open_opemos_contract.py"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/interstitial_progress.py" "$DEST/lib/interstitial_progress.py"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/validate_interstitial_binary.py" "$DEST/lib/validate_interstitial_binary.py"
