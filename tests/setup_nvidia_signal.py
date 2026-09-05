@@ -15,8 +15,8 @@ def executable(path: Path, body: str) -> None:
     path.write_text("#!/bin/bash\nset -eu\n" + body, encoding="utf-8")
     path.chmod(0o755)
 
-def main() -> None:
-    with tempfile.TemporaryDirectory(prefix="setup-nvidia-signal-") as name:
+def exercise(interrupt: signal.Signals) -> None:
+    with tempfile.TemporaryDirectory(prefix=f"setup-nvidia-{interrupt.name.lower()}-") as name:
         root = Path(name)
         home = root / "home with spaces"
         fake_bin = root / "bin"
@@ -81,13 +81,18 @@ exec "$@"
                 raise AssertionError("setup did not reach the pacman transaction")
             time.sleep(0.02)
         assert process.poll() is None, process.communicate()
-        os.killpg(process.pid, signal.SIGINT)
+        os.killpg(process.pid, interrupt)
         stdout, stderr = process.communicate(timeout=10)
-        assert process.returncode == 130, (process.returncode, stdout, stderr)
+        expected = 128 + interrupt.value
+        assert process.returncode == expected, (process.returncode, stdout, stderr)
         assert readonly_log.read_text(encoding="utf-8").splitlines() == ["disable", "enable"]
         cache = home / ".cache/open-gpu-kernel-modules-steamos-support"
         assert cache.is_dir()
         assert not list(cache.glob("setup-nvidia.*"))
+
+def main() -> None:
+    for interrupt in (signal.SIGINT, signal.SIGTERM):
+        exercise(interrupt)
 
 if __name__ == "__main__":
     main()
