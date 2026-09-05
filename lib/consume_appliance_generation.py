@@ -185,8 +185,6 @@ def validate_handoff(document, expected_operation, expected_target):
             or any(HASH.fullmatch(item or "") is None for item in lineage)
             or len(lineage) != len(set(lineage))):
         fail("appliance handoff lineage is invalid")
-    if lineage:
-        fail("appliance handoff lineage consumption is not implemented")
     files = document["files"]
     if not isinstance(files, list) or not 1 <= len(files) <= MAX_FILES + 5:
         fail("appliance handoff file set is invalid")
@@ -432,6 +430,65 @@ def validate_signer_policy(document, packages):
     return document
 
 
+def authenticate_lineage(root, records, lineage_hashes, gpgv, keyring,
+                         fingerprint, compatibility):
+    authenticated = []
+    consumed = set()
+    for expected_hash in lineage_hashes:
+        matches = [name for name, record in records.items()
+                   if record["sha256"] == expected_hash
+                   and name.endswith(".manifest.json")]
+        if len(matches) != 1:
+            fail("lineage manifest is missing or ambiguous")
+        manifest_name = matches[0]
+        signature_name = manifest_name + ".sig"
+        signature_record = records.get(signature_name)
+        if signature_record is None:
+            fail("lineage manifest signature is missing")
+        manifest_payload = read_received_payload(
+            root, records, manifest_name, MANIFEST_MAX_BYTES, "lineage manifest"
+        )
+        signature_payload = read_received_payload(
+            root, records, signature_name, MAX_SIGNATURE_BYTES,
+            "lineage manifest signature",
+        )
+        verify_signature(
+            gpgv, keyring, manifest_payload, signature_payload,
+            fingerprint, "lineage manifest",
+        )
+        manifest = strict_json(
+            manifest_payload, MANIFEST_MAX_BYTES, "lineage manifest"
+        )
+        release_tag = manifest_name[:-len(".manifest.json")]
+        discovery = {
+            "schemaVersion": 1,
+            "kind": "opemos-userspace-lock-discovery",
+            "channel": manifest.get("channel"),
+            "sequence": manifest.get("sequence"),
+            "publishedAt": manifest.get("publishedAt"),
+            "authority": manifest.get("authority"),
+            "compatibility": compatibility,
+            "generation": {
+                "releaseTag": release_tag,
+                "manifestFilename": manifest_name,
+                "manifestSha256": expected_hash,
+                "manifestSize": len(manifest_payload),
+                "signatureFilename": signature_name,
+                "signatureSha256": digest(signature_payload),
+                "signatureSize": len(signature_payload),
+                "previousManifestSha256": manifest.get("previousManifestSha256"),
+            },
+            "targets": manifest.get("targetLocks"),
+        }
+        try:
+            validate_pair(discovery, manifest)
+        except ValueError as error:
+            fail(f"lineage generation is invalid: {error}")
+        authenticated.append((discovery, manifest))
+        consumed.update((manifest_name, signature_name))
+    return authenticated, consumed
+
+
 def validate_verifier_evidence(payload, policy_payload, keyring_payload,
                                discovery_payload, discovery_signature,
                                manifest_payload, manifest_signature):
@@ -583,10 +640,15 @@ def prepare(arguments):
         policy["authority"]["primarySigningFingerprint"], "manifest",
     )
     manifest = strict_json(manifest_payload, MANIFEST_MAX_BYTES, "manifest")
+    lineage, lineage_files = authenticate_lineage(
+        root, records, handoff["lineageManifestSha256"], arguments.gpgv,
+        keyring_payload, policy["authority"]["primarySigningFingerprint"],
+        discovery["compatibility"],
+    )
     try:
         validate_pair(discovery, manifest)
         validate_activation(
-            discovery, manifest, authority, target, 0, None, [],
+            discovery, manifest, authority, target, 0, None, lineage,
             {
                 "sequence": checkpoint["minimumSequence"],
                 "manifestSha256": checkpoint["minimumManifestSha256"],
@@ -615,7 +677,7 @@ def prepare(arguments):
             fail("handoff differs from generation manifest")
     expected_handoff_files = {
         discovery_name, discovery_signature_name, manifest_name, signature_name,
-        EVIDENCE_FILENAME, *manifest_by_name,
+        EVIDENCE_FILENAME, *manifest_by_name, *lineage_files,
     }
     if set(records) != expected_handoff_files:
         fail("appliance handoff contains an unexpected or missing file")

@@ -77,8 +77,94 @@ def tree_identity(root):
 def clone(source, destination):
     shutil.copytree(source, destination, copy_function=shutil.copy2)
     for path in destination.rglob("*"):
-        path.chmod(0o700 if path.is_dir() else 0o600)
+        if path.is_dir():
+            path.chmod(0o700)
+        elif path.name == "development-gpgv":
+            path.chmod(0o500)
+        else:
+            path.chmod(0o600)
     destination.chmod(0o700)
+
+
+def canonical(document):
+    return (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode()
+
+
+def add_lineage(root):
+    handoff_root = root / "handoff"
+    discovery_path = handoff_root / "opemos-userspace-lock-discovery-v1.json"
+    discovery = json.loads(discovery_path.read_text())
+    old_manifest = handoff_root / discovery["generation"]["manifestFilename"]
+    old_signature = handoff_root / discovery["generation"]["signatureFilename"]
+    base = json.loads(old_manifest.read_text())
+    previous = hashlib.sha256(canonical(base)).hexdigest()
+    lineage = []
+    generated = []
+    for sequence in (2, 3, 4):
+        manifest = json.loads(json.dumps(base))
+        manifest["sequence"] = sequence
+        manifest["publishedAt"] = f"2026-09-03T1{sequence}:00:00Z"
+        manifest["previousManifestSha256"] = previous
+        payload = canonical(manifest)
+        name = f"opemos-userspace-lock-generation-v1-s{sequence}.manifest.json"
+        signature_name = name + ".sig"
+        signature = f"OPEMOS DEVELOPMENT TEST MANIFEST SIGNATURE {sequence}\n".encode()
+        (handoff_root / name).write_bytes(payload)
+        (handoff_root / signature_name).write_bytes(signature)
+        (handoff_root / name).chmod(0o400)
+        (handoff_root / signature_name).chmod(0o400)
+        manifest_hash = hashlib.sha256(payload).hexdigest()
+        generated.append((name, signature_name, manifest_hash, manifest, signature))
+        if sequence < 4:
+            lineage.append(manifest_hash)
+        previous = manifest_hash
+    old_manifest.unlink()
+    old_signature.unlink()
+    name, signature_name, current_hash, manifest, signature = generated[-1]
+    discovery["sequence"] = 4
+    discovery["publishedAt"] = manifest["publishedAt"]
+    discovery["generation"].update({
+        "releaseTag": name[:-len(".manifest.json")],
+        "manifestFilename": name, "manifestSha256": current_hash,
+        "manifestSize": len(canonical(manifest)),
+        "signatureFilename": signature_name,
+        "signatureSha256": hashlib.sha256(signature).hexdigest(),
+        "signatureSize": len(signature),
+        "previousManifestSha256": manifest["previousManifestSha256"],
+    })
+    discovery_path.chmod(0o600)
+    discovery_path.write_bytes(canonical(discovery))
+    discovery_path.chmod(0o400)
+    evidence_path = handoff_root / "opemos-userspace-lock-verifier-evidence-v1.json"
+    evidence = json.loads(evidence_path.read_text())
+    documents = evidence["documents"]
+    documents[0].update({
+        "payloadSha256": hashlib.sha256(canonical(discovery)).hexdigest(),
+        "payloadSize": len(canonical(discovery)),
+    })
+    documents[1].update({
+        "payloadSha256": current_hash, "payloadSize": len(canonical(manifest)),
+        "signatureSha256": hashlib.sha256(signature).hexdigest(),
+        "signatureSize": len(signature),
+    })
+    evidence_path.chmod(0o600)
+    evidence_path.write_bytes(canonical(evidence))
+    evidence_path.chmod(0o400)
+    handoff_path = handoff_root / HANDOFF_NAME
+    handoff = json.loads(handoff_path.read_text())
+    handoff["identity"] = {
+        "sequence": 4, "generationId": current_hash,
+        "manifestSha256": current_hash,
+    }
+    handoff["lineageManifestSha256"] = lineage
+    handoff["files"] = [{
+        "filename": item.name, "size": item.stat().st_size,
+        "sha256": hashlib.sha256(item.read_bytes()).hexdigest(),
+    } for item in sorted(handoff_root.iterdir()) if item.name != HANDOFF_NAME]
+    handoff_path.chmod(0o600)
+    handoff_path.write_bytes(canonical(handoff))
+    handoff_path.chmod(0o400)
+    return generated
 
 
 def rewrite_handoff(root):
@@ -173,6 +259,70 @@ def main():
         run([GENERATOR, "--development-test", "--output", first], success=False)
         assert tree_identity(first) == tree_identity(second)
 
+        lineage_generation = root / "lineage"
+        clone(first, lineage_generation)
+        generated = add_lineage(lineage_generation)
+        lineage_parent = root / "lineage-output"
+        lineage_parent.mkdir(mode=0o700)
+        lineage_result = json.loads(consume(
+            lineage_generation, lineage_parent / "inputs"
+        ).stdout)
+        assert lineage_result["operationId"] == "development-generation-v1"
+        assert lineage_result["generation"]["sequence"] == 4
+        assert lineage_result["generation"]["manifestSha256"] == generated[-1][2]
+        assert lineage_result["target"] == target
+        assert len(lineage_result["packages"]) == 6
+
+        for case in ("missing", "duplicate", "reordered", "unrelated",
+                     "downgraded", "malformed", "unsupported"):
+            candidate = root / f"lineage-{case}"
+            clone(lineage_generation, candidate)
+            handoff_path = candidate / "handoff" / HANDOFF_NAME
+            document = json.loads(handoff_path.read_text())
+            if case == "missing":
+                missing_name = generated[0][0]
+                (candidate / "handoff" / missing_name).unlink()
+            elif case == "duplicate":
+                source = candidate / "handoff" / generated[0][0]
+                duplicate = candidate / "handoff/duplicate-s2.manifest.json"
+                duplicate.write_bytes(source.read_bytes())
+                duplicate.chmod(0o400)
+                document["files"].append({
+                    "filename": duplicate.name, "size": duplicate.stat().st_size,
+                    "sha256": hashlib.sha256(duplicate.read_bytes()).hexdigest(),
+                })
+                document["files"].sort(key=lambda item: item["filename"])
+            elif case == "reordered":
+                document["lineageManifestSha256"].reverse()
+            else:
+                manifest_path = candidate / "handoff" / generated[0][0]
+                if case == "malformed":
+                    payload = b"{malformed\n"
+                else:
+                    manifest = json.loads(manifest_path.read_text())
+                    if case == "unrelated":
+                        manifest["previousManifestSha256"] = "0" * 64
+                    elif case == "downgraded":
+                        manifest["sequence"] = 1
+                    else:
+                        manifest["schemaVersion"] = 2
+                    payload = canonical(manifest)
+                manifest_path.chmod(0o600)
+                manifest_path.write_bytes(payload)
+                manifest_path.chmod(0o400)
+                changed_hash = hashlib.sha256(payload).hexdigest()
+                document["lineageManifestSha256"][0] = changed_hash
+                for record in document["files"]:
+                    if record["filename"] == manifest_path.name:
+                        record.update(size=len(payload), sha256=changed_hash)
+            handoff_path.chmod(0o600)
+            handoff_path.write_bytes(canonical(document))
+            handoff_path.chmod(0o400)
+            case_parent = root / f"lineage-{case}-output"
+            case_parent.mkdir(mode=0o700)
+            consume(candidate, case_parent / "inputs", success=False)
+            assert not (case_parent / "inputs").exists()
+
         denied_parent = root / "denied-output"
         denied_parent.mkdir(mode=0o700)
         consume(first, denied_parent / "inputs", success=False, development=False)
@@ -253,6 +403,7 @@ def main():
         clone(first, cancelled)
         verifier = cancelled / "trust/development-gpgv"
         verifier_pid = root / "verifier.pid"
+        verifier.chmod(0o700)
         verifier.write_text(
             f"#!/bin/sh\necho $$ > {verifier_pid}\nsleep 30\n",
             encoding="utf-8",

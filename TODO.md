@@ -331,6 +331,23 @@ for `* [ ]` to enumerate them mechanically.
   Debian/macOS execution, and hardware certification remain separate gates.
   See `docs/image-builder.md#experimental-ubuntudebian-consumer-checks`.
 
+* [x] Complete inactive schema-1 appliance-generation guest consumption for
+  non-empty authenticated lineage requested by the experimental EXE consumer.
+  The Core guest consumer resolves every declared predecessor hash to exactly
+  one received manifest and canonical detached-signature sibling, verifies it
+  under the installed bootstrap authority, reconstructs only the schema-1
+  semantic envelope required by the canonical activation validator, and
+  requires ordered checkpoint-to-current predecessor continuity. The exact
+  handoff inventory includes no undeclared lineage bytes. A deterministic
+  checkpoint-sequence-1 to generation-sequence-4 fixture preserves operation
+  ID, final generation identity, exact target, authenticated six-package
+  inventory, and create-only output. Missing, duplicate, reordered, unrelated,
+  downgraded, malformed, and unsupported lineage all fail before output
+  creation. `heavy.sh python3 tests/appliance_generation_consumer.py` passed on
+  2026-09-05. Bounded consumer handoff: EXE may provide the existing ordered
+  `lineageManifestSha256` plus each named manifest and `.sig` receipt; Core
+  remains the authority that authenticates and authorizes the chain.
+
 ## Current project phase
 
 **Status: development / active dogfooding**
