@@ -1625,7 +1625,11 @@ def main():
         raise SystemExit("A successful installation requires workspace verification metadata.")
     if args.initramfs_verification:
         initramfs_verification = load_initramfs_verification(args.initramfs_verification)
-        if args.status != "success":
+        may_preserve_verified_initramfs = (
+            args.status == "success"
+            or args.status == "failed" and args.phase == "payload_receipt"
+        )
+        if not may_preserve_verified_initramfs:
             raise SystemExit("Initramfs verification metadata does not match the result.")
         validate_initramfs_verification_binding(initramfs_verification, args.kernel)
         document["initramfsVerification"] = initramfs_verification

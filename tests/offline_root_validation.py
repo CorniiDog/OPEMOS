@@ -545,7 +545,7 @@ eval target=\${$#}; grep -F -q "$target" "$MOCK_MOUNT_STATE" 2>/dev/null
         "  if [ \"${MOCK_BAD_INITRAMFS_LISTING:-0}\" != 0 ]; then printf 'etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf\\n'; exit 0; fi\n"
         "  for module in nvidia nvidia-modeset nvidia-uvm nvidia-drm; do printf 'usr/lib/modules/%s/%s.ko.zst\\n' \"$MOCK_KERNEL\" \"$module\"; done\n"
         "  printf 'etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf\\n'\n  exit 0\nfi\n"
-        "printf active > \"$MOCK_CHROOT_STATE\"\nsleep \"${MOCK_CHROOT_DELAY:-0}\"\n[ \"${MOCK_FAIL_CHROOT:-0}\" = 0 ] || exit 1\nfor runtime in dev proc sys var/tmp; do grep -F -x -q \"$1/$runtime\" \"$MOCK_MOUNT_STATE\" || exit 97; done\nworkspace=\"$1/var/tmp/explicit-mkinitcpio.$$\"\n: > \"$workspace\" || exit 98\nrm -f \"$workspace\"\nprintf '%s\\n' mkinitcpio >> \"$MOCK_TRANSACTION_LOG\"\nmkdir -p \"$1/boot\"; echo initramfs > \"$1/boot/initramfs-fixture.img\"\n[ \"${MOCK_DRIFT_COMPRESSION:-0}\" = 0 ] || : > \"$MOCK_COMPRESSION_STATE\"\n",
+        "printf active > \"$MOCK_CHROOT_STATE\"\nsleep \"${MOCK_CHROOT_DELAY:-0}\"\n[ \"${MOCK_FAIL_CHROOT:-0}\" = 0 ] || exit 1\nfor runtime in dev proc sys var/tmp; do grep -F -x -q \"$1/$runtime\" \"$MOCK_MOUNT_STATE\" || exit 97; done\nworkspace=\"$1/var/tmp/explicit-mkinitcpio.$$\"\n: > \"$workspace\" || exit 98\nrm -f \"$workspace\"\nprintf '%s\\n' mkinitcpio >> \"$MOCK_TRANSACTION_LOG\"\nmkdir -p \"$1/boot\"; echo initramfs > \"$1/boot/initramfs-fixture.img\"\nif [ \"${MOCK_UNSAFE_RECEIPT_AFTER_INITRAMFS:-0}\" != 0 ]; then\n  receipt=\"$1/usr/lib/open-gpu-kernel-modules-steamos-support/offline-install\"\n  saved=\"${receipt}.mock-saved\"\n  [ ! -e \"$saved\" ] || exit 99\n  mv \"$receipt\" \"$saved\" || exit 99\n  ln -s /tmp \"$receipt\" || exit 99\nfi\n[ \"${MOCK_DRIFT_COMPRESSION:-0}\" = 0 ] || : > \"$MOCK_COMPRESSION_STATE\"\n",
         encoding="utf-8",
     )
     for path in binaries.iterdir():
@@ -2769,6 +2769,50 @@ def main():
             for record in verification_progress
         )
         assert_item_progress(verification_progress, "mount_cleanup", 4)
+
+        state_write_failed = run_installer(
+            paths,
+            binaries,
+            temporary / "state-write-failed.json",
+            False,
+            MOCK_UNSAFE_RECEIPT_AFTER_INITRAMFS="1",
+        )
+        assert state_write_failed["status"] == "failed"
+        assert state_write_failed["reason"] == "payload_receipt"
+        assert state_write_failed["phase"] == "payload_receipt"
+        assert state_write_failed["cleanup"]["mountsReleased"] is True
+        assert state_write_failed["cleanup"]["runtimeMountsReleased"] == 4
+        assert state_write_failed["cleanup"]["compressionPolicyRestored"] is True
+        assert state_write_failed["initramfsVerification"]["status"] == "verified"
+        state_write_progress = parse_progress_records(
+            (temporary / "state-write-failed.json.stderr").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert_indeterminate_then_complete(state_write_progress, "initramfs")
+        assert [
+            record
+            for record in state_write_progress
+            if record["phase"] == "installation_state"
+        ] == [
+            {
+                "attempt": 0,
+                "indeterminate": True,
+                "phase": "installation_state",
+                "schemaVersion": 1,
+            }
+        ]
+        assert_item_progress(state_write_progress, "mount_cleanup", 4)
+        receipt_path = (
+            paths["target"]
+            / "usr/lib/open-gpu-kernel-modules-steamos-support/offline-install"
+        )
+        saved_receipt_path = receipt_path.with_name(
+            receipt_path.name + ".mock-saved"
+        )
+        assert receipt_path.is_symlink()
+        receipt_path.unlink()
+        saved_receipt_path.rename(receipt_path)
 
         depmod_failed = run_installer(
             paths,
