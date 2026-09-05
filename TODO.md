@@ -1935,6 +1935,16 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
     network tests passed through `heavy.sh`.
 * [x] Detect and remove abandoned inactive build sessions on the next run.
 
+  * 2026-09-05 authorized cleanup follow-up: build-session pruning now requires
+    an exact Core session name, minimum age, safe creator-owned cache/session
+    directories, an inactive owned single-link lock, and a complete bounded
+    preflight before mutation. Descriptor-relative deletion revalidates every
+    recorded identity and bounds depth, nodes, and logical bytes. Active,
+    recent, foreign-name, symlink-root, hardlinked-content, symlink-content,
+    special, unowned, changed, or excessive sessions remain preserved.
+    `heavy.sh python3 tests/build_session_retention.py` passed nested valid
+    cleanup and active/ambiguous preservation cases.
+
 ## Fedora/Linux validation
 
 * [x] Run `tests/check.sh` under the same Fedora appliance used for builds.

@@ -24,6 +24,9 @@ with tempfile.TemporaryDirectory(prefix="build-session-retention-") as temporary
     outside = Path(temporary) / "outside"
     for path in (active, abandoned, recent, unknown, outside):
         path.mkdir()
+    nested = abandoned / "source/deep"
+    nested.mkdir(parents=True)
+    (nested / "owned").write_text("owned build output\n")
     old = time.time() - 2 * 24 * 60 * 60
     for path in (active, abandoned, unknown):
         os.utime(path, (old, old))
@@ -43,5 +46,22 @@ with tempfile.TemporaryDirectory(prefix="build-session-retention-") as temporary
         assert recent.is_dir()
         assert unknown.is_dir()
         assert alias.is_symlink() and outside.is_dir()
+
+        linked_session = cache / "target-build.linked1"
+        linked_session.mkdir()
+        linked_source = outside / "shared"
+        linked_source.write_text("shared\n")
+        os.link(linked_source, linked_session / "shared")
+        os.utime(linked_session, (old, old))
+        unsafe_session = cache / "target-build.unsafe1"
+        unsafe_session.mkdir()
+        (unsafe_session / "link").symlink_to(outside, target_is_directory=True)
+        os.utime(unsafe_session, (old, old))
+        subprocess.run([
+            sys.executable, str(HELPER), "--root", str(cache),
+            "--minimum-age-seconds", "86400",
+        ], check=True)
+        assert linked_session.is_dir() and (linked_session / "shared").exists()
+        assert unsafe_session.is_dir() and (unsafe_session / "link").is_symlink()
     finally:
         os.close(lock_fd)
