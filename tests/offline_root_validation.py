@@ -417,7 +417,7 @@ esac
         encoding="utf-8",
     )
     (binaries / "depmod").write_text(
-        "#!/bin/sh\nroot=$2; kernel=$4; mkdir -p \"$root/usr/lib/modules/$kernel\"; echo fixture > \"$root/usr/lib/modules/$kernel/modules.dep\"\n"
+        "#!/bin/sh\n[ \"${MOCK_FAIL_DEPMOD:-0}\" = 0 ] || exit 66\nroot=$2; kernel=$4; mkdir -p \"$root/usr/lib/modules/$kernel\"; echo fixture > \"$root/usr/lib/modules/$kernel/modules.dep\"\n"
         "[ \"${MOCK_DRIFT_TARGET_EXECUTION:-0}\" = 0 ] || printf 'HOOKS=(hostile)\\n' > \"$root/etc/mkinitcpio.conf\"\n",
         encoding="utf-8",
     )
@@ -2644,6 +2644,27 @@ def main():
         assert failed_verification["reason"] == "initramfs_verification"
         assert failed_verification["cleanup"]["mountsReleased"] is True
         assert failed_verification["cleanup"]["runtimeMountsReleased"] == 4
+
+        depmod_failed = run_installer(
+            paths,
+            binaries,
+            temporary / "depmod-failed.json",
+            False,
+            MOCK_FAIL_DEPMOD="1",
+        )
+        assert depmod_failed["status"] == "failed"
+        assert depmod_failed["reason"] == "depmod"
+        assert depmod_failed["phase"] == "depmod"
+        assert depmod_failed["cleanup"]["mountsReleased"] is True
+        depmod_progress = parse_progress_records(
+            (temporary / "depmod-failed.json.stderr").read_text(encoding="utf-8")
+        )
+        depmod_records = [
+            record for record in depmod_progress if record["phase"] == "depmod"
+        ]
+        assert depmod_records[-1]["indeterminate"] is True
+        assert not any(record["phase"] == "initramfs" for record in depmod_progress)
+        assert_item_progress(depmod_progress, "mount_cleanup", 4)
 
         failed = run_installer(
             paths,

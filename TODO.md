@@ -2218,6 +2218,15 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   userspace verification, module extraction/compression/copy/verification,
   GRUB, depmod, mkinitcpio, state writing, compression restoration, and
   recursive mount cleanup.
+  * [x] Add an injected depmod status-66 failure after GRUB completion. The
+    fixture requires terminal phase/reason `depmod`, complete runtime-mount
+    cleanup, an indeterminate depmod record with no false completion, no
+    initramfs progress, and complete mount-cleanup counters. Python syntax and
+    diff checks passed. The required local `heavy.sh` matrix stopped before
+    mutation because this host lacks `bsdtar`; it reported the existing nominal
+    userspace-package metadata error, so no local integration pass is claimed.
+    PR checks on the declared GitHub runner provide the reachable integration
+    validation and are recorded after completion.
 * [x] Emit bounded heartbeats or safe subphase records during opaque pacman and
   mkinitcpio subprocesses without exposing paths, credentials, or unbounded
   output.
