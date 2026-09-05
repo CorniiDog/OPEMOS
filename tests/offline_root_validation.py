@@ -2124,8 +2124,26 @@ def main():
             PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
             MOCK_CORRUPT_INSTALLED_MODULE="1",
         )
+        assert corrupt_module["status"] == "failed"
         assert corrupt_module["reason"] == "module_install"
+        assert corrupt_module["phase"] == "module_install"
+        assert corrupt_module["cleanup"]["mountsReleased"] is True
+        assert corrupt_module["cleanup"]["runtimeMountsReleased"] == 4
         assert corrupt_module["cleanup"]["compressionPolicyRestored"] is True
+        corrupt_module_progress = parse_progress_records(
+            (temporary / "compression-profile-corrupt-module.json.stderr").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert_item_progress(corrupt_module_progress, "module_install", 5)
+        assert_item_progress(corrupt_module_progress, "module_verification", 5)
+        assert not any(
+            record["phase"] in {
+                "grub_update", "depmod", "initramfs", "installation_state",
+            }
+            for record in corrupt_module_progress
+        )
+        assert_item_progress(corrupt_module_progress, "mount_cleanup", 4)
         mismatches = corrupt_module["moduleVerification"]["moduleMismatches"]
         assert [record["moduleName"] for record in mismatches] == [
             "nvidia-drm.ko", "nvidia.ko",
