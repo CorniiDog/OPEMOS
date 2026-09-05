@@ -55,12 +55,37 @@ def run_case(root: Path, mode: str) -> None:
         assert calls[2].endswith(f"checkout --quiet --detach {REVISION}")
 
 
+def reject_revision(root: Path, revision: str, name: str) -> None:
+    home = root / f"invalid-{name}"
+    fake_bin = root / f"invalid-bin-{name}"
+    marker = root / f"git-called-{name}"
+    fake_bin.mkdir()
+    git = fake_bin / "git"
+    git.write_text(f"#!/bin/sh\ntouch {str(marker)!r}\nexit 99\n", encoding="utf-8")
+    git.chmod(0o755)
+    completed = subprocess.run(
+        [str(ENTRYPOINT), "--yes"], cwd="/",
+        env={**os.environ, "HOME": str(home),
+             "PATH": f"{fake_bin}:{os.environ['PATH']}",
+             "SUPPORT_REVISION": revision},
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    assert completed.returncode == 1
+    assert completed.stderr == "Could not resolve support revision.\n"
+    assert not marker.exists()
+    assert not home.exists()
+
+
 def main() -> None:
     with tempfile.TemporaryDirectory(prefix="online-bootstrap-") as name:
         root = Path(name)
         run_case(root, "clone-fail")
         run_case(root, "fetch-fail")
         run_case(root, "checkout-fail")
+        reject_revision(root, "a" * 39, "short")
+        reject_revision(root, "a" * 41, "long")
+        reject_revision(root, "g" * 40, "nonhex")
+        reject_revision(root, "a" * 20 + " " + "a" * 19, "whitespace")
 
 
 if __name__ == "__main__":

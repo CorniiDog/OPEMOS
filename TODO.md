@@ -219,6 +219,10 @@ index in the same commit.
     successful clone and fetch. It preserves the checkout status, removes the
     partial cache tree, and never reaches Core trust or privileged work; the
     focused matrix passed through `heavy.sh` on 2026-09-04.
+  * [x] Reject malformed pinned support revisions before cache creation or Git
+    execution. Focused cases cover short, long, non-hex, and embedded-whitespace
+    identities and prove the stable error plus absence of network/privileged
+    setup; the full bootstrap failure matrix passed through `heavy.sh`.
   * [x] Commit `e1bc00a4331d7caaffee71c27a519d7ae5f3919e`: exercise a real TERM during the fake-root installer's
     blocked initramfs phase. The process group exits 143, restores the prior
     module/state trees byte-for-byte, re-enables SteamOS read-only mode, removes
