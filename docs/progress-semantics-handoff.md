@@ -36,3 +36,9 @@ immutable bundle.
 `contracts/fixtures/progress-semantics-v1.json` is the deterministic consumer
 corpus. Consumers must reproduce every expected semantic record; its bundled
 generator proves canonical bytes and prevents hand-edited fixture drift.
+
+The semantic records are closed and frontend-neutral. They contain no labels,
+layout, widgets, focus/window state, animation, toolkit choices, rendering or
+interaction instructions, accessibility presentation, or platform behavior.
+Frontends own all of those choices and must treat phase identifiers as stable
+data rather than Core-supplied display text.

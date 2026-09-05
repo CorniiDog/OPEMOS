@@ -3,7 +3,7 @@
 import argparse, json, re
 from pathlib import Path
 TOKEN=re.compile(r"[a-z][a-z0-9_]{0,63}")
-PHASES=("target_identity","input_snapshot","archive_layout","modules","userspace","dependency_closure","storage_calculation","pacman_policy","runtime_mounts","userspace_install","userspace_verification","module_install","module_verification","grub_update","depmod","initramfs","installation_state","mount_cleanup")
+PHASES=("holo_database","hashing","archive_layout","modules","userspace_packages","gaming_payload_repack","dependency_closure","storage_calculation","pacman_policy","runtime_mounts","userspace_install","userspace_verification","module_install","module_verification","grub_update","depmod","initramfs","installation_state","mount_cleanup")
 MAX=4096
 class ContractError(ValueError): pass
 def strict(payload):

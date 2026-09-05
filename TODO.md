@@ -165,6 +165,12 @@ index in the same commit.
   indeterminate heartbeat, additive future-phase, fractional-rounding, and
   maximum-counter outputs. Its generator, fixture, adapter, and schema are in
   the immutable bundle; focused adapter and bundle tests passed via `heavy.sh`.
+  A follow-up emitter audit corrected the known-phase table to every current
+  Core validation/mutation phase. Exact closed-output and recursive separation
+  assertions cover known/future/indeterminate progress and all normalized
+  terminal states; schemas and outputs contain no frontend layout, widget,
+  focus/window, animation, toolkit, rendering, interaction, accessibility, or
+  platform behavior. Focused adapter and bundle tests passed via `heavy.sh`.
 
 * [ ] Hardware-validate the implemented no-input DRM/KMS boot interstitial on
   real SteamOS with simpledrm and intended iGPU paths, internal/external display
