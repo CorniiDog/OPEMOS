@@ -1022,7 +1022,9 @@ Desired design:
 * [x] `install_upstream.sh` does not independently own reboot prompting.
 * [x] `online_install.sh` owns the normal production reboot prompt.
 * [x] Confirm idempotent install never offers reboot.
-* [ ] Confirm changed install offers reboot exactly once.
+* [x] Confirm changed install offers reboot exactly once.
+
+  * 2026-09-04: `tests/online_reboot.py` runs the real local online entry point with an isolated cloned-support fixture, verifies one installer call, one guardian refresh, and exactly one traced `offer_reboot` dispatch, then declines and proves no sudo/reboot call occurs and the bootstrap workspace is removed. `heavy.sh python3 tests/online_reboot.py` passed.
 
 ---
 

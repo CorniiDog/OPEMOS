@@ -400,6 +400,9 @@ fi
 printf 'Checking online bootstrap failure cleanup...\n'
 python3 tests/online_bootstrap_failures.py
 
+printf 'Checking changed-install reboot ownership...\n'
+python3 tests/online_reboot.py
+
 printf 'Checking NVIDIA userspace interrupt cleanup...\n'
 python3 tests/setup_nvidia_signal.py
 
