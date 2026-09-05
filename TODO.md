@@ -2218,6 +2218,14 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   userspace verification, module extraction/compression/copy/verification,
   GRUB, depmod, mkinitcpio, state writing, compression restoration, and
   recursive mount cleanup.
+  * [x] Add a post-initramfs unsafe payload-receipt destination failure while
+    preserving and restoring the prior receipt fixture. The test requires
+    terminal phase/reason `payload_receipt`, completed initramfs progress,
+    exactly one indeterminate installation-state record with no false
+    completion, complete four-mount cleanup, and exact compression-policy
+    restoration. Required validation evidence is recorded with the GitHub PR
+    because this host's unchanged `bsdtar` limitation blocks the monolithic
+    integration suite before mutation.
   * [x] Strengthen the malformed generated-initramfs listing failure boundary.
     The fixture requires terminal phase/reason `initramfs_verification`, exactly
     one indeterminate initramfs record with no false completion, no
