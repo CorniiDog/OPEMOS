@@ -395,6 +395,7 @@ fi
 
 printf 'Checking CLI mode consistency...\n'
 python3 tests/cli_consistency.py
+python3 tests/implementation_hygiene.py
 
 printf 'Checking development-mode terminology...\n'
 if grep -RniE --exclude='TODO.md' --exclude-dir='.git' \

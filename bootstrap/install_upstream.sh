@@ -242,7 +242,7 @@ if [[ "$BUILD_ONLY" == "1" ]]; then
         "$(basename "$OUTPUT_ARCHIVE")" \
         > "$OUTPUT_CHECKSUM"
 
-    ok "Pristine upstream NVIDIA ${NVIDIA_VERSION} modules built."
+    ok "Unmodified upstream-development NVIDIA ${NVIDIA_VERSION} modules built."
     printf "[%s] Archive:  %s\n" "$PROJECT_NAME" "$OUTPUT_ARCHIVE"
     printf "[%s] Checksum: %s\n" "$PROJECT_NAME" "$OUTPUT_CHECKSUM"
     warn "Modules were NOT installed."
@@ -254,5 +254,5 @@ ARGS=(--archive "$ARCHIVE" --checksum "$CHECKSUM")
 
 "${SCRIPT_DIR}/install.sh" "${ARGS[@]}"
 
-ok "Pristine upstream NVIDIA ${NVIDIA_VERSION} modules installed."
+ok "Unmodified upstream-development NVIDIA ${NVIDIA_VERSION} modules installed."
 warn "Project fixes are NOT applied."

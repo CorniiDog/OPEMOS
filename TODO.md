@@ -1417,8 +1417,15 @@ offline installer contract.
 * [x] Audit duplicate `setup_build_env.sh` invocation.
 * [x] Audit stale `DRIVER_*` names after `--development` rename.
 * [x] Audit README for `--driver`.
-* [ ] Audit unused variables plus stale mode terminology in comments,
+* [x] Audit unused variables plus stale mode terminology in comments,
   release scripts, and action entry points.
+
+  * 2026-09-05: the cross-file implementation audit distinguishes shared
+    `common.sh` globals from orphaned assignments, scans tracked shell entry
+    points and GitHub workflows, and rejects legacy mode names. The remaining
+    upstream success messages now use canonical `upstream-development` wording.
+    Focused hygiene, CLI, upstream workflow, and shell-syntax tests passed
+    through `heavy.sh`; the regression is wired into `tests/check.sh`.
   * [x] 2026-09-05: `tests/setup_nvidia_modes.py` verifies userspace installation precedes exactly one upstream installer delegation with the resolved version and `-y`. `tests/upstream_build_only.py` now exercises both build-only and normal paths, asserts the exact tag fetch and detached resolved commit checkout, builds the five-module fixture, freezes `source_provider=upstream` plus `project_patches=0`, and verifies one archive/checksum handoff to `install.sh`. `heavy.sh python3 tests/upstream_build_only.py` passed.
 
 
