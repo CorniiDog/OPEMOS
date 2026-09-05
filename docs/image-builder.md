@@ -7,6 +7,7 @@ description: Exact OPEMOS contract used by OPEMOS.EXE to resolve, validate, and 
 ## Contents
 
 - [Responsibility boundary](#responsibility-boundary)
+- [Experimental Ubuntu/Debian consumer checks](#experimental-ubuntudebian-consumer-checks)
 - [End-to-end flow](#end-to-end-flow)
 - [Target discovery](#target-discovery)
 - [Artifact resolution](#artifact-resolution)
@@ -14,6 +15,54 @@ description: Exact OPEMOS contract used by OPEMOS.EXE to resolve, validate, and 
 - [Validation and mutation](#validation-and-mutation)
 - [Progress UI](#progress-ui)
 - [Final-image acceptance](#final-image-acceptance)
+
+## Experimental Ubuntu/Debian consumer checks
+
+The experimental Linux host uses the same Core contracts as macOS. Host OS
+identity does not change the exact SteamOS target, source authorization, or
+production trust requirements. Ubuntu/Debian host testing does not authorize
+Ubuntu/Debian target installation or establish hardware certification.
+
+The Core baseline reviewed for this handoff is
+`7f90e45c4c154fdfda81ff594611cf533e4fb894`. This identifies the reviewed source;
+it does not replace EXE's independently pinned bundle manifest digest or change
+any governance counterpart pin. Follow the immutable bundle procedure in
+[consumer contracts](../contracts/README.md) before consuming a new bundle.
+
+Compatibility-management consumers use resolver schema 2 and source-intent /
+source-authorization schema 1. Run the resolver compatibility corpus and the
+deterministic source-intent matrix against the consumer. Rejected requests
+must expose no authorized action; Automatic must not acquire development
+permission. Installer result and progress matrices cover missing proofs,
+identity mismatches, malformed JSON, cleanup failures, and stream regression.
+The development appliance-generation tests cover the staged handoff separately
+from production trust. Synthetic generations remain non-installable fixtures.
+
+From the Core checkout, the relevant validation command under the shared
+scheduler is:
+
+```bash
+"/home/connor/Documents/ChatGPT/Handoff troubleshooting/opemos-scheduler/heavy.sh" \
+  bash -c 'set -e; for test in boundary_policy consumer_contracts source_intent_contract appliance_generation_consumer; do python3 "tests/$test.py"; echo "PASS $test"; done'
+```
+
+On 2026-09-04 all four suites above passed on Ubuntu 24.04.4 LTS through
+the shared wrapper. The initial resource-busy attempt was followed by a run
+that exposed a restrictive-umask manifest permission bug. The Core writer now
+explicitly sets its required 0644 mode and avoids double-closing its descriptor
+on failure. Regression coverage includes three umasks, injected mode-setting
+failure, cleanup, and retry. The appliance unsafe-parent fixture now explicitly
+sets 0755 so a restrictive umask cannot neutralize its negative test.
+Debian and macOS were not tested in this continuation. These results validate
+Core's suites; EXE must still validate its own consumer and Linux adapters.
+
+No Linux-specific Core contract gap was identified in this source review.
+EXE still owns consumer equivalence testing, host capability reporting,
+QEMU/storage/process adapters, and compatibility UI. A discovered mismatch
+should be handed back with the exact Core commit, fixture/case, input bytes,
+expected result, and observed result so a bounded Core fix can be assessed.
+Production activation remains blocked on the existing reviewed trust and
+publication inputs.
 
 ## Responsibility boundary
 

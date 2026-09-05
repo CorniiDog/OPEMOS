@@ -203,6 +203,20 @@ The detailed unchecked items and their historical context remain below. Search
 for `* [ ]` to enumerate them mechanically.
 
 
+## Experimental Linux Core conformance evidence
+
+* [x] Verify Core contract matrices on Ubuntu 24.04.4 LTS (2026-09-04):
+  `boundary_policy`, `consumer_contracts`, `source_intent_contract`, and
+  `appliance_generation_consumer` passed through the shared heavy wrapper.
+  Fixed manifest creation under umask 0077 by explicitly setting required 0644
+  permissions and transferring descriptor ownership before fallible writes.
+  Regression cases cover umasks 0077/0027/0000, injected chmod failure,
+  partial-file cleanup, and successful retry. Corrected the unsafe appliance
+  output-directory fixture to explicitly retain 0755 under restrictive umasks.
+  Production trust and governance are unchanged. EXE consumer equivalence,
+  Debian/macOS execution, and hardware certification remain separate gates.
+  See `docs/image-builder.md#experimental-ubuntudebian-consumer-checks`.
+
 ## Current project phase
 
 **Status: development / active dogfooding**

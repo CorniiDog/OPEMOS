@@ -234,6 +234,8 @@ def main():
 
         unsafe_parent = root / "unsafe-output"
         unsafe_parent.mkdir(mode=0o755)
+        unsafe_parent.chmod(0o755)  # Do not let a private umask sanitize the fixture.
+        assert unsafe_parent.stat().st_mode & 0o777 == 0o755
         consume(first, unsafe_parent / "inputs", success=False)
         assert not (unsafe_parent / "inputs").exists()
 

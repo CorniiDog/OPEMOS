@@ -302,6 +302,8 @@ def write_create_only(path, payload):
         descriptor = os.open(output, flags, 0o644)
         created = True
         with os.fdopen(descriptor, "wb") as stream:
+            descriptor = None  # The stream now owns and closes the descriptor.
+            os.fchmod(stream.fileno(), 0o644)
             stream.write(payload)
             stream.flush()
             os.fsync(stream.fileno())

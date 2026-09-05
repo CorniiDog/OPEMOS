@@ -1055,6 +1055,31 @@ def main():
         assert os.stat(output).st_mode & 0o777 == 0o644
         expect_failure(write_create_only, output, payload)
 
+        # Public manifest permissions are deterministic even in private host
+        # sessions; restore the caller's umask on every assertion/failure path.
+        for mask in (0o077, 0o027, 0o000):
+            previous = os.umask(mask)
+            try:
+                masked = Path(temporary) / f"manifest-{mask:o}.json"
+                write_create_only(masked, payload)
+                assert masked.read_bytes() == payload
+                assert masked.stat().st_mode & 0o777 == 0o644
+            finally:
+                os.umask(previous)
+
+        failed = Path(temporary) / "failed-mode.json"
+        injected = PermissionError("injected mode failure")
+        with mock.patch("installer_bundle_manifest.os.fchmod", side_effect=injected):
+            try:
+                write_create_only(failed, payload)
+            except PermissionError as error:
+                assert error is injected
+            else:
+                raise AssertionError("mode failure was ignored")
+        assert not failed.exists()
+        write_create_only(failed, payload)
+        assert failed.read_bytes() == payload
+
 
 def validate_installer_initramfs_verification_compatibility_fixtures(generator):
     outputs = []
