@@ -395,6 +395,9 @@ then
     fail "stale explicit/driver terminology remains"
 fi
 
+printf 'Checking online bootstrap failure cleanup...\n'
+python3 tests/online_bootstrap_failures.py
+
 printf 'Checking pre-bootstrap temp helper ordering...\n'
 for bootstrap_entry in \
     bootstrap/online_install.sh \

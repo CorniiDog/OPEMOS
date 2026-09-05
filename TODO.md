@@ -181,6 +181,11 @@ index in the same commit.
   published navigation links.
 * [ ] Finish online-installer failure, signal, readonly-restoration, userspace
   rollback, and raw-`.ko`/`.ko.zst` idempotency coverage.
+  * [x] Cover support-repository clone and pinned-revision fetch failures before
+    Core trust loading. Both preserve the underlying nonzero status, clean
+    partial cache-rooted `online-install.*` trees even with spaces in `HOME`,
+    and stop before privileged or installation work. The isolated test passed
+    through `heavy.sh` on 2026-09-04 and is included in `tests/check.sh`.
   * [x] Commit `e1bc00a4331d7caaffee71c27a519d7ae5f3919e`: exercise a real TERM during the fake-root installer's
     blocked initramfs phase. The process group exits 143, restores the prior
     module/state trees byte-for-byte, re-enables SteamOS read-only mode, removes
