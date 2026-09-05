@@ -2218,6 +2218,14 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   userspace verification, module extraction/compression/copy/verification,
   GRUB, depmod, mkinitcpio, state writing, compression restoration, and
   recursive mount cleanup.
+  * [x] Strengthen the wrong-installed-version failure at the first userspace
+    verification item. The fixture requires terminal phase/reason
+    `userspace_verification`, exactly zero of the validated package count, no
+    module-install, module-verification, GRUB, depmod, initramfs, or
+    installation-state progress, complete four-mount cleanup, and exact
+    compression-policy restoration. Required validation evidence is recorded
+    with the GitHub PR because this host's unchanged `bsdtar` limitation blocks
+    the monolithic integration suite before mutation.
   * [x] Strengthen the injected module-compression status-88 failure at the
     first module. The fixture requires terminal phase/reason `module_install`,
     exactly zero of five completed module items, no module-verification, GRUB,

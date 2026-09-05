@@ -1996,8 +1996,41 @@ def main():
             PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
             MOCK_WRONG_INSTALLED_VERSION="1",
         )
+        assert wrong_installed_version["status"] == "failed"
         assert wrong_installed_version["reason"] == "userspace_verification"
+        assert wrong_installed_version["phase"] == "userspace_verification"
+        assert wrong_installed_version["cleanup"]["mountsReleased"] is True
+        assert wrong_installed_version["cleanup"]["runtimeMountsReleased"] == 4
         assert wrong_installed_version["cleanup"]["compressionPolicyRestored"] is True
+        wrong_version_progress = parse_progress_records(
+            (
+                temporary
+                / "compression-profile-wrong-installed-version.json.stderr"
+            ).read_text(encoding="utf-8")
+        )
+        assert [
+            record
+            for record in wrong_version_progress
+            if record["phase"] == "userspace_verification"
+        ] == [
+            {
+                "attempt": 0,
+                "completed": 0,
+                "indeterminate": False,
+                "phase": "userspace_verification",
+                "schemaVersion": 1,
+                "total": len(wrong_installed_version["validation"]["packages"]),
+                "unit": "items",
+            }
+        ]
+        assert not any(
+            record["phase"] in {
+                "module_install", "module_verification", "grub_update", "depmod",
+                "initramfs", "installation_state",
+            }
+            for record in wrong_version_progress
+        )
+        assert_item_progress(wrong_version_progress, "mount_cleanup", 4)
         corrupt_installed_payload = run_installer(
             profile_paths,
             binaries,
