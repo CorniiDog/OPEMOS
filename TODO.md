@@ -214,6 +214,11 @@ index in the same commit.
     freezes this list and boundary wording; it passed through `heavy.sh` on
     2026-09-04. The same validation exposed and fixed missing required front
     matter on the preserved boundary-decision page.
+  * [x] Correct the prerequisite contract to distinguish executable names from
+    SteamOS package providers: the frozen command list now exactly names
+    `modinfo`, `python3`, `realpath`, and `sha256sum`, while prose maps them to
+    `kmod`, `python`, and GNU coreutils. Focused documentation validation passed
+    through `heavy.sh` on 2026-09-04.
 
 ### Newly identified security gates
 

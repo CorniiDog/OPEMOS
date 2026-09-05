@@ -22,19 +22,22 @@ important data, and read the resolver's trust classification before installing.
 SteamOS updates can replace the active A/B system slot, so an install that works
 today is not automatically carried into a future SteamOS image.
 
-The inspection and published-install entrypoints require these commands before
-they create a working directory or request administrator access:
+The inspection and published-install entrypoints check these executable names
+before they create a working directory or request administrator access:
 
 ```text
 curl
 git
-kmod (provides modinfo)
-python
-realpath (GNU coreutils)
-sha256sum (GNU coreutils)
+modinfo
+python3
+realpath
+sha256sum
 tar
 zstd
 ```
+
+On SteamOS, `modinfo` is provided by the `kmod` package, `python3` by the
+`python` package, and `realpath` plus `sha256sum` by GNU coreutils.
 
 On a stock SteamOS image, use Valve's supported package-management workflow to
 restore a missing prerequisite. Do not paste an unreviewed command that disables

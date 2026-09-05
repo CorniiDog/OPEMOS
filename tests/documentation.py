@@ -159,11 +159,12 @@ def main() -> None:
     ):
         assert invariant in handoff
     getting_started = (DOCS / "getting-started.md").read_text(encoding="utf-8")
-    for prerequisite in (
-        "curl", "git", "kmod (provides modinfo)", "python",
-        "realpath (GNU coreutils)", "sha256sum (GNU coreutils)", "tar", "zstd",
-    ):
-        assert prerequisite in getting_started
+    prerequisite_block = getting_started.split("```text", 1)[1].split("```", 1)[0]
+    assert prerequisite_block.split() == [
+        "curl", "git", "modinfo", "python3", "realpath", "sha256sum", "tar", "zstd",
+    ]
+    for provider in ("`kmod` package", "`python` package", "GNU coreutils"):
+        assert provider in getting_started
     assert "exits before installation" in getting_started
     assert "rootless Podman" in getting_started
     assert "belong to OPEMOS.EXE host setup" in getting_started
