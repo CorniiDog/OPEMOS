@@ -196,6 +196,41 @@ EOF
     printf 'old-nvidia\n' > "${MOCK_STATE_ROOT}/installed-nvidia.txt"
 }
 
+run_install_checksum_failure_case()
+{
+    local before="${WORK_ROOT}/install-checksum.before"
+    local after="${WORK_ROOT}/install-checksum.after"
+    local bad_checksum="${WORK_ROOT}/bad-checksum.sha256"
+    local output rc
+
+    printf 'Testing install rejection before read-only changes on checksum failure...\n'
+    reset_case install-checksum
+    snapshot_fake_state "$before"
+    printf '%064d  %s\n' 0 "$(basename "$RELEASE_ARCHIVE")" > "$bad_checksum"
+
+    set +e
+    output="$(
+        "${PROJECT_ROOT}/bootstrap/install.sh" \
+            --archive "$RELEASE_ARCHIVE" \
+            --checksum "$bad_checksum" --yes \
+            2>&1
+    )"
+    rc=$?
+    set -e
+
+    (( rc != 0 )) || die "Installer accepted a mismatched archive checksum."
+    [[ "$output" == *"Archive checksum verification failed."* ]] || {
+        printf '%s\n' "$output" >&2
+        die "Installer did not report checksum verification failure."
+    }
+    [[ ! -s "$MOCK_COMMAND_LOG" ]] || {
+        cat "$MOCK_COMMAND_LOG" >&2
+        die "Checksum failure reached a privileged operation."
+    }
+    snapshot_fake_state "$after"
+    assert_fake_state_restored "$before" "$after"
+}
+
 run_install_failure_case()
 {
     local case_name="$1"
@@ -405,6 +440,7 @@ ORIGINAL_PATH="$PATH"
 snapshot_real_modules "$REAL_BEFORE"
 make_release_archive
 
+run_install_checksum_failure_case
 run_install_failure_case install-partial-copy target-copy
 run_install_failure_case install-initramfs initramfs
 run_install_failure_case install-legacy-raw-target initramfs raw
