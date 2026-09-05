@@ -1,9 +1,9 @@
 # Repository agent instructions
 
 `BOUNDARIES.md` is the read-only ownership authority. OPEMOS.EXE mirrors the
-same bytes. The previous mirror is pinned to counterpart commit
-`c6733c7c80a104f57b44411d2d4223c2d624818d`; the explicitly authorized
-2026-09-04 cleanup-ownership revision awaits an EXE mirror commit recorded in
+the same bytes, pinned by this repository to counterpart commit
+`064d1d54c7ef2eda3d56e80c67e9f8e78a554725`. The preceding pin `c6733c7c80a104f57b44411d2d4223c2d624818d`
+and the authorized 2026-09-04 cleanup-ownership decision are preserved in
 `docs/boundary-decision-2026-09-04.md`. Do not modify the authority, its
 integrity test, or the counterpart reference during ordinary implementation,
 cleanup, documentation, release, or repinning work. A change requires an

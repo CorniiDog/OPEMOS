@@ -1,81 +1,40 @@
-#!/usr/bin/env python3
-"""Prevent accidental edits or disconnected copies of the ownership contract."""
+# Artifact cleanup ownership decision — 2026-09-04
 
-import argparse
-import hashlib
-import subprocess
-from pathlib import Path
+The user explicitly authorized a narrow amendment to `BOUNDARIES.md`. Creator
+ownership governs cleanup: EXE cleans EXE-created artifacts; Core cleans
+Core-created artifacts only when it can safely identify them. For a concerning
+Core-created artifact conflict, Core may expose a bounded, provenance-preserving
+flag for EXE to consume. Exact identity and provenance must be revalidated;
+missing, stale, malformed, mismatched, conflicting, or ambiguous evidence fails
+safely. The flag supplies no blanket deletion authority.
 
+## Canonical identities
 
-ROOT = Path(__file__).resolve().parents[1]
-COUNTERPART_COMMIT = "c6733c7c80a104f57b44411d2d4223c2d624818d"
-EXPECTED_GIT_BLOB = "68fd9553bb8fee79cee803a38f980a94b2d80e57"
-EXPECTED_SHA256 = "136d3572effa90c1b84bcf51002d7f9641c367132de20d54dd7173f68f13c6a8"
+- Core boundary commit introducing the decision: `3a6f0652f4118936820871f8201f7c5e1250acbf`
+- SHA-256: `136d3572effa90c1b84bcf51002d7f9641c367132de20d54dd7173f68f13c6a8`
+- Git blob: `68fd9553bb8fee79cee803a38f980a94b2d80e57`
 
+## Synchronization history
 
-def git_blob_id(payload):
-    header = f"blob {len(payload)}\0".encode("ascii")
-    return hashlib.sha1(header + payload, usedforsecurity=False).hexdigest()
+The preceding identical-mirror counterpart pin was
+`c6733c7c80a104f57b44411d2d4223c2d624818d`. After the Core change, the default cross-repository integrity test
+correctly failed against that old commit while the strict `--local-only` check
+passed. This preserved the mirror gate during the staged handoff.
 
-
-def verify_counterpart_commit(payload):
-    sibling = ROOT.parent / "steamos-nvidia-image-builder"
-    if not (sibling / ".git").exists():
-        return
-    result = subprocess.run(
-        ["git", "-C", str(sibling), "show", f"{COUNTERPART_COMMIT}:BOUNDARIES.md"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-        timeout=10,
-    )
-    assert result.returncode == 0, "pinned OPEMOS.EXE boundary commit is unavailable"
-    assert result.stdout == payload, "Core boundary differs from the pinned OPEMOS.EXE mirror"
-    assert hashlib.sha256(result.stdout).hexdigest() == EXPECTED_SHA256
-
-
-def main(local_only=False):
-    authority = ROOT / "BOUNDARIES.md"
-    payload = authority.read_bytes()
-    assert hashlib.sha256(payload).hexdigest() == EXPECTED_SHA256, (
-        "BOUNDARIES.md changed without an explicit governance update"
-    )
-    assert git_blob_id(payload) == EXPECTED_GIT_BLOB, (
-        "BOUNDARIES.md is not the exact cross-project governance blob"
-    )
-    if not local_only:
-        verify_counterpart_commit(payload)
-    text = payload.decode("utf-8")
-    assert "READ-ONLY GOVERNANCE CONTRACT" in text
-    assert "## Sole UI exception" in text
-    assert "The OPEMOS repository—not OPEMOS.EXE—owns and implements the fullscreen" in text
-    assert "sibling consumer of Core progress and state contracts" in text
-    assert "## Networking boundary" in text
-    assert "## Source intent and Core authorization" in text
-    assert "## A/B ownership" in text
-    assert "## Artifact cleanup ownership" in text
-    assert "Artifact cleanup follows creator ownership" in text
-    assert "Missing, stale, malformed, mismatched," in text
-    assert "The flag grants\nno blanket deletion authority" in text
-    assert "This ownership is cross-platform" in text
-    assert "Automatic is itself explicit user intent" in text
-    assert "authenticated OPEMOS-owned\ninterstitial target payload" in text
-    assert "Core-owned installed-device supervisor may launch and\nmonitor" in text
-    for relative in ("README.md", "TODO.md", "docs/image-builder.md"):
-        summary = (ROOT / relative).read_text(encoding="utf-8")
-        assert "BOUNDARIES.md" in summary, f"{relative} does not link to the authority"
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--local-only", action="store_true",
-                        help="verify canonical Core bytes before EXE mirror repinning")
-    main(parser.parse_args().local_only)
+OPEMOS.EXE then mirrored the exact bytes at commit
+`064d1d54c7ef2eda3d56e80c67e9f8e78a554725`. Core verified that commit read-only: its `BOUNDARIES.md` has the
+canonical SHA-256 and Git blob above. Core repinned its mandatory default
+cross-repository integrity check to that commit. Core did not edit EXE.
 
 ## Validation
 
-`python3 tests/boundary_policy.py --local-only` is the bounded pre-mirror check;
-it validates the exact local SHA/blob and required semantic clauses. The default
-cross-repository check must continue to fail against the previous counterpart
-commit until EXE mirrors these bytes and Core receives its new commit for
-repinning. This staged failure preserves, rather than weakens, mirror integrity.
+Both commands are required focused checks after synchronization:
+
+```bash
+python3 tests/boundary_policy.py
+python3 tests/boundary_policy.py --local-only
+```
+
+The default command verifies the pinned EXE commit bytes; `--local-only` verifies
+the canonical Core bytes and semantic clauses independently of sibling checkout
+availability.

@@ -210,6 +210,10 @@ for `* [ ]` to enumerate them mechanically.
   Git blob `68fd9553bb8fee79cee803a38f980a94b2d80e57`; focused local integrity
   assertions updated. EXE mirror commit and synchronized counterpart pin remain
   pending. See `docs/boundary-decision-2026-09-04.md`.
+  Synchronization completed after that staged state: EXE mirrored the exact
+  bytes at `064d1d54c7ef2eda3d56e80c67e9f8e78a554725`, and Core repinned the default integrity check to that
+  commit. Default cross-repository and focused local checks pass; the preceding
+  pin and staged validation remain recorded in the dated decision.
 
 ## Experimental Linux Core conformance evidence
 

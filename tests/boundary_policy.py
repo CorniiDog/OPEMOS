@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-COUNTERPART_COMMIT = "c6733c7c80a104f57b44411d2d4223c2d624818d"
+COUNTERPART_COMMIT = "064d1d54c7ef2eda3d56e80c67e9f8e78a554725"
 EXPECTED_GIT_BLOB = "68fd9553bb8fee79cee803a38f980a94b2d80e57"
 EXPECTED_SHA256 = "136d3572effa90c1b84bcf51002d7f9641c367132de20d54dd7173f68f13c6a8"
 
@@ -69,5 +69,5 @@ def main(local_only=False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--local-only", action="store_true",
-                        help="verify canonical Core bytes before EXE mirror repinning")
+                        help="verify canonical Core bytes without the optional local EXE checkout")
     main(parser.parse_args().local_only)
