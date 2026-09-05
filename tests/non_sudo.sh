@@ -117,16 +117,6 @@ metadata_value_from_text()
     sed -n "s/^${key}=//p" <<< "$text" | head -n1
 }
 
-module_content_sha256()
-{
-    local module="$1"
-
-    case "$module" in
-        *.ko.zst) zstd -q -dc -- "$module" | sha256sum | awk '{print $1}' ;;
-        *.ko) sha256_file "$module" ;;
-        *) return 1 ;;
-    esac
-}
 
 printf 'Running fast repository checks...\n'
 "${TEST_DIR}/check.sh"

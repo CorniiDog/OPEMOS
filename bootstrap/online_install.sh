@@ -113,22 +113,6 @@ INSTALL_CHANGED=0
 
 # Hash the actual kernel module contents, independent of on-disk compression.
 # Release archives may contain raw .ko files while installed modules use .ko.zst.
-module_content_sha256()
-{
-    local module="$1"
-
-    case "$module" in
-        *.ko.zst)
-            zstd -q -dc -- "$module" | sha256sum | awk '{print $1}'
-            ;;
-        *.ko)
-            sha256sum "$module" | awk '{print $1}'
-            ;;
-        *)
-            return 1
-            ;;
-    esac
-}
 
 already_installed()
 {

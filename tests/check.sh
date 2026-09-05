@@ -411,6 +411,8 @@ done
 printf 'Checking exact NVIDIA module-set validation...\n'
 source "$PROJECT_ROOT/lib/common.sh"
 
+"$PROJECT_ROOT/tests/module_content_hash.sh"
+
 RAW_MODULES=(
     /fixture/nvidia.ko
     /fixture/nvidia-drm.ko

@@ -214,6 +214,23 @@ valve_repository_names_from_html()
         awk 'NR <= 128'
 }
 
+module_content_sha256()
+{
+    local module="$1"
+
+    case "$module" in
+        *.ko.zst)
+            zstd -q -dc -- "$module" | sha256sum | awk '{print $1}'
+            ;;
+        *.ko)
+            sha256_file "$module"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 project_cache_root()
 {
     printf '%s\n' "${HOME}/.cache/${PROJECT_ID}"

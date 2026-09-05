@@ -191,6 +191,12 @@ index in the same commit.
     produce nonzero results, roll back target and state bytes, retry restoration
     during cleanup, remove temporary stages, and leave real modules unchanged.
     The complete transaction suite passed through `heavy.sh` on 2026-09-04.
+  * [x] Consolidate the online installer and non-sudo baseline onto Core's
+    shared decompressed-module content hash helper. Focused tests passed through
+    `heavy.sh` for raw `.ko` / equivalent `.ko.zst` equality, corrupt Zstd
+    rejection, and unsupported suffix rejection. The broader `tests/check.sh`
+    stopped earlier on an existing restrictive-umask desktop-update fixture, so
+    no full-suite pass is claimed or repeated.
 * [ ] Resolve build caching, compiler/certification policy, reproducibility,
   backup retention, and safe Podman/bootstrap ownership decisions.
 * [ ] Audit fresh-machine prerequisites, duplicated environment setup, stale
