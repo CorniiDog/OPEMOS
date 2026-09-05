@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise setup_nvidia.sh interrupt cleanup with command-level fixtures."""
+"""Exercise setup_nvidia.sh transaction failure cleanup with command fixtures."""
 import os
 import signal
 import subprocess
@@ -15,8 +15,9 @@ def executable(path: Path, body: str) -> None:
     path.write_text("#!/bin/bash\nset -eu\n" + body, encoding="utf-8")
     path.chmod(0o755)
 
-def exercise(interrupt: signal.Signals) -> None:
-    with tempfile.TemporaryDirectory(prefix=f"setup-nvidia-{interrupt.name.lower()}-") as name:
+def exercise(interrupt: signal.Signals | None) -> None:
+    case = interrupt.name.lower() if interrupt is not None else "pacman-failure"
+    with tempfile.TemporaryDirectory(prefix=f"setup-nvidia-{case}-") as name:
         root = Path(name)
         home = root / "home with spaces"
         fake_bin = root / "bin"
@@ -50,6 +51,7 @@ esac
 ''')
         executable(fake_bin / "pacman", '''if [ "${1:-}" = -U ]; then
   : > "$MOCK_PACMAN_STARTED"
+  [ "${MOCK_PACMAN_FAIL:-0}" = 0 ] || exit 42
   while :; do sleep 1; done
 fi
 printf 'nvidia-utils 575.64.05-1\\n'
@@ -67,6 +69,7 @@ exec "$@"
             "PROJECT_TEST_MODE": "1",
             "PROJECT_TEST_ROOT": str(root),
             "MOCK_READONLY_LOG": str(readonly_log),
+            "MOCK_PACMAN_FAIL": "1" if interrupt is None else "0",
             "MOCK_PACMAN_STARTED": str(pacman_started),
         }
         process = subprocess.Popen(
@@ -80,10 +83,11 @@ exec "$@"
                 process.kill()
                 raise AssertionError("setup did not reach the pacman transaction")
             time.sleep(0.02)
-        assert process.poll() is None, process.communicate()
-        os.killpg(process.pid, interrupt)
+        if interrupt is not None:
+            assert process.poll() is None, process.communicate()
+            os.killpg(process.pid, interrupt)
         stdout, stderr = process.communicate(timeout=10)
-        expected = 128 + interrupt.value
+        expected = 42 if interrupt is None else 128 + interrupt.value
         assert process.returncode == expected, (process.returncode, stdout, stderr)
         assert readonly_log.read_text(encoding="utf-8").splitlines() == ["disable", "enable"]
         cache = home / ".cache/open-gpu-kernel-modules-steamos-support"
@@ -91,7 +95,7 @@ exec "$@"
         assert not list(cache.glob("setup-nvidia.*"))
 
 def main() -> None:
-    for interrupt in (signal.SIGINT, signal.SIGTERM):
+    for interrupt in (signal.SIGINT, signal.SIGTERM, None):
         exercise(interrupt)
 
 if __name__ == "__main__":

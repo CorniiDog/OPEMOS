@@ -215,11 +215,12 @@ index in the same commit.
 * [ ] Finish online-installer failure, signal, readonly-restoration, userspace
   rollback, and raw-`.ko`/`.ko.zst` idempotency coverage.
   * [x] Exercise both INT and TERM during the online userspace package
-    transaction. Each process group preserves the conventional 130/143 exit,
-    re-enables SteamOS read-only mode exactly once, and removes its partial
-    cache-rooted setup workspace. The focused signal matrix passed through
-    `heavy.sh` on 2026-09-05. Package/configuration rollback remains tracked
-    separately below and this does not close the aggregate item.
+    transaction, plus a pacman transaction returning status 42. Each path
+    preserves its conventional or underlying exit, re-enables SteamOS read-only
+    mode exactly once, and removes its partial cache-rooted setup workspace. The
+    focused signal/failure matrix passed through `heavy.sh` on 2026-09-05.
+    Package/configuration rollback remains tracked separately below and this
+    does not close the aggregate item.
   * [x] Cover support-repository clone and pinned-revision fetch failures before
     Core trust loading. Both preserve the underlying nonzero status, clean
     partial cache-rooted `online-install.*` trees even with spaces in `HOME`,
