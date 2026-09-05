@@ -25,7 +25,7 @@ fi
 
 (( EUID != 0 )) || die "Run transaction tests as the normal deck/user account."
 
-for command_name in cmp diff find git id install realpath sha256sum sort tar xargs zstd; do
+for command_name in cmp diff find git id install realpath setsid sha256sum sort tar xargs zstd; do
     need_cmd "$command_name"
 done
 
@@ -241,6 +241,45 @@ run_install_failure_case()
     assert_fake_state_restored "$before" "$after"
 }
 
+run_install_signal_case()
+{
+    local before="${WORK_ROOT}/install-signal.before"
+    local after="${WORK_ROOT}/install-signal.after"
+    local pid rc waited=0
+
+    printf 'Testing install rollback on TERM during initramfs...\n'
+    reset_case install-signal
+    snapshot_fake_state "$before"
+    export MOCK_FAIL_POINT=initramfs-block
+
+    setsid "${PROJECT_ROOT}/bootstrap/install.sh" \
+        --archive "$RELEASE_ARCHIVE" \
+        --checksum "${RELEASE_ARCHIVE}.sha256" --yes \
+        >"${CASE_ROOT}/installer.out" 2>&1 &
+    pid=$!
+    while [[ ! -e "$MOCK_FAILURE_MARKER" && $waited -lt 100 ]]; do
+        sleep 0.05
+        waited=$((waited + 1))
+    done
+    [[ -e "$MOCK_FAILURE_MARKER" ]] || {
+        kill -KILL -- "-$pid" 2>/dev/null || true
+        wait "$pid" 2>/dev/null || true
+        die "Signal fixture did not reach blocked initramfs."
+    }
+
+    kill -TERM -- "-$pid"
+    set +e
+    wait "$pid"
+    rc=$?
+    set -e
+    (( rc == 143 )) || die "TERM install returned ${rc}, expected 143."
+    grep -q 'restoring previous updates directory' "${CASE_ROOT}/installer.out" ||
+        die "TERM install did not report target rollback."
+
+    snapshot_fake_state "$after"
+    assert_fake_state_restored "$before" "$after"
+}
+
 run_uninstall_failure_case()
 {
     local before="${WORK_ROOT}/uninstall-depmod.before"
@@ -344,6 +383,7 @@ run_install_failure_case install-partial-copy target-copy
 run_install_failure_case install-initramfs initramfs
 run_install_failure_case install-legacy-raw-target initramfs raw
 run_install_failure_case install-state-write state-write
+run_install_signal_case
 run_uninstall_failure_case
 run_successful_lifecycle
 

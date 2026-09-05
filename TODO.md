@@ -181,6 +181,11 @@ index in the same commit.
   published navigation links.
 * [ ] Finish online-installer failure, signal, readonly-restoration, userspace
   rollback, and raw-`.ko`/`.ko.zst` idempotency coverage.
+  * [x] Commit `e1bc00a4331d7caaffee71c27a519d7ae5f3919e`: exercise a real TERM during the fake-root installer's
+    blocked initramfs phase. The process group exits 143, restores the prior
+    module/state trees byte-for-byte, re-enables SteamOS read-only mode, removes
+    temporary stages, and leaves real system modules unchanged. The complete
+    `tests/transaction.sh` suite passed through `heavy.sh` on 2026-09-04.
 * [ ] Resolve build caching, compiler/certification policy, reproducibility,
   backup retention, and safe Podman/bootstrap ownership decisions.
 * [ ] Audit fresh-machine prerequisites, duplicated environment setup, stale

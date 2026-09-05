@@ -3,6 +3,13 @@ set -euo pipefail
 
 printf 'mkinitcpio %s\n' "$*" >> "${MOCK_COMMAND_LOG:?}"
 
+if [[ "${MOCK_FAIL_POINT:-}" == "initramfs-block" &&
+      ! -e "${MOCK_FAILURE_MARKER:?}" ]]; then
+    touch "$MOCK_FAILURE_MARKER"
+    trap 'exit 143' TERM
+    while :; do sleep 1; done
+fi
+
 if [[ "${MOCK_FAIL_POINT:-}" == "initramfs" &&
       ! -e "${MOCK_FAILURE_MARKER:?}" ]]; then
     touch "$MOCK_FAILURE_MARKER"
