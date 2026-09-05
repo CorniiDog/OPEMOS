@@ -257,8 +257,15 @@ index in the same commit.
     complete full-suite pass is claimed.
 * [ ] Resolve build caching, compiler/certification policy, reproducibility,
   backup retention, and safe Podman/bootstrap ownership decisions.
-* [ ] Audit fresh-machine prerequisites, duplicated environment setup, stale
+* [x] Audit fresh-machine prerequisites, duplicated environment setup, stale
   terminology, unused variables, and intended remote/raw invocation paths.
+
+  * 2026-09-05 aggregate reconciliation: the preserved detailed entries and
+    commits `c37e864`, `7e730b7`, `50f8043`, `595b42f`, `ec029f7`, and
+    `fe0d752` cover prerequisite ordering, one setup owner, canonical mode
+    terminology, cross-file variable/workflow hygiene, consistent CLI behavior,
+    and raw/bootstrap invocation. Their focused suites were already validated
+    through `heavy.sh`; no unchanged suite was repeated for this index update.
   * [x] Document the exact pre-mutation Core CLI command prerequisites, safe
     missing-tool behavior, development-only rootless Podman requirement, and
     the separation from EXE host dependencies. `tests/documentation.py` now
@@ -273,10 +280,20 @@ index in the same commit.
 
 ### Newly identified security gates
 
-* [ ] Snapshot every authenticated installer input, add an exclusive per-target
+* [x] Snapshot every authenticated installer input, add an exclusive per-target
   lifecycle lock, and preserve exact rootfs/EFI mount identity through cleanup.
-* [ ] Require structured module, userspace, initramfs, and Holo-database
+
+  * 2026-09-05 aggregate reconciliation: the preserved implementation section
+    below records private immutable input snapshots, the exclusive target lock,
+    repeated rootfs/EFI identity checks, and failure cleanup coverage. Those
+    completed gates remain unchanged; this update only corrects the stale index.
+* [x] Require structured module, userspace, initramfs, and Holo-database
   verification before any schema-1 installer success result.
+
+  * 2026-09-05 aggregate reconciliation: the preserved mandatory-verification
+    section below records all four closed success proofs plus their target/hash
+    cross-bindings and deterministic consumer matrices. This update retains that
+    history and corrects only the stale index checkbox.
 * [ ] Formalize result/progress compatibility, opaque-operation liveness, and a
   real phase-by-phase failure/cancellation matrix.
 * [ ] Authenticate target-owned executable code and raise the public online
