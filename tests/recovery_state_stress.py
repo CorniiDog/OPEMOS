@@ -30,6 +30,36 @@ def run(arguments, *, success=True):
     return result
 
 
+def assert_archive_identity_drift_rejected(archive):
+    program = r"""
+import importlib.util
+import pathlib
+import sys
+spec = importlib.util.spec_from_file_location("release_plan_drift", sys.argv[1])
+helper = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(helper)
+original = helper.identity
+calls = 0
+def changed(value):
+    global calls
+    calls += 1
+    result = original(value)
+    return result if calls != 2 else (*result[:-1], result[-1] + 1)
+helper.identity = changed
+try:
+    helper.hash_archive(pathlib.Path(sys.argv[2]))
+except ValueError as error:
+    assert "changed while it was hashed" in str(error)
+else:
+    raise AssertionError("archive identity drift was accepted")
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", program, str(PLAN), str(archive)],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def hold_lock(module, function, path):
     program = """
 import importlib.util
@@ -130,6 +160,16 @@ with tempfile.TemporaryDirectory(prefix="opemos-recovery-stress-") as temporary:
     archive.write_bytes(b"immutable stress artifact")
     run([*plan_command, "bind-archive", "--plan", plan, "--archive", archive])
     canonical_plan = plan.read_bytes()
+    wrong_target = [
+        *plan_command, "create", "--plan", plan,
+        "--steamos", "3.8.99", "--nvidia", NVIDIA,
+        "--kernel-tag", "wrong-kernel", "--release-tag", "wrong-release",
+        "--asset-name", "wrong-artifact-x86_64.tar.gz",
+    ]
+    run(wrong_target, success=False)
+    assert plan.read_bytes() == canonical_plan
+    assert_archive_identity_drift_rejected(archive)
+    assert plan.read_bytes() == canonical_plan
     for arguments in (
         [*plan_command, "show", "--plan", plan, "--archive", archive],
         [*plan_command, "bind-archive", "--plan", plan, "--archive", archive,

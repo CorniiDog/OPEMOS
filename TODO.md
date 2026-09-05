@@ -1314,6 +1314,13 @@ This remains a major future area, represented by three distinct gates:
     retains existing rejection of different bytes at the same path. It passed
     through `heavy.sh`. Wrong-target publication, replacement during download,
     and certified-after-local-repair integration cases remain open.
+  * 2026-09-05 follow-up: the same stress suite now proves a wrong
+    SteamOS/kernel release cannot replace the exact bound plan, and injects
+    deterministic archive identity drift between pre/post-hash observations to
+    prove replacement during download/hash is rejected before binding. The
+    exact plan remains byte-for-byte unchanged. `heavy.sh python3
+    tests/recovery_state_stress.py` passed. Certified-after-local-repair remains
+    the final open case for this item.
 * [ ] Stage and independently verify the guardian assets and systemd enablement
   in OPEMOS.EXE-generated rootfs payloads.
 * [ ] Test a 3.8.x kernel upgrade, missing-release behavior, and rollback to the
