@@ -15,6 +15,8 @@ publisher evidence, and installed-device lifecycle.
 
 - `schemas/resolver-result-v2.schema.json` describes the additive resolver
   result emitted by `lib/resolve_target.py`.
+- `fixtures/progress-semantics-v1.json` freezes canonical adapter outputs for
+  known, indeterminate, future, fractional, and maximum-counter cases.
 - `schemas/result-semantics-v1.schema.json` describes canonical terminal
   semantics emitted only after complete authoritative installer-result
   validation.

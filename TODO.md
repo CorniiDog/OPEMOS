@@ -161,6 +161,10 @@ index in the same commit.
   reason, trust, and cleanup completeness. All accepted result-matrix cases and
   bundle-contract tests passed through `heavy.sh`; malformed and unsupported
   results produce no semantic output.
+  A deterministic cross-consumer corpus now freezes known start/completion,
+  indeterminate heartbeat, additive future-phase, fractional-rounding, and
+  maximum-counter outputs. Its generator, fixture, adapter, and schema are in
+  the immutable bundle; focused adapter and bundle tests passed via `heavy.sh`.
 
 * [ ] Hardware-validate the implemented no-input DRM/KMS boot interstitial on
   real SteamOS with simpledrm and intended iGPU paths, internal/external display

@@ -10,6 +10,12 @@ def reject(value):
  raise AssertionError(value)
 
 def main():
+ from generate_progress_semantics_fixtures import matrix as semantics_matrix
+ import subprocess
+ fixture=ROOT/"contracts/fixtures/progress-semantics-v1.json"
+ generated=subprocess.run([sys.executable,str(ROOT/"lib/generate_progress_semantics_fixtures.py")],cwd="/",check=True,stdout=subprocess.PIPE).stdout
+ assert generated==fixture.read_bytes()
+ for case in semantics_matrix()["cases"]: assert adapt(case["input"])==case["expected"]
  from generate_installer_result_fixtures import matrix
  from validate_install_contract import validate_result
  import tempfile

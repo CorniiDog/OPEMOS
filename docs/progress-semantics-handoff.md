@@ -32,3 +32,7 @@ computed cleanup-complete flag. Invalid or future unsupported result schemas
 produce no semantic record. The output schema is
 `contracts/schemas/result-semantics-v1.schema.json` and is included in the same
 immutable bundle.
+
+`contracts/fixtures/progress-semantics-v1.json` is the deterministic consumer
+corpus. Consumers must reproduce every expected semantic record; its bundled
+generator proves canonical bytes and prevents hand-edited fixture drift.
