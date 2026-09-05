@@ -2218,6 +2218,14 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   userspace verification, module extraction/compression/copy/verification,
   GRUB, depmod, mkinitcpio, state writing, compression restoration, and
   recursive mount cleanup.
+  * [x] Strengthen the installed-module mismatch failure after all five modules
+    are copied and inspected. The fixture requires terminal phase/reason
+    `module_install` with structured two-module mismatch evidence, complete
+    five-item module-install and module-verification counters, no GRUB, depmod,
+    initramfs, or installation-state progress, complete four-mount cleanup, and
+    exact compression-policy restoration. Required validation evidence is
+    recorded with the GitHub PR because this host's unchanged `bsdtar`
+    limitation blocks the monolithic integration suite before mutation.
   * [x] Add a post-initramfs unsafe payload-receipt destination failure while
     preserving and restoring the prior receipt fixture. The test requires
     terminal phase/reason `payload_receipt`, completed initramfs progress,
