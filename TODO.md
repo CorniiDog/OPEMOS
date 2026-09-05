@@ -761,7 +761,9 @@ standardize on raw `.ko` or `.ko.zst`; the installer accepts both safely.
   * it must not fail with `Source branch is ; expected HEAD`.
 * [ ] Define one owner for build-environment preparation and remove duplicated
   setup between callers and `build.sh`.
-* [ ] Verify no host-root temp writes remain for large data.
+* [x] Verify no host-root temp writes remain for large data.
+
+  * 2026-09-05: `tests/host_temp_storage.py` inventories every large host build/install/bootstrap workflow and rejects literal `/tmp`, direct `/tmp` mktemp, and `${TMPDIR:-/tmp}` staging. Negative cases freeze those failures and accept `$HOME/.cache` staging. The test separately requires `build.sh` to retain the documented Fedora-container `/tmp` exception and its rootless-Podman-under-`/home` rationale. Bounded publication metadata plus explicit-root recovery/appliance workspaces remain separately scoped. `heavy.sh python3 tests/host_temp_storage.py` passed.
 
 ---
 
