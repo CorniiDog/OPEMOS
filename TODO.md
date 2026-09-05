@@ -1304,7 +1304,7 @@ This remains a major future area, represented by three distinct gates:
   descriptor-read, identity-stable, and serialized across direct invocations;
   hash only a stable owner-controlled archive and publish create-only or by an
   exact prior-plan identity.
-* [ ] Test publication races: an exact release appearing during offline wait,
+* [x] Test publication races: an exact release appearing during offline wait,
   wrong-kernel/version releases, mid-download publication, and a certified
   equivalent appearing after a locally-built verified repair.
 
@@ -1314,6 +1314,13 @@ This remains a major future area, represented by three distinct gates:
     retains existing rejection of different bytes at the same path. It passed
     through `heavy.sh`. Wrong-target publication, replacement during download,
     and certified-after-local-repair integration cases remain open.
+  * 2026-09-05 completion: the recovery stress suite now also freezes the
+    verified-local-repair branch: it reconciles the exact transaction, emits
+    `exact_nvidia_already_healthy` with `no_action`, and exits before connectivity,
+    release selection, or `online_install.sh`. A later certified publication
+    therefore cannot implicitly replace a healthy locally-built verified repair.
+    Together with the preserved timing, wrong-target, and identity-drift cases,
+    the dedicated suite covers the full race item and passed through `heavy.sh`.
   * 2026-09-05 follow-up: the same stress suite now proves a wrong
     SteamOS/kernel release cannot replace the exact bound plan, and injects
     deterministic archive identity drift between pre/post-hash observations to

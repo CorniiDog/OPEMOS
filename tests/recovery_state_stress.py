@@ -17,6 +17,18 @@ KERNEL = "6.16.12-valve24.5-1-neptune-616-stress"
 NVIDIA = "575.64.05"
 REVISION = "f" * 40
 
+# A later certified publication must not replace an already healthy exact local
+# repair. Freeze the recovery command's no-action return before all networking.
+control = (ROOT / "bootstrap/recoveryctl.sh").read_text(encoding="utf-8")
+healthy_gate = control.index('if [[ "$recovery_status" == healthy ]]')
+network_probe = control.index('curl -fsS --connect-timeout 10 --max-time 20')
+healthy_block = control[healthy_gate:network_probe]
+assert healthy_gate < network_probe
+assert 'reconcile_verified_transaction "$kernel" "$nvidia" "$revision"' in healthy_block
+assert 'emit_result restored exact_nvidia_already_healthy no_action' in healthy_block
+assert "exit 0" in healthy_block
+assert "online_install.sh" not in healthy_block
+
 
 def run(arguments, *, success=True):
     result = subprocess.run(
