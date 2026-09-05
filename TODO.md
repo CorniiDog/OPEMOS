@@ -1834,7 +1834,16 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
     input, bytes, URL/path and credential combinations, invalid bounds, and
     truncation; focused privacy, measurement, and immutable consumer-bundle
     tests passed through `heavy.sh`.
-* [ ] Cache only authenticated headers/artifacts for normal reuse.
+* [x] Cache only authenticated headers/artifacts for normal reuse.
+
+  * 2026-09-05: cached remote Valve headers remain eligible only with a pinned
+    keyring and are reverified before extraction; a corrupt cached signature
+    with unavailable download now proves `header_signature_invalid` and never
+    compiles. Compiled bundle reuse requires `locally-built-verified`, the full
+    publication validator, exact source/support/kernel/NVIDIA/container
+    identities, and the archive checksum. Focused negative header-cache,
+    artifact trust-policy, builder fault-injection, and shell-syntax checks
+    passed through `heavy.sh`; the policy regression is in `tests/check.sh`.
 * [ ] Key caches by exact header identity/hash, source commit, support commit,
   NVIDIA version, target kernel, architecture, and toolchain/appliance identity.
 * [x] Detect and remove abandoned inactive build sessions on the next run.

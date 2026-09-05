@@ -393,6 +393,9 @@ then
     fail "setup_nvidia.sh accepted mutually exclusive modes"
 fi
 
+printf 'Checking authenticated cache reuse policy...\n'
+python3 tests/cache_trust_policy.py
+
 printf 'Checking bounded diagnostic safety...\n'
 python3 tests/diagnostic_safety.py
 

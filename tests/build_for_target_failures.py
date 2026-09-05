@@ -88,7 +88,7 @@ with tarfile.open(package) as archive:
         "gcc-15": "#!/bin/sh\ncase \" $* \" in *' -dumpfullversion -dumpversion '*) echo ${MOCK_COMPAT_GCC_VERSION:-15.2.1};; *) exit 0;; esac\n",
         "flock": "#!/bin/sh\nexit 0\n",
         "git": "#!/bin/sh\nexit 1\n",
-        "gpgv": f"#!/bin/sh\necho '[GNUPG:] VALIDSIG {HEADER_SIGNER} 2026-01-01 0 4 0 1 10 00 {HEADER_SIGNER}'\n",
+        "gpgv": f"#!/bin/sh\n[ \"${{MOCK_GPG_FAIL:-0}}\" != 1 ] || exit 1\necho '[GNUPG:] VALIDSIG {HEADER_SIGNER} 2026-01-01 0 4 0 1 10 00 {HEADER_SIGNER}'\n",
         "ld": "#!/bin/sh\necho 'GNU ld 2.45'\n",
         "modinfo": f"""#!/bin/sh
 case "${{1:-}}" in
@@ -402,6 +402,22 @@ def run_authenticated_header_cache(fixture):
     assert "Using cached authenticated Valve headers candidate" in (
         completed.stdout + completed.stderr
     )
+
+    (cache / f"{HEADERS_NAME}.sig").write_bytes(b"corrupt-cached-signature")
+    result = fixture / "cache-corrupt.result.json"
+    output = fixture / "cache-corrupt.output"
+    arguments = command(fixture, result, output)
+    arguments.extend(["--header-keyring", str(keyring), "--header-signer", HEADER_SIGNER])
+    env = environment(fixture, "fail")
+    env.update(MOCK_MAKE_MODE="complete", MOCK_GPG_FAIL="1")
+    rejected = subprocess.run(
+        arguments, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+    )
+    assert rejected.returncode != 0
+    document = json.loads(result.read_text(encoding="utf-8"))
+    assert document["reason"] == "header_signature_invalid", document
+    assert "Using cached authenticated Valve headers candidate" in rejected.stdout
+    assert_clean(fixture, output)
 
 
 def main():
