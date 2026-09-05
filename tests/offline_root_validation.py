@@ -2783,6 +2783,7 @@ def main():
         assert state_write_failed["cleanup"]["mountsReleased"] is True
         assert state_write_failed["cleanup"]["runtimeMountsReleased"] == 4
         assert state_write_failed["cleanup"]["compressionPolicyRestored"] is True
+        assert state_write_failed["initramfsVerification"]["status"] == "verified"
         state_write_progress = parse_progress_records(
             (temporary / "state-write-failed.json.stderr").read_text(
                 encoding="utf-8"

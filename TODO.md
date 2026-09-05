@@ -2221,9 +2221,12 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   * [x] Add a post-initramfs unsafe payload-receipt destination failure while
     preserving and restoring the prior receipt fixture. The test requires
     terminal phase/reason `payload_receipt`, completed initramfs progress,
-    exactly one indeterminate installation-state record with no false
-    completion, complete four-mount cleanup, and exact compression-policy
-    restoration. Required validation evidence is recorded with the GitHub PR
+    preserved verified initramfs evidence in the failed result, exactly one
+    indeterminate installation-state record with no false completion, complete
+    four-mount cleanup, and exact compression-policy restoration. This also
+    fixes the result writer's former rejection of already-verified initramfs
+    evidence on this later failure phase. Required validation evidence is
+    recorded with the GitHub PR
     because this host's unchanged `bsdtar` limitation blocks the monolithic
     integration suite before mutation.
   * [x] Strengthen the malformed generated-initramfs listing failure boundary.
