@@ -22,6 +22,31 @@ important data, and read the resolver's trust classification before installing.
 SteamOS updates can replace the active A/B system slot, so an install that works
 today is not automatically carried into a future SteamOS image.
 
+The inspection and published-install entrypoints require these commands before
+they create a working directory or request administrator access:
+
+```text
+curl
+git
+kmod (provides modinfo)
+python
+realpath (GNU coreutils)
+sha256sum (GNU coreutils)
+tar
+zstd
+```
+
+On a stock SteamOS image, use Valve's supported package-management workflow to
+restore a missing prerequisite. Do not paste an unreviewed command that disables
+read-only mode or refreshes package databases merely to satisfy this list. The
+entrypoint reports `Missing command: NAME` and exits before installation when a
+required tool is absent.
+
+Development source builds additionally require rootless Podman with its graph
+root under the user's home directory. QEMU, host storage tools, and Linux/macOS
+application dependencies belong to OPEMOS.EXE host setup and are not Core CLI
+prerequisites.
+
 The expected kernel module set is exactly:
 
 ```text

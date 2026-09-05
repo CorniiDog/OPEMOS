@@ -208,6 +208,12 @@ index in the same commit.
   backup retention, and safe Podman/bootstrap ownership decisions.
 * [ ] Audit fresh-machine prerequisites, duplicated environment setup, stale
   terminology, unused variables, and intended remote/raw invocation paths.
+  * [x] Document the exact pre-mutation Core CLI command prerequisites, safe
+    missing-tool behavior, development-only rootless Podman requirement, and
+    the separation from EXE host dependencies. `tests/documentation.py` now
+    freezes this list and boundary wording; it passed through `heavy.sh` on
+    2026-09-04. The same validation exposed and fixed missing required front
+    matter on the preserved boundary-decision page.
 
 ### Newly identified security gates
 

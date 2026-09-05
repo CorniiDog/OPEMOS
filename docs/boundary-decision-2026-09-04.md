@@ -1,3 +1,9 @@
+---
+layout: page
+title: Artifact cleanup ownership decision
+description: Dated synchronization record for the creator-owned artifact cleanup boundary.
+---
+
 # Artifact cleanup ownership decision — 2026-09-04
 
 The user explicitly authorized a narrow amendment to `BOUNDARIES.md`. Creator

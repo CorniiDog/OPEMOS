@@ -158,6 +158,17 @@ def main() -> None:
         "never lowers the high-water mark",
     ):
         assert invariant in handoff
+    getting_started = (DOCS / "getting-started.md").read_text(encoding="utf-8")
+    for prerequisite in (
+        "curl", "git", "kmod (provides modinfo)", "python",
+        "realpath (GNU coreutils)", "sha256sum (GNU coreutils)", "tar", "zstd",
+    ):
+        assert prerequisite in getting_started
+    assert "exits before installation" in getting_started
+    assert "rootless Podman" in getting_started
+    assert "belong to OPEMOS.EXE host setup" in getting_started
+    assert "unreviewed command that disables" in getting_started
+
     assert "actions/workflows/shell.yml" in readme
     pill = DOCS / "assets/images/opemos-pill.svg"
     pill_text = pill.read_text(encoding="utf-8")
