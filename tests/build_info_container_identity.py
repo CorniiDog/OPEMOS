@@ -40,6 +40,12 @@ for digest, expected in ((valid_digest, 0), *((value, 1) for value in invalid_di
     )
     assert result.returncode == expected, f"unexpected digest validation for {digest!r}"
 
+inspect_at = build.index('podman image inspect "$NVIDIA_BUILD_IMAGE"')
+run_at = build.index("podman run")
+assert inspect_at < run_at, "build image digest must be resolved before container execution"
+assert '    "$CONTAINER_IMAGE_REF" \\' in build, "container run must use the immutable image reference"
+run_block = build[run_at:build.index("bash -euxo pipefail -c", run_at)]
+assert '    "$NVIDIA_BUILD_IMAGE" \\' not in run_block, "container run must not use the mutable tag"
 assert "container_digest=%s" not in build, "legacy bare/unknown digest metadata is forbidden"
 assert "${CONTAINER_DIGEST:-unknown}" not in build, "unknown container identity is forbidden"
 assert "build_mode=offline-target-fedora" in offline, (

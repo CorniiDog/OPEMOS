@@ -744,7 +744,16 @@ standardize on raw `.ko` or `.ko.zst`; the installer accepts both safely.
     the rootless GraphRoot and image preparation checks. Focused execution covers
     absent Podman, help, malformed options, mutation ordering, caller delegation,
     documentation, and shell syntax; all passed through `heavy.sh`.
-* [ ] Cache authenticated headers and the build environment by exact identity.
+* [x] Cache authenticated headers and the build environment by exact identity.
+
+  * 2026-09-05: authenticated Valve header reuse is bound to its exact package
+    identity, signature, and SHA-256 evidence. After setup pulls the configured
+    Fedora image, `build.sh` now resolves and validates its digest before launch,
+    runs the immutable repository-qualified `@sha256:` reference, and records
+    that same identity; a mutable tag is never passed to the build container.
+    Podman retains content-addressed layer reuse. Focused malformed-digest,
+    execution-order, immutable-run-reference, ownership, upstream-build, and
+    shell-syntax tests passed through `heavy.sh`.
 * [x] Fix grep warning:
 
   * `grep: warning: stray \ before "`

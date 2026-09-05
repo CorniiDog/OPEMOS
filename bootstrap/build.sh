@@ -60,18 +60,26 @@ KERNEL_PKGVER="${KERNEL_PKGVER/-valve/.valve}"
 
 HEADERS_FILENAME="linux-neptune-${NEPTUNE_SERIES}-headers-${KERNEL_PKGVER}-${KERNEL_PKGREL}-x86_64.pkg.tar.zst"
 
-log "Build environment: ${NVIDIA_BUILD_IMAGE}"
-log "SteamOS kernel:    ${KERNEL_VERSION}"
-log "NVIDIA version:    ${EXPECTED_NVIDIA}"
-log "Source branch:     ${EXPECTED_BRANCH}"
-log "Headers package:   ${HEADERS_FILENAME}"
-echo
-
 mkdir -p "$STATE_DIR"
 BUILD_ENV_FILE="${STATE_DIR}/last-build-environment"
 # Never let a failed build make a later package inherit metadata from an older
 # successful build.
 rm -f "$BUILD_ENV_FILE"
+
+CONTAINER_DIGEST="$(
+    podman image inspect "$NVIDIA_BUILD_IMAGE" --format '{{.Digest}}' 2>/dev/null ||
+        true
+)"
+[[ "$CONTAINER_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+    die "Could not determine immutable build container digest."
+CONTAINER_IMAGE_REF="${NVIDIA_BUILD_IMAGE%:*}@${CONTAINER_DIGEST}"
+
+log "Build environment: ${CONTAINER_IMAGE_REF}"
+log "SteamOS kernel:    ${KERNEL_VERSION}"
+log "NVIDIA version:    ${EXPECTED_NVIDIA}"
+log "Source branch:     ${EXPECTED_BRANCH}"
+log "Headers package:   ${HEADERS_FILENAME}"
+echo
 
 podman run \
     --rm \
@@ -81,7 +89,7 @@ podman run \
     -v "${SOURCE_DIR}:/src" \
     -v "${STATE_DIR}:/build-state" \
     -w /src \
-    "$NVIDIA_BUILD_IMAGE" \
+    "$CONTAINER_IMAGE_REF" \
     bash -euxo pipefail -c '
         dnf install -y \
             gcc \
@@ -230,13 +238,6 @@ podman run \
         done
     '
 
-CONTAINER_DIGEST="$(
-    podman image inspect "$NVIDIA_BUILD_IMAGE" --format '{{.Digest}}' 2>/dev/null ||
-        true
-)"
-[[ "$CONTAINER_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] ||
-    die "Could not determine immutable build container digest."
-CONTAINER_IMAGE_REF="${NVIDIA_BUILD_IMAGE%:*}@${CONTAINER_DIGEST}"
 printf 'container_image=%s\n' "$CONTAINER_IMAGE_REF" >> "$BUILD_ENV_FILE"
 
 mapfile -t MODULES < <(
