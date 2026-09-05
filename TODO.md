@@ -1311,7 +1311,9 @@ offline installer contract.
 * [ ] Test all scripts for unbound variables under `set -u`.
 * [x] Test `--help` exits 0.
 * [x] Test mutually exclusive arguments.
-* [ ] Test build-only mode.
+* [x] Test build-only mode.
+
+  * 2026-09-04: `tests/upstream_build_only.py` exercises the real `install_upstream.sh --build-only` workflow in an isolated SteamOS/source/build fixture. It verifies no sudo or installer dispatch, persistent archive plus exact SHA-256 sidecar, prior state restoration, transient-work cleanup, and explicit non-install reporting. `heavy.sh python3 tests/upstream_build_only.py` passed.
 
 ---
 

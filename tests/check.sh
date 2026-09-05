@@ -406,6 +406,9 @@ python3 tests/setup_nvidia_signal.py
 printf 'Checking compile dependency-install interrupt cleanup...\n'
 python3 tests/compile_readonly_signal.py
 
+printf 'Checking upstream build-only isolation...\n'
+python3 tests/upstream_build_only.py
+
 printf 'Checking pre-bootstrap temp helper ordering...\n'
 for bootstrap_entry in \
     bootstrap/online_install.sh \
