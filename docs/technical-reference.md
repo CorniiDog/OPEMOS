@@ -132,7 +132,9 @@ To build the pristine archive without changing installed modules:
 ./bootstrap/install_upstream.sh --build-only 580.119.02
 ```
 
-When Podman is already installed, build-only mode does not request sudo.
+When Podman is already installed, build-only mode does not request sudo. If it
+is absent, the build stops before privilege acquisition; Podman installation is a
+separate explicit `./bootstrap/setup_build_env.sh --install-podman` operation.
 
 Artifacts are preserved under:
 

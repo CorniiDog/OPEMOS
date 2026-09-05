@@ -50,9 +50,11 @@ entrypoint reports `Missing command: NAME` and exits before installation when a
 required tool is absent.
 
 Development source builds additionally require rootless Podman with its graph
-root under the user's home directory. QEMU, host storage tools, and Linux/macOS
-application dependencies belong to OPEMOS.EXE host setup and are not Core CLI
-prerequisites.
+root under the user's home directory. Core build entry points never install a
+missing Podman implicitly. After reviewing the host mutation, install it explicitly
+with `./bootstrap/setup_build_env.sh --install-podman`; without that flag, setup
+fails before sudo or pacman. QEMU, host storage tools, and Linux/macOS application
+dependencies belong to OPEMOS.EXE host setup and are not Core CLI prerequisites.
 
 The expected kernel module set is exactly:
 

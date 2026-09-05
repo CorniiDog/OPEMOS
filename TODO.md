@@ -734,8 +734,16 @@ standardize on raw `.ko` or `.ko.zst`; the installer accepts both safely.
 * [x] Download/extract headers inside build container.
 * [x] Build NVIDIA modules against exact Neptune kernel headers.
 * [x] Pin/record immutable container digest during successful build.
-* [ ] Replace or tightly constrain the host-mutating
+* [x] Replace or tightly constrain the host-mutating
   `pacman -Sy --needed --noconfirm podman` bootstrap path.
+
+  * 2026-09-05: ordinary Core builds no longer opt into host package mutation.
+    When Podman is absent, setup fails before sudo/pacman with a bounded recovery
+    instruction; only the separately reviewed `setup_build_env.sh
+    --install-podman` action permits installation. Existing Podman still follows
+    the rootless GraphRoot and image preparation checks. Focused execution covers
+    absent Podman, help, malformed options, mutation ordering, caller delegation,
+    documentation, and shell syntax; all passed through `heavy.sh`.
 * [ ] Cache authenticated headers and the build environment by exact identity.
 * [x] Fix grep warning:
 

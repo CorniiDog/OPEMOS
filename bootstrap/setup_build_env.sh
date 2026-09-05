@@ -7,16 +7,19 @@ source "${SUPPORT_ROOT}/lib/common.sh"
 
 usage()
 {
-    printf 'Usage: %s\n' "$0"
+    printf 'Usage: %s [--install-podman]\n' "$0"
     printf 'Prepare the rootless Fedora/Podman NVIDIA build environment.\n'
+    printf '  --install-podman  Explicitly allow installation through SteamOS pacman.\n'
 }
 
-if [[ $# -gt 0 ]]; then
+INSTALL_PODMAN=0
+while [[ $# -gt 0 ]]; do
     case "$1" in
+        --install-podman) INSTALL_PODMAN=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) die "Unknown argument: $1" ;;
     esac
-fi
+done
 
 require_steamos
 
@@ -33,6 +36,8 @@ restore_readonly()
 trap restore_readonly EXIT
 
 if ! command -v podman >/dev/null 2>&1; then
+    [[ "$INSTALL_PODMAN" == "1" ]] ||
+        die "Podman is required. Review and run: ${SCRIPT_DIR}/setup_build_env.sh --install-podman"
     need_cmd sudo
     log "Installing Podman for NVIDIA development builds..."
 
