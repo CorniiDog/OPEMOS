@@ -44,6 +44,26 @@ def main():
    assert result["state"]==expected
    assert result==result_cases[case["name"]]["expected"]
    if expected in {"succeeded","validated"}: assert result["cleanupComplete"]
+  tool=ROOT/"lib/progress_semantics.py"
+  progress_path=Path(name)/"progress.json"
+  progress_input={"schemaVersion":1,"attempt":3,"phase":"future_phase","indeterminate":False,"completed":1,"total":3,"unit":"bytes","additive":True}
+  progress_path.write_text(json.dumps(progress_input,sort_keys=True,separators=(",",":"))+"\n")
+  completed=subprocess.run([sys.executable,str(tool),"--record",str(progress_path)],cwd="/",stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+  assert completed.returncode==0 and completed.stderr==b""
+  assert completed.stdout==(json.dumps(adapt(progress_input),sort_keys=True,separators=(",",":"))+"\n").encode()
+  result_document=next(case["document"] for case in matrix()["cases"] if case["name"]=="cancelled-terminal")
+  path.write_text(json.dumps(result_document,sort_keys=True,separators=(",",":"))+"\n")
+  completed=subprocess.run([sys.executable,str(tool),"--result",str(path)],cwd="/",stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+  assert completed.returncode==0 and completed.stderr==b""
+  assert completed.stdout==(json.dumps(adapt_result(validate_result(path)),sort_keys=True,separators=(",",":"))+"\n").encode()
+  hostile=("{\"schemaVersion\":1,\"schemaVersion\":1}" , "{", "{\"schemaVersion\":2}")
+  for index,payload in enumerate(hostile):
+   bad_path=Path(name)/f"bad-{index}.json"; bad_path.write_text(payload)
+   rejected=subprocess.run([sys.executable,str(tool),"--record",str(bad_path)],cwd="/",stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+   assert rejected.returncode!=0 and rejected.stdout==b"" and rejected.stderr.startswith(b"progress semantics rejected:")
+  oversized=Path(name)/"oversized.json"; oversized.write_bytes(b" "*4097)
+  rejected=subprocess.run([sys.executable,str(tool),"--record",str(oversized)],cwd="/",stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+  assert rejected.returncode!=0 and rejected.stdout==b""
  schema=json.loads((ROOT/"contracts/schemas/progress-semantics-v1.schema.json").read_text())
  assert schema["additionalProperties"] is False
  assert schema["properties"]["kind"]["const"]=="opemos-progress-semantics"

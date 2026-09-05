@@ -176,6 +176,10 @@ index in the same commit.
   validation-only, diagnostic failure, cancellation, and additive source
   fields. It exposed and fixed the prior corpus omission of accepted
   cancellation. Focused adapter and bundle tests passed through `heavy.sh`.
+  Executable-boundary tests now require byte-exact canonical stdout for valid
+  future progress and cancelled terminal results, and nonzero/empty stdout for
+  duplicate-key, malformed, unsupported-schema, and oversized records. Focused
+  adapter and bundle tests passed through `heavy.sh`.
 
 * [ ] Hardware-validate the implemented no-input DRM/KMS boot interstitial on
   real SteamOS with simpledrm and intended iGPU paths, internal/external display
