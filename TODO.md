@@ -981,7 +981,7 @@ standardize on raw `.ko` or `.ko.zst`; the installer accepts both safely.
   * does not fetch, build, or install pristine upstream modules.
 
   * 2026-09-05: `tests/setup_nvidia_modes.py` runs the real setup script in an isolated support layout, resolves prefix `580` to exact `580.119.02`, performs one userspace transaction with read-only restoration, reports unchanged modules, and proves the upstream module entry point is never called. `heavy.sh python3 tests/setup_nvidia_modes.py` passed.
-* [ ] Test `--use-upstream` semantics:
+* [x] Test `--use-upstream` semantics:
 
   * resolves userspace matching the selected upstream NVIDIA version,
   * fetches pristine NVIDIA source at the exact tag/commit,
@@ -1380,18 +1380,8 @@ offline installer contract.
 * [x] Audit README for `--driver`.
 * [ ] Audit unused variables plus stale mode terminology in comments,
   release scripts, and action entry points.
-  * [x] 2026-09-05: normalized the remaining executable `pristine-upstream`
-    and `upstream-control` labels to the canonical `upstream-development` mode
-    in online setup and upstream installation help/comments. The existing
-    development-terminology regression now rejects both legacy labels alongside
-    `--driver`, `explicit:`, and `DRIVER_SPEC`. Focused `bash -n` plus the exact
-    repository grep passed through `heavy.sh`. The unused-variable audit remains
-    open independently.
-* [x] Audit all direct `/tmp` usages and classify:
+  * [x] 2026-09-05: `tests/setup_nvidia_modes.py` verifies userspace installation precedes exactly one upstream installer delegation with the resolved version and `-y`. `tests/upstream_build_only.py` now exercises both build-only and normal paths, asserts the exact tag fetch and detached resolved commit checkout, builds the five-module fixture, freezes `source_provider=upstream` plus `project_patches=0`, and verifies one archive/checksum handoff to `install.sh`. `heavy.sh python3 tests/upstream_build_only.py` passed.
 
-  * host `/tmp` → generally avoid for large work.
-  * container `/tmp` → allowed/intended.
-* [x] Add comments where this distinction matters.
 
 ---
 

@@ -4,6 +4,7 @@ import hashlib
 import os
 import shutil
 import subprocess
+import tarfile
 import tempfile
 from pathlib import Path
 
@@ -31,14 +32,20 @@ for module in nvidia nvidia-drm nvidia-modeset nvidia-peermem nvidia-uvm; do
 done
 ''')
         install_marker = fixture / "install-called"
-        executable(support / "bootstrap/install.sh", f"touch {str(install_marker)!r}\nexit 99\n")
+        captured_archive = fixture / "installed-input.tar.gz"
+        executable(support / "bootstrap/install.sh", f"""printf '%s\\n' "$*" >> {str(install_marker)!r}
+archive=
+previous=
+for argument in "$@"; do [ "$previous" != --archive ] || archive=$argument; previous=$argument; done
+cp "$archive" {str(captured_archive)!r}
+""")
         system = fixture / "system/etc"
         system.mkdir(parents=True)
         (system / "os-release").write_text('ID=steamos\nNAME="SteamOS"\nVERSION_ID="3.8.14"\n')
         fake_bin = fixture / "bin"
         fake_bin.mkdir()
         sudo_marker = fixture / "sudo-called"
-        executable(fake_bin / "sudo", f"touch {str(sudo_marker)!r}\nexit 99\n")
+        executable(fake_bin / "sudo", f"printf '%s\\n' \"$*\" >> {str(sudo_marker)!r}\n[ \"${{1:-}}\" = -v ] && exit 0\nexit 99\n")
         executable(fake_bin / "uname", f'''case "${{1:-}}" in -r) echo {KERNEL};; *) echo Linux;; esac
 ''')
         executable(fake_bin / "nvidia-smi", f'''echo {VERSION}
@@ -46,7 +53,9 @@ done
         executable(fake_bin / "modinfo", f'''[ "${{1:-}}" = -F ] && [ "${{2:-}}" = vermagic ] && echo '{KERNEL} SMP' && exit 0
 exit 1
 ''')
-        executable(fake_bin / "git", f'''case "$*" in
+        git_log = fixture / "git.log"
+        executable(fake_bin / "git", f'''printf '%s\n' "$*" >> {str(git_log)!r}
+case "$*" in
   "clone "*) dest=${{@: -1}}; mkdir -p "$dest/.git" "$dest/kernel-open"; echo 'NVIDIA_VERSION = {VERSION}' > "$dest/version.mk";;
   *" rev-list -n1 "*) printf '%040d\\n' 1;;
   *" rev-parse HEAD"*) printf '%040d\\n' 2;;
@@ -77,8 +86,34 @@ esac
         checksum = Path(str(archives[0]) + ".sha256")
         fields = checksum.read_text().split()
         assert fields == [hashlib.sha256(archives[0].read_bytes()).hexdigest(), archives[0].name]
+        with tarfile.open(archives[0]) as archive:
+            build_info = archive.extractfile("BUILD-INFO.txt").read().decode()
+        assert "source_provider=upstream\n" in build_info
+        assert "project_patches=0\n" in build_info
+        assert "source_commit=" + "0" * 39 + "1\n" in build_info
         assert not list((home / ".cache/open-gpu-kernel-modules-steamos-support").glob("upstream-install.*"))
         assert "Modules were NOT installed." in completed.stderr
+
+        completed = subprocess.run(
+            [str(support / "bootstrap/install_upstream.sh"), "--yes", VERSION],
+            cwd="/", env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        assert completed.returncode == 0, (completed.stdout, completed.stderr)
+        assert sudo_marker.read_text().splitlines() == ["-v"]
+        calls = install_marker.read_text().splitlines()
+        assert len(calls) == 1
+        assert "--archive " in calls[0] and " --checksum " in calls[0]
+        assert calls[0].endswith(" -y")
+        assert captured_archive.is_file()
+        with tarfile.open(captured_archive) as archive:
+            installed_info = archive.extractfile("BUILD-INFO.txt").read().decode()
+        assert "source_provider=upstream\n" in installed_info
+        assert "project_patches=0\n" in installed_info
+        git_calls = git_log.read_text().splitlines()
+        exact_ref = f"+refs/tags/{VERSION}:refs/tags/{VERSION}"
+        assert sum(exact_ref in call for call in git_calls) == 2
+        assert sum("checkout --quiet --detach " + "0" * 39 + "1" in call for call in git_calls) == 2
+        assert state_file.read_text() == "preserved-state\n"
 
 if __name__ == "__main__":
     main()
