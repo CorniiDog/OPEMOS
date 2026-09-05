@@ -205,6 +205,7 @@ FINAL_CHECKSUM=""
 FINAL_OUTPUTS_OWNED=0
 CACHE_PACKAGE_TEMP=""
 CACHE_SIGNATURE_TEMP=""
+CACHE_HASH_TEMP=""
 
 write_final_result()
 {
@@ -227,6 +228,7 @@ cleanup_build()
     [[ -z "$WORK_DIR" ]] || rm -rf "$WORK_DIR"
     [[ -z "$CACHE_PACKAGE_TEMP" ]] || rm -f "$CACHE_PACKAGE_TEMP"
     [[ -z "$CACHE_SIGNATURE_TEMP" ]] || rm -f "$CACHE_SIGNATURE_TEMP"
+    [[ -z "$CACHE_HASH_TEMP" ]] || rm -f "$CACHE_HASH_TEMP"
     if [[ "$BUILD_COMPLETED" == "0" && "$FINAL_OUTPUTS_OWNED" == "1" ]]; then
         [[ -z "$FINAL_BUILD_INFO" ]] || rm -f "$FINAL_BUILD_INFO"
         [[ -z "$FINAL_PROVENANCE" ]] || rm -f "$FINAL_PROVENANCE"
@@ -351,6 +353,7 @@ if [[ -z "$HEADERS_PACKAGE" ]]; then
     HEADER_CACHE_DIR="$CACHE_ROOT/authenticated-headers"
     HEADER_CACHE_PACKAGE="$HEADER_CACHE_DIR/$HEADERS_FILENAME"
     HEADER_CACHE_SIGNATURE="$HEADER_CACHE_PACKAGE.sig"
+    HEADER_CACHE_SHA256="$HEADER_CACHE_PACKAGE.sha256"
     HEADER_CACHE_ELIGIBLE=0
     HEADER_CACHE_HIT=0
     if [[ -z "$HEADERS_URL" ]]; then
@@ -375,13 +378,21 @@ if [[ -z "$HEADERS_PACKAGE" ]]; then
         exec 7>"$HEADER_CACHE_DIR/.lock"
         flock 7
         if [[ -f "$HEADER_CACHE_PACKAGE" && ! -L "$HEADER_CACHE_PACKAGE" &&
-              -f "$HEADER_CACHE_SIGNATURE" && ! -L "$HEADER_CACHE_SIGNATURE" ]]; then
-            HEADERS_PACKAGE="$WORK_DIR/$HEADERS_FILENAME"
-            HEADERS_SIGNATURE="$WORK_DIR/$HEADERS_FILENAME.sig"
-            cp "$HEADER_CACHE_PACKAGE" "$HEADERS_PACKAGE"
-            cp "$HEADER_CACHE_SIGNATURE" "$HEADERS_SIGNATURE"
-            HEADER_CACHE_HIT=1
-            log "Using cached authenticated Valve headers candidate..."
+              -f "$HEADER_CACHE_SIGNATURE" && ! -L "$HEADER_CACHE_SIGNATURE" &&
+              -f "$HEADER_CACHE_SHA256" && ! -L "$HEADER_CACHE_SHA256" ]]; then
+            CACHED_HEADER_SHA256="$(sed -n '1p' "$HEADER_CACHE_SHA256")"
+            ACTUAL_CACHED_HEADER_SHA256="$(sha256_file "$HEADER_CACHE_PACKAGE")"
+            if [[ "$CACHED_HEADER_SHA256" =~ ^[0-9a-f]{64}$ &&
+                  "$ACTUAL_CACHED_HEADER_SHA256" == "$CACHED_HEADER_SHA256" ]]; then
+                HEADERS_PACKAGE="$WORK_DIR/$HEADERS_FILENAME"
+                HEADERS_SIGNATURE="$WORK_DIR/$HEADERS_FILENAME.sig"
+                cp "$HEADER_CACHE_PACKAGE" "$HEADERS_PACKAGE"
+                cp "$HEADER_CACHE_SIGNATURE" "$HEADERS_SIGNATURE"
+                HEADER_CACHE_HIT=1
+                log "Using cached authenticated Valve headers candidate..."
+            else
+                warn "Ignoring cached Valve headers with missing or mismatched hash evidence."
+            fi
         fi
         flock -u 7
     fi
@@ -447,13 +458,18 @@ if [[ "${HEADER_CACHE_ELIGIBLE:-0}" == 1 && "${HEADER_CACHE_HIT:-0}" != 1 ]]; th
     flock 7
     CACHE_PACKAGE_TEMP="$(mktemp "$HEADER_CACHE_DIR/.package.XXXXXX")"
     CACHE_SIGNATURE_TEMP="$(mktemp "$HEADER_CACHE_DIR/.signature.XXXXXX")"
+    CACHE_HASH_TEMP="$(mktemp "$HEADER_CACHE_DIR/.sha256.XXXXXX")"
     cp "$HEADERS_PACKAGE" "$CACHE_PACKAGE_TEMP"
     cp "$HEADERS_SIGNATURE" "$CACHE_SIGNATURE_TEMP"
-    chmod 0600 "$CACHE_PACKAGE_TEMP" "$CACHE_SIGNATURE_TEMP"
+    printf '%s\n' "$HEADER_SHA256" > "$CACHE_HASH_TEMP"
+    chmod 0600 "$CACHE_PACKAGE_TEMP" "$CACHE_SIGNATURE_TEMP" "$CACHE_HASH_TEMP"
     mv -f "$CACHE_PACKAGE_TEMP" "$HEADER_CACHE_PACKAGE"
     CACHE_PACKAGE_TEMP=""
     mv -f "$CACHE_SIGNATURE_TEMP" "$HEADER_CACHE_SIGNATURE"
     CACHE_SIGNATURE_TEMP=""
+    # Publish the hash last so it is the cache entry's completion marker.
+    mv -f "$CACHE_HASH_TEMP" "$HEADER_CACHE_SHA256"
+    CACHE_HASH_TEMP=""
     flock -u 7
 fi
 

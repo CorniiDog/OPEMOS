@@ -399,6 +399,11 @@ def run_authenticated_header_cache(fixture):
     cache = fixture / "home/.cache/open-gpu-kernel-modules-steamos-support/authenticated-headers"
     assert (cache / HEADERS_NAME).is_file()
     assert (cache / f"{HEADERS_NAME}.sig").is_file()
+    cache_hash = cache / f"{HEADERS_NAME}.sha256"
+    assert cache_hash.is_file()
+    assert cache_hash.read_text().strip() == __import__("hashlib").sha256(
+        (cache / HEADERS_NAME).read_bytes()
+    ).hexdigest()
     assert "Using cached authenticated Valve headers candidate" in (
         completed.stdout + completed.stderr
     )
@@ -418,6 +423,45 @@ def run_authenticated_header_cache(fixture):
     assert document["reason"] == "header_signature_invalid", document
     assert "Using cached authenticated Valve headers candidate" in rejected.stdout
     assert_clean(fixture, output)
+
+    # A package changed after authentication must miss the cache before gpgv.
+    (cache / f"{HEADERS_NAME}.sig").write_bytes(b"fixture-signature")
+    (cache / HEADERS_NAME).write_bytes(b"tampered-cached-package")
+    result = fixture / "cache-hash-mismatch.result.json"
+    output = fixture / "cache-hash-mismatch.output"
+    arguments = command(fixture, result, output)
+    arguments.extend(["--header-keyring", str(keyring), "--header-signer", HEADER_SIGNER])
+    missed = subprocess.run(
+        arguments, env=environment(fixture, "fail"),
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    assert missed.returncode != 0
+    document = json.loads(result.read_text(encoding="utf-8"))
+    assert document["reason"] == "header_download_failed", document
+    assert "Ignoring cached Valve headers" in missed.stderr
+    assert "Using cached authenticated Valve headers candidate" not in missed.stdout
+    assert_clean(fixture, output)
+
+    for label, hash_text in (("missing", None), ("malformed", "not-a-sha256\n")):
+        (cache / HEADERS_NAME).write_bytes((fixture / HEADERS_NAME).read_bytes())
+        (cache / f"{HEADERS_NAME}.sig").write_bytes(b"fixture-signature")
+        if hash_text is None:
+            cache_hash.unlink(missing_ok=True)
+        else:
+            cache_hash.write_text(hash_text)
+        result = fixture / f"cache-hash-{label}.result.json"
+        output = fixture / f"cache-hash-{label}.output"
+        arguments = command(fixture, result, output)
+        arguments.extend(["--header-keyring", str(keyring), "--header-signer", HEADER_SIGNER])
+        incomplete = subprocess.run(
+            arguments, env=environment(fixture, "fail"),
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        assert incomplete.returncode != 0
+        document = json.loads(result.read_text(encoding="utf-8"))
+        assert document["reason"] == "header_download_failed", (label, document)
+        assert "Using cached authenticated Valve headers candidate" not in incomplete.stdout
+        assert_clean(fixture, output)
 
 
 def main():

@@ -1844,8 +1844,19 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
     identities, and the archive checksum. Focused negative header-cache,
     artifact trust-policy, builder fault-injection, and shell-syntax checks
     passed through `heavy.sh`; the policy regression is in `tests/check.sh`.
-* [ ] Key caches by exact header identity/hash, source commit, support commit,
+* [x] Key caches by exact header identity/hash, source commit, support commit,
   NVIDIA version, target kernel, architecture, and toolchain/appliance identity.
+
+  * 2026-09-05: authenticated header entries now include an exact SHA-256
+    sidecar published last as the atomic completion marker; lookup requires
+    regular package/signature/hash files and exact lowercase hash agreement
+    before signature revalidation. Missing, malformed, mismatched, and changed
+    hash evidence bypasses reuse and fails safely when fresh acquisition is
+    unavailable. Compiled bundles retain exact source/support/kernel/NVIDIA,
+    architecture-bearing asset, immutable container/toolchain, trust,
+    publication-contract, and archive-hash checks. Focused valid reuse plus
+    incomplete, malformed, tampered-package, corrupt-signature, and unavailable-
+    network tests passed through `heavy.sh`.
 * [x] Detect and remove abandoned inactive build sessions on the next run.
 
 ## Fedora/Linux validation
