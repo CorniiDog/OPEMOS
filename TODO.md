@@ -1158,6 +1158,14 @@ Desired design:
 * [ ] Prefer an installed matching-major compatibility compiler automatically;
   validate this path with Fedora `gcc15` after the successful GCC 16.2.1
   development build against Valve GCC 15.1.1.
+
+  * 2026-09-05: the exact-target fault-injection suite now runs the real builder
+    with default GCC 16.2.1 and installed `gcc-15` 15.2.1, requires
+    `compiler_command=gcc-15`, `compiler_major_match=1`, and `CC=gcc-15` at
+    `make`, then substitutes a falsely named GCC 14 compatibility binary and
+    proves `--require-compiler-major-match` fails before compilation. The suite
+    passed through `heavy.sh`. A real Fedora `gcc15` module build remains
+    required before this item can be marked complete.
 * [ ] Decide whether certification requires compiler-major equality or an exact
   compiler build after comparative module/runtime testing.
 

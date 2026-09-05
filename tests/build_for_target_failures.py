@@ -84,7 +84,8 @@ with tarfile.open(package) as archive:
 """,
         "uname": "#!/bin/sh\n[ \"${1:-}\" = -m ] && echo x86_64 || echo Linux\n",
         "date": "#!/bin/sh\ncase \"${1:-}\" in --iso-8601=seconds) echo 2026-08-31T12:00:00+00:00;; *) /bin/date \"$@\";; esac\n",
-        "gcc": "#!/bin/sh\ncase \" $* \" in *' -dumpfullversion -dumpversion '*) echo 15.1.1;; *) exit 0;; esac\n",
+        "gcc": "#!/bin/sh\ncase \" $* \" in *' -dumpfullversion -dumpversion '*) echo ${MOCK_DEFAULT_GCC_VERSION:-15.1.1};; *) exit 0;; esac\n",
+        "gcc-15": "#!/bin/sh\ncase \" $* \" in *' -dumpfullversion -dumpversion '*) echo ${MOCK_COMPAT_GCC_VERSION:-15.2.1};; *) exit 0;; esac\n",
         "flock": "#!/bin/sh\nexit 0\n",
         "git": "#!/bin/sh\nexit 1\n",
         "gpgv": f"#!/bin/sh\necho '[GNUPG:] VALIDSIG {HEADER_SIGNER} 2026-01-01 0 4 0 1 10 00 {HEADER_SIGNER}'\n",
@@ -111,6 +112,7 @@ case " $* " in
 esac
 """,
         "make": """#!/bin/sh
+[ -z "${MOCK_MAKE_LOG:-}" ] || printf '%s\n' "$*" >> "$MOCK_MAKE_LOG"
 case " $* " in
   *" clean "*) exit 0 ;;
   *" modules "*)
@@ -311,6 +313,53 @@ def run_local_headers_success(fixture):
     assert not list(cache.glob("target-build.*"))
 
 
+def run_compiler_selection(fixture):
+    make_log = fixture / "compiler.make.log"
+    result = fixture / "compiler.result.json"
+    output = fixture / "compiler.output"
+    env = environment(fixture, "unused")
+    env.update(
+        MOCK_MAKE_MODE="complete",
+        MOCK_DEFAULT_GCC_VERSION="16.2.1",
+        MOCK_COMPAT_GCC_VERSION="15.2.1",
+        MOCK_MAKE_LOG=str(make_log),
+    )
+    completed = subprocess.run(
+        command(fixture, result, output, local_headers=True),
+        env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert "Using installed GCC 15 compatibility compiler." in completed.stdout
+    build_info = next(output.glob("*.build-info.txt")).read_text(encoding="utf-8")
+    assert "compiler_command=gcc-15\n" in build_info
+    assert "compiler_version=15.2.1\n" in build_info
+    assert "kernel_compiler_version=15.1.1\n" in build_info
+    assert "compiler_major_match=1\n" in build_info
+    module_calls = [line for line in make_log.read_text().splitlines() if " modules " in f" {line} "]
+    assert len(module_calls) == 1 and "CC=gcc-15" in module_calls[0], module_calls
+
+    mismatch_result = fixture / "compiler-mismatch.result.json"
+    mismatch_output = fixture / "compiler-mismatch.output"
+    mismatch_args = command(
+        fixture, mismatch_result, mismatch_output, local_headers=True
+    ) + ["--require-compiler-major-match"]
+    mismatch_env = environment(fixture, "unused")
+    mismatch_env.update(
+        MOCK_MAKE_MODE="complete",
+        MOCK_DEFAULT_GCC_VERSION="16.2.1",
+        MOCK_COMPAT_GCC_VERSION="14.3.0",
+    )
+    mismatch = subprocess.run(
+        mismatch_args, env=mismatch_env, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, text=True,
+    )
+    assert mismatch.returncode != 0
+    document = json.loads(mismatch_result.read_text(encoding="utf-8"))
+    assert document["reason"] == "compiler_policy_mismatch", document
+    assert "does not match target kernel compiler major 15" in mismatch.stderr
+    assert_clean(fixture, mismatch_output)
+
+
 def run_output_exhaustion(fixture):
     result = fixture / "output-exhaustion.result.json"
     output = fixture / "output-exhaustion.output"
@@ -369,6 +418,7 @@ def main():
         run_cancellation(fixture, "sleep")
         run_cancellation(fixture, "unused", local_headers=True)
         run_local_headers_success(fixture)
+        run_compiler_selection(fixture)
         run_output_exhaustion(fixture)
         run_authenticated_header_cache(fixture)
 
