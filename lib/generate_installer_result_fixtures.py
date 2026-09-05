@@ -328,6 +328,8 @@ def matrix():
     )
     failed_userspace["userspaceVerification"] = failed_userspace_verification()
     cases.append(case("failed-userspace-diagnostic", failed_userspace, True))
+    cancelled = envelope("cancelled", "cancelled", "cancelled")
+    cases.append(case("cancelled-terminal", cancelled, True))
     additive = copy.deepcopy(success)
     additive["futureAdditiveField"] = {"safe": True}
     additive["inputs"]["futureAdditiveInput"] = "accepted"

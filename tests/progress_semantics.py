@@ -25,8 +25,14 @@ def main():
  assert generated==fixture.read_bytes()
  for case in semantics_matrix()["cases"]: assert adapt(case["input"])==case["expected"]
  from generate_installer_result_fixtures import matrix
+ from generate_result_semantics_fixtures import matrix as result_semantics_matrix
  from validate_install_contract import validate_result
  import tempfile
+ result_fixture=ROOT/"contracts/fixtures/result-semantics-v1.json"
+ result_generated=subprocess.run([sys.executable,str(ROOT/"lib/generate_result_semantics_fixtures.py")],cwd="/",check=True,stdout=subprocess.PIPE).stdout
+ assert result_generated==result_fixture.read_bytes()
+ result_cases={case["name"]:case for case in result_semantics_matrix()["cases"]}
+ assert {case["expected"]["state"] for case in result_cases.values()}=={"succeeded","validated","failed","cancelled"}
  with tempfile.TemporaryDirectory() as name:
   for case in matrix()["cases"]:
    if not case["expected"]["accepted"]: continue
@@ -36,6 +42,7 @@ def main():
    assert_frontend_neutral(result)
    expected={"success":"succeeded","validated":"validated","failed":"failed","cancelled":"cancelled"}[case["expected"]["status"]]
    assert result["state"]==expected
+   assert result==result_cases[case["name"]]["expected"]
    if expected in {"succeeded","validated"}: assert result["cleanupComplete"]
  schema=json.loads((ROOT/"contracts/schemas/progress-semantics-v1.schema.json").read_text())
  assert schema["additionalProperties"] is False

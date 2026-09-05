@@ -224,6 +224,10 @@ def validate_installer_result_compatibility_fixtures(generator):
                     assert isinstance(workspace, dict)
                     assert {"requiredBytes", "requiredInodes", "availableBytes",
                             "availableInodes", "inodeCapacityMode", "mode"} <= set(workspace)
+                elif parsed.get("status") == "cancelled":
+                    assert parsed["reason"] == "cancelled"
+                    assert "moduleVerification" not in parsed
+                    assert "userspaceVerification" not in parsed
                 elif "moduleVerification" in parsed:
                     nested = Path(temporary) / "failed-module-verification.json"
                     nested.write_text(json.dumps(parsed["moduleVerification"]), encoding="utf-8")
@@ -241,6 +245,7 @@ def validate_installer_result_compatibility_fixtures(generator):
         assert set(names) == {
             "validated-success", "mutation-success", "safe-additive-fields",
             "failed-module-diagnostic", "failed-userspace-diagnostic",
+            "cancelled-terminal",
             "missing-module-verification", "missing-userspace-verification",
             "missing-workspace-verification", "missing-initramfs-verification",
             "missing-payload-receipt", "target-proof-mismatch",

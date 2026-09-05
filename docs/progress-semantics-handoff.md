@@ -42,3 +42,8 @@ layout, widgets, focus/window state, animation, toolkit choices, rendering or
 interaction instructions, accessibility presentation, or platform behavior.
 Frontends own all of those choices and must treat phase identifiers as stable
 data rather than Core-supplied display text.
+
+`contracts/fixtures/result-semantics-v1.json` links each accepted authoritative
+installer-result fixture by case name to its exact normalized semantic output.
+It covers succeeded, validation-only, failed diagnostics, cancellation, and safe
+additive source fields without duplicating the large source documents.

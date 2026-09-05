@@ -171,6 +171,11 @@ index in the same commit.
   terminal states; schemas and outputs contain no frontend layout, widget,
   focus/window, animation, toolkit, rendering, interaction, accessibility, or
   platform behavior. Focused adapter and bundle tests passed via `heavy.sh`.
+  A deterministic terminal-semantics corpus now links every accepted
+  authoritative installer-result case to exact output and covers succeeded,
+  validation-only, diagnostic failure, cancellation, and additive source
+  fields. It exposed and fixed the prior corpus omission of accepted
+  cancellation. Focused adapter and bundle tests passed through `heavy.sh`.
 
 * [ ] Hardware-validate the implemented no-input DRM/KMS boot interstitial on
   real SteamOS with simpledrm and intended iGPU paths, internal/external display
