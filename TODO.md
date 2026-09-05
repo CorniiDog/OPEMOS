@@ -1374,6 +1374,13 @@ offline installer contract.
 * [x] Audit README for `--driver`.
 * [ ] Audit unused variables plus stale mode terminology in comments,
   release scripts, and action entry points.
+  * [x] 2026-09-05: normalized the remaining executable `pristine-upstream`
+    and `upstream-control` labels to the canonical `upstream-development` mode
+    in online setup and upstream installation help/comments. The existing
+    development-terminology regression now rejects both legacy labels alongside
+    `--driver`, `explicit:`, and `DRIVER_SPEC`. Focused `bash -n` plus the exact
+    repository grep passed through `heavy.sh`. The unused-variable audit remains
+    open independently.
 * [x] Audit all direct `/tmp` usages and classify:
 
   * host `/tmp` → generally avoid for large work.

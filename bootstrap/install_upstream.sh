@@ -25,7 +25,7 @@ Options:
 NVIDIA_VERSION must be exact, for example: 580.119.02
 
 Without --build-only, the resulting modules are installed through install.sh.
-Project patches are never applied by this upstream-control workflow.
+Project patches are never applied by this upstream-development workflow.
 EOF
 }
 

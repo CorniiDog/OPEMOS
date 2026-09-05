@@ -10,7 +10,7 @@ usage()
 Usage: online_setup_nvidia.sh [setup_nvidia.sh options]
 
 Download a pinned support revision, then run NVIDIA userspace selection or a
-pristine-upstream control installation without requiring a local support
+upstream-development control installation without requiring a local support
 repository checkout.
 
 Examples:
@@ -48,7 +48,7 @@ SUPPORT_REV="$(
     exit 1
 }
 
-# setup_nvidia.sh calls other support scripts for pristine-upstream builds, so
+# setup_nvidia.sh calls other support scripts for upstream-development builds, so
 # use a pinned temporary checkout instead of downloading individual files.
 mkdir -p "${HOME}/.cache/open-gpu-kernel-modules-steamos-support"
 TMP="$(mktemp -d "${HOME}/.cache/open-gpu-kernel-modules-steamos-support/online-setup-nvidia.XXXXXX")"

@@ -393,7 +393,7 @@ fi
 
 printf 'Checking development-mode terminology...\n'
 if grep -RniE --exclude='TODO.md' --exclude-dir='.git' \
-    -- '--driver|explicit:|DRIVER_SPEC' \
+    -- '--driver|explicit:|DRIVER_SPEC|pristine-upstream|upstream-control' \
     bootstrap lib README.md >/dev/null
 then
     fail "stale explicit/driver terminology remains"
