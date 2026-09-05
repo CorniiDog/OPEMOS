@@ -66,6 +66,7 @@ FILES = (
     ("lib/verify_installed_userspace.py", "installer-helper", "0755"),
     ("lib/check_initramfs_workspace.py", "installer-helper", "0755"),
     ("lib/run_pacman_transaction.py", "installer-helper", "0755"),
+    ("lib/run_opaque_operation.py", "installer-helper", "0755"),
     ("lib/snapshot_install_input.py", "installer-helper", "0644"),
     ("lib/snapshot_target_execution.py", "installer-helper", "0755"),
     ("lib/verify_initramfs.py", "installer-helper", "0755"),

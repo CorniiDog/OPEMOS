@@ -1238,7 +1238,9 @@ run_mutation_command python3 "$SUPPORT_ROOT/lib/snapshot_target_execution.py" \
     PHASE=target_execution_trust
     die "Target-owned initramfs inputs changed before execution."
 }
-run_mutation_command env SYSTEMD_OFFLINE=1 chroot "$ROOT" /usr/bin/mkinitcpio -P
+run_mutation_command python3 "$SUPPORT_ROOT/lib/run_opaque_operation.py" \
+    --phase initramfs --progress-attempt "$PROGRESS_ATTEMPT_VALUE" -- \
+    env SYSTEMD_OFFLINE=1 chroot "$ROOT" /usr/bin/mkinitcpio -P
 [[ -z "$COMPRESSION_PROFILE" ]] || require_active_compression_policy
 INITRAMFS_VERIFY_ARGS=(
     --kernel "$KERNEL" --execution-manifest "$POST_TRANSACTION_EXECUTION_MANIFEST"
