@@ -143,10 +143,15 @@ index in the same commit.
   hashes, dependency/provider arrays, reviewed lock/provenance identities,
   pacman consistency, payload confinement/hash/mode/ownership/link proofs, and
   exact-version GSP firmware to authenticated validation.
-* [ ] Define a bounded adapter from installer `STEAMOS_NVIDIA_PROGRESS` records
-  to the shared overall/current-operation presentation model. OPEMOS.EXE owns
-  macOS labels, weighting, controls, and loading UI; the SteamOS interstitial
-  owns its direct-DRM rendering; neither frontend may depend on the other.
+* [x] Define a bounded adapter from installer `STEAMOS_NVIDIA_PROGRESS` records
+  to shared consumer-ready semantics. The 2026-09-04 ownership decision assigns
+  the reusable canonical adapter to Core while frontends retain rendering,
+  interaction, labels, accessibility, and platform presentation. Schema 1 emits
+  integer-millionth current/overall progress for known phases and safely makes
+  overall progress indeterminate for valid future phases. Focused malformed,
+  duplicate/non-finite, unknown-schema, future-phase, heartbeat, invalid-range,
+  and boundary-fraction tests passed through `heavy.sh`. See
+  `docs/progress-semantics-handoff.md`; unrelated cleanup approval remains open.
 
 * [ ] Hardware-validate the implemented no-input DRM/KMS boot interstitial on
   real SteamOS with simpledrm and intended iGPU paths, internal/external display
