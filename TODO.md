@@ -197,6 +197,13 @@ index in the same commit.
     rejection, and unsupported suffix rejection. The broader `tests/check.sh`
     stopped earlier on an existing restrictive-umask desktop-update fixture, so
     no full-suite pass is claimed or repeated.
+    The restrictive-umask blocker was subsequently fixed in Core's desktop
+    generation writer: exact modes are applied after creation, and mode-setting
+    failures remove partial create-only files. Its focused suite passes for
+    umasks 0077/0027/0000, injected failure, cleanup, and retry. A fresh broader
+    check passed this stage and later stopped independently in
+    `device_generation_lifecycle.py` with `generation tree is too deep`; no
+    complete full-suite pass is claimed.
 * [ ] Resolve build caching, compiler/certification policy, reproducibility,
   backup retention, and safe Podman/bootstrap ownership decisions.
 * [ ] Audit fresh-machine prerequisites, duplicated environment setup, stale

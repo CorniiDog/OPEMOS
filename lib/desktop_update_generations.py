@@ -374,11 +374,24 @@ def terminate_process_group(process):
 
 
 def write_file(path, payload, mode):
-    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode)
-    with os.fdopen(descriptor, "wb") as output:
-        output.write(payload)
-        output.flush()
-        os.fsync(output.fileno())
+    descriptor = None
+    complete = False
+    try:
+        descriptor = os.open(
+            path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode
+        )
+        with os.fdopen(descriptor, "wb") as output:
+            descriptor = None  # The stream owns the descriptor after fdopen.
+            os.fchmod(output.fileno(), mode)
+            output.write(payload)
+            output.flush()
+            os.fsync(output.fileno())
+        complete = True
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        if not complete:
+            path.unlink(missing_ok=True)
 
 
 def verify_generation(store, identity):

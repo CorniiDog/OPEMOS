@@ -13,6 +13,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOL = ROOT / "lib/desktop_update_generations.py"
@@ -118,6 +119,28 @@ def main():
             "OPEMOS_TEST_ARCHITECTURE": "x86_64",
             "OPEMOS_TEST_SUPPORT_REVISION": REVISION,
         }
+        # Creation modes must be independent of the caller's umask, and a
+        # failed mode-setting operation must leave no create-only artifact.
+        for mask in (0o077, 0o027, 0o000):
+            previous = os.umask(mask)
+            try:
+                output = root / f"mode-{mask:o}"
+                UPDATE_MODULE.write_file(output, b"mode fixture\n", 0o444)
+                assert stat.S_IMODE(output.stat().st_mode) == 0o444
+            finally:
+                os.umask(previous)
+        failed_output = root / "failed-mode"
+        with mock.patch.object(UPDATE_MODULE.os, "fchmod", side_effect=PermissionError):
+            try:
+                UPDATE_MODULE.write_file(failed_output, b"partial", 0o444)
+            except PermissionError:
+                pass
+            else:
+                raise AssertionError("injected mode failure was ignored")
+        assert not failed_output.exists()
+        UPDATE_MODULE.write_file(failed_output, b"retry\n", 0o444)
+        assert failed_output.read_bytes() == b"retry\n"
+
         store = root / "store"
         first = update_files(root, "0.1.0", "first")
         second = update_files(root, "0.2.0", "second")
