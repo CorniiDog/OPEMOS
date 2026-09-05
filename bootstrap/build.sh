@@ -234,7 +234,10 @@ CONTAINER_DIGEST="$(
     podman image inspect "$NVIDIA_BUILD_IMAGE" --format '{{.Digest}}' 2>/dev/null ||
         true
 )"
-printf 'container_digest=%s\n' "${CONTAINER_DIGEST:-unknown}" >> "$BUILD_ENV_FILE"
+[[ "$CONTAINER_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+    die "Could not determine immutable build container digest."
+CONTAINER_IMAGE_REF="${NVIDIA_BUILD_IMAGE%:*}@${CONTAINER_DIGEST}"
+printf 'container_image=%s\n' "$CONTAINER_IMAGE_REF" >> "$BUILD_ENV_FILE"
 
 mapfile -t MODULES < <(
     find "${SOURCE_DIR}/kernel-open" -maxdepth 1 -type f -name '*.ko' | sort

@@ -1107,7 +1107,15 @@ Desired design:
   * `project_patches=0`
 * [x] Persist installed BUILD-INFO.
 * [x] Ensure `support_commit` is populated rather than `unknown` during normal builds.
-* [ ] Add build container digest to all relevant BUILD-INFO variants if not already consistent.
+* [x] Add build container digest to all relevant BUILD-INFO variants if not already consistent.
+
+  * 2026-09-05: every container-backed BUILD-INFO producer now requires and
+    records the canonical repository-qualified `container_image=...@sha256:...`
+    identity; unavailable, empty, truncated, overlong, uppercase, non-hex, and
+    wrong-algorithm digests fail closed instead of recording `unknown`. The
+    native Fedora appliance producer retains its explicit non-container
+    `build_mode`. Focused syntax, metadata, ownership, and upstream-artifact
+    tests passed through `heavy.sh`.
 * [x] Add `schema_version=1` to newly generated BUILD-INFO files.
 * [x] Record module SHA entries in BUILD-INFO and structured provenance.
 

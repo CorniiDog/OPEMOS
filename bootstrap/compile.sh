@@ -204,7 +204,7 @@ RELEASE_TAG="$(release_tag)"
 ASSET_NAME="$(release_asset)"
 
 CONTAINER_IMAGE_REF="$(podman image inspect "$NVIDIA_BUILD_IMAGE" --format "{{.Digest}}")"
-[[ "$CONTAINER_IMAGE_REF" == sha256:* ]] || die "Could not determine immutable build container digest."
+[[ "$CONTAINER_IMAGE_REF" =~ ^sha256:[0-9a-f]{64}$ ]] || die "Could not determine immutable build container digest."
 CONTAINER_IMAGE_REF="${NVIDIA_BUILD_IMAGE%:*}@${CONTAINER_IMAGE_REF}"
 
 mkdir -p "$OUTPUT_DIR"
