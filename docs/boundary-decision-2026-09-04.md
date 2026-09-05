@@ -71,3 +71,11 @@ if __name__ == "__main__":
     parser.add_argument("--local-only", action="store_true",
                         help="verify canonical Core bytes before EXE mirror repinning")
     main(parser.parse_args().local_only)
+
+## Validation
+
+`python3 tests/boundary_policy.py --local-only` is the bounded pre-mirror check;
+it validates the exact local SHA/blob and required semantic clauses. The default
+cross-repository check must continue to fail against the previous counterpart
+commit until EXE mirrors these bytes and Core receives its new commit for
+repinning. This staged failure preserves, rather than weakens, mirror integrity.

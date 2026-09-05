@@ -203,6 +203,14 @@ The detailed unchecked items and their historical context remain below. Search
 for `* [ ]` to enumerate them mechanically.
 
 
+## Boundary decisions
+
+* [x] 2026-09-04 user-authorized creator-owned artifact cleanup boundary:
+  canonical SHA-256 `136d3572effa90c1b84bcf51002d7f9641c367132de20d54dd7173f68f13c6a8`,
+  Git blob `68fd9553bb8fee79cee803a38f980a94b2d80e57`; focused local integrity
+  assertions updated. EXE mirror commit and synchronized counterpart pin remain
+  pending. See `docs/boundary-decision-2026-09-04.md`.
+
 ## Experimental Linux Core conformance evidence
 
 * [x] Verify Core contract matrices on Ubuntu 24.04.4 LTS (2026-09-04):
