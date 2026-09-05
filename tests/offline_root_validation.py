@@ -2808,14 +2808,28 @@ def main():
         )
         assert failed["status"] == "failed"
         assert failed["reason"] == "initramfs"
+        assert failed["phase"] == "initramfs"
         assert failed["cleanup"]["mountsReleased"] is True
+        assert failed["cleanup"]["runtimeMountsReleased"] == 4
+        assert failed["cleanup"]["compressionPolicyRestored"] is True
         failed_progress = parse_progress_records(
             (temporary / "install-failed.json.stderr").read_text(encoding="utf-8")
         )
         failed_initramfs = [
             record for record in failed_progress if record["phase"] == "initramfs"
         ]
-        assert failed_initramfs[-1]["indeterminate"] is True
+        assert failed_initramfs == [
+            {
+                "attempt": 0,
+                "indeterminate": True,
+                "phase": "initramfs",
+                "schemaVersion": 1,
+            }
+        ]
+        assert not any(
+            record["phase"] == "installation_state"
+            for record in failed_progress
+        )
         assert_item_progress(failed_progress, "mount_cleanup", 4)
 
         cancel_installer(
