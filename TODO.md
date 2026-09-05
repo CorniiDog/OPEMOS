@@ -2184,6 +2184,13 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
 * [ ] Emit bounded heartbeats or safe subphase records during opaque pacman and
   mkinitcpio subprocesses without exposing paths, credentials, or unbounded
   output.
+  * [x] Emit fixed-schema indeterminate `userspace_install` heartbeats every 15
+    seconds while the pacman runner is silent, preserving pacman stdout and the
+    existing hook/result semantics. Attempt and interval inputs are bounded;
+    focused tests cover exact records, multiple heartbeats, invalid attempts,
+    zero/excessive/non-finite intervals, and successful result preservation.
+    `heavy.sh python3 tests/pacman_heartbeat.py` passed on 2026-09-05. The
+    separate mkinitcpio heartbeat remains open, so this parent stays unchecked.
 * [ ] Authenticate or allowlist target-owned pacman hooks and mkinitcpio code,
   or require a verified official-recovery-image attestation from the image
   builder before executing target-controlled programs.

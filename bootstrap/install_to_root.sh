@@ -1103,7 +1103,8 @@ run_mutation_command python3 "$SUPPORT_ROOT/lib/snapshot_target_execution.py" \
 }
 set +e
 run_mutation_command python3 "$SUPPORT_ROOT/lib/run_pacman_transaction.py" \
-    --output "$PACMAN_TRANSACTION_RESULT" -- \
+    --output "$PACMAN_TRANSACTION_RESULT" \
+    --progress-attempt "$PROGRESS_ATTEMPT_VALUE" -- \
     env SYSTEMD_OFFLINE=1 pacman "${PACMAN_ARGS[@]}"
 PACMAN_RC=$?
 set -e
