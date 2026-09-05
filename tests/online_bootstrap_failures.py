@@ -9,9 +9,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 ENTRYPOINT = ROOT / "bootstrap/online_install.sh"
 REVISION = "a" * 40
+RAW_ENTRYPOINTS = (
+    "online_install.sh", "compile_online.sh", "online_commit.sh",
+    "online_dev.sh", "online_setup_nvidia.sh",
+)
 
 
-def run_case(root: Path, mode: str) -> None:
+def run_case(root: Path, mode: str, piped: bool = False) -> None:
     home = root / f"home with spaces {mode}"
     fake_bin = root / f"bin-{mode}"
     log = root / f"git-{mode}.log"
@@ -34,22 +38,27 @@ def run_case(root: Path, mode: str) -> None:
         "HOME": str(home),
         "PATH": f"{fake_bin}:{os.environ['PATH']}",
         "SUPPORT_REVISION": REVISION,
-        "MOCK_GIT_MODE": mode,
+        "MOCK_GIT_MODE": "clone-fail" if mode == "raw-clone-fail" else mode,
         "MOCK_GIT_LOG": str(log),
     }
+    command = (["bash", "-s", "--", "--yes"] if piped
+               else [str(ENTRYPOINT), "--yes"])
     completed = subprocess.run(
-        [str(ENTRYPOINT), "--yes"], cwd="/", env=environment,
+        command, cwd="/", env=environment,
+        input=ENTRYPOINT.read_text(encoding="utf-8") if piped else None,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
     )
-    expected = {"clone-fail": 81, "fetch-fail": 82, "checkout-fail": 83}[mode]
+    expected = {"clone-fail": 81, "raw-clone-fail": 81,
+                "fetch-fail": 82, "checkout-fail": 83}[mode]
     assert completed.returncode == expected, (completed.returncode, completed.stderr)
     cache = home / ".cache/open-gpu-kernel-modules-steamos-support"
     assert cache.is_dir()
     assert not list(cache.glob("online-install.*"))
     calls = log.read_text(encoding="utf-8").splitlines()
-    assert len(calls) == {"clone-fail": 1, "fetch-fail": 2, "checkout-fail": 3}[mode]
+    assert len(calls) == {"clone-fail": 1, "raw-clone-fail": 1,
+                          "fetch-fail": 2, "checkout-fail": 3}[mode]
     assert calls[0].startswith("clone --quiet --depth 1 ")
-    if mode != "clone-fail":
+    if mode not in ("clone-fail", "raw-clone-fail"):
         assert " fetch --quiet --depth 1 origin " in calls[1]
     if mode == "checkout-fail":
         assert calls[2].endswith(f"checkout --quiet --detach {REVISION}")
@@ -100,10 +109,24 @@ def reject_missing_prerequisite(root: Path, missing: str) -> None:
     assert not home.exists()
 
 
+
+def check_raw_help() -> None:
+    for name in RAW_ENTRYPOINTS:
+        script = ROOT / "bootstrap" / name
+        completed = subprocess.run(
+            ["bash", "-s", "--", "--help"], cwd="/",
+            input=script.read_text(encoding="utf-8"),
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        assert completed.returncode == 0, (name, completed.stderr)
+        assert completed.stderr == "", (name, completed.stderr)
+        assert completed.stdout.startswith("Usage:"), (name, completed.stdout)
+
 def main() -> None:
     with tempfile.TemporaryDirectory(prefix="online-bootstrap-") as name:
         root = Path(name)
         run_case(root, "clone-fail")
+        run_case(root, "raw-clone-fail", piped=True)
         run_case(root, "fetch-fail")
         run_case(root, "checkout-fail")
         reject_revision(root, "a" * 39, "short")
@@ -112,6 +135,7 @@ def main() -> None:
         reject_revision(root, "a" * 20 + " " + "a" * 19, "whitespace")
         for command in ("git", "curl", "tar", "sha256sum", "zstd", "modinfo", "realpath", "python3"):
             reject_missing_prerequisite(root, command)
+        check_raw_help()
 
 
 if __name__ == "__main__":

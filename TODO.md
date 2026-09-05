@@ -933,7 +933,9 @@ standardize on raw `.ko` or `.ko.zst`; the installer accepts both safely.
 * [x] Add a small comment in each explaining why it does not use `project_mktemp_dir`.
 * [x] Test each entry-point help path from a working directory outside the
   repository, without pre-sourcing project helpers.
-* [ ] Test scripts via their intended remote/raw invocation, not only from the local checkout.
+* [x] Test scripts via their intended remote/raw invocation, not only from the local checkout.
+
+  * 2026-09-04: `tests/online_bootstrap_failures.py` pipes all five standalone online entry points into `bash -s -- --help`; the online installer also runs from stdin through exact pinned clone dispatch, verifies deterministic clone failure propagation, and removes its cache-rooted partial tree. `heavy.sh python3 tests/online_bootstrap_failures.py` passed without network access.
 
 ---
 
