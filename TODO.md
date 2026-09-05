@@ -2218,6 +2218,13 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   userspace verification, module extraction/compression/copy/verification,
   GRUB, depmod, mkinitcpio, state writing, compression restoration, and
   recursive mount cleanup.
+  * [x] Strengthen the injected module-compression status-88 failure at the
+    first module. The fixture requires terminal phase/reason `module_install`,
+    exactly zero of five completed module items, no module-verification, GRUB,
+    depmod, initramfs, or installation-state progress, complete four-mount
+    cleanup, and exact compression-policy restoration. Python syntax and diff
+    checks passed. Required full integration validation is recorded after the
+    GitHub PR checks complete because this host lacks `bsdtar`.
   * [x] Add a post-validation GRUB disappearance failure after the authenticated
     userspace transaction. The fixture requires terminal phase/reason
     `bootloader_config`, complete runtime-mount cleanup, exactly one

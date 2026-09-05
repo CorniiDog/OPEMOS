@@ -2080,7 +2080,40 @@ def main():
             False,
             MOCK_FAIL_MODULE_COMPRESSION="1",
         )
+        assert compression_failure["status"] == "failed"
         assert compression_failure["reason"] == "module_install"
+        assert compression_failure["phase"] == "module_install"
+        assert compression_failure["cleanup"]["mountsReleased"] is True
+        assert compression_failure["cleanup"]["runtimeMountsReleased"] == 4
+        assert compression_failure["cleanup"]["compressionPolicyRestored"] is True
+        compression_failure_progress = parse_progress_records(
+            (temporary / "module-compression-failure.json.stderr").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert [
+            record
+            for record in compression_failure_progress
+            if record["phase"] == "module_install"
+        ] == [
+            {
+                "attempt": 0,
+                "completed": 0,
+                "indeterminate": False,
+                "phase": "module_install",
+                "schemaVersion": 1,
+                "total": 5,
+                "unit": "items",
+            }
+        ]
+        assert not any(
+            record["phase"] in {
+                "module_verification", "grub_update", "depmod", "initramfs",
+                "installation_state",
+            }
+            for record in compression_failure_progress
+        )
+        assert_item_progress(compression_failure_progress, "mount_cleanup", 4)
         del paths["compression_profile"]
 
         local_database = paths["target"] / "usr/lib/holo/pacmandb/local"
