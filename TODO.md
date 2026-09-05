@@ -227,6 +227,11 @@ index in the same commit.
     execution. Focused cases cover short, long, non-hex, and embedded-whitespace
     identities and prove the stable error plus absence of network/privileged
     setup; the full bootstrap failure matrix passed through `heavy.sh`.
+  * [x] Hermetically remove each declared prerequisite (`git`, `curl`, `tar`,
+    `sha256sum`, `zstd`, `modinfo`, `realpath`, and `python3`) in turn. Every
+    case emits only the exact missing-command error and exits before HOME/cache
+    creation or any external/network/privileged execution. The full focused
+    bootstrap matrix passed through `heavy.sh` on 2026-09-04.
   * [x] Commit `e1bc00a4331d7caaffee71c27a519d7ae5f3919e`: exercise a real TERM during the fake-root installer's
     blocked initramfs phase. The process group exits 143, restores the prior
     module/state trees byte-for-byte, re-enables SteamOS read-only mode, removes

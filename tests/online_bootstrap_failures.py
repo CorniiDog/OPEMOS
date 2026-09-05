@@ -76,6 +76,30 @@ def reject_revision(root: Path, revision: str, name: str) -> None:
     assert not home.exists()
 
 
+def reject_missing_prerequisite(root: Path, missing: str) -> None:
+    commands = ("git", "curl", "tar", "sha256sum", "zstd", "modinfo", "realpath", "python3")
+    home = root / f"missing-{missing}"
+    fake_bin = root / f"missing-bin-{missing}"
+    fake_bin.mkdir()
+    (fake_bin / "bash").symlink_to("/usr/bin/bash")
+    for command in commands:
+        if command == missing:
+            continue
+        source = __import__("shutil").which(command)
+        assert source, command
+        (fake_bin / command).symlink_to(source)
+    completed = subprocess.run(
+        [str(ENTRYPOINT), "--yes"], cwd="/",
+        env={**os.environ, "HOME": str(home), "PATH": str(fake_bin),
+             "SUPPORT_REVISION": REVISION},
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    assert completed.returncode == 1
+    assert completed.stdout == ""
+    assert completed.stderr == f"Missing command: {missing}\n"
+    assert not home.exists()
+
+
 def main() -> None:
     with tempfile.TemporaryDirectory(prefix="online-bootstrap-") as name:
         root = Path(name)
@@ -86,6 +110,8 @@ def main() -> None:
         reject_revision(root, "a" * 41, "long")
         reject_revision(root, "g" * 40, "nonhex")
         reject_revision(root, "a" * 20 + " " + "a" * 19, "whitespace")
+        for command in ("git", "curl", "tar", "sha256sum", "zstd", "modinfo", "realpath", "python3"):
+            reject_missing_prerequisite(root, command)
 
 
 if __name__ == "__main__":

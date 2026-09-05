@@ -33,3 +33,20 @@ under the shared POLICY.md. Major ownership, deletion authority, trust,
 production, destructive, hardware, or governance questions still require the
 user. Preserve completed TODO entries in place with commit/test evidence and
 preserve Git and handoff history; do not erase or rewrite completed history.
+
+## Lead-only necessary GitHub pushes
+
+The user authorizes this repository's existing primary lead to push its own
+commits to GitHub only when the exact remote commit is required for a
+cross-repository immutable pin/handoff, remote-only CI or review, or a current
+user-requested GitHub deliverable. Helpers and Resolver may not push. Local
+commits remain local when remote availability is unnecessary.
+
+Before pushing, verify the configured remote URL, target branch, exact commit
+set, relevant tests, and absence of secrets, private inputs, or unrelated
+commits. Use a normal fast-forward push only. Never force-push, delete/rewrite
+refs, alter remotes, push tags, publish releases/assets, merge, or bypass branch
+protection. Stop on divergence, rejection, or ambiguity. Record the necessity,
+remote, branch, and pushed commit in TODO or handoff history. This permission
+does not authorize production activation, trust publication, or boundary and
+governance changes.
