@@ -10,6 +10,33 @@ OUTPUT_DIR="$HOME"
 AUTO_UPLOAD=0
 FORCE_REBUILD=0
 YES=0
+GH_READONLY_WAS_ENABLED=0
+
+restore_compile_readonly()
+{
+    if [[ "$GH_READONLY_WAS_ENABLED" == "1" ]]; then
+        if ! sudo steamos-readonly enable >/dev/null 2>&1; then
+            warn "Failed to re-enable SteamOS read-only mode."
+            return 1
+        fi
+        GH_READONLY_WAS_ENABLED=0
+    fi
+    return 0
+}
+
+cleanup_compile()
+{
+    local rc=$?
+    trap - EXIT INT TERM
+    if ! restore_compile_readonly && [[ "$rc" == "0" ]]; then
+        rc=1
+    fi
+    exit "$rc"
+}
+
+trap cleanup_compile EXIT
+trap "exit 130" INT
+trap "exit 143" TERM
 
 usage()
 {
@@ -60,8 +87,6 @@ if [[ "$AUTO_UPLOAD" == "1" ]]; then
                 need_cmd sudo
                 need_cmd pacman
 
-                GH_READONLY_WAS_ENABLED=0
-
                 if command -v steamos-readonly >/dev/null 2>&1 &&
                    steamos-readonly status 2>/dev/null | grep -qi enabled; then
                     log "Disabling SteamOS read-only mode temporarily..."
@@ -71,16 +96,12 @@ if [[ "$AUTO_UPLOAD" == "1" ]]; then
 
                 log "Installing GitHub CLI..."
 
-                if ! sudo pacman -Sy --needed --noconfirm github-cli; then
-                    if [[ "$GH_READONLY_WAS_ENABLED" == "1" ]]; then
-                        sudo steamos-readonly enable || true
-                    fi
+                sudo pacman -Sy --needed --noconfirm github-cli ||
                     die "GitHub CLI installation failed."
-                fi
 
                 if [[ "$GH_READONLY_WAS_ENABLED" == "1" ]]; then
                     log "Re-enabling SteamOS read-only mode..."
-                    sudo steamos-readonly enable
+                    restore_compile_readonly
                 fi
 
                 command -v gh >/dev/null 2>&1 ||

@@ -1055,7 +1055,9 @@ Desired design:
 
   * 2026-09-04: `tests/transaction.sh` now supplies a mismatched archive checksum and verifies failure occurs before every privileged/read-only operation, preserves fake module and state content byte-for-byte, leaves read-only enabled, and creates no install stage. `heavy.sh ./tests/transaction.sh` passed all install/uninstall rollback cases and confirmed the real module tree was untouched.
 * [x] Test cleanup path after fake-root target replacement.
-* [ ] Ensure every script that disables readonly reliably restores it.
+* [x] Ensure every script that disables readonly reliably restores it.
+
+  * 2026-09-04: audited every `steamos-readonly disable` site. Existing install/uninstall transaction, recovery-controller, guardian-installer, setup-build-environment, and NVIDIA userspace cleanup traps remain in place. Added a missing scoped EXIT/INT/TERM restoration trap to `compile.sh`; `tests/compile_readonly_signal.py` interrupts the real entry point during mocked GitHub CLI package installation and verifies exit 130 plus exact disable/enable ordering. Focused validation passed via `heavy.sh python3 tests/compile_readonly_signal.py`.
 
 ---
 
