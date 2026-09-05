@@ -1332,9 +1332,40 @@ def main():
             False,
             MOCK_POST_HOOK_FAILURE="1",
         )
+        assert hook_result["status"] == "failed"
         assert hook_result["reason"] == "userspace_hook_failed"
         assert hook_result["phase"] == "userspace_hook_failed"
+        assert hook_result["cleanup"]["mountsReleased"] is True
         assert hook_result["cleanup"]["runtimeMountsReleased"] == 4
+        assert hook_result["cleanup"]["compressionPolicyRestored"] is True
+        hook_progress = parse_progress_records(
+            (temporary / "post-hook-failure.json.stderr").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert [
+            record
+            for record in hook_progress
+            if record["phase"] == "userspace_install"
+        ] == [
+            {
+                "attempt": 0,
+                "completed": 0,
+                "indeterminate": False,
+                "phase": "userspace_install",
+                "schemaVersion": 1,
+                "total": len(hook_result["validation"]["packages"]),
+                "unit": "items",
+            }
+        ]
+        assert not any(
+            record["phase"] in {
+                "userspace_verification", "module_install", "module_verification",
+                "grub_update", "depmod", "initramfs", "installation_state",
+            }
+            for record in hook_progress
+        )
+        assert_item_progress(hook_progress, "mount_cleanup", 4)
         assert (temporary / "post-hook-failure.transaction").read_text(
             encoding="utf-8"
         ).splitlines() == ["pacman-hooks"]

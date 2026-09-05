@@ -2218,6 +2218,14 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   userspace verification, module extraction/compression/copy/verification,
   GRUB, depmod, mkinitcpio, state writing, compression restoration, and
   recursive mount cleanup.
+  * [x] Strengthen the successful-pacman/post-hook-error failure boundary. The
+    fixture requires terminal phase/reason `userspace_hook_failed`, exactly zero
+    completed package-install items despite pacman's zero exit status, no
+    userspace-verification or module/boot/state progress, complete four-mount
+    cleanup, exact compression-policy restoration, and the isolated hook
+    transaction record. Required validation evidence is recorded with the
+    GitHub PR because this host's unchanged `bsdtar` limitation blocks the
+    monolithic integration suite before mutation.
   * [x] Strengthen the wrong-installed-version failure at the first userspace
     verification item. The fixture requires terminal phase/reason
     `userspace_verification`, exactly zero of the validated package count, no
