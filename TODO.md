@@ -365,6 +365,16 @@ for `* [ ]` to enumerate them mechanically.
     `CorniiDog` GitHub CLI token is invalid and HTTPS could not obtain a
     username. Re-authentication is required; no remote, credentials, or refs
     were altered.
+  * 2026-09-05 continuation: after authentication was restored, a fresh fetch
+    reconfirmed `origin/main` and `FETCH_HEAD` at `7f90e45`, the same exact
+    55-commit fast-forward and reviewed target. The Core primary pushed only
+    `adf372b857cd348b6a18680b45ffcea790f04d4b` to `main` through configured
+    remote `https://github.com/CorniiDog/open-gpu-kernel-modules-steamos-support`
+    for EXE immutable Linux CI checkout, then fetched again and verified the
+    published remote head exactly equals `adf372b`. GitHub announced a redirect
+    to `https://github.com/CorniiDog/OPEMOS.git`; the configured remote was not
+    altered. No later local commits, tags, releases, assets, or other refs were
+    pushed.
 
 ## Current project phase
 
