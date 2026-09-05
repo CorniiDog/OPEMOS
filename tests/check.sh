@@ -129,6 +129,8 @@ cargo clippy --locked --manifest-path interstitial/Cargo.toml --all-targets -- -
 cargo fmt --manifest-path interstitial/Cargo.toml -- --check
 printf 'Checking canonical progress semantics...\n'
 python3 tests/progress_semantics.py
+python3 tests/pacman_heartbeat.py
+python3 tests/opaque_operation_heartbeat.py
 printf 'Checking canonical cross-frontend contracts...\n'
 python3 tests/consumer_contracts.py
 printf 'Checking reviewed userspace-lock generation contracts...\n'

@@ -214,6 +214,13 @@ index in the same commit.
   published navigation links.
 * [ ] Finish online-installer failure, signal, readonly-restoration, userspace
   rollback, and raw-`.ko`/`.ko.zst` idempotency coverage.
+  * [x] Exercise both INT and TERM during the online userspace package
+    transaction, plus a pacman transaction returning status 42. Each path
+    preserves its conventional or underlying exit, re-enables SteamOS read-only
+    mode exactly once, and removes its partial cache-rooted setup workspace. The
+    focused signal/failure matrix passed through `heavy.sh` on 2026-09-05.
+    Package/configuration rollback remains tracked separately below and this
+    does not close the aggregate item.
   * [x] Cover support-repository clone and pinned-revision fetch failures before
     Core trust loading. Both preserve the underlying nonzero status, clean
     partial cache-rooted `online-install.*` trees even with spaces in `HOME`,
@@ -347,6 +354,37 @@ for `* [ ]` to enumerate them mechanically.
   2026-09-05. Bounded consumer handoff: EXE may provide the existing ordered
   `lineageManifestSha256` plus each named manifest and `.sig` receipt; Core
   remains the authority that authenticates and authorizes the chain.
+  * 2026-09-05 remote CI handoff: EXE requires immutable GitHub checkout of
+    Core `adf372b857cd348b6a18680b45ffcea790f04d4b`. Fetch confirmed
+    `origin/main` and `FETCH_HEAD` at `7f90e45c4c154fdfda81ff594611cf533e4fb894`;
+    the exact 55-commit range is a normal fast-forward to `adf372b`, targets
+    `https://github.com/CorniiDog/open-gpu-kernel-modules-steamos-support` branch
+    `main`, passes diff/path/binary/credential-filename hygiene review, and
+    passed focused lineage plus boundary tests through `heavy.sh`. The push was
+    attempted normally and stopped before remote mutation because the active
+    `CorniiDog` GitHub CLI token is invalid and HTTPS could not obtain a
+    username. Re-authentication is required; no remote, credentials, or refs
+    were altered.
+  * 2026-09-05 continuation: after authentication was restored, a fresh fetch
+    reconfirmed `origin/main` and `FETCH_HEAD` at `7f90e45`, the same exact
+    55-commit fast-forward and reviewed target. The Core primary pushed only
+    `adf372b857cd348b6a18680b45ffcea790f04d4b` to `main` through configured
+    remote `https://github.com/CorniiDog/open-gpu-kernel-modules-steamos-support`
+    for EXE immutable Linux CI checkout, then fetched again and verified the
+    published remote head exactly equals `adf372b`. GitHub announced a redirect
+    to `https://github.com/CorniiDog/OPEMOS.git`; the configured remote was not
+    altered. No later local commits, tags, releases, assets, or other refs were
+    pushed.
+  * 2026-09-05 canonical repository migration: the user explicitly approved
+    `CorniiDog/OPEMOS` as Core's publication identity and retained
+    `CorniiDog/open-gpu-kernel-modules-steamos-support` only as a legacy GitHub
+    redirect. PR https://github.com/CorniiDog/OPEMOS/pull/1 carries the
+    transition. Publisher tests enforce canonical manifest/plan output for both
+    canonical and legacy redirect origins and reject unrelated origins;
+    `heavy.sh python3 tests/installer_bundle_publisher.py` and
+    `heavy.sh python3 tests/documentation.py` passed. The resulting squash
+    commit and branch deletion are recorded in a later continuation after
+    required PR checks pass.
 
 ## Current project phase
 
@@ -2174,9 +2212,27 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   userspace verification, module extraction/compression/copy/verification,
   GRUB, depmod, mkinitcpio, state writing, compression restoration, and
   recursive mount cleanup.
-* [ ] Emit bounded heartbeats or safe subphase records during opaque pacman and
+* [x] Emit bounded heartbeats or safe subphase records during opaque pacman and
   mkinitcpio subprocesses without exposing paths, credentials, or unbounded
   output.
+  * [x] Emit fixed-schema indeterminate `userspace_install` heartbeats every 15
+    seconds while the pacman runner is silent, preserving pacman stdout and the
+    existing hook/result semantics. Attempt and interval inputs are bounded;
+    focused tests cover exact records, multiple heartbeats, invalid attempts,
+    zero/excessive/non-finite intervals, and successful result preservation.
+    `heavy.sh python3 tests/pacman_heartbeat.py` passed on 2026-09-05. The
+    separate mkinitcpio heartbeat remains open, so this parent stays unchecked.
+  * [x] Run mkinitcpio through a phase-allowlisted opaque-operation helper that
+    emits the same fixed-schema indeterminate `initramfs` heartbeat every 15
+    seconds while preserving inherited output, process-group cancellation, and
+    the exact command exit status. Focused cases cover multiple exact records,
+    nonzero exit propagation, missing commands, unknown/future phases, invalid
+    attempts, and zero/excessive/non-finite intervals. The focused matrix and
+    immutable staged-tree installer-bundle dry run passed through `heavy.sh` on
+    2026-09-05; the bundle contains 116 exact inventoried files.
+    After commit `cca0a85cec94ba460d01810da5edd3b9bf6592c6`, the complete
+    `tests/installer_bundle_publisher.py` suite also passed through `heavy.sh`
+    against the final commit identity.
 * [ ] Authenticate or allowlist target-owned pacman hooks and mkinitcpio code,
   or require a verified official-recovery-image attestation from the image
   builder before executing target-controlled programs.

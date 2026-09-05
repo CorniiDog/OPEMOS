@@ -14,7 +14,7 @@ from pathlib import Path
 
 SCHEMA_VERSION = 1
 KIND = "opemos-installer-bundle"
-REPOSITORY = "CorniiDog/open-gpu-kernel-modules-steamos-support"
+REPOSITORY = "CorniiDog/OPEMOS"
 MAX_MANIFEST_BYTES = 2 * 1024 * 1024
 MAX_FILE_BYTES = 128 * 1024 * 1024
 COMMIT = re.compile(r"[0-9a-f]{40}")
@@ -66,6 +66,7 @@ FILES = (
     ("lib/verify_installed_userspace.py", "installer-helper", "0755"),
     ("lib/check_initramfs_workspace.py", "installer-helper", "0755"),
     ("lib/run_pacman_transaction.py", "installer-helper", "0755"),
+    ("lib/run_opaque_operation.py", "installer-helper", "0755"),
     ("lib/snapshot_install_input.py", "installer-helper", "0644"),
     ("lib/snapshot_target_execution.py", "installer-helper", "0755"),
     ("lib/verify_initramfs.py", "installer-helper", "0755"),

@@ -37,7 +37,7 @@ def main():
     tag = f"opemos-installer-bundle-{commit}"
     assert plan["schemaVersion"] == 1
     assert plan["status"] == "ready"
-    canonical_repository = "CorniiDog/open-gpu-kernel-modules-steamos-support"
+    canonical_repository = "CorniiDog/OPEMOS"
     assert plan["repository"] == canonical_repository
     assert plan["tag"] == tag
     assert plan["targetCommit"] == commit
@@ -88,7 +88,7 @@ def main():
             "command = args[:2]\n"
             "if command == ['auth', 'status']:\n"
             "    raise SystemExit(0)\n"
-            "if command == ['api', 'repos/CorniiDog/open-gpu-kernel-modules-steamos-support']:\n"
+            "if command == ['api', 'repos/CorniiDog/OPEMOS']:\n"
             "    print('true')\n"
             "    raise SystemExit(0)\n"
             "if command == ['release', 'view']:\n"
@@ -107,6 +107,15 @@ def main():
         env["PATH"] = f"{fake_bin}:{env['PATH']}"
         env["REAL_GIT"] = real_git
         env["GH_LOG"] = str(gh_log)
+
+        legacy_env = env.copy()
+        legacy_env["FAKE_ORIGIN"] = (
+            "https://github.com/CorniiDog/open-gpu-kernel-modules-steamos-support"
+        )
+        legacy = run(commit, "--dry-run", env=legacy_env)
+        assert legacy.returncode == 0, legacy.stderr
+        assert json.loads(legacy.stdout)["repository"] == canonical_repository
+        assert "open-gpu-kernel-modules-steamos-support" not in legacy.stdout
 
         mismatched_env = env.copy()
         mismatched_env["FAKE_ORIGIN"] = "https://github.com/attacker/other"

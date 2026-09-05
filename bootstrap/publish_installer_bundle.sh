@@ -3,7 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SUPPORT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-CANONICAL_REPOSITORY="CorniiDog/open-gpu-kernel-modules-steamos-support"
+CANONICAL_REPOSITORY="CorniiDog/OPEMOS"
+LEGACY_REDIRECT_REPOSITORY="CorniiDog/open-gpu-kernel-modules-steamos-support"
 REPOSITORY="$CANONICAL_REPOSITORY"
 SUPPORT_COMMIT=""
 DRY_RUN=0
@@ -57,7 +58,13 @@ if (( DEVELOPMENT_REPOSITORY == 0 )); then
         "git@github.com:${CANONICAL_REPOSITORY}"|\
         "git@github.com:${CANONICAL_REPOSITORY}.git"|\
         "ssh://git@github.com/${CANONICAL_REPOSITORY}"|\
-        "ssh://git@github.com/${CANONICAL_REPOSITORY}.git") ;;
+        "ssh://git@github.com/${CANONICAL_REPOSITORY}.git"|\
+        "https://github.com/${LEGACY_REDIRECT_REPOSITORY}"|\
+        "https://github.com/${LEGACY_REDIRECT_REPOSITORY}.git"|\
+        "git@github.com:${LEGACY_REDIRECT_REPOSITORY}"|\
+        "git@github.com:${LEGACY_REDIRECT_REPOSITORY}.git"|\
+        "ssh://git@github.com/${LEGACY_REDIRECT_REPOSITORY}"|\
+        "ssh://git@github.com/${LEGACY_REDIRECT_REPOSITORY}.git") ;;
         *) die "origin does not match canonical repository: ${CANONICAL_REPOSITORY}" ;;
     esac
 fi
