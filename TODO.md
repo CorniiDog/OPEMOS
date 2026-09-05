@@ -186,6 +186,11 @@ index in the same commit.
     module/state trees byte-for-byte, re-enables SteamOS read-only mode, removes
     temporary stages, and leaves real system modules unchanged. The complete
     `tests/transaction.sh` suite passed through `heavy.sh` on 2026-09-04.
+  * [x] Make SteamOS read-only restoration fail closed before install/uninstall
+    completion. Injected first-attempt `steamos-readonly enable` failures now
+    produce nonzero results, roll back target and state bytes, retry restoration
+    during cleanup, remove temporary stages, and leave real modules unchanged.
+    The complete transaction suite passed through `heavy.sh` on 2026-09-04.
 * [ ] Resolve build caching, compiler/certification policy, reproducibility,
   backup retention, and safe Podman/bootstrap ownership decisions.
 * [ ] Audit fresh-machine prerequisites, duplicated environment setup, stale

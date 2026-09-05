@@ -73,8 +73,10 @@ UNINSTALL_COMPLETE=0
 restore_readonly()
 {
     if [[ "$RO_WAS_ENABLED" == "1" ]]; then
-        sudo steamos-readonly enable >/dev/null 2>&1 ||
+        if ! sudo steamos-readonly enable >/dev/null 2>&1; then
             warn "Failed to re-enable SteamOS read-only mode."
+            return 1
+        fi
         RO_WAS_ENABLED=0
     fi
 }
@@ -164,8 +166,8 @@ fi
 
 sudo rm -f     "${STATE_ROOT}/installed-build-info.txt"     "${STATE_ROOT}/installed-archive.txt"     "${STATE_ROOT}/installed-kernel.txt"     "${STATE_ROOT}/installed-nvidia.txt"
 
-UNINSTALL_COMPLETE=1
 restore_readonly
+UNINSTALL_COMPLETE=1
 trap - EXIT INT TERM
 python3 "$SUPPORT_ROOT/lib/prune_backup_generations.py" \
     --root "$BACKUP_ROOT" --protect "$(basename "$BACKUP_DIR")" \

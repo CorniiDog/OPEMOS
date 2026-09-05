@@ -311,6 +311,32 @@ run_uninstall_failure_case()
     assert_fake_state_restored "$before" "$after"
 }
 
+run_uninstall_readonly_failure_case()
+{
+    local before="${WORK_ROOT}/uninstall-readonly.before"
+    local after="${WORK_ROOT}/uninstall-readonly.after"
+    local output rc
+
+    printf 'Testing uninstall rollback on read-only restoration failure...\n'
+    reset_case uninstall-readonly
+    snapshot_fake_state "$before"
+    export MOCK_FAIL_POINT=readonly-enable
+
+    set +e
+    output="$("${PROJECT_ROOT}/bootstrap/uninstall.sh" --yes 2>&1)"
+    rc=$?
+    set -e
+    (( rc != 0 )) || die "Expected uninstall read-only restoration failure."
+    [[ -e "$MOCK_FAILURE_MARKER" ]] || die "Read-only failure injection did not run."
+    [[ "$output" == *"restoring NVIDIA open kernel modules"* ]] || {
+        printf '%s\n' "$output" >&2
+        die "Uninstaller did not roll back after read-only restoration failure."
+    }
+
+    snapshot_fake_state "$after"
+    assert_fake_state_restored "$before" "$after"
+}
+
 run_successful_lifecycle()
 {
     local output
@@ -383,8 +409,10 @@ run_install_failure_case install-partial-copy target-copy
 run_install_failure_case install-initramfs initramfs
 run_install_failure_case install-legacy-raw-target initramfs raw
 run_install_failure_case install-state-write state-write
+run_install_failure_case install-readonly-restore readonly-enable
 run_install_signal_case
 run_uninstall_failure_case
+run_uninstall_readonly_failure_case
 run_successful_lifecycle
 
 snapshot_real_modules "$REAL_AFTER"

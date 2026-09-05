@@ -11,6 +11,12 @@ case "${1:-}" in
         printf 'disabled\n' > "$state_file"
         ;;
     enable)
+        if [[ "${MOCK_FAIL_POINT:-}" == "readonly-enable" &&
+              ! -e "${MOCK_FAILURE_MARKER:?}" ]]; then
+            touch "$MOCK_FAILURE_MARKER"
+            printf 'Injected read-only restoration failure.\n' >&2
+            exit 90
+        fi
         printf 'enabled\n' > "$state_file"
         ;;
     *)
