@@ -62,6 +62,26 @@ def make_source(path):
 def make_mocks(path):
     path.mkdir()
     scripts = {
+        "bsdtar": r"""#!/usr/bin/env python3
+import sys, tarfile
+args=sys.argv[1:]
+mode=args[0]
+package=args[1]
+with tarfile.open(package) as archive:
+    if mode == "-tf":
+        for member in archive.getmembers(): print(member.name)
+    elif mode == "-tvf":
+        for member in archive.getmembers():
+            kind = "d" if member.isdir() else "-"
+            print(f"{kind}rw-r--r-- 0 0 0 {member.size} Jan 1 00:00 {member.name}")
+    elif mode == "-xOf":
+        sys.stdout.buffer.write(archive.extractfile(args[2]).read())
+    elif mode == "-xf":
+        destination=args[args.index("-C") + 1]
+        archive.extractall(destination)
+    else:
+        raise SystemExit(2)
+""",
         "uname": "#!/bin/sh\n[ \"${1:-}\" = -m ] && echo x86_64 || echo Linux\n",
         "date": "#!/bin/sh\ncase \"${1:-}\" in --iso-8601=seconds) echo 2026-08-31T12:00:00+00:00;; *) /bin/date \"$@\";; esac\n",
         "gcc": "#!/bin/sh\ncase \" $* \" in *' -dumpfullversion -dumpversion '*) echo 15.1.1;; *) exit 0;; esac\n",
@@ -165,7 +185,12 @@ def command(fixture, result, output, *, local_headers=False):
         "--result-json", str(result),
     ]
     if local_headers:
-        arguments.extend(["--headers-package", str(fixture / HEADERS_NAME)])
+        arguments.extend([
+            "--headers-package", str(fixture / HEADERS_NAME),
+            "--headers-signature", str(fixture / f"{HEADERS_NAME}.sig"),
+            "--header-keyring", str(fixture / "keyring.gpg"),
+            "--header-signer", HEADER_SIGNER,
+        ])
     else:
         arguments.extend([
             "--headers-url",
@@ -218,8 +243,12 @@ def wait_for(path, process):
         if path.exists():
             return
         time.sleep(0.05)
-    process.kill()
-    raise AssertionError("fault-injection child did not start")
+    if process.poll() is None:
+        process.kill()
+    stdout, stderr = process.communicate()
+    raise AssertionError(
+        f"fault-injection child did not start: stdout={stdout!r} stderr={stderr!r}"
+    )
 
 
 def child_is_gone(pid):
@@ -255,6 +284,31 @@ def run_cancellation(fixture, mode, *, local_headers=False):
     assert document["status"] == "cancelled"
     assert document["reason"] == "cancelled"
     assert_clean(fixture, output)
+
+
+def run_local_headers_success(fixture):
+    result = fixture / "local-success.result.json"
+    output = fixture / "local-success.output"
+    env = environment(fixture, "unused")
+    env.update(MOCK_MAKE_MODE="complete")
+    completed = subprocess.run(
+        command(fixture, result, output, local_headers=True),
+        env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
+    document = json.loads(result.read_text(encoding="utf-8"))
+    assert document["status"] == "success"
+    assert document["reason"] == "build_complete"
+    build_info = next(output.glob("*.build-info.txt")).read_text(encoding="utf-8")
+    assert f"header_package={HEADERS_NAME}\n" in build_info
+    assert "header_url=local-file\n" in build_info
+    assert "header_authentication=detached-signature-verified-with-pinned-keyring\n" in build_info
+    assert f"header_signing_key_fingerprint={HEADER_SIGNER}\n" in build_info
+    assert len(list(output.glob("*.tar.gz"))) == 1
+    assert len(list(output.glob("*.tar.gz.sha256"))) == 1
+    assert len(list(output.glob("*.provenance.json"))) == 1
+    cache = fixture / "home/.cache/open-gpu-kernel-modules-steamos-support"
+    assert not list(cache.glob("target-build.*"))
 
 
 def run_output_exhaustion(fixture):
@@ -307,11 +361,14 @@ def main():
         (fixture / "home").mkdir()
         make_source(fixture / "source")
         make_headers(fixture / HEADERS_NAME)
+        (fixture / f"{HEADERS_NAME}.sig").write_bytes(b"fixture-signature")
+        (fixture / "keyring.gpg").write_bytes(b"fixture-keyring")
         make_mocks(fixture / "bin")
         run_failure(fixture, "fail", "header_download_failed")
         run_failure(fixture, "truncate", "header_identity_mismatch")
         run_cancellation(fixture, "sleep")
         run_cancellation(fixture, "unused", local_headers=True)
+        run_local_headers_success(fixture)
         run_output_exhaustion(fixture)
         run_authenticated_header_cache(fixture)
 

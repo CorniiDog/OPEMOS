@@ -1776,7 +1776,9 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   descendant termination, temporary-tree cleanup, and a cancelled result.
 * [x] Test output publication with an injected `ENOSPC` failure and verify the
   typed packaging failure, removal of partial final names, and work-tree cleanup.
-* [ ] Test both automatically downloaded and pinned-local header inputs.
+* [x] Test both automatically downloaded and pinned-local header inputs.
+
+  * 2026-09-04: `tests/build_for_target_failures.py` retains successful authenticated automatic download plus exact cache reuse, and now completes an authenticated pinned-local build without invoking curl. Exact assertions cover the local filename marker, detached-signature trust classification, signer fingerprint, four final artifacts, and temporary workspace cleanup. The fixture now supplies current mandatory signature/keyring inputs and a bounded bsdtar-compatible archive adapter. `heavy.sh python3 tests/build_for_target_failures.py` passed download failure/truncation, download and compile cancellation, both input modes, ENOSPC publication, and authenticated cache reuse.
 * [x] Verify artifact installation, idempotency, failure rollback, and cleanup
   against fake mounted targets before modifying a real recovery-image overlay.
 * [x] Define the x86_64-only explicit-root installer CLI with authenticated
