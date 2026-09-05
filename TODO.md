@@ -2220,6 +2220,9 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
     attempts, and zero/excessive/non-finite intervals. The focused matrix and
     immutable staged-tree installer-bundle dry run passed through `heavy.sh` on
     2026-09-05; the bundle contains 116 exact inventoried files.
+    After commit `cca0a85cec94ba460d01810da5edd3b9bf6592c6`, the complete
+    `tests/installer_bundle_publisher.py` suite also passed through `heavy.sh`
+    against the final commit identity.
 * [ ] Authenticate or allowlist target-owned pacman hooks and mkinitcpio code,
   or require a verified official-recovery-image attestation from the image
   builder before executing target-controlled programs.
