@@ -1477,8 +1477,15 @@ offline installer contract.
 # 31. Code cleanup
 
 * [x] Centralize project temp helpers where usable.
-* [ ] Centralize bootstrap cache-root creation without violating pre-bootstrap
+* [x] Centralize bootstrap cache-root creation without violating pre-bootstrap
   ordering, then remove redundant hardcoded cache-path creation.
+
+  * 2026-09-05: scripts that have loaded `common.sh` now rely on
+    `project_mktemp_dir`/`project_mktemp_file` for cache-root creation. The five
+    online entry points retain explicit creation before the support checkout
+    makes `common.sh` available. `tests/cache_root_contract.py` enforces that
+    boundary. Its focused check and shell syntax validation passed through
+    `heavy.sh`.
 * [x] Audit duplicate `setup_build_env.sh` invocation.
 * [x] Audit stale `DRIVER_*` names after `--development` rename.
 * [x] Audit README for `--driver`.

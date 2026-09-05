@@ -134,12 +134,10 @@ mkdir -p "$STATE_DIR"
 
 STATE_BACKUP=""
 if [[ -f "$STATE_FILE" ]]; then
-    mkdir -p "${HOME}/.cache/${PROJECT_ID}"
-    STATE_BACKUP="$(project_mktemp_file upstream-state)"
+        STATE_BACKUP="$(project_mktemp_file upstream-state)"
     cp "$STATE_FILE" "$STATE_BACKUP"
 fi
 
-mkdir -p "${HOME}/.cache/${PROJECT_ID}"
 WORK_DIR="$(project_mktemp_dir upstream-install)"
 
 cleanup()

@@ -61,7 +61,6 @@ if [[ -n "$CHECKSUM" ]]; then
         die "Archive checksum verification failed."
 fi
 
-mkdir -p "${HOME}/.cache/${PROJECT_ID}"
 TMP="$(project_mktemp_dir install-extract)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -233,7 +232,6 @@ if [[ -d "$TARGET_DIR" ]]; then
     sudo chown -R "$USER":"$(id -gn)" "$BACKUP_DIR"
 fi
 
-mkdir -p "${HOME}/.cache/${PROJECT_ID}"
 STAGE="$(project_mktemp_dir install-stage)"
 
 for module in "${MODULES[@]}"; do

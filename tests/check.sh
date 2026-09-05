@@ -244,6 +244,7 @@ python3 tests/payload_receipt.py
 printf 'Checking installed-system recovery contract...\n'
 python3 tests/recovery_status.py
 python3 tests/recovery_state_stress.py
+python3 tests/cache_root_contract.py
 
 printf 'Checking target-owned execution trust...\n'
 python3 tests/target_execution_trust.py
