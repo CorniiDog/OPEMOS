@@ -1312,7 +1312,9 @@ offline installer contract.
 * [x] Add a reusable non-sudo pre/post-reinstall baseline report.
 * [x] Run fake-root install/uninstall rollback transactions in the local/CI check suite.
 * [x] Test temp-helper bootstrap ordering.
-* [ ] Test all scripts for unbound variables under `set -u`.
+* [x] Test all scripts for unbound variables under `set -u`.
+
+  * 2026-09-04: `tests/shell_nounset.py` discovers every tracked `*.sh` through Git and requires a Bash shebang plus `set -euo pipefail` before executable setup. Negative cases reject missing nounset, late strict mode, non-Bash shebangs, and overlong preambles. Existing registered help-path checks safely execute user-facing entry points under their declared nounset mode. `heavy.sh python3 tests/shell_nounset.py` passed.
 * [x] Test `--help` exits 0.
 * [x] Test mutually exclusive arguments.
 * [x] Test build-only mode.
