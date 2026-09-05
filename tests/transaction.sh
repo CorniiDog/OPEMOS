@@ -374,10 +374,12 @@ run_uninstall_readonly_failure_case()
 
 run_successful_lifecycle()
 {
-    local output
+    local output fallback_before unrelated_before
 
     printf 'Testing successful fake-root install and uninstall...\n'
     reset_case successful-lifecycle
+    fallback_before="$(sha256_file "$MOCK_FALLBACK_MODULE")"
+    unrelated_before="$(sha256_file "$MOCK_UNRELATED_FILE")"
 
     output="$(
         "${PROJECT_ROOT}/bootstrap/install.sh" \
@@ -407,8 +409,14 @@ run_successful_lifecycle()
         die "Fake-root uninstall did not succeed."
     }
     [[ ! -e "$MOCK_TARGET_DIR" ]] || die "Successful uninstall left target modules."
+    [[ -f "$MOCK_FALLBACK_MODULE" ]] ||
+        die "Compressed-module uninstall removed the fallback NVIDIA module."
+    [[ "$(sha256_file "$MOCK_FALLBACK_MODULE")" == "$fallback_before" ]] ||
+        die "Compressed-module uninstall changed the fallback NVIDIA module."
     [[ -f "$MOCK_UNRELATED_FILE" ]] ||
         die "Successful uninstall removed an unrelated NVIDIA file."
+    [[ "$(sha256_file "$MOCK_UNRELATED_FILE")" == "$unrelated_before" ]] ||
+        die "Compressed-module uninstall changed an unrelated NVIDIA file."
     [[ ! -e "${MOCK_STATE_ROOT}/installed-nvidia.txt" ]] ||
         die "Successful uninstall left installation state."
     [[ "$(<"$MOCK_READONLY_STATE")" == "enabled" ]] ||

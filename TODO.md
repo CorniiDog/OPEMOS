@@ -1034,7 +1034,9 @@ Desired design:
 * [x] Preserve fallback DKMS modules.
 * [x] Rebuild initramfs.
 * [x] Restore read-only filesystem.
-* [ ] Re-test uninstall with `.ko.zst` project installation.
+* [x] Re-test uninstall with `.ko.zst` project installation.
+
+  * 2026-09-04: the successful fake-root lifecycle installs the exact five-module compressed target, removes that target through `uninstall.sh`, preserves the fallback module and an unrelated NVIDIA file by exact SHA-256, restores read-only state, clears project state, and reinstalls successfully. `heavy.sh ./tests/transaction.sh` passed every rollback/lifecycle case and confirmed real system modules were untouched.
 * [x] Verify fake-root uninstall rollback after a post-removal `depmod` failure.
 * [x] Verify fake-root uninstall does not remove unrelated NVIDIA files outside the project target.
 * [x] Verify fake-root reinstall after successful uninstall.
