@@ -331,6 +331,9 @@ index in the same commit.
   release-order dependence. Cover additive extensions, unknown required versus
   optional capabilities, exact target/module/userspace compatibility,
   revocation, malformed candidates, byte-identical duplicates, and ambiguity.
+  Implementation commit `80b8276`; focused hostile-fixture, consumer-contract,
+  documentation, JSON syntax, and Python compile validations passed through
+  `heavy.sh` where required on 2026-09-06.
 * [ ] Authenticate target-owned executable code and raise the public online
   bootstrap/release/certification path to the offline installer's trust level.
 * [ ] Define authenticated archival/cache recovery and typed outage behavior for
