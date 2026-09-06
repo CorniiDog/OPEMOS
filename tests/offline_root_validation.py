@@ -2220,8 +2220,12 @@ def main():
             MOCK_CHROOT_DELAY="30",
             MOCK_INITIAL_COMPRESSION="",
         )
+        module_cancel_root = temporary / "compression-profile-module-cancel-fixture"
+        module_cancel_root.mkdir()
+        module_cancel_paths = make_fixture(module_cancel_root)
+        module_cancel_paths["compression_profile"] = "btrfs-zstd3"
         cancel_installer(
-            profile_paths,
+            module_cancel_paths,
             binaries,
             temporary / "compression-profile-module-cancel.json",
             "module_install",
