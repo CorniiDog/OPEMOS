@@ -669,6 +669,8 @@ TARGET_EXECUTION_MANIFEST="$MUTATION_WORK/target-execution.json"
 POST_TRANSACTION_EXECUTION_MANIFEST="$MUTATION_WORK/post-transaction-execution.json"
 TARGET_EXECUTION_FAILURE_JSON="$MUTATION_WORK/target-execution-failure.json"
 MOUNTS=()
+MOUNT_CLEANUP_TOTAL=0
+MOUNT_CLEANUP_RELEASED=0
 RUNTIME_MOUNTS_EXPECTED=4
 RUNTIME_MOUNTS_RELEASED=0
 PHASE=mutation_preflight
@@ -885,15 +887,22 @@ cleanup_mutation()
 {
     local rc=$? index mounts_released=true compression_restored=true
     local workspace_released=true target_identity_safe=true
-    local released_mounts=0 total_mounts=${#MOUNTS[@]}
+    local released_mounts=$MOUNT_CLEANUP_RELEASED
+    local total_mounts=$MOUNT_CLEANUP_TOTAL
     trap - EXIT INT TERM
-    (( total_mounts == 0 )) || emit_progress_items mount_cleanup 0 "$total_mounts"
+    if (( total_mounts == 0 )); then
+        total_mounts=${#MOUNTS[@]}
+        MOUNT_CLEANUP_TOTAL=$total_mounts
+        (( total_mounts == 0 )) || emit_progress_items mount_cleanup 0 "$total_mounts"
+    fi
     if (( total_mounts > 0 )) || [[ "$COMPRESSION_POLICY_ACTIVE" == 1 ]]; then
         require_target_mount_identities || target_identity_safe=false
     fi
     for (( index=${#MOUNTS[@]}-1; index>=0; index-- )); do
         if unmount_tree "${MOUNTS[$index]}"; then
             released_mounts=$((released_mounts + 1))
+            MOUNT_CLEANUP_RELEASED=$released_mounts
+            unset 'MOUNTS[index]'
             emit_progress_items mount_cleanup "$released_mounts" "$total_mounts"
         else
             mounts_released=false
@@ -1320,11 +1329,15 @@ PHASE=cleanup
 guard_target_mount_identities
 released_mounts=0
 total_mounts=${#MOUNTS[@]}
+MOUNT_CLEANUP_TOTAL=$total_mounts
+MOUNT_CLEANUP_RELEASED=0
 emit_progress_items mount_cleanup 0 "$total_mounts"
 for (( index=${#MOUNTS[@]}-1; index>=0; index-- )); do
     guard_target_mount_identities
     unmount_tree "${MOUNTS[$index]}"
     released_mounts=$((released_mounts + 1))
+    MOUNT_CLEANUP_RELEASED=$released_mounts
+    unset 'MOUNTS[index]'
     emit_progress_items mount_cleanup "$released_mounts" "$total_mounts"
 done
 MOUNTS=()
