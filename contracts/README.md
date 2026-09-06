@@ -13,6 +13,11 @@ publisher evidence, and installed-device lifecycle.
 
 ## Schemas
 
+- `schemas/driver-product-manifest-v1.schema.json` describes the compact
+  manifest inside one deterministic compiled-driver product tar. It binds exact
+  target compatibility, Core creator ownership, capabilities, payload and
+  metadata hashes, install destination, initramfs requirement, and provenance.
+
 - `schemas/resolver-result-v2.schema.json` describes the additive resolver
   result emitted by `lib/resolve_target.py`.
 - `fixtures/result-semantics-v1.json` links every accepted authoritative
