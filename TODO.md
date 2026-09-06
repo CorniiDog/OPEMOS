@@ -311,6 +311,11 @@ index in the same commit.
   * [x] Add bounded lifecycle progress and explicit pre-publication cancellation;
     progress derives only from exact asset states, rejects cancellation combined
     with remote observations, and never claims remote completion after cancel.
+  * [x] Publish the EXE-requested stable network-free command boundary for
+    `execute`, `status`, `reconcile`, and `cancel`. Private atomic state
+    binds every retry to the same operation ID; the closed end-to-end fixture
+    covers resume, missing-only retry, mismatch, cancellation, terminal
+    idempotency, symlink rejection, and exact completion without publication.
 * [ ] Authenticate target-owned executable code and raise the public online
   bootstrap/release/certification path to the offline installer's trust level.
 * [ ] Define authenticated archival/cache recovery and typed outage behavior for
