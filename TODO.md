@@ -356,7 +356,9 @@ for `* [ ]` to enumerate them mechanically.
   staged as recorded in `docs/boundary-decision-2026-09-06.md`. Canonical-first
   implementation commit `44498c4`; both focused boundary checks, documentation,
   Python compilation, canonical SHA-256/Git-blob, and diff checks passed on
-  2026-09-06. EXE mirror and final Core repin remain pending.
+  2026-09-06. Authenticated scheduler/handoff fallback amendment commit
+  `77f8715`; both boundary checks, documentation, compilation, canonical hashes,
+  and diff checks passed again. EXE mirror and final Core repin remain pending.
 
 * [x] 2026-09-04 user-authorized creator-owned artifact cleanup boundary:
   canonical SHA-256 `136d3572effa90c1b84bcf51002d7f9641c367132de20d54dd7173f68f13c6a8`,
