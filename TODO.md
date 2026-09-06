@@ -347,11 +347,12 @@ for `* [ ]` to enumerate them mechanically.
 
 * [ ] 2026-09-06 user-authorized cross-repository merge governance:
   Core canonical SHA-256
-  `ec64ceb374a56a4217ca47cedd5ae238bab30926230ef0bf2aafd8000c3512c2`, Git
-  blob `fb13c9ae5ca0544978bcde433f50958c446cd8cf`. Only owning primary leads may
+  `8c882b9a25e3d53fc200d82fff0807a8746dc826410271563d37342542c01df0`, Git
+  blob `2f8424a1df29fce2859126f7c42fd1885db8a425`. Only owning primary leads may
   squash-merge after exact unchanged-head/base/scope/check-set counterpart-lead
   approval and passing required checks; helpers and Resolver cannot approve or
-  merge. Core-first synchronization, EXE mirror, and final Core repin remain
+  merge. A same-author GitHub refusal permits only the exact authenticated
+  counterpart-primary scheduler/handoff fallback recorded by the authority. Core-first synchronization, EXE mirror, and final Core repin remain
   staged as recorded in `docs/boundary-decision-2026-09-06.md`. Canonical-first
   implementation commit `44498c4`; both focused boundary checks, documentation,
   Python compilation, canonical SHA-256/Git-blob, and diff checks passed on

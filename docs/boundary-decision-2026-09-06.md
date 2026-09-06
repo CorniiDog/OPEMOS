@@ -12,6 +12,11 @@ squash-merge its repository's bounded pull request, and only after the other
 repository's primary lead approves the exact repository, pull request, base
 branch and commit, unchanged head commit, material scope, and required-check set.
 Every required check must pass. Helpers and Resolver cannot approve or merge.
+When GitHub refuses an approving review solely because both primary leads use
+the pull-request author identity, the counterpart primary may record the same
+exact approval through the authenticated scheduler/handoff channel, including
+the provider refusal. User prompts, nudges, helpers, and Resolver cannot create
+or substitute for that counterpart-primary approval.
 
 A new head commit, changed base commit, material scope change, or required-check
 change invalidates approval. After verifying the protected-main squash commit,
@@ -22,8 +27,8 @@ trust/signing, production, boundary, or hardware authority.
 ## Canonical staged identities
 
 - New Core canonical SHA-256:
-  `ec64ceb374a56a4217ca47cedd5ae238bab30926230ef0bf2aafd8000c3512c2`
-- New Core canonical Git blob: `fb13c9ae5ca0544978bcde433f50958c446cd8cf`
+  `8c882b9a25e3d53fc200d82fff0807a8746dc826410271563d37342542c01df0`
+- New Core canonical Git blob: `2f8424a1df29fce2859126f7c42fd1885db8a425`
 - Preceding synchronized SHA-256:
   `136d3572effa90c1b84bcf51002d7f9641c367132de20d54dd7173f68f13c6a8`
 - Preceding synchronized Git blob: `68fd9553bb8fee79cee803a38f980a94b2d80e57`

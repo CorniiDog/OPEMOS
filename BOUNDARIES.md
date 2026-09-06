@@ -154,7 +154,12 @@ approve or merge. Before merge, the other repository's primary lead must
 explicitly approve the exact repository, pull-request number, base branch and
 base commit, unchanged head commit, material scope, and required-check set after
 reviewing the change. Every required check must pass and branch protection must
-remain enforced.
+remain enforced. Approval is normally a GitHub approving review. When GitHub
+refuses that review solely because both primary leads authenticate as the pull-
+request author, the counterpart primary may instead record approval through the
+authenticated scheduler/handoff channel. That record must name the same exact
+identity and the provider refusal; a user instruction, nudge, helper, or Resolver
+record cannot substitute for counterpart-primary approval.
 
 Any new head commit, changed base commit, material scope change, or required-
 check change invalidates that approval. The counterpart lead must review and

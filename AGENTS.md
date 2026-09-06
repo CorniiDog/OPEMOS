@@ -1,8 +1,8 @@
 # Repository agent instructions
 
 `BOUNDARIES.md` is the read-only ownership authority. Its current canonical
-SHA-256 is `ec64ceb374a56a4217ca47cedd5ae238bab30926230ef0bf2aafd8000c3512c2`
-and Git blob is `fb13c9ae5ca0544978bcde433f50958c446cd8cf`. OPEMOS.EXE still mirrors the
+SHA-256 is `8c882b9a25e3d53fc200d82fff0807a8746dc826410271563d37342542c01df0`
+and Git blob is `2f8424a1df29fce2859126f7c42fd1885db8a425`. OPEMOS.EXE still mirrors the
 preceding bytes at pinned counterpart commit
 `064d1d54c7ef2eda3d56e80c67e9f8e78a554725` while the authorized 2026-09-06
 governance synchronization is staged. The preceding pin
@@ -52,8 +52,11 @@ commits. Use a normal fast-forward push of the short-lived work branch only.
 Never force-push, rewrite published refs, alter remotes, push tags, publish
 releases/assets, or bypass branch protection. The owning primary lead may
 squash-merge only under the exact cross-lead approval gate in `BOUNDARIES.md`;
-helpers and Resolver cannot approve or merge. Any changed head, base, material
-scope, or required-check set invalidates approval. After verifying the protected
+helpers and Resolver cannot approve or merge. If GitHub rejects an approving
+review solely because both leads use the PR-author identity, the counterpart
+primary may use the exact authenticated scheduler/handoff fallback defined by
+the authority. Any changed head, base, material scope, or required-check set
+invalidates approval. After verifying the protected
 main squash commit, the owning lead may delete only that merged topic branch.
 Stop on divergence, rejection, or ambiguity and record the remote, branch, pull
 request, source commits, checks, and squash commit in TODO or handoff history.

@@ -9,8 +9,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 COUNTERPART_COMMIT = "064d1d54c7ef2eda3d56e80c67e9f8e78a554725"
-EXPECTED_GIT_BLOB = "fb13c9ae5ca0544978bcde433f50958c446cd8cf"
-EXPECTED_SHA256 = "ec64ceb374a56a4217ca47cedd5ae238bab30926230ef0bf2aafd8000c3512c2"
+EXPECTED_GIT_BLOB = "2f8424a1df29fce2859126f7c42fd1885db8a425"
+EXPECTED_SHA256 = "8c882b9a25e3d53fc200d82fff0807a8746dc826410271563d37342542c01df0"
 COUNTERPART_EXPECTED_SHA256 = "136d3572effa90c1b84bcf51002d7f9641c367132de20d54dd7173f68f13c6a8"
 MIRROR_SYNCHRONIZED = False
 
@@ -63,6 +63,8 @@ def main(local_only=False):
     assert "## Cross-repository pull-request merge governance" in text
     assert "Only the owning repository primary lead may squash-merge" in text
     assert "Any new head commit, changed base commit, material scope change" in text
+    assert "the counterpart primary may instead record approval through the" in text
+    assert "authenticated scheduler/handoff channel" in text
     assert "may delete only that exact merged topic branch" in text
     assert "## Artifact cleanup ownership" in text
     assert "Artifact cleanup follows creator ownership" in text
