@@ -876,7 +876,7 @@ unmount_tree()
     # of allowing a failed/stale discovery probe to strand a known mount.
     # A target that disappeared concurrently is acceptable only when the
     # authoritative postcondition confirms that no mount remains there.
-    umount -R "$target" >/dev/null 2>&1 ||
+    run_mutation_command umount -R "$target" >/dev/null 2>&1 ||
         ! findmnt -rn -R "$target" >/dev/null 2>&1 || return 1
     ! findmnt -rn -R "$target" >/dev/null 2>&1
 }

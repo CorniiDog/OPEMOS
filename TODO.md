@@ -2218,6 +2218,18 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   userspace verification, module extraction/compression/copy/verification,
   GRUB, depmod, mkinitcpio, state writing, compression restoration, and
   recursive mount cleanup.
+  * [x] Add cancellation after recursive cleanup starts the first unmount. The
+    unmount child now uses Core's cancellation-aware process-group launcher;
+    exit cleanup retries the still-recorded mounts and requires the exact
+    `0,0,1,2,3,4` recovery sequence without a false release. The isolated
+    compressed-profile fixture requires complete mutation/state progress,
+    terminal phase `cleanup` and reason `cancelled`, verified initramfs evidence
+    without a receipt claim, all four mounts released, no temporary workspace
+    leak, and exact restoration to the original no-compression policy.
+    Serialized shell and Python syntax validation run through `heavy.sh`;
+    required integration validation is recorded with the GitHub PR because this
+    host's unchanged `bsdtar` limitation blocks the monolithic suite before
+    mutation.
   * [x] Add cancellation after all four runtime mounts are released and the
     original Btrfs compression policy restoration starts. Restoration now uses
     Core's cancellation-aware process-group launcher, and exit cleanup avoids a
