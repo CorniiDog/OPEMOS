@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://corniidog.github.io/OPEMOS/contracts/schemas/driver-release-metadata-v1.schema.json",
+  "title": "OPEMOS self-describing driver release metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "contract", "artifactId", "target", "capabilities", "compatibility", "lifecycle", "archive", "provenance", "authentication", "extensions"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "contract": {"const": "opemos-driver-release-v1"},
+    "artifactId": {"$ref": "#/$defs/sha256"},
+    "target": {"type": "object", "additionalProperties": false, "required": ["steamosVersion", "kernelAbi", "architecture"], "properties": {"steamosVersion": {"$ref": "#/$defs/nonempty"}, "kernelAbi": {"$ref": "#/$defs/nonempty"}, "architecture": {"const": "x86_64"}}},
+    "capabilities": {"type": "object", "additionalProperties": false, "required": ["required", "optional"], "properties": {"required": {"$ref": "#/$defs/capabilities"}, "optional": {"$ref": "#/$defs/capabilities"}}},
+    "compatibility": {"type": "object", "additionalProperties": false, "required": ["nvidiaModuleVersion", "userspace"], "properties": {"nvidiaModuleVersion": {"$ref": "#/$defs/nonempty"}, "userspace": {"type": "object", "additionalProperties": false, "required": ["version", "policy"], "properties": {"version": {"$ref": "#/$defs/nonempty"}, "policy": {"const": "exact"}}}}},
+    "lifecycle": {"type": "object", "additionalProperties": false, "required": ["status", "revocation"], "properties": {"status": {"enum": ["active", "deprecated", "revoked"]}, "revocation": {"oneOf": [{"type": "null"}, {"type": "object", "additionalProperties": false, "required": ["reason", "reference"], "properties": {"reason": {"$ref": "#/$defs/nonempty"}, "reference": {"$ref": "#/$defs/nonempty"}}}]}}},
+    "archive": {"type": "object", "additionalProperties": false, "required": ["name", "bytes", "sha256"], "properties": {"name": {"type": "string", "pattern": "^[A-Za-z0-9._+-]+\\.tar\\.gz$"}, "bytes": {"type": "integer", "minimum": 1, "maximum": 8589934592}, "sha256": {"$ref": "#/$defs/sha256"}}},
+    "provenance": {"type": "object", "additionalProperties": false, "required": ["repository", "commit", "reference", "sha256"], "properties": {"repository": {"$ref": "#/$defs/nonempty"}, "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"}, "reference": {"$ref": "#/$defs/nonempty"}, "sha256": {"$ref": "#/$defs/sha256"}}},
+    "authentication": {"type": "array", "minItems": 1, "maxItems": 8, "items": {"type": "object", "additionalProperties": false, "required": ["kind", "reference", "sha256"], "properties": {"kind": {"enum": ["signature", "attestation"]}, "reference": {"$ref": "#/$defs/nonempty"}, "sha256": {"$ref": "#/$defs/sha256"}}}},
+    "extensions": {"type": "object"}
+  },
+  "$defs": {
+    "nonempty": {"type": "string", "minLength": 1, "maxLength": 1024},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "capabilities": {"type": "array", "maxItems": 64, "uniqueItems": true, "items": {"type": "string", "pattern": "^[a-z][a-z0-9.-]{0,63}$"}}
+  }
+}

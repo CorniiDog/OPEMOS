@@ -326,6 +326,14 @@ index in the same commit.
   only with its SHA-256 sidecar. Implementation commit `c2bc400`; focused
   deterministic/hostile-input, consumer-contract, documentation, and Python
   compile validations passed through `heavy.sh` on 2026-09-06.
+* [x] Define bounded self-describing release metadata and deterministic
+  selection/rejection semantics for one driver tar without tag parsing or
+  release-order dependence. Cover additive extensions, unknown required versus
+  optional capabilities, exact target/module/userspace compatibility,
+  revocation, malformed candidates, byte-identical duplicates, and ambiguity.
+  Implementation commit `80b8276`; focused hostile-fixture, consumer-contract,
+  documentation, JSON syntax, and Python compile validations passed through
+  `heavy.sh` where required on 2026-09-06.
 * [ ] Authenticate target-owned executable code and raise the public online
   bootstrap/release/certification path to the offline installer's trust level.
 * [ ] Define authenticated archival/cache recovery and typed outage behavior for

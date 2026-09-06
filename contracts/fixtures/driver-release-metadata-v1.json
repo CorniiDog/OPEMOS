@@ -1,0 +1,126 @@
+{
+  "base": {
+    "archive": {
+      "bytes": 4096,
+      "name": "opemos-driver-steamos-3.8.16-x86_64.tar.gz",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "artifactId": "df8048a888cb621c22ab23b34e3308a0c2ab65a92dc65eaa6eb8deb5ebf4a7d4",
+    "authentication": [
+      {
+        "kind": "attestation",
+        "reference": "opemos-driver.intoto.jsonl",
+        "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      }
+    ],
+    "capabilities": {
+      "optional": [
+        "open-kernel-modules"
+      ],
+      "required": [
+        "initramfs-integration",
+        "offline-install"
+      ]
+    },
+    "compatibility": {
+      "nvidiaModuleVersion": "575.64.05",
+      "userspace": {
+        "policy": "exact",
+        "version": "575.64.05"
+      }
+    },
+    "contract": "opemos-driver-release-v1",
+    "extensions": {
+      "futureOptional": {
+        "preserved": true
+      }
+    },
+    "lifecycle": {
+      "revocation": null,
+      "status": "active"
+    },
+    "provenance": {
+      "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "reference": "metadata/PROVENANCE.json",
+      "repository": "CorniiDog/OPEMOS",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "schemaVersion": 1,
+    "target": {
+      "architecture": "x86_64",
+      "kernelAbi": "6.16.12-valve24.5-1-neptune-616-gb2f7cfe85e45",
+      "steamosVersion": "3.8.16"
+    }
+  },
+  "cases": [
+    {
+      "expected": "selected",
+      "mutation": {},
+      "name": "valid"
+    },
+    {
+      "expected": "selected",
+      "mutation": {
+        "capabilities.optional": [
+          "future-telemetry",
+          "open-kernel-modules"
+        ]
+      },
+      "name": "unknown-optional-capability"
+    },
+    {
+      "expected": "no_match",
+      "mutation": {
+        "capabilities.required": [
+          "future-required",
+          "initramfs-integration",
+          "offline-install"
+        ]
+      },
+      "name": "unknown-required-capability"
+    },
+    {
+      "expected": "no_match",
+      "mutation": {
+        "lifecycle.revocation": {
+          "reason": "withdrawn",
+          "reference": "revocations/fixture.json"
+        },
+        "lifecycle.status": "revoked"
+      },
+      "name": "revoked"
+    },
+    {
+      "expected": "no_match",
+      "mutation": {
+        "target.kernelAbi": "other-kernel"
+      },
+      "name": "kernel-abi-mismatch"
+    },
+    {
+      "expected": "no_match",
+      "mutation": {
+        "compatibility.userspace.version": "999.0"
+      },
+      "name": "userspace-mismatch"
+    },
+    {
+      "expected": "no_match",
+      "mutation": {
+        "archive.sha256": "BAD"
+      },
+      "name": "malformed-hash"
+    }
+  ],
+  "kind": "opemos-driver-release-hostile-fixtures",
+  "schemaVersion": 1,
+  "supportedRequiredCapabilities": [
+    "initramfs-integration",
+    "offline-install"
+  ],
+  "target": {
+    "architecture": "x86_64",
+    "kernelAbi": "6.16.12-valve24.5-1-neptune-616-gb2f7cfe85e45",
+    "steamosVersion": "3.8.16"
+  }
+}
