@@ -1012,7 +1012,7 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
             if record["phase"] == "mount_cleanup"
         ]
         cleanup_completions = [record["completed"] for record in cleanup_records]
-        assert cleanup_completions == [0, 1, 2, 3, 4]
+        assert cleanup_completions == [0, 1, 2, 3, 4], cleanup_completions
         assert all(record["total"] == 4 for record in cleanup_records)
         assert len(
             mount_state.with_suffix(".umount").read_text(
