@@ -352,7 +352,10 @@ for `* [ ]` to enumerate them mechanically.
   squash-merge after exact unchanged-head/base/scope/check-set counterpart-lead
   approval and passing required checks; helpers and Resolver cannot approve or
   merge. Core-first synchronization, EXE mirror, and final Core repin remain
-  staged as recorded in `docs/boundary-decision-2026-09-06.md`.
+  staged as recorded in `docs/boundary-decision-2026-09-06.md`. Canonical-first
+  implementation commit `44498c4`; both focused boundary checks, documentation,
+  Python compilation, canonical SHA-256/Git-blob, and diff checks passed on
+  2026-09-06. EXE mirror and final Core repin remain pending.
 
 * [x] 2026-09-04 user-authorized creator-owned artifact cleanup boundary:
   canonical SHA-256 `136d3572effa90c1b84bcf51002d7f9641c367132de20d54dd7173f68f13c6a8`,
