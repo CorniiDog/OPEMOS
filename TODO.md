@@ -2218,6 +2218,22 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   userspace verification, module extraction/compression/copy/verification,
   GRUB, depmod, mkinitcpio, state writing, compression restoration, and
   recursive mount cleanup.
+  * [x] Add cancellation after the verified payload receipt is committed and
+    the first persistent installation-state file write starts. The isolated
+    fixture exposed and corrected state-file copies that were outside Core's
+    cancellation-aware process-group launcher, plus stale result handling that
+    attempted to attach the rolled-back receipt while rejecting the already
+    verified initramfs proof. The
+    compressed-profile fixture requires complete userspace, module, bootloader,
+    depmod, and initramfs progress, terminal phase `state_write` and reason
+    `cancelled`, exactly one indeterminate installation-state record with no
+    false completion, a bounded empty partial state directory, omission of the
+    disposable overlay's receipt from the cancelled result, complete
+    four-mount cleanup, no temporary workspace leak, and exact restoration of
+    the original compression policy. Serialized Python syntax
+    validation passed through `heavy.sh`; required integration validation is
+    recorded with the GitHub PR because this host's unchanged `bsdtar`
+    limitation blocks the monolithic suite before mutation.
   * [x] Add cancellation after the module verifier starts decompression of the
     first installed module. The deterministic nested-zstd fixture requires
     complete authenticated userspace and five-module installation counters,

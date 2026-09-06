@@ -434,6 +434,10 @@ case "$target" in
     : > "$MOCK_INSTALL_STATE"
     sleep "${{MOCK_MODULE_INSTALL_DELAY:-0}}"
     ;;
+  */var/lib/open-gpu-kernel-modules-steamos-support/offline-install/BUILD-INFO.txt)
+    : > "$MOCK_STATE_WRITE_STATE"
+    sleep "${{MOCK_STATE_WRITE_DELAY:-0}}"
+    ;;
 esac
 {real_install} "$@" || exit $?
 case "$target" in
@@ -672,6 +676,7 @@ def installer_environment(binaries, mount_state, **environment):
         MOCK_MODULE_VERIFICATION_STATE=str(
             mount_state.with_suffix(".module-verify")
         ),
+        MOCK_STATE_WRITE_STATE=str(mount_state.with_suffix(".state-write")),
         MOCK_TRANSACTION_LOG=str(mount_state.with_suffix(".transaction")),
         MOCK_UMOUNT_LOG=str(mount_state.with_suffix(".umount")),
     )
@@ -858,6 +863,11 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
         while time.monotonic() < deadline and not verification_state.exists():
             time.sleep(0.05)
         assert verification_state.exists(), "module verification was not started"
+    elif expected_phase == "state_write":
+        state_write_state = mount_state.with_suffix(".state-write")
+        while time.monotonic() < deadline and not state_write_state.exists():
+            time.sleep(0.05)
+        assert state_write_state.exists(), "installation state write was not started"
     elif expected_phase == "initramfs":
         child_state = mount_state.with_suffix(".chroot")
         while time.monotonic() < deadline and not child_state.exists():
@@ -912,6 +922,40 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
             for record in records
         )
         assert_item_progress(records, "mount_cleanup", 4)
+    elif expected_phase == "state_write":
+        package_count = len(document["validation"]["packages"])
+        assert document["initramfsVerification"]["status"] == "verified"
+        assert "payloadReceipt" not in document
+        assert_item_progress(records, "userspace_install", package_count)
+        assert_item_progress(records, "userspace_verification", package_count)
+        assert_item_progress(records, "module_install", 5)
+        assert_item_progress(records, "module_verification", 5)
+        assert_item_progress(records, "grub_update", 1)
+        assert_item_progress(records, "depmod", 1)
+        assert_indeterminate_then_complete(records, "initramfs")
+        assert [
+            record for record in records
+            if record["phase"] == "installation_state"
+        ] == [
+            {
+                "attempt": 0,
+                "indeterminate": True,
+                "phase": "installation_state",
+                "schemaVersion": 1,
+            }
+        ]
+        assert_item_progress(records, "mount_cleanup", 4)
+        partial_state = (
+            paths["target"]
+            / "var/lib/open-gpu-kernel-modules-steamos-support/offline-install"
+        )
+        assert partial_state.is_dir()
+        assert list(partial_state.iterdir()) == []
+        receipt = (
+            paths["target"]
+            / "usr/lib/open-gpu-kernel-modules-steamos-support/offline-install"
+        )
+        assert receipt.is_dir() and not receipt.is_symlink()
     elif expected_phase == "userspace_verification":
         package_count = len(document["validation"]["packages"])
         assert_item_progress(records, "userspace_install", package_count)
@@ -2312,6 +2356,20 @@ def main():
             PROJECT_TEST_ROOT_AVAILABLE_BYTES=str(256 * 1024 * 1024),
             PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
             MOCK_MODULE_VERIFICATION_DELAY="30",
+            MOCK_INITIAL_COMPRESSION="",
+        )
+        state_write_cancel_root = temporary / "state-write-cancel-fixture"
+        state_write_cancel_root.mkdir()
+        state_write_cancel_paths = make_fixture(state_write_cancel_root)
+        state_write_cancel_paths["compression_profile"] = "btrfs-zstd3"
+        cancel_installer(
+            state_write_cancel_paths,
+            binaries,
+            temporary / "state-write-cancel.json",
+            "state_write",
+            PROJECT_TEST_ROOT_AVAILABLE_BYTES=str(256 * 1024 * 1024),
+            PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
+            MOCK_STATE_WRITE_DELAY="30",
             MOCK_INITIAL_COMPRESSION="",
         )
         corrupt_module_fixture = temporary / "corrupt-module-fixture"

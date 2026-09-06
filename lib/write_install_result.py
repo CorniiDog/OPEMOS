@@ -1628,6 +1628,7 @@ def main():
         may_preserve_verified_initramfs = (
             args.status == "success"
             or args.status == "failed" and args.phase == "payload_receipt"
+            or args.status == "cancelled" and args.phase == "state_write"
         )
         if not may_preserve_verified_initramfs:
             raise SystemExit("Initramfs verification metadata does not match the result.")
