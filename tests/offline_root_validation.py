@@ -385,6 +385,7 @@ case " $* " in
     : > "$workspace" || exit 98
     rm -f "$workspace"
     printf '%s\n' pacman-hooks >> "$MOCK_TRANSACTION_LOG"
+    sleep "${MOCK_PACMAN_DELAY:-0}"
     if [ "${MOCK_POST_HOOK_FAILURE:-0}" != 0 ]; then
       echo 'error: command failed to execute correctly' >&2
     fi
@@ -800,6 +801,17 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
     deadline = time.monotonic() + 10
     if expected_phase == "validation":
         time.sleep(0.5)
+    elif expected_phase == "userspace_install":
+        pacman_log = mount_state.with_suffix(".pacman")
+        while time.monotonic() < deadline:
+            if pacman_log.exists() and " -U " in pacman_log.read_text(
+                encoding="utf-8"
+            ):
+                break
+            time.sleep(0.05)
+        assert pacman_log.exists() and " -U " in pacman_log.read_text(
+            encoding="utf-8"
+        ), "userspace package transaction was not started"
     elif expected_phase == "initramfs":
         child_state = mount_state.with_suffix(".chroot")
         while time.monotonic() < deadline and not child_state.exists():
@@ -830,7 +842,31 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
     assert set(test_temp_root.glob("offline-root-workspace.*")) == before_workspace_results
     assert set(scratch_parent.glob("offline-root-initramfs.*")) == before_scratch
     records = parse_progress_records(stderr)
-    if expected_phase == "initramfs":
+    if expected_phase == "userspace_install":
+        package_count = len(document["validation"]["packages"])
+        assert [
+            record for record in records
+            if record["phase"] == "userspace_install"
+        ] == [
+            {
+                "attempt": 0,
+                "completed": 0,
+                "indeterminate": False,
+                "phase": "userspace_install",
+                "schemaVersion": 1,
+                "total": package_count,
+                "unit": "items",
+            }
+        ]
+        assert not any(
+            record["phase"] in {
+                "userspace_verification", "module_install", "module_verification",
+                "grub_update", "depmod", "initramfs", "installation_state",
+            }
+            for record in records
+        )
+        assert_item_progress(records, "mount_cleanup", 4)
+    elif expected_phase == "initramfs":
         assert any(
             record["phase"] == "initramfs" and record["indeterminate"]
             for record in records
@@ -2925,6 +2961,13 @@ def main():
             temporary / "cancel-validation.json",
             "validation",
             MOCK_GPGV_DELAY="30",
+        )
+        cancel_installer(
+            paths,
+            binaries,
+            temporary / "cancel-userspace-install.json",
+            "userspace_install",
+            MOCK_PACMAN_DELAY="30",
         )
         cancel_installer(
             paths,

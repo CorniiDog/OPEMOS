@@ -2218,6 +2218,16 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   userspace verification, module extraction/compression/copy/verification,
   GRUB, depmod, mkinitcpio, state writing, compression restoration, and
   recursive mount cleanup.
+  * [x] Add cancellation after the userspace package transaction has actually
+    entered pacman's `-U` operation. The deterministic fixture requires terminal
+    phase `userspace_install` and reason `cancelled`, exactly one zero-complete
+    package counter with the authenticated package total, no verification,
+    module, boot, initramfs, or state progress, complete four-mount cleanup,
+    exact compression-policy restoration, and removal of all temporary
+    workspaces. Serialized Python syntax validation passed through `heavy.sh`;
+    required integration validation is recorded with the GitHub PR because this
+    host's unchanged `bsdtar` limitation blocks the monolithic suite before
+    mutation.
   * [x] Strengthen the installed-module mismatch failure after all five modules
     are copied and inspected. The fixture requires terminal phase/reason
     `module_install` with structured two-module mismatch evidence, complete
