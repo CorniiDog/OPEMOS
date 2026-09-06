@@ -2218,6 +2218,18 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   userspace verification, module extraction/compression/copy/verification,
   GRUB, depmod, mkinitcpio, state writing, compression restoration, and
   recursive mount cleanup.
+  * [x] Add cancellation after the exact first module-copy process starts but
+    before it writes or increments the module count. Both precompressed and
+    newly compressed module copies now use the existing bounded process-group
+    launcher in test and production modes. The isolated compressed-profile
+    fixture requires complete userspace counters, terminal phase
+    `module_install` and reason `cancelled`, exactly zero of five installed
+    modules, no later progress, complete four-mount cleanup, no temporary
+    workspace leak, and exact restoration of the original compression policy.
+    Serialized shell and Python syntax validation passed through `heavy.sh`;
+    required integration validation is recorded with the GitHub PR because this
+    host's unchanged `bsdtar` limitation blocks the monolithic suite before
+    mutation.
   * [x] Add cancellation after the first raw module has been compressed into the
     private mutation workspace but before it is installed or counted. The
     deterministic compressed-profile fixture requires complete authenticated
