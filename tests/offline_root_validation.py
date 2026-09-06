@@ -450,6 +450,12 @@ esac
     )
     (binaries / "zstd").write_text(
         f"""#!/bin/sh
+case " $* " in
+  *" -d "*" -c "*)
+    : > "$MOCK_MODULE_VERIFICATION_STATE"
+    sleep "${{MOCK_MODULE_VERIFICATION_DELAY:-0}}"
+    ;;
+esac
 {real_zstd} "$@" || exit $?
 previous=
 output=
@@ -663,6 +669,9 @@ def installer_environment(binaries, mount_state, **environment):
         MOCK_CHROOT_STATE=str(mount_state.with_suffix(".chroot")),
         MOCK_ZSTD_STATE=str(mount_state.with_suffix(".zstd")),
         MOCK_INSTALL_STATE=str(mount_state.with_suffix(".install")),
+        MOCK_MODULE_VERIFICATION_STATE=str(
+            mount_state.with_suffix(".module-verify")
+        ),
         MOCK_TRANSACTION_LOG=str(mount_state.with_suffix(".transaction")),
         MOCK_UMOUNT_LOG=str(mount_state.with_suffix(".umount")),
     )
@@ -844,6 +853,11 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
         while time.monotonic() < deadline and not operation_state.exists():
             time.sleep(0.05)
         assert operation_state.exists(), "module mutation operation was not started"
+    elif expected_phase == "module_verification":
+        verification_state = mount_state.with_suffix(".module-verify")
+        while time.monotonic() < deadline and not verification_state.exists():
+            time.sleep(0.05)
+        assert verification_state.exists(), "module verification was not started"
     elif expected_phase == "initramfs":
         child_state = mount_state.with_suffix(".chroot")
         while time.monotonic() < deadline and not child_state.exists():
@@ -945,6 +959,32 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
             record["phase"] in {
                 "module_verification", "grub_update", "depmod", "initramfs",
                 "installation_state",
+            }
+            for record in records
+        )
+        assert_item_progress(records, "mount_cleanup", 4)
+    elif expected_phase == "module_verification":
+        package_count = len(document["validation"]["packages"])
+        assert_item_progress(records, "userspace_install", package_count)
+        assert_item_progress(records, "userspace_verification", package_count)
+        assert_item_progress(records, "module_install", 5)
+        assert [
+            record for record in records
+            if record["phase"] == "module_verification"
+        ] == [
+            {
+                "attempt": 0,
+                "completed": 0,
+                "indeterminate": False,
+                "phase": "module_verification",
+                "schemaVersion": 1,
+                "total": 5,
+                "unit": "items",
+            }
+        ]
+        assert not any(
+            record["phase"] in {
+                "grub_update", "depmod", "initramfs", "installation_state",
             }
             for record in records
         )
@@ -2256,6 +2296,22 @@ def main():
             PROJECT_TEST_ROOT_AVAILABLE_BYTES=str(256 * 1024 * 1024),
             PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
             MOCK_MODULE_INSTALL_DELAY="30",
+            MOCK_INITIAL_COMPRESSION="",
+        )
+        module_verification_cancel_root = temporary / "module-verification-cancel-fixture"
+        module_verification_cancel_root.mkdir()
+        module_verification_cancel_paths = make_fixture(
+            module_verification_cancel_root
+        )
+        module_verification_cancel_paths["compression_profile"] = "btrfs-zstd3"
+        cancel_installer(
+            module_verification_cancel_paths,
+            binaries,
+            temporary / "module-verification-cancel.json",
+            "module_verification",
+            PROJECT_TEST_ROOT_AVAILABLE_BYTES=str(256 * 1024 * 1024),
+            PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
+            MOCK_MODULE_VERIFICATION_DELAY="30",
             MOCK_INITIAL_COMPRESSION="",
         )
         corrupt_module_fixture = temporary / "corrupt-module-fixture"
