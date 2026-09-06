@@ -13,6 +13,12 @@ publisher evidence, and installed-device lifecycle.
 
 ## Schemas
 
+- `schemas/driver-release-metadata-v1.schema.json` is the bounded,
+  self-describing release-level contract for one compiled-driver tar. It makes
+  exact target, capability, lifecycle, archive, provenance, and authentication
+  references discoverable without tag parsing. Unknown additive data is
+  confined to `extensions`; required capabilities remain fail-closed.
+
 - `schemas/driver-product-manifest-v1.schema.json` describes the compact
   manifest inside one deterministic compiled-driver product tar. It binds exact
   target compatibility, Core creator ownership, capabilities, payload and

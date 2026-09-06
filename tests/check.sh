@@ -275,6 +275,8 @@ printf 'Checking canonical artifact publisher...\n'
 python3 tests/publisher.py
 printf 'Checking single compiled-driver product artifact...\n'
 python3 tests/driver_product.py
+printf 'Checking self-describing driver release metadata...\n'
+python3 tests/driver_release_metadata.py
 python3 - <<'PY' || fail "compile cache bypasses canonical artifact validation"
 from pathlib import Path
 script = Path("bootstrap/compile.sh").read_text(encoding="utf-8")
