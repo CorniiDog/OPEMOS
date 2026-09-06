@@ -504,8 +504,20 @@ case " $* " in
     [ "${MOCK_FAIL_COMPRESSION_ACTIVATE:-0}" = 0 ] || exit 1
     printf '%s\n' 'compress-force=zstd:3' > "$MOCK_COMPRESSION_STATE"
     ;;
-  *' remount,compress=no '*) : > "$MOCK_COMPRESSION_STATE";;
-  *' remount,compress='*) option=${2#remount,}; printf '%s\n' "$option" > "$MOCK_COMPRESSION_STATE";;
+  *' remount,compress=no '*)
+    if [ ! -e "$MOCK_COMPRESSION_RESTORE_STATE" ]; then
+      : > "$MOCK_COMPRESSION_RESTORE_STATE"
+      sleep "${MOCK_COMPRESSION_RESTORE_DELAY:-0}"
+    fi
+    : > "$MOCK_COMPRESSION_STATE"
+    ;;
+  *' remount,compress='*)
+    if [ ! -e "$MOCK_COMPRESSION_RESTORE_STATE" ]; then
+      : > "$MOCK_COMPRESSION_RESTORE_STATE"
+      sleep "${MOCK_COMPRESSION_RESTORE_DELAY:-0}"
+    fi
+    option=${2#remount,}; printf '%s\n' "$option" > "$MOCK_COMPRESSION_STATE"
+    ;;
 esac
 """,
         encoding="utf-8",
@@ -677,6 +689,9 @@ def installer_environment(binaries, mount_state, **environment):
             mount_state.with_suffix(".module-verify")
         ),
         MOCK_STATE_WRITE_STATE=str(mount_state.with_suffix(".state-write")),
+        MOCK_COMPRESSION_RESTORE_STATE=str(
+            mount_state.with_suffix(".compression-restore")
+        ),
         MOCK_TRANSACTION_LOG=str(mount_state.with_suffix(".transaction")),
         MOCK_UMOUNT_LOG=str(mount_state.with_suffix(".umount")),
     )
@@ -868,6 +883,11 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
         while time.monotonic() < deadline and not state_write_state.exists():
             time.sleep(0.05)
         assert state_write_state.exists(), "installation state write was not started"
+    elif expected_phase == "compression_policy_restore":
+        restore_state = mount_state.with_suffix(".compression-restore")
+        while time.monotonic() < deadline and not restore_state.exists():
+            time.sleep(0.05)
+        assert restore_state.exists(), "compression policy restoration was not started"
     elif expected_phase == "initramfs":
         child_state = mount_state.with_suffix(".chroot")
         while time.monotonic() < deadline and not child_state.exists():
@@ -956,6 +976,19 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
             / "usr/lib/open-gpu-kernel-modules-steamos-support/offline-install"
         )
         assert receipt.is_dir() and not receipt.is_symlink()
+    elif expected_phase == "compression_policy_restore":
+        package_count = len(document["validation"]["packages"])
+        assert document["initramfsVerification"]["status"] == "verified"
+        assert "payloadReceipt" not in document
+        assert_item_progress(records, "userspace_install", package_count)
+        assert_item_progress(records, "userspace_verification", package_count)
+        assert_item_progress(records, "module_install", 5)
+        assert_item_progress(records, "module_verification", 5)
+        assert_item_progress(records, "grub_update", 1)
+        assert_item_progress(records, "depmod", 1)
+        assert_indeterminate_then_complete(records, "initramfs")
+        assert_item_progress(records, "installation_state", 1)
+        assert_item_progress(records, "mount_cleanup", 4)
     elif expected_phase == "userspace_verification":
         package_count = len(document["validation"]["packages"])
         assert_item_progress(records, "userspace_install", package_count)
@@ -2370,6 +2403,22 @@ def main():
             PROJECT_TEST_ROOT_AVAILABLE_BYTES=str(256 * 1024 * 1024),
             PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
             MOCK_STATE_WRITE_DELAY="30",
+            MOCK_INITIAL_COMPRESSION="",
+        )
+        compression_restore_cancel_root = temporary / "compression-restore-cancel-fixture"
+        compression_restore_cancel_root.mkdir()
+        compression_restore_cancel_paths = make_fixture(
+            compression_restore_cancel_root
+        )
+        compression_restore_cancel_paths["compression_profile"] = "btrfs-zstd3"
+        cancel_installer(
+            compression_restore_cancel_paths,
+            binaries,
+            temporary / "compression-restore-cancel.json",
+            "compression_policy_restore",
+            PROJECT_TEST_ROOT_AVAILABLE_BYTES=str(256 * 1024 * 1024),
+            PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
+            MOCK_COMPRESSION_RESTORE_DELAY="30",
             MOCK_INITIAL_COMPRESSION="",
         )
         corrupt_module_fixture = temporary / "corrupt-module-fixture"
