@@ -436,7 +436,7 @@ esac
         encoding="utf-8",
     )
     (binaries / "depmod").write_text(
-        "#!/bin/sh\n[ \"${MOCK_FAIL_DEPMOD:-0}\" = 0 ] || exit 66\nroot=$2; kernel=$4; mkdir -p \"$root/usr/lib/modules/$kernel\"; echo fixture > \"$root/usr/lib/modules/$kernel/modules.dep\"\n"
+        "#!/bin/sh\n[ \"${MOCK_FAIL_DEPMOD:-0}\" = 0 ] || exit 66\n[ -z \"${MOCK_DEPMOD_STATE:-}\" ] || { : > \"$MOCK_DEPMOD_STATE\"; sleep \"${MOCK_DEPMOD_DELAY:-0}\"; }\nroot=$2; kernel=$4; mkdir -p \"$root/usr/lib/modules/$kernel\"; echo fixture > \"$root/usr/lib/modules/$kernel/modules.dep\"\n"
         "[ \"${MOCK_DRIFT_TARGET_EXECUTION:-0}\" = 0 ] || printf 'HOOKS=(hostile)\\n' > \"$root/etc/mkinitcpio.conf\"\n",
         encoding="utf-8",
     )
@@ -708,6 +708,7 @@ def installer_environment(binaries, mount_state, **environment):
         ),
         MOCK_TRANSACTION_LOG=str(mount_state.with_suffix(".transaction")),
         MOCK_GRUB_UPDATE_STATE=str(mount_state.with_suffix(".grub-update")),
+        MOCK_DEPMOD_STATE=str(mount_state.with_suffix(".depmod")),
         MOCK_UMOUNT_LOG=str(mount_state.with_suffix(".umount")),
         MOCK_UMOUNT_STATE=str(mount_state.with_suffix(".umount-state")),
     )
@@ -917,6 +918,11 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
         while time.monotonic() < deadline and not grub_state.exists():
             time.sleep(0.05)
         assert grub_state.exists(), "GRUB configuration update was not started"
+    elif expected_phase == "depmod":
+        depmod_state = mount_state.with_suffix(".depmod")
+        while time.monotonic() < deadline and not depmod_state.exists():
+            time.sleep(0.05)
+        assert depmod_state.exists(), "depmod was not started"
     elif expected_phase == "initramfs":
         child_state = mount_state.with_suffix(".chroot")
         while time.monotonic() < deadline and not child_state.exists():
@@ -1142,6 +1148,29 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
         assert (
             paths["target"] / "efi/EFI/steamos/grub.cfg"
         ).read_text(encoding="utf-8") == initial_grub
+        assert_item_progress(records, "mount_cleanup", 4)
+    elif expected_phase == "depmod":
+        package_count = len(document["validation"]["packages"])
+        assert_item_progress(records, "userspace_install", package_count)
+        assert_item_progress(records, "userspace_verification", package_count)
+        assert_item_progress(records, "module_install", 5)
+        assert_item_progress(records, "module_verification", 5)
+        assert_item_progress(records, "grub_update", 1)
+        assert [
+            record for record in records if record["phase"] == "depmod"
+        ] == [{
+            "attempt": 0,
+            "indeterminate": True,
+            "phase": "depmod",
+            "schemaVersion": 1,
+        }]
+        assert not any(
+            record["phase"] in {"initramfs", "installation_state"}
+            for record in records
+        )
+        assert not (
+            paths["target"] / "usr/lib/modules" / KERNEL / "modules.dep"
+        ).exists()
         assert_item_progress(records, "mount_cleanup", 4)
     elif expected_phase == "initramfs":
         assert any(
@@ -2480,6 +2509,20 @@ def main():
             PROJECT_TEST_ROOT_AVAILABLE_BYTES=str(256 * 1024 * 1024),
             PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
             MOCK_GRUB_UPDATE_DELAY="30",
+            MOCK_INITIAL_COMPRESSION="",
+        )
+        depmod_cancel_root = temporary / "depmod-cancel-fixture"
+        depmod_cancel_root.mkdir()
+        depmod_cancel_paths = make_fixture(depmod_cancel_root)
+        depmod_cancel_paths["compression_profile"] = "btrfs-zstd3"
+        cancel_installer(
+            depmod_cancel_paths,
+            binaries,
+            temporary / "depmod-cancel.json",
+            "depmod",
+            PROJECT_TEST_ROOT_AVAILABLE_BYTES=str(256 * 1024 * 1024),
+            PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
+            MOCK_DEPMOD_DELAY="30",
             MOCK_INITIAL_COMPRESSION="",
         )
         state_write_cancel_root = temporary / "state-write-cancel-fixture"

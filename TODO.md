@@ -2244,6 +2244,17 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
     Python syntax validation run through `heavy.sh`; required integration
     validation is recorded with the GitHub PR because this host's unchanged
     `bsdtar` limitation blocks the monolithic suite before mutation.
+  * [x] Add cancellation after depmod starts but before it writes the target
+    module dependency index. The delayed mock exposes an exact start marker;
+    the compressed-profile fixture requires complete userspace, module, and GRUB
+    progress, terminal phase `depmod` and reason `cancelled`, exactly one
+    indeterminate depmod record with no false completion, no initramfs or
+    installation-state progress, absence of the uncommitted `modules.dep`,
+    complete four-mount cleanup, no temporary workspace leak, and exact
+    restoration of the original compression policy. Serialized Python syntax
+    and progress-semantics validation run through `heavy.sh`; required
+    integration validation is recorded with the GitHub PR because this host's
+    unchanged `bsdtar` limitation blocks the monolithic suite before mutation.
   * [x] Add cancellation after the GRUB configuration helper starts but before
     it atomically replaces the target configuration. A fixture-only Python
     wrapper delays the real Core helper and exposes an exact start marker; the
