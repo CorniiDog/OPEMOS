@@ -308,6 +308,9 @@ index in the same commit.
   reconciliation over the validated canonical release plan. The closed schema
   and focused hostile matrix preserve production trust/signing gates and perform
   no network or publication action.
+  * [x] Add bounded lifecycle progress and explicit pre-publication cancellation;
+    progress derives only from exact asset states, rejects cancellation combined
+    with remote observations, and never claims remote completion after cancel.
 * [ ] Authenticate target-owned executable code and raise the public online
   bootstrap/release/certification path to the offline installer's trust level.
 * [ ] Define authenticated archival/cache recovery and typed outage behavior for
