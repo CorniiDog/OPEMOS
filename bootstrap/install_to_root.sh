@@ -843,10 +843,11 @@ restore_compression_policy()
     [[ "$COMPRESSION_POLICY_ACTIVE" == 1 ]] || return 0
     if [[ -n "$ORIGINAL_COMPRESSION_OPTION" &&
           "$ORIGINAL_COMPRESSION_OPTION" != compress=no ]]; then
-        mount -o "remount,$ORIGINAL_COMPRESSION_OPTION" "$ROOT" || return 1
+        run_mutation_command mount -o \
+            "remount,$ORIGINAL_COMPRESSION_OPTION" "$ROOT" || return 1
         [[ "$(compression_option)" == "$ORIGINAL_COMPRESSION_OPTION" ]] || return 1
     else
-        mount -o remount,compress=no "$ROOT" || return 1
+        run_mutation_command mount -o remount,compress=no "$ROOT" || return 1
         case "$(compression_option)" in
             ""|compress=no) ;;
             *) return 1 ;;
@@ -886,7 +887,7 @@ cleanup_mutation()
     local workspace_released=true target_identity_safe=true
     local released_mounts=0 total_mounts=${#MOUNTS[@]}
     trap - EXIT INT TERM
-    emit_progress_items mount_cleanup 0 "$total_mounts"
+    (( total_mounts == 0 )) || emit_progress_items mount_cleanup 0 "$total_mounts"
     if (( total_mounts > 0 )) || [[ "$COMPRESSION_POLICY_ACTIVE" == 1 ]]; then
         require_target_mount_identities || target_identity_safe=false
     fi

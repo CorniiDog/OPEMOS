@@ -2218,6 +2218,18 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   userspace verification, module extraction/compression/copy/verification,
   GRUB, depmod, mkinitcpio, state writing, compression restoration, and
   recursive mount cleanup.
+  * [x] Add cancellation after all four runtime mounts are released and the
+    original Btrfs compression policy restoration starts. Restoration now uses
+    Core's cancellation-aware process-group launcher, and exit cleanup avoids a
+    duplicate zero-total mount-cleanup sequence after normal unmount completion.
+    The isolated fixture requires complete mutation/state and four-mount
+    progress, terminal phase `compression_policy_restore` and reason
+    `cancelled`, preservation of verified initramfs evidence without advertising
+    the disposable overlay's receipt, no temporary workspace leak, and exact
+    restoration to the original no-compression policy. Serialized shell and
+    Python syntax validation run through `heavy.sh`; required integration
+    validation is recorded with the GitHub PR because this host's unchanged
+    `bsdtar` limitation blocks the monolithic suite before mutation.
   * [x] Add cancellation after the verified payload receipt is committed and
     the first persistent installation-state file write starts. The isolated
     fixture exposed and corrected state-file copies that were outside Core's
