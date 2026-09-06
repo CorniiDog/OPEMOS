@@ -2227,9 +2227,10 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
     compressed-profile fixture requires complete userspace, module, bootloader,
     depmod, and initramfs progress, terminal phase `state_write` and reason
     `cancelled`, exactly one indeterminate installation-state record with no
-    false completion, complete four-mount cleanup, removal of both newly
-    created receipt/state trees, no temporary workspace leak, and exact
-    restoration of the original compression policy. Serialized Python syntax
+    false completion, a bounded empty partial state directory, omission of the
+    disposable overlay's receipt from the cancelled result, complete
+    four-mount cleanup, no temporary workspace leak, and exact restoration of
+    the original compression policy. Serialized Python syntax
     validation passed through `heavy.sh`; required integration validation is
     recorded with the GitHub PR because this host's unchanged `bsdtar`
     limitation blocks the monolithic suite before mutation.

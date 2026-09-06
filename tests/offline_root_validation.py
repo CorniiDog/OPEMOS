@@ -945,14 +945,17 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
             }
         ]
         assert_item_progress(records, "mount_cleanup", 4)
-        assert not (
+        partial_state = (
             paths["target"]
             / "var/lib/open-gpu-kernel-modules-steamos-support/offline-install"
-        ).exists()
-        assert not (
+        )
+        assert partial_state.is_dir()
+        assert list(partial_state.iterdir()) == []
+        receipt = (
             paths["target"]
             / "usr/lib/open-gpu-kernel-modules-steamos-support/offline-install"
-        ).exists()
+        )
+        assert receipt.is_dir() and not receipt.is_symlink()
     elif expected_phase == "userspace_verification":
         package_count = len(document["validation"]["packages"])
         assert_item_progress(records, "userspace_install", package_count)
