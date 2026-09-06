@@ -924,6 +924,8 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
         assert_item_progress(records, "mount_cleanup", 4)
     elif expected_phase == "state_write":
         package_count = len(document["validation"]["packages"])
+        assert document["initramfsVerification"]["status"] == "verified"
+        assert "payloadReceipt" not in document
         assert_item_progress(records, "userspace_install", package_count)
         assert_item_progress(records, "userspace_verification", package_count)
         assert_item_progress(records, "module_install", 5)

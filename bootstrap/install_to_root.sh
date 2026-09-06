@@ -557,7 +557,8 @@ write_install_result()
         set -- "$@" --initramfs-workspace "$INITRAMFS_WORKSPACE_JSON"
     [[ -z "${INITRAMFS_VERIFICATION_JSON:-}" || ! -s "$INITRAMFS_VERIFICATION_JSON" ]] ||
         set -- "$@" --initramfs-verification "$INITRAMFS_VERIFICATION_JSON"
-    [[ -z "${PAYLOAD_RECEIPT_JSON:-}" || ! -s "$PAYLOAD_RECEIPT_JSON" ]] ||
+    [[ "$result_status" != success || -z "${PAYLOAD_RECEIPT_JSON:-}" ||
+       ! -s "$PAYLOAD_RECEIPT_JSON" ]] ||
         set -- "$@" --payload-receipt "$PAYLOAD_RECEIPT_JSON"
     if [[ "$result_status" == failed && "$result_reason" == target_execution_trust &&
           -n "${TARGET_EXECUTION_FAILURE_JSON:-}" &&

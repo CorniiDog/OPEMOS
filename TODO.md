@@ -2221,7 +2221,9 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   * [x] Add cancellation after the verified payload receipt is committed and
     the first persistent installation-state file write starts. The isolated
     fixture exposed and corrected state-file copies that were outside Core's
-    cancellation-aware process-group launcher. The
+    cancellation-aware process-group launcher, plus stale result handling that
+    attempted to attach the rolled-back receipt while rejecting the already
+    verified initramfs proof. The
     compressed-profile fixture requires complete userspace, module, bootloader,
     depmod, and initramfs progress, terminal phase `state_write` and reason
     `cancelled`, exactly one indeterminate installation-state record with no
