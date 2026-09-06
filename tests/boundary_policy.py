@@ -9,8 +9,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 COUNTERPART_COMMIT = "064d1d54c7ef2eda3d56e80c67e9f8e78a554725"
-EXPECTED_GIT_BLOB = "68fd9553bb8fee79cee803a38f980a94b2d80e57"
-EXPECTED_SHA256 = "136d3572effa90c1b84bcf51002d7f9641c367132de20d54dd7173f68f13c6a8"
+EXPECTED_GIT_BLOB = "fb13c9ae5ca0544978bcde433f50958c446cd8cf"
+EXPECTED_SHA256 = "ec64ceb374a56a4217ca47cedd5ae238bab30926230ef0bf2aafd8000c3512c2"
+COUNTERPART_EXPECTED_SHA256 = "136d3572effa90c1b84bcf51002d7f9641c367132de20d54dd7173f68f13c6a8"
+MIRROR_SYNCHRONIZED = False
 
 
 def git_blob_id(payload):
@@ -30,8 +32,13 @@ def verify_counterpart_commit(payload):
         timeout=10,
     )
     assert result.returncode == 0, "pinned OPEMOS.EXE boundary commit is unavailable"
-    assert result.stdout == payload, "Core boundary differs from the pinned OPEMOS.EXE mirror"
-    assert hashlib.sha256(result.stdout).hexdigest() == EXPECTED_SHA256
+    counterpart_sha256 = hashlib.sha256(result.stdout).hexdigest()
+    assert counterpart_sha256 == COUNTERPART_EXPECTED_SHA256
+    if MIRROR_SYNCHRONIZED:
+        assert result.stdout == payload, "Core boundary differs from the pinned OPEMOS.EXE mirror"
+        assert counterpart_sha256 == EXPECTED_SHA256
+    else:
+        assert result.stdout != payload, "staged mirror unexpectedly matches canonical bytes"
 
 
 def main(local_only=False):
@@ -53,6 +60,10 @@ def main(local_only=False):
     assert "## Networking boundary" in text
     assert "## Source intent and Core authorization" in text
     assert "## A/B ownership" in text
+    assert "## Cross-repository pull-request merge governance" in text
+    assert "Only the owning repository primary lead may squash-merge" in text
+    assert "Any new head commit, changed base commit, material scope change" in text
+    assert "may delete only that exact merged topic branch" in text
     assert "## Artifact cleanup ownership" in text
     assert "Artifact cleanup follows creator ownership" in text
     assert "Missing, stale, malformed, mismatched," in text

@@ -345,6 +345,15 @@ for `* [ ]` to enumerate them mechanically.
 
 ## Boundary decisions
 
+* [ ] 2026-09-06 user-authorized cross-repository merge governance:
+  Core canonical SHA-256
+  `ec64ceb374a56a4217ca47cedd5ae238bab30926230ef0bf2aafd8000c3512c2`, Git
+  blob `fb13c9ae5ca0544978bcde433f50958c446cd8cf`. Only owning primary leads may
+  squash-merge after exact unchanged-head/base/scope/check-set counterpart-lead
+  approval and passing required checks; helpers and Resolver cannot approve or
+  merge. Core-first synchronization, EXE mirror, and final Core repin remain
+  staged as recorded in `docs/boundary-decision-2026-09-06.md`.
+
 * [x] 2026-09-04 user-authorized creator-owned artifact cleanup boundary:
   canonical SHA-256 `136d3572effa90c1b84bcf51002d7f9641c367132de20d54dd7173f68f13c6a8`,
   Git blob `68fd9553bb8fee79cee803a38f980a94b2d80e57`; focused local integrity
