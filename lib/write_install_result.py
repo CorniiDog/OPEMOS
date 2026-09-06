@@ -1575,7 +1575,7 @@ def main():
     if args.module_verification:
         module_verification = load_module_verification(args.module_verification)
         if (module_verification["status"] == "failed"
-                and (args.status != "failed" or args.phase != "module_install")):
+                and (args.status != "failed" or args.phase != "module_verification")):
             raise SystemExit(
                 "Failed module verification metadata does not match result phase."
             )

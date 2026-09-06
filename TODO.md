@@ -2218,6 +2218,16 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   userspace verification, module extraction/compression/copy/verification,
   GRUB, depmod, mkinitcpio, state writing, compression restoration, and
   recursive mount cleanup.
+  * [x] Add cancellation after the module verifier starts decompression of the
+    first installed module. The deterministic nested-zstd fixture requires
+    complete authenticated userspace and five-module installation counters,
+    terminal phase `module_verification` and reason `cancelled`, exactly one
+    zero-complete five-module verification counter, no boot, initramfs, or state
+    progress, complete four-mount cleanup, no verification-output or temporary
+    workspace leak, and exact restoration of the original compression policy.
+    Serialized Python syntax validation passed through `heavy.sh`; required
+    integration validation is recorded with the GitHub PR because this host's
+    unchanged `bsdtar` limitation blocks the monolithic suite before mutation.
   * [x] Add cancellation after the exact first module-copy process starts but
     before it writes or increments the module count. Both precompressed and
     newly compressed module copies now use the existing bounded process-group
@@ -2268,7 +2278,10 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
     initramfs, or installation-state progress, complete four-mount cleanup, and
     exact compression-policy restoration. Required validation evidence is
     recorded with the GitHub PR because this host's unchanged `bsdtar`
-    limitation blocks the monolithic integration suite before mutation.
+    limitation blocks the monolithic integration suite before mutation. The
+    later module-verification cancellation matrix exposed and corrects the
+    stale terminal identity to phase/reason `module_verification`; the original
+    mismatch evidence remains preserved.
   * [x] Add a post-initramfs unsafe payload-receipt destination failure while
     preserving and restoring the prior receipt fixture. The test requires
     terminal phase/reason `payload_receipt`, completed initramfs progress,
