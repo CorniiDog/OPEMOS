@@ -96,6 +96,10 @@ publisher evidence, and installed-device lifecycle.
   authority and cannot activate production trust. Lifecycle progress exposes
   bounded asset counts for planning, reconciliation, completion, failure, and
   pre-publication cancellation.
+  `lib/release_operation_session.py` is the stable network-free command boundary:
+  `execute` creates/resumes private durable state, `status` returns it, `reconcile`
+  admits only the same immutable plan plus observed inventory, and `cancel` records
+  terminal cancellation. All commands emit one release-operation schema-1 document.
 - `schemas/device-generation-result-v1.schema.json` describes bounded results
   and durable state from the inactive installed-device generation lifecycle.
 - `schemas/device-generation-health-v1.schema.json` describes the closed,
