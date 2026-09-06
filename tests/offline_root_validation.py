@@ -408,6 +408,7 @@ case " $* " in
     fi
     ;;
   *" -Q nvidia-utils "*)
+    sleep "${MOCK_PACMAN_QUERY_DELAY:-0}"
     if [ "${MOCK_WRONG_INSTALLED_VERSION:-0}" = 0 ]; then
       echo "nvidia-utils $MOCK_NVIDIA-2"
     else
@@ -812,6 +813,19 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
         assert pacman_log.exists() and " -U " in pacman_log.read_text(
             encoding="utf-8"
         ), "userspace package transaction was not started"
+    elif expected_phase == "userspace_verification":
+        pacman_log = mount_state.with_suffix(".pacman")
+        while time.monotonic() < deadline:
+            if pacman_log.exists() and any(
+                line.endswith(" -Q nvidia-utils")
+                for line in pacman_log.read_text(encoding="utf-8").splitlines()
+            ):
+                break
+            time.sleep(0.05)
+        assert pacman_log.exists() and any(
+            line.endswith(" -Q nvidia-utils")
+            for line in pacman_log.read_text(encoding="utf-8").splitlines()
+        ), "userspace package verification was not started"
     elif expected_phase == "initramfs":
         child_state = mount_state.with_suffix(".chroot")
         while time.monotonic() < deadline and not child_state.exists():
@@ -862,6 +876,31 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
             record["phase"] in {
                 "userspace_verification", "module_install", "module_verification",
                 "grub_update", "depmod", "initramfs", "installation_state",
+            }
+            for record in records
+        )
+        assert_item_progress(records, "mount_cleanup", 4)
+    elif expected_phase == "userspace_verification":
+        package_count = len(document["validation"]["packages"])
+        assert_item_progress(records, "userspace_install", package_count)
+        assert [
+            record for record in records
+            if record["phase"] == "userspace_verification"
+        ] == [
+            {
+                "attempt": 0,
+                "completed": 0,
+                "indeterminate": False,
+                "phase": "userspace_verification",
+                "schemaVersion": 1,
+                "total": package_count,
+                "unit": "items",
+            }
+        ]
+        assert not any(
+            record["phase"] in {
+                "module_install", "module_verification", "grub_update", "depmod",
+                "initramfs", "installation_state",
             }
             for record in records
         )
@@ -2968,6 +3007,13 @@ def main():
             temporary / "cancel-userspace-install.json",
             "userspace_install",
             MOCK_PACMAN_DELAY="30",
+        )
+        cancel_installer(
+            paths,
+            binaries,
+            temporary / "cancel-userspace-verification.json",
+            "userspace_verification",
+            MOCK_PACMAN_QUERY_DELAY="30",
         )
         cancel_installer(
             paths,
