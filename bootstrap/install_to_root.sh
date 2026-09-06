@@ -1163,7 +1163,7 @@ guard_target_mount_identities
 module_count=0
 emit_progress_items module_install 0 5
 [[ -z "$COMPRESSION_PROFILE" ]] || require_active_compression_policy
-bsdtar -xzf "$ARCHIVE" -C "$MUTATION_WORK"
+run_mutation_command bsdtar -xzf "$ARCHIVE" -C "$MUTATION_WORK"
 TARGET_MODULES="$ROOT/usr/lib/modules/$KERNEL/updates/open-gpu-kernel-modules-steamos"
 if [[ "$MODULE_PAYLOAD_NOOP" != True ]]; then
     rm -rf "$TARGET_MODULES"

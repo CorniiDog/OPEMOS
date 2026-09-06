@@ -344,10 +344,22 @@ def make_mocks(root):
         "[core]\nInclude = /etc/pacman.d/mirrorlist\n",
         encoding="utf-8",
     )
+    real_bsdtar = shutil.which("bsdtar")
     real_install = shutil.which("install")
     real_zstd = shutil.which("zstd")
+    assert real_bsdtar
     assert real_install
     assert real_zstd
+    (binaries / "bsdtar").write_text(
+        f'''#!/bin/sh
+if [ "$1" = -xzf ] && [ -n "${{MOCK_MODULE_EXTRACTION_STATE:-}}" ]; then
+  : > "$MOCK_MODULE_EXTRACTION_STATE"
+  sleep "${{MOCK_MODULE_EXTRACTION_DELAY:-0}}"
+fi
+exec "{real_bsdtar}" "$@"
+''',
+        encoding="utf-8",
+    )
     (binaries / "python3").write_text(
         f'''#!/bin/sh
 case "$1" in
@@ -698,6 +710,7 @@ def installer_environment(binaries, mount_state, **environment):
         MOCK_PACMAN_LOG=str(mount_state.with_suffix(".pacman")),
         MOCK_CHROOT_STATE=str(mount_state.with_suffix(".chroot")),
         MOCK_ZSTD_STATE=str(mount_state.with_suffix(".zstd")),
+        MOCK_MODULE_EXTRACTION_STATE=str(mount_state.with_suffix(".extract")),
         MOCK_INSTALL_STATE=str(mount_state.with_suffix(".install")),
         MOCK_MODULE_VERIFICATION_STATE=str(
             mount_state.with_suffix(".module-verify")
@@ -886,9 +899,12 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
             for line in pacman_log.read_text(encoding="utf-8").splitlines()
         ), "userspace package verification was not started"
     elif expected_phase == "module_install":
-        state_suffix = (
-            ".install" if "MOCK_MODULE_INSTALL_DELAY" in environment else ".zstd"
-        )
+        if "MOCK_MODULE_EXTRACTION_DELAY" in environment:
+            state_suffix = ".extract"
+        elif "MOCK_MODULE_INSTALL_DELAY" in environment:
+            state_suffix = ".install"
+        else:
+            state_suffix = ".zstd"
         operation_state = mount_state.with_suffix(state_suffix)
         while time.monotonic() < deadline and not operation_state.exists():
             time.sleep(0.05)
@@ -1100,6 +1116,11 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
             }
             for record in records
         )
+        if "MOCK_MODULE_EXTRACTION_DELAY" in environment:
+            assert not (
+                paths["target"] / "usr/lib/modules" / KERNEL / "updates"
+                / "open-gpu-kernel-modules-steamos"
+            ).exists()
         assert_item_progress(records, "mount_cleanup", 4)
     elif expected_phase == "module_verification":
         package_count = len(document["validation"]["packages"])
@@ -2451,6 +2472,20 @@ def main():
             PROJECT_TEST_ROOT_AVAILABLE_BYTES=str(256 * 1024 * 1024),
             PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
             MOCK_CHROOT_DELAY="30",
+            MOCK_INITIAL_COMPRESSION="",
+        )
+        extraction_cancel_root = temporary / "module-extraction-cancel-fixture"
+        extraction_cancel_root.mkdir()
+        extraction_cancel_paths = make_fixture(extraction_cancel_root)
+        extraction_cancel_paths["compression_profile"] = "btrfs-zstd3"
+        cancel_installer(
+            extraction_cancel_paths,
+            binaries,
+            temporary / "module-extraction-cancel.json",
+            "module_install",
+            PROJECT_TEST_ROOT_AVAILABLE_BYTES=str(256 * 1024 * 1024),
+            PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
+            MOCK_MODULE_EXTRACTION_DELAY="30",
             MOCK_INITIAL_COMPRESSION="",
         )
         module_cancel_root = temporary / "compression-profile-module-cancel-fixture"

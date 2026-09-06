@@ -2306,6 +2306,19 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
     required integration validation is recorded with the GitHub PR because this
     host's unchanged `bsdtar` limitation blocks the monolithic suite before
     mutation.
+  * [x] Add cancellation after module archive extraction starts but before any
+    extracted module can replace target bytes. Extraction now uses Core's
+    cancellation-aware process-group launcher; a fixture-only `bsdtar` wrapper
+    exposes an exact start marker and delays before extraction. The compressed-
+    profile fixture requires complete authenticated userspace progress, terminal
+    phase `module_install` and reason `cancelled`, exactly one zero-complete
+    five-module counter, no target module directory or later phase progress,
+    complete four-mount cleanup, removal of the private extraction workspace,
+    and exact restoration of the original compression policy. Serialized shell,
+    Python syntax, and progress-semantics validation run through `heavy.sh`;
+    required integration validation is recorded with the GitHub PR because this
+    host's unchanged `bsdtar` limitation blocks the monolithic suite before
+    mutation.
   * [x] Add cancellation after the first raw module has been compressed into the
     private mutation workspace but before it is installed or counted. The
     deterministic compressed-profile fixture requires complete authenticated
