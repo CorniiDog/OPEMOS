@@ -155,6 +155,8 @@ printf 'Checking installed-device generation compatibility contracts...\n'
 python3 tests/device_generation_contract.py
 printf 'Checking immutable installer-bundle publisher...\n'
 python3 tests/installer_bundle_publisher.py
+printf 'Checking immutable release operation reconciliation...\n'
+python3 tests/release_operation.py
 
 printf 'Checking immutable installer input snapshots...\n'
 SNAPSHOT_FIXTURE="$(mktemp -d /tmp/installer-input-snapshot.XXXXXX)"
