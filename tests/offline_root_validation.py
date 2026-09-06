@@ -569,7 +569,7 @@ eval target=\${$#}; grep -F -q "$target" "$MOCK_MOUNT_STATE" 2>/dev/null
         encoding="utf-8",
     )
     (binaries / "umount").write_text(
-        "#!/bin/sh\neval target=\\${$#}; printf '%s\\n' \"$target\" >> \"$MOCK_UMOUNT_LOG\"; grep -F -v \"$target\" \"$MOCK_MOUNT_STATE\" > \"$MOCK_MOUNT_STATE.next\" || true; mv \"$MOCK_MOUNT_STATE.next\" \"$MOCK_MOUNT_STATE\"\n",
+        "#!/bin/sh\neval target=\\${$#}; if [ ! -e \"$MOCK_UMOUNT_STATE\" ]; then : > \"$MOCK_UMOUNT_STATE\"; sleep \"${MOCK_UMOUNT_DELAY:-0}\"; fi; printf '%s\\n' \"$target\" >> \"$MOCK_UMOUNT_LOG\"; grep -F -v \"$target\" \"$MOCK_MOUNT_STATE\" > \"$MOCK_MOUNT_STATE.next\" || true; mv \"$MOCK_MOUNT_STATE.next\" \"$MOCK_MOUNT_STATE\"\n",
         encoding="utf-8",
     )
     (binaries / "chroot").write_text(
@@ -694,6 +694,7 @@ def installer_environment(binaries, mount_state, **environment):
         ),
         MOCK_TRANSACTION_LOG=str(mount_state.with_suffix(".transaction")),
         MOCK_UMOUNT_LOG=str(mount_state.with_suffix(".umount")),
+        MOCK_UMOUNT_STATE=str(mount_state.with_suffix(".umount-state")),
     )
     env.update(environment)
     return env
@@ -888,6 +889,11 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
         while time.monotonic() < deadline and not restore_state.exists():
             time.sleep(0.05)
         assert restore_state.exists(), "compression policy restoration was not started"
+    elif expected_phase == "cleanup":
+        umount_state = mount_state.with_suffix(".umount-state")
+        while time.monotonic() < deadline and not umount_state.exists():
+            time.sleep(0.05)
+        assert umount_state.exists(), "recursive mount cleanup was not started"
     elif expected_phase == "initramfs":
         child_state = mount_state.with_suffix(".chroot")
         while time.monotonic() < deadline and not child_state.exists():
@@ -989,6 +995,32 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
         assert_indeterminate_then_complete(records, "initramfs")
         assert_item_progress(records, "installation_state", 1)
         assert_item_progress(records, "mount_cleanup", 4)
+    elif expected_phase == "cleanup":
+        package_count = len(document["validation"]["packages"])
+        assert document["initramfsVerification"]["status"] == "verified"
+        assert "payloadReceipt" not in document
+        assert_item_progress(records, "userspace_install", package_count)
+        assert_item_progress(records, "userspace_verification", package_count)
+        assert_item_progress(records, "module_install", 5)
+        assert_item_progress(records, "module_verification", 5)
+        assert_item_progress(records, "grub_update", 1)
+        assert_item_progress(records, "depmod", 1)
+        assert_indeterminate_then_complete(records, "initramfs")
+        assert_item_progress(records, "installation_state", 1)
+        cleanup_records = [
+            record for record in records
+            if record["phase"] == "mount_cleanup"
+        ]
+        cleanup_completions = [record["completed"] for record in cleanup_records]
+        assert cleanup_completions[0] == 0
+        assert cleanup_completions[-1] == 4, cleanup_completions
+        assert cleanup_completions == sorted(cleanup_completions)
+        assert all(record["total"] == 4 for record in cleanup_records)
+        assert len(
+            mount_state.with_suffix(".umount").read_text(
+                encoding="utf-8"
+            ).splitlines()
+        ) == 4
     elif expected_phase == "userspace_verification":
         package_count = len(document["validation"]["packages"])
         assert_item_progress(records, "userspace_install", package_count)
@@ -2419,6 +2451,20 @@ def main():
             PROJECT_TEST_ROOT_AVAILABLE_BYTES=str(256 * 1024 * 1024),
             PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
             MOCK_COMPRESSION_RESTORE_DELAY="30",
+            MOCK_INITIAL_COMPRESSION="",
+        )
+        mount_cleanup_cancel_root = temporary / "mount-cleanup-cancel-fixture"
+        mount_cleanup_cancel_root.mkdir()
+        mount_cleanup_cancel_paths = make_fixture(mount_cleanup_cancel_root)
+        mount_cleanup_cancel_paths["compression_profile"] = "btrfs-zstd3"
+        cancel_installer(
+            mount_cleanup_cancel_paths,
+            binaries,
+            temporary / "mount-cleanup-cancel.json",
+            "cleanup",
+            PROJECT_TEST_ROOT_AVAILABLE_BYTES=str(256 * 1024 * 1024),
+            PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
+            MOCK_UMOUNT_DELAY="30",
             MOCK_INITIAL_COMPRESSION="",
         )
         corrupt_module_fixture = temporary / "corrupt-module-fixture"
