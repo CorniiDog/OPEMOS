@@ -1298,14 +1298,16 @@ run_mutation_command python3 "$SUPPORT_ROOT/lib/payload_receipt.py" commit \
 }
 STATE_ROOT="$ROOT/var/lib/$PROJECT_ID/offline-install"
 install -d -m 0755 "$STATE_ROOT"
-install -m 0644 "$MUTATION_WORK/BUILD-INFO.txt" "$STATE_ROOT/BUILD-INFO.txt"
-install -m 0644 "$PROVENANCE" "$STATE_ROOT/PROVENANCE.json"
+run_mutation_command install -m 0644 \
+    "$MUTATION_WORK/BUILD-INFO.txt" "$STATE_ROOT/BUILD-INFO.txt"
+run_mutation_command install -m 0644 \
+    "$PROVENANCE" "$STATE_ROOT/PROVENANCE.json"
 printf '%s\n' "$KERNEL" > "$STATE_ROOT/kernel-version"
 printf '%s\n' "$NVIDIA_VERSION" > "$STATE_ROOT/nvidia-version"
 if [[ -n "$GAMING_PAYLOAD_PROFILE" ]]; then
     python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(json.dumps(d["gamingPayload"], sort_keys=True, separators=(",", ":")))' \
         "$VALIDATION_JSON" > "$MUTATION_WORK/gaming-payload.json"
-    install -m 0644 "$MUTATION_WORK/gaming-payload.json" \
+    run_mutation_command install -m 0644 "$MUTATION_WORK/gaming-payload.json" \
         "$STATE_ROOT/gaming-payload.json"
 else
     rm -f "$STATE_ROOT/gaming-payload.json"
