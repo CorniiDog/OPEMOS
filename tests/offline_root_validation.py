@@ -453,6 +453,8 @@ for argument in "$@"; do
 done
 case "$output" in
   */module-compression/*)
+    : > "$MOCK_ZSTD_STATE"
+    sleep "${{MOCK_MODULE_COMPRESSION_DELAY:-0}}"
     [ "${{MOCK_FAIL_MODULE_COMPRESSION:-0}}" = 0 ] || exit 88
     ;;
 esac
@@ -653,6 +655,7 @@ def installer_environment(binaries, mount_state, **environment):
         MOCK_COMPRESSION_STATE=str(mount_state.with_suffix(".compression")),
         MOCK_PACMAN_LOG=str(mount_state.with_suffix(".pacman")),
         MOCK_CHROOT_STATE=str(mount_state.with_suffix(".chroot")),
+        MOCK_ZSTD_STATE=str(mount_state.with_suffix(".zstd")),
         MOCK_TRANSACTION_LOG=str(mount_state.with_suffix(".transaction")),
         MOCK_UMOUNT_LOG=str(mount_state.with_suffix(".umount")),
     )
@@ -826,6 +829,11 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
             line.endswith(" -Q nvidia-utils")
             for line in pacman_log.read_text(encoding="utf-8").splitlines()
         ), "userspace package verification was not started"
+    elif expected_phase == "module_install":
+        compression_state = mount_state.with_suffix(".zstd")
+        while time.monotonic() < deadline and not compression_state.exists():
+            time.sleep(0.05)
+        assert compression_state.exists(), "module compression was not started"
     elif expected_phase == "initramfs":
         child_state = mount_state.with_suffix(".chroot")
         while time.monotonic() < deadline and not child_state.exists():
@@ -901,6 +909,32 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
             record["phase"] in {
                 "module_install", "module_verification", "grub_update", "depmod",
                 "initramfs", "installation_state",
+            }
+            for record in records
+        )
+        assert_item_progress(records, "mount_cleanup", 4)
+    elif expected_phase == "module_install":
+        package_count = len(document["validation"]["packages"])
+        assert_item_progress(records, "userspace_install", package_count)
+        assert_item_progress(records, "userspace_verification", package_count)
+        assert [
+            record for record in records
+            if record["phase"] == "module_install"
+        ] == [
+            {
+                "attempt": 0,
+                "completed": 0,
+                "indeterminate": False,
+                "phase": "module_install",
+                "schemaVersion": 1,
+                "total": 5,
+                "unit": "items",
+            }
+        ]
+        assert not any(
+            record["phase"] in {
+                "module_verification", "grub_update", "depmod", "initramfs",
+                "installation_state",
             }
             for record in records
         )
@@ -2184,6 +2218,20 @@ def main():
             PROJECT_TEST_ROOT_AVAILABLE_BYTES=str(256 * 1024 * 1024),
             PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
             MOCK_CHROOT_DELAY="30",
+            MOCK_INITIAL_COMPRESSION="",
+        )
+        module_cancel_root = temporary / "compression-profile-module-cancel-fixture"
+        module_cancel_root.mkdir()
+        module_cancel_paths = make_fixture(module_cancel_root)
+        module_cancel_paths["compression_profile"] = "btrfs-zstd3"
+        cancel_installer(
+            module_cancel_paths,
+            binaries,
+            temporary / "compression-profile-module-cancel.json",
+            "module_install",
+            PROJECT_TEST_ROOT_AVAILABLE_BYTES=str(256 * 1024 * 1024),
+            PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
+            MOCK_MODULE_COMPRESSION_DELAY="30",
             MOCK_INITIAL_COMPRESSION="",
         )
         corrupt_module_fixture = temporary / "corrupt-module-fixture"

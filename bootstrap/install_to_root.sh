@@ -1159,7 +1159,7 @@ if [[ "$MODULE_PAYLOAD_NOOP" != True ]]; then
                 ;;
             *.ko)
                 compressed="$MUTATION_WORK/module-compression/${module_name}.zst"
-                zstd -q -f -T0 "$module" -o "$compressed"
+                run_mutation_command zstd -q -f -T0 "$module" -o "$compressed"
                 if [[ "${PROJECT_TEST_MODE:-0}" == 1 ]]; then
                     install -m 0644 \
                         "$compressed" "$TARGET_MODULES/${module_name}.zst"
