@@ -2328,8 +2328,8 @@ def main():
             MOCK_CORRUPT_INSTALLED_MODULE="1",
         )
         assert corrupt_module["status"] == "failed"
-        assert corrupt_module["reason"] == "module_install"
-        assert corrupt_module["phase"] == "module_install"
+        assert corrupt_module["reason"] == "module_verification"
+        assert corrupt_module["phase"] == "module_verification"
         assert corrupt_module["cleanup"]["mountsReleased"] is True
         assert corrupt_module["cleanup"]["runtimeMountsReleased"] == 4
         assert corrupt_module["cleanup"]["compressionPolicyRestored"] is True

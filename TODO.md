@@ -2278,7 +2278,10 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
     initramfs, or installation-state progress, complete four-mount cleanup, and
     exact compression-policy restoration. Required validation evidence is
     recorded with the GitHub PR because this host's unchanged `bsdtar`
-    limitation blocks the monolithic integration suite before mutation.
+    limitation blocks the monolithic integration suite before mutation. The
+    later module-verification cancellation matrix exposed and corrects the
+    stale terminal identity to phase/reason `module_verification`; the original
+    mismatch evidence remains preserved.
   * [x] Add a post-initramfs unsafe payload-receipt destination failure while
     preserving and restoring the prior receipt fixture. The test requires
     terminal phase/reason `payload_receipt`, completed initramfs progress,

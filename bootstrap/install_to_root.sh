@@ -1179,6 +1179,7 @@ if [[ "$MODULE_PAYLOAD_NOOP" != True ]]; then
 else
     emit_progress_items module_install 5 5
 fi
+PHASE=module_verification
 emit_progress_items module_verification 0 5
 run_mutation_command python3 "$SUPPORT_ROOT/lib/verify_installed_modules.py" \
     --root "$ROOT" --kernel "$KERNEL" --validation "$VALIDATION_JSON" \

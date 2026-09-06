@@ -320,7 +320,9 @@ def matrix():
         case("validated-success", validated, True),
         case("mutation-success", success, True),
     ]
-    failed_module = envelope("failed", "module_install", "module_install")
+    failed_module = envelope(
+        "failed", "module_verification", "module_verification"
+    )
     failed_module["moduleVerification"] = failed_module_verification()
     cases.append(case("failed-module-diagnostic", failed_module, True))
     failed_userspace = envelope(
