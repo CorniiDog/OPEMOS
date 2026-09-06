@@ -88,6 +88,12 @@ publisher evidence, and installed-device lifecycle.
   source request from Core's bounded authorization decision. Automatic never
   authorizes development sources; explicit upstream use remains unpublishable
   development trust.
+- `schemas/release-operation-v1.schema.json` describes one deterministic,
+  immutable release operation. Its ID binds repository, tag, target commit, and
+  ordered asset names, sizes, and SHA-256 identities. Reconciliation permits
+  only creation, exact completion, or retry of missing assets; changed commits,
+  unexpected assets, and changed bytes fail closed. It carries no signing
+  authority and cannot activate production trust.
 - `schemas/device-generation-result-v1.schema.json` describes bounded results
   and durable state from the inactive installed-device generation lifecycle.
 - `schemas/device-generation-health-v1.schema.json` describes the closed,

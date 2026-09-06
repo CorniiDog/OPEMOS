@@ -303,6 +303,11 @@ index in the same commit.
     history and corrects only the stale index checkbox.
 * [ ] Formalize result/progress compatibility, opaque-operation liveness, and a
   real phase-by-phase failure/cancellation matrix.
+* [x] Define the first bounded release-workflow contract: deterministic immutable
+  operation identity plus create/exact-complete/missing-only-retry/conflict
+  reconciliation over the validated canonical release plan. The closed schema
+  and focused hostile matrix preserve production trust/signing gates and perform
+  no network or publication action.
 * [ ] Authenticate target-owned executable code and raise the public online
   bootstrap/release/certification path to the offline installer's trust level.
 * [ ] Define authenticated archival/cache recovery and typed outage behavior for
