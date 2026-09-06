@@ -1013,7 +1013,7 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
         ]
         cleanup_completions = [record["completed"] for record in cleanup_records]
         assert cleanup_completions[0] == 0
-        assert cleanup_completions[-1] == 4
+        assert cleanup_completions[-1] == 4, cleanup_completions
         assert cleanup_completions == sorted(cleanup_completions)
         assert all(record["total"] == 4 for record in cleanup_records)
         assert len(
