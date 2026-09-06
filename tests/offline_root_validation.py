@@ -428,8 +428,14 @@ esac
     )
     (binaries / "install").write_text(
         fr"""#!/bin/sh
-{real_install} "$@" || exit $?
 eval target=\${{$#}}
+case "$target" in
+  */open-gpu-kernel-modules-steamos/*.ko.zst)
+    : > "$MOCK_INSTALL_STATE"
+    sleep "${{MOCK_MODULE_INSTALL_DELAY:-0}}"
+    ;;
+esac
+{real_install} "$@" || exit $?
 case "$target" in
   */open-gpu-kernel-modules-steamos/nvidia.ko.zst|\
   */open-gpu-kernel-modules-steamos/nvidia-drm.ko.zst)
@@ -656,6 +662,7 @@ def installer_environment(binaries, mount_state, **environment):
         MOCK_PACMAN_LOG=str(mount_state.with_suffix(".pacman")),
         MOCK_CHROOT_STATE=str(mount_state.with_suffix(".chroot")),
         MOCK_ZSTD_STATE=str(mount_state.with_suffix(".zstd")),
+        MOCK_INSTALL_STATE=str(mount_state.with_suffix(".install")),
         MOCK_TRANSACTION_LOG=str(mount_state.with_suffix(".transaction")),
         MOCK_UMOUNT_LOG=str(mount_state.with_suffix(".umount")),
     )
@@ -830,10 +837,13 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
             for line in pacman_log.read_text(encoding="utf-8").splitlines()
         ), "userspace package verification was not started"
     elif expected_phase == "module_install":
-        compression_state = mount_state.with_suffix(".zstd")
-        while time.monotonic() < deadline and not compression_state.exists():
+        state_suffix = (
+            ".install" if "MOCK_MODULE_INSTALL_DELAY" in environment else ".zstd"
+        )
+        operation_state = mount_state.with_suffix(state_suffix)
+        while time.monotonic() < deadline and not operation_state.exists():
             time.sleep(0.05)
-        assert compression_state.exists(), "module compression was not started"
+        assert operation_state.exists(), "module mutation operation was not started"
     elif expected_phase == "initramfs":
         child_state = mount_state.with_suffix(".chroot")
         while time.monotonic() < deadline and not child_state.exists():
@@ -2232,6 +2242,20 @@ def main():
             PROJECT_TEST_ROOT_AVAILABLE_BYTES=str(256 * 1024 * 1024),
             PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
             MOCK_MODULE_COMPRESSION_DELAY="30",
+            MOCK_INITIAL_COMPRESSION="",
+        )
+        module_copy_cancel_root = temporary / "module-copy-cancel-fixture"
+        module_copy_cancel_root.mkdir()
+        module_copy_cancel_paths = make_fixture(module_copy_cancel_root)
+        module_copy_cancel_paths["compression_profile"] = "btrfs-zstd3"
+        cancel_installer(
+            module_copy_cancel_paths,
+            binaries,
+            temporary / "module-copy-cancel.json",
+            "module_install",
+            PROJECT_TEST_ROOT_AVAILABLE_BYTES=str(256 * 1024 * 1024),
+            PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
+            MOCK_MODULE_INSTALL_DELAY="30",
             MOCK_INITIAL_COMPRESSION="",
         )
         corrupt_module_fixture = temporary / "corrupt-module-fixture"
