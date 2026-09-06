@@ -42,6 +42,25 @@ def main():
     rejected=call(root,"reconcile","--plan",plan,"--observed",observed,"--attempt","3")
     assert rejected.returncode!=0 and "cannot be reconciled" in rejected.stderr
 
+    valid_state=(root/"state.json").read_text()
+    corruptions=(
+      ("identity",lambda value:value.update(operationId="bad")),
+      ("repository",lambda value:value.update(repository="owner/repo/extra")),
+      ("attempt-bool",lambda value:value.update(attempt=True)),
+      ("lifecycle",lambda value:value.update(lifecycle="succeeded")),
+      ("progress",lambda value:value["progress"].update(completedAssets=4)),
+      ("asset-hash",lambda value:value["assets"][0].update(sha256="bad")),
+      ("asset-size-bool",lambda value:value["assets"][0].update(bytes=True)),
+      ("asset-duplicate",lambda value:value["assets"].append(dict(value["assets"][0]))),
+      ("message",lambda value:value.update(message="x"*501)),
+    )
+    for name,mutate in corruptions:
+      value=json.loads(valid_state);mutate(value);(root/"state.json").write_text(json.dumps(value))
+      rejected_state=call(root,"status")
+      assert rejected_state.returncode!=0,(name,rejected_state.stdout,rejected_state.stderr)
+      assert "Traceback" not in rejected_state.stderr
+    (root/"state.json").write_text(valid_state)
+
     status_extra=call(root,"status","--plan",plan)
     assert status_extra.returncode!=0 and "Status accepts only" in status_extra.stderr
 

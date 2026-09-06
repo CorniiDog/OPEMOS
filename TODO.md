@@ -316,6 +316,9 @@ index in the same commit.
     binds every retry to the same operation ID; the closed end-to-end fixture
     covers resume, missing-only retry, mismatch, cancellation, terminal
     idempotency, symlink rejection, and exact completion without publication.
+    * [x] Fail closed while reading durable state when operation/repository/tag/
+      commit/attempt identity, lifecycle-decision pairing, progress, unique asset
+      inventory, hashes, sizes, states, or bounded message content is malformed.
 * [ ] Authenticate target-owned executable code and raise the public online
   bootstrap/release/certification path to the offline installer's trust level.
 * [ ] Define authenticated archival/cache recovery and typed outage behavior for

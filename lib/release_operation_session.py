@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Durable, network-free execution/status boundary for immutable releases."""
-import argparse, fcntl, json, os, stat, tempfile
+import argparse, fcntl, json, os, re, tempfile
 from pathlib import Path
 from release_operation import operation, strict_object
 
@@ -12,16 +12,43 @@ def fail(message): raise SystemExit(message)
 def validate_state(value):
     if not isinstance(value,dict) or set(value)!=FIELDS or value.get("schemaVersion")!=1:
         fail("Release operation state is malformed.")
-    if value.get("lifecycle") not in {"planned","reconciling",*TERMINAL}:
+    if (not re.fullmatch(r"[0-9a-f]{64}",value.get("operationId","")) or
+        not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+",value.get("repository","")) or
+        not isinstance(value.get("tag"),str) or not 0<len(value["tag"])<=200 or
+        not re.fullmatch(r"[0-9a-f]{40}",value.get("targetCommit","")) or
+        not isinstance(value.get("attempt"),int) or isinstance(value.get("attempt"),bool) or
+        not 1<=value["attempt"]<=1000):
+        fail("Release operation identity is malformed.")
+    lifecycle=value.get("lifecycle");decision=value.get("decision")
+    allowed={"planned":"create","reconciling":"retry-missing","succeeded":"already-complete",
+             "failed":"conflict","cancelled":"cancelled"}
+    if lifecycle not in allowed or decision!=allowed[lifecycle]:
         fail("Release operation lifecycle is malformed.")
     progress=value.get("progress")
     if not isinstance(progress,dict) or set(progress)!={"phase","completedAssets","totalAssets","indeterminate"}:
         fail("Release operation progress is malformed.")
     assets=value.get("assets")
-    if not isinstance(assets,list) or not 4<=len(assets)<=16 or progress["totalAssets"]!=len(assets):
+    if not isinstance(assets,list) or not 4<=len(assets)<=16:
         fail("Release operation asset inventory is malformed.")
-    if progress["completedAssets"] != sum(a.get("state")=="present" for a in assets if isinstance(a,dict)):
-        fail("Release operation progress does not match asset state.")
+    names=set()
+    for asset in assets:
+        if (not isinstance(asset,dict) or set(asset)!={"name","sha256","bytes","state"} or
+            not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,254}",asset.get("name","")) or
+            asset["name"] in names or not re.fullmatch(r"[0-9a-f]{64}",asset.get("sha256","")) or
+            not isinstance(asset.get("bytes"),int) or isinstance(asset.get("bytes"),bool) or
+            not 1<=asset["bytes"]<=2*1024*1024*1024 or
+            asset.get("state") not in {"pending","present","missing","conflict"}):
+            fail("Release operation asset inventory is malformed.")
+        names.add(asset["name"])
+    completed=sum(asset["state"]=="present" for asset in assets)
+    phase={"planned":"planning","reconciling":"reconciling","succeeded":"complete",
+           "failed":"failed","cancelled":"cancelled"}[lifecycle]
+    if (progress.get("phase")!=phase or progress.get("completedAssets")!=completed or
+        progress.get("totalAssets")!=len(assets) or
+        progress.get("indeterminate") is not (lifecycle in {"planned","cancelled"})):
+        fail("Release operation progress does not match lifecycle and asset state.")
+    if not isinstance(value.get("message"),str) or len(value["message"])>500:
+        fail("Release operation message is malformed.")
     return value
 
 def read_state(path):
