@@ -2244,6 +2244,19 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
     Python syntax validation run through `heavy.sh`; required integration
     validation is recorded with the GitHub PR because this host's unchanged
     `bsdtar` limitation blocks the monolithic suite before mutation.
+  * [x] Add cancellation after the GRUB configuration helper starts but before
+    it atomically replaces the target configuration. A fixture-only Python
+    wrapper delays the real Core helper and exposes an exact start marker; the
+    compressed-profile fixture requires complete userspace and module progress,
+    terminal phase `bootloader_config` and reason `cancelled`, exactly one
+    indeterminate GRUB record with no false completion, no depmod, initramfs, or
+    installation-state progress, byte-for-byte preservation of the original
+    GRUB configuration, complete four-mount cleanup, no temporary workspace
+    leak, and exact restoration of the original compression policy. Serialized
+    Python syntax and progress-semantics validation run through `heavy.sh`;
+    required integration validation is recorded with the GitHub PR because this
+    host's unchanged `bsdtar` limitation blocks the monolithic suite before
+    mutation.
   * [x] Add cancellation after the verified payload receipt is committed and
     the first persistent installation-state file write starts. The isolated
     fixture exposed and corrected state-file copies that were outside Core's

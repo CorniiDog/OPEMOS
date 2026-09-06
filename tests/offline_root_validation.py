@@ -348,6 +348,20 @@ def make_mocks(root):
     real_zstd = shutil.which("zstd")
     assert real_install
     assert real_zstd
+    (binaries / "python3").write_text(
+        f'''#!/bin/sh
+case "$1" in
+  */update_grub_nvidia_args.py)
+    if [ -n "${{MOCK_GRUB_UPDATE_STATE:-}}" ]; then
+      : > "$MOCK_GRUB_UPDATE_STATE"
+      sleep "${{MOCK_GRUB_UPDATE_DELAY:-0}}"
+    fi
+    ;;
+esac
+exec "{sys.executable}" "$@"
+''',
+        encoding="utf-8",
+    )
     (binaries / "modinfo").write_text(
         "#!/bin/sh\ncase $2 in version) echo \"$MOCK_NVIDIA\";; vermagic) echo \"$MOCK_KERNEL SMP preempt mod_unload\";; esac\n",
         encoding="utf-8",
@@ -693,6 +707,7 @@ def installer_environment(binaries, mount_state, **environment):
             mount_state.with_suffix(".compression-restore")
         ),
         MOCK_TRANSACTION_LOG=str(mount_state.with_suffix(".transaction")),
+        MOCK_GRUB_UPDATE_STATE=str(mount_state.with_suffix(".grub-update")),
         MOCK_UMOUNT_LOG=str(mount_state.with_suffix(".umount")),
         MOCK_UMOUNT_STATE=str(mount_state.with_suffix(".umount-state")),
     )
@@ -832,6 +847,9 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
     before_workspace_results = set(test_temp_root.glob("offline-root-workspace.*"))
     scratch_parent = binaries.parent / "appliance-var-tmp"
     before_scratch = set(scratch_parent.glob("offline-root-initramfs.*"))
+    initial_grub = (
+        paths["target"] / "efi/EFI/steamos/grub.cfg"
+    ).read_text(encoding="utf-8")
     process = subprocess.Popen(
         installer_command(paths, result),
         env=env,
@@ -894,6 +912,11 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
         while time.monotonic() < deadline and not umount_state.exists():
             time.sleep(0.05)
         assert umount_state.exists(), "recursive mount cleanup was not started"
+    elif expected_phase == "bootloader_config":
+        grub_state = mount_state.with_suffix(".grub-update")
+        while time.monotonic() < deadline and not grub_state.exists():
+            time.sleep(0.05)
+        assert grub_state.exists(), "GRUB configuration update was not started"
     elif expected_phase == "initramfs":
         child_state = mount_state.with_suffix(".chroot")
         while time.monotonic() < deadline and not child_state.exists():
@@ -1097,6 +1120,28 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
             }
             for record in records
         )
+        assert_item_progress(records, "mount_cleanup", 4)
+    elif expected_phase == "bootloader_config":
+        package_count = len(document["validation"]["packages"])
+        assert_item_progress(records, "userspace_install", package_count)
+        assert_item_progress(records, "userspace_verification", package_count)
+        assert_item_progress(records, "module_install", 5)
+        assert_item_progress(records, "module_verification", 5)
+        assert [
+            record for record in records if record["phase"] == "grub_update"
+        ] == [{
+            "attempt": 0,
+            "indeterminate": True,
+            "phase": "grub_update",
+            "schemaVersion": 1,
+        }]
+        assert not any(
+            record["phase"] in {"depmod", "initramfs", "installation_state"}
+            for record in records
+        )
+        assert (
+            paths["target"] / "efi/EFI/steamos/grub.cfg"
+        ).read_text(encoding="utf-8") == initial_grub
         assert_item_progress(records, "mount_cleanup", 4)
     elif expected_phase == "initramfs":
         assert any(
@@ -2421,6 +2466,20 @@ def main():
             PROJECT_TEST_ROOT_AVAILABLE_BYTES=str(256 * 1024 * 1024),
             PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
             MOCK_MODULE_VERIFICATION_DELAY="30",
+            MOCK_INITIAL_COMPRESSION="",
+        )
+        grub_cancel_root = temporary / "grub-cancel-fixture"
+        grub_cancel_root.mkdir()
+        grub_cancel_paths = make_fixture(grub_cancel_root)
+        grub_cancel_paths["compression_profile"] = "btrfs-zstd3"
+        cancel_installer(
+            grub_cancel_paths,
+            binaries,
+            temporary / "grub-cancel.json",
+            "bootloader_config",
+            PROJECT_TEST_ROOT_AVAILABLE_BYTES=str(256 * 1024 * 1024),
+            PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
+            MOCK_GRUB_UPDATE_DELAY="30",
             MOCK_INITIAL_COMPRESSION="",
         )
         state_write_cancel_root = temporary / "state-write-cancel-fixture"
