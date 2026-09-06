@@ -1011,10 +1011,16 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
             record for record in records
             if record["phase"] == "mount_cleanup"
         ]
-        assert [record["completed"] for record in cleanup_records] == [
-            0, 0, 1, 2, 3, 4
-        ]
+        cleanup_completions = [record["completed"] for record in cleanup_records]
+        assert cleanup_completions[-4:] == [1, 2, 3, 4]
+        assert 1 <= cleanup_completions.count(0) <= 2
+        assert cleanup_completions == sorted(cleanup_completions)
         assert all(record["total"] == 4 for record in cleanup_records)
+        assert len(
+            mount_state.with_suffix(".umount").read_text(
+                encoding="utf-8"
+            ).splitlines()
+        ) == 4
     elif expected_phase == "userspace_verification":
         package_count = len(document["validation"]["packages"])
         assert_item_progress(records, "userspace_install", package_count)

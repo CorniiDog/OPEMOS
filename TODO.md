@@ -2221,8 +2221,9 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   * [x] Add cancellation after recursive cleanup starts the first unmount. The
     unmount child now uses Core's cancellation-aware process-group launcher;
     exit cleanup retries the still-recorded mounts and requires the exact
-    `0,0,1,2,3,4` recovery sequence without a false release. The isolated
-    compressed-profile fixture requires complete mutation/state progress,
+    monotonic `1,2,3,4` release tail after a bounded one-or-two-record zero
+    prefix, plus exactly four completed unmounts without a false release. The
+    isolated compressed-profile fixture requires complete mutation/state progress,
     terminal phase `cleanup` and reason `cancelled`, verified initramfs evidence
     without a receipt claim, all four mounts released, no temporary workspace
     leak, and exact restoration to the original no-compression policy.
