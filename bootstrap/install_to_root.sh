@@ -911,6 +911,8 @@ cleanup_mutation()
     done
     if (( released_mounts != total_mounts )); then
         mounts_released=false
+    elif (( total_mounts > 0 )); then
+        emit_progress_items mount_cleanup "$released_mounts" "$total_mounts"
     fi
     RUNTIME_MOUNTS_RELEASED=$released_mounts
     if [[ "$target_identity_safe" == true ]]; then
