@@ -451,7 +451,7 @@ esac
     (binaries / "zstd").write_text(
         f"""#!/bin/sh
 case " $* " in
-  *" -d "*" -c "*)
+  *" -d -c "*)
     : > "$MOCK_MODULE_VERIFICATION_STATE"
     sleep "${{MOCK_MODULE_VERIFICATION_DELAY:-0}}"
     ;;
