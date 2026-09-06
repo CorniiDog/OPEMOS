@@ -1,0 +1,218 @@
+{
+  "$defs": {
+    "file": {
+      "additionalProperties": false,
+      "properties": {
+        "bytes": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "path": {
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "sourceName": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "bytes",
+        "sha256"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://corniidog.github.io/OPEMOS/contracts/schemas/driver-product-manifest-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "capabilities": {
+      "const": [
+        "open-kernel-modules",
+        "offline-install",
+        "initramfs-integration"
+      ]
+    },
+    "compatibility": {
+      "const": {
+        "architecture": "exact",
+        "fallback": false,
+        "kernel": "exact"
+      }
+    },
+    "creator": {
+      "additionalProperties": false,
+      "properties": {
+        "cleanupOwner": {
+          "const": "core"
+        },
+        "commit": {
+          "pattern": "^[0-9a-f]{40}$",
+          "type": "string"
+        },
+        "component": {
+          "const": "OPEMOS Core"
+        },
+        "repository": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "component",
+        "repository",
+        "commit",
+        "cleanupOwner"
+      ],
+      "type": "object"
+    },
+    "install": {
+      "additionalProperties": false,
+      "properties": {
+        "initramfs": {
+          "additionalProperties": false,
+          "properties": {
+            "kernelVersion": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "required": {
+              "const": true
+            }
+          },
+          "required": [
+            "required",
+            "kernelVersion"
+          ],
+          "type": "object"
+        },
+        "moduleDestination": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "runDepmod": {
+          "const": true
+        }
+      },
+      "required": [
+        "moduleDestination",
+        "runDepmod",
+        "initramfs"
+      ],
+      "type": "object"
+    },
+    "kind": {
+      "const": "opemos-compiled-driver"
+    },
+    "metadata": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "path": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "build-info",
+              "provenance",
+              "validation-receipt"
+            ]
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "path",
+          "bytes",
+          "sha256"
+        ],
+        "type": "object"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "type": "array"
+    },
+    "payload": {
+      "$ref": "#/$defs/file"
+    },
+    "releaseTag": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "source": {
+      "additionalProperties": false,
+      "properties": {
+        "commit": {
+          "pattern": "^[0-9a-f]{40}$",
+          "type": "string"
+        },
+        "repository": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "repository",
+        "commit"
+      ],
+      "type": "object"
+    },
+    "target": {
+      "additionalProperties": false,
+      "properties": {
+        "architecture": {
+          "const": "x86_64"
+        },
+        "kernelVersion": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "nvidiaVersion": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "steamosVersion": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "steamosVersion",
+        "kernelVersion",
+        "nvidiaVersion",
+        "architecture"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "kind",
+    "creator",
+    "target",
+    "compatibility",
+    "capabilities",
+    "payload",
+    "metadata",
+    "install",
+    "source",
+    "releaseTag"
+  ],
+  "title": "OPEMOS compiled-driver product manifest",
+  "type": "object"
+}

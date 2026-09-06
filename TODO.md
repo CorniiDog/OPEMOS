@@ -319,6 +319,13 @@ index in the same commit.
     * [x] Fail closed while reading durable state when operation/repository/tag/
       commit/attempt identity, lifecycle-decision pairing, progress, unique asset
       inventory, hashes, sizes, states, or bounded message content is malformed.
+* [x] Define an additive single compiled-driver product tar that wraps the
+  canonical validated payload with a compact manifest, provenance/build metadata,
+  Core creator ownership, exact compatibility/capabilities, internal hashes,
+  install/initramfs metadata, and validation receipt; authenticate the outer tar
+  only with its SHA-256 sidecar. Implementation commit `c2bc400`; focused
+  deterministic/hostile-input, consumer-contract, documentation, and Python
+  compile validations passed through `heavy.sh` on 2026-09-06.
 * [ ] Authenticate target-owned executable code and raise the public online
   bootstrap/release/certification path to the offline installer's trust level.
 * [ ] Define authenticated archival/cache recovery and typed outage behavior for
