@@ -93,7 +93,9 @@ publisher evidence, and installed-device lifecycle.
   ordered asset names, sizes, and SHA-256 identities. Reconciliation permits
   only creation, exact completion, or retry of missing assets; changed commits,
   unexpected assets, and changed bytes fail closed. It carries no signing
-  authority and cannot activate production trust.
+  authority and cannot activate production trust. Lifecycle progress exposes
+  bounded asset counts for planning, reconciliation, completion, failure, and
+  pre-publication cancellation.
 - `schemas/device-generation-result-v1.schema.json` describes bounded results
   and durable state from the inactive installed-device generation lifecycle.
 - `schemas/device-generation-health-v1.schema.json` describes the closed,

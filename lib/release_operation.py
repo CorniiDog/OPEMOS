@@ -79,18 +79,24 @@ def validate_plan(plan):
     return identity, records
 
 
-def operation(plan, attempt, observed=None):
+def operation(plan, attempt, observed=None, cancelled=False):
     identity, assets = validate_plan(plan)
     operation_id = hashlib.sha256(canonical({"schemaVersion": 1, **identity})).hexdigest()
     lifecycle, decision, message = "planned", "create", "Exact release is absent and may be created after explicit authorization."
-    if observed is not None:
+    phase = "planning"
+    if cancelled:
+        lifecycle, decision, phase = "cancelled", "cancelled", "cancelled"
+        message = "Operation was cancelled before publication; no remote completion is claimed."
+    elif observed is not None:
         lifecycle = "reconciling"
+        phase = "reconciling"
         if not isinstance(observed, dict) or set(observed) != {"repository", "tag", "targetCommit", "assets"}:
             fail("Observed release inventory is malformed.")
         if observed["repository"] != identity["repository"] or observed["tag"] != identity["tag"]:
             fail("Observed release identity does not match the operation.")
         if observed["targetCommit"] != identity["targetCommit"]:
             decision, lifecycle, message = "conflict", "failed", "Existing tag targets a different commit."
+            phase = "failed"
             for asset in assets: asset["state"] = "conflict"
         else:
             remote = observed["assets"]
@@ -104,6 +110,7 @@ def operation(plan, attempt, observed=None):
             expected_names = {item["name"] for item in assets}
             if set(indexed) - expected_names:
                 decision, lifecycle, message = "conflict", "failed", "Existing release contains an unexpected asset."
+                phase = "failed"
             else:
                 conflict = False
                 missing = False
@@ -117,11 +124,16 @@ def operation(plan, attempt, observed=None):
                         asset["state"] = "present"
                 if conflict:
                     decision, lifecycle, message = "conflict", "failed", "Existing asset identity conflicts with the immutable plan."
+                    phase = "failed"
                 elif missing:
                     decision, message = "retry-missing", "Only missing assets may be uploaded; existing assets are immutable."
                 else:
                     decision, lifecycle, message = "already-complete", "succeeded", "Remote release exactly matches the immutable plan."
-    return {"schemaVersion": 1, "operationId": operation_id, **{k: identity[k] for k in ("repository", "tag", "targetCommit")}, "attempt": attempt, "lifecycle": lifecycle, "decision": decision, "assets": assets, "message": message}
+                    phase = "complete"
+    completed = sum(asset["state"] == "present" for asset in assets)
+    progress = {"phase": phase, "completedAssets": completed,
+                "totalAssets": len(assets), "indeterminate": phase in {"planning", "cancelled"}}
+    return {"schemaVersion": 1, "operationId": operation_id, **{k: identity[k] for k in ("repository", "tag", "targetCommit")}, "attempt": attempt, "lifecycle": lifecycle, "decision": decision, "progress": progress, "assets": assets, "message": message}
 
 
 def main():
@@ -129,12 +141,15 @@ def main():
     parser.add_argument("--plan", required=True, type=Path)
     parser.add_argument("--observed", type=Path)
     parser.add_argument("--attempt", type=int, default=1)
+    parser.add_argument("--cancelled", action="store_true")
     args = parser.parse_args()
     if not 1 <= args.attempt <= 1000:
         fail("Release operation attempt is out of bounds.")
     plan = strict_object(args.plan)
+    if args.cancelled and args.observed:
+        fail("Cancelled operations cannot accept observed remote state.")
     observed = strict_object(args.observed) if args.observed else None
-    print(json.dumps(operation(plan, args.attempt, observed), sort_keys=True, separators=(",", ":")))
+    print(json.dumps(operation(plan, args.attempt, observed, args.cancelled), sort_keys=True, separators=(",", ":")))
 
 
 if __name__ == "__main__":
