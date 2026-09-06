@@ -860,7 +860,17 @@ restore_compression_policy()
 
 run_mutation_command()
 {
-    python3 "${SUPPORT_ROOT}/lib/run_in_process_group.py" "$@" &
+    local quiet_output=0
+    if [[ "${1:-}" == --quiet-output ]]; then
+        quiet_output=1
+        shift
+    fi
+    if [[ "$quiet_output" == 1 ]]; then
+        python3 "${SUPPORT_ROOT}/lib/run_in_process_group.py" "$@" \
+            >/dev/null 2>&1 &
+    else
+        python3 "${SUPPORT_ROOT}/lib/run_in_process_group.py" "$@" &
+    fi
     ACTIVE_CHILD=$!
     set +e
     wait "$ACTIVE_CHILD"
@@ -878,7 +888,7 @@ unmount_tree()
     # of allowing a failed/stale discovery probe to strand a known mount.
     # A target that disappeared concurrently is acceptable only when the
     # authoritative postcondition confirms that no mount remains there.
-    run_mutation_command umount -R "$target" >/dev/null 2>&1 ||
+    run_mutation_command --quiet-output umount -R "$target" ||
         ! findmnt -rn -R "$target" >/dev/null 2>&1 || return 1
     ! findmnt -rn -R "$target" >/dev/null 2>&1
 }
