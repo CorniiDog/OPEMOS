@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Cross-repository merge governance decision
-description: Staged synchronization record for owning-lead squash merges with exact counterpart approval.
+description: Synchronized record for owning-lead squash merges with exact counterpart approval.
 ---
 
 # Cross-repository merge governance decision — 2026-09-06
@@ -24,7 +24,7 @@ the owning lead may delete only the exact merged topic branch. This grants no
 force-push, history rewrite, other-ref deletion, non-squash merge, release,
 trust/signing, production, boundary, or hardware authority.
 
-## Canonical staged identities
+## Canonical synchronized identities
 
 - New Core canonical SHA-256:
   `8c882b9a25e3d53fc200d82fff0807a8746dc826410271563d37342542c01df0`
@@ -32,7 +32,9 @@ trust/signing, production, boundary, or hardware authority.
 - Preceding synchronized SHA-256:
   `136d3572effa90c1b84bcf51002d7f9641c367132de20d54dd7173f68f13c6a8`
 - Preceding synchronized Git blob: `68fd9553bb8fee79cee803a38f980a94b2d80e57`
-- Current preceding EXE mirror commit:
+- Synchronized EXE mirror commit:
+  `507e23cf848cde3c74390f7e6c41ba09f9084a15`
+- Preceding EXE mirror commit:
   `064d1d54c7ef2eda3d56e80c67e9f8e78a554725`
 
 ## Synchronization sequence
@@ -61,3 +63,17 @@ The local check authenticates the new canonical bytes and semantic clauses. The
 default check additionally authenticates the preceding pinned EXE bytes while
 synchronization is staged. After the final repin, both checks require identical
 mirrored bytes again.
+
+## Completed synchronization
+
+Core PR https://github.com/CorniiDog/OPEMOS/pull/29 preserved its four source
+commits and squash-merged as
+`73e8d15c07671f3174f1a948d525e18db1084e5a` after exact EXE-primary approval
+and passing checks. EXE PR https://github.com/CorniiDog/OPEMOS.EXE/pull/53
+preserved its two source commits and squash-merged as
+`507e23cf848cde3c74390f7e6c41ba09f9084a15` after exact Core-primary approval
+and passing checks. Both merged `BOUNDARIES.md` files have Git blob
+`2f8424a1df29fce2859126f7c42fd1885db8a425` and SHA-256
+`8c882b9a25e3d53fc200d82fff0807a8746dc826410271563d37342542c01df0`.
+This final Core repin replaces only the staged counterpart identity and flag;
+the preceding identities and approval history remain above.
