@@ -345,20 +345,30 @@ for `* [ ]` to enumerate them mechanically.
 
 ## Boundary decisions
 
-* [ ] 2026-09-06 user-authorized cross-repository merge governance:
+* [x] 2026-09-06 user-authorized cross-repository merge governance:
   Core canonical SHA-256
   `8c882b9a25e3d53fc200d82fff0807a8746dc826410271563d37342542c01df0`, Git
   blob `2f8424a1df29fce2859126f7c42fd1885db8a425`. Only owning primary leads may
   squash-merge after exact unchanged-head/base/scope/check-set counterpart-lead
   approval and passing required checks; helpers and Resolver cannot approve or
   merge. A same-author GitHub refusal permits only the exact authenticated
-  counterpart-primary scheduler/handoff fallback recorded by the authority. Core-first synchronization, EXE mirror, and final Core repin remain
-  staged as recorded in `docs/boundary-decision-2026-09-06.md`. Canonical-first
+  counterpart-primary scheduler/handoff fallback recorded by the authority.
+  The completed synchronization is recorded in
+  `docs/boundary-decision-2026-09-06.md`. Canonical-first
   implementation commit `44498c4`; both focused boundary checks, documentation,
   Python compilation, canonical SHA-256/Git-blob, and diff checks passed on
   2026-09-06. Authenticated scheduler/handoff fallback amendment commit
   `77f8715`; both boundary checks, documentation, compilation, canonical hashes,
-  and diff checks passed again. EXE mirror and final Core repin remain pending.
+  and diff checks passed again. Core PR
+  https://github.com/CorniiDog/OPEMOS/pull/29 squash-merged as
+  `73e8d15c07671f3174f1a948d525e18db1084e5a`; EXE PR
+  https://github.com/CorniiDog/OPEMOS.EXE/pull/53 squash-merged as
+  `507e23cf848cde3c74390f7e6c41ba09f9084a15`. Both authorities are
+  byte-identical at Git blob `2f8424a1df29fce2859126f7c42fd1885db8a425`
+  and SHA-256
+  `8c882b9a25e3d53fc200d82fff0807a8746dc826410271563d37342542c01df0`.
+  The final Core integrity repin validates that exact EXE squash while
+  preserving the preceding counterpart identities and review history.
 
 * [x] 2026-09-04 user-authorized creator-owned artifact cleanup boundary:
   canonical SHA-256 `136d3572effa90c1b84bcf51002d7f9641c367132de20d54dd7173f68f13c6a8`,

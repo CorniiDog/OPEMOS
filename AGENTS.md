@@ -2,13 +2,14 @@
 
 `BOUNDARIES.md` is the read-only ownership authority. Its current canonical
 SHA-256 is `8c882b9a25e3d53fc200d82fff0807a8746dc826410271563d37342542c01df0`
-and Git blob is `2f8424a1df29fce2859126f7c42fd1885db8a425`. OPEMOS.EXE still mirrors the
-preceding bytes at pinned counterpart commit
-`064d1d54c7ef2eda3d56e80c67e9f8e78a554725` while the authorized 2026-09-06
-governance synchronization is staged. The preceding pin
-`c6733c7c80a104f57b44411d2d4223c2d624818d` and the 2026-09-04 cleanup-ownership
-decision remain preserved in `docs/boundary-decision-2026-09-04.md`; the staged
-merge-governance decision is recorded in
+and Git blob is `2f8424a1df29fce2859126f7c42fd1885db8a425`. OPEMOS.EXE mirrors these exact
+bytes at pinned counterpart commit
+`507e23cf848cde3c74390f7e6c41ba09f9084a15`. The preceding counterpart pins
+`064d1d54c7ef2eda3d56e80c67e9f8e78a554725` and
+`c6733c7c80a104f57b44411d2d4223c2d624818d`, plus the 2026-09-04
+cleanup-ownership decision, remain preserved in
+`docs/boundary-decision-2026-09-04.md`; the synchronized merge-governance
+decision is recorded in
 `docs/boundary-decision-2026-09-06.md`. Do not modify the authority, integrity
 test, or counterpart reference during ordinary work. A change requires explicit
 user approval plus synchronized source commit, counterpart commit, Git blob, and
