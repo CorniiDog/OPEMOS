@@ -369,6 +369,9 @@ for `* [ ]` to enumerate them mechanically.
   `8c882b9a25e3d53fc200d82fff0807a8746dc826410271563d37342542c01df0`.
   The final Core integrity repin validates that exact EXE squash while
   preserving the preceding counterpart identities and review history.
+  Final repin implementation commit `5cb1fe6`; canonical-only and synchronized
+  boundary checks, documentation validation, Python compilation, and diff checks
+  passed through `heavy.sh` where required on 2026-09-08.
 
 * [x] 2026-09-04 user-authorized creator-owned artifact cleanup boundary:
   canonical SHA-256 `136d3572effa90c1b84bcf51002d7f9641c367132de20d54dd7173f68f13c6a8`,
