@@ -330,8 +330,9 @@ index in the same commit.
     offline validator. It binds exact Core/source commits, target compatibility,
     product/release schema versions, and the ordered product-tar/checksum asset
     sizes and SHA-256 identities without publishing or creating a disk image.
-    Focused coverage rejects changed pins, changed asset bytes, collisions,
-    symlink manifests, and missing assets.
+    Both independent pins are required validator inputs. Focused coverage
+    rejects omitted or changed pins, changed asset bytes, collisions, symlink
+    manifests, and missing assets.
 * [x] Define bounded self-describing release metadata and deterministic
   selection/rejection semantics for one driver tar without tag parsing or
   release-order dependence. Cover additive extensions, unknown required versus

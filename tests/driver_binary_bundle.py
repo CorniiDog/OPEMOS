@@ -142,13 +142,21 @@ def main():
             hostile_archive, hostile_sidecar, root / "hostile.json"
         ).returncode != 0
 
-        linked = root / "linked.json"
-        linked.symlink_to(first)
         assert run(
             "validate",
-            "--manifest", linked,
+            "--manifest", first,
             "--asset-dir", archive.parent,
         ).returncode != 0
+        assert run(
+            "validate",
+            "--manifest", first,
+            "--asset-dir", archive.parent,
+            "--expected-manifest-sha256", digest,
+        ).returncode != 0
+
+        linked = root / "linked.json"
+        linked.symlink_to(first)
+        assert validate(linked, archive.parent, digest).returncode != 0
 
         sidecar.unlink()
         assert validate(first, archive.parent, digest).returncode != 0

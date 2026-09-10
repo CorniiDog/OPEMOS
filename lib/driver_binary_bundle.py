@@ -319,7 +319,7 @@ def validate(args):
     if not regular(args.manifest, MAX_MANIFEST_BYTES):
         fail("Bundle manifest is missing, linked, empty, or excessive.")
     payload = args.manifest.read_bytes()
-    if args.expected_manifest_sha256 and sha256(args.manifest) != args.expected_manifest_sha256:
+    if sha256(args.manifest) != args.expected_manifest_sha256:
         fail("Bundle manifest does not match the pinned SHA-256.")
     try:
         document = validate_document(strict_json(payload.decode("utf-8")))
@@ -327,7 +327,7 @@ def validate(args):
         fail("Bundle manifest is not UTF-8.")
     if canonical(document) != payload:
         fail("Bundle manifest is not canonical JSON.")
-    if args.expected_core_commit and document["core"]["commit"] != args.expected_core_commit:
+    if document["core"]["commit"] != args.expected_core_commit:
         fail("Bundle manifest does not match the pinned Core commit.")
     validate_assets(document, args.asset_dir)
     print(json.dumps({
@@ -352,14 +352,14 @@ def main():
     checker = commands.add_parser("validate")
     checker.add_argument("--manifest", required=True, type=Path)
     checker.add_argument("--asset-dir", required=True, type=Path)
-    checker.add_argument("--expected-manifest-sha256")
-    checker.add_argument("--expected-core-commit")
+    checker.add_argument("--expected-manifest-sha256", required=True)
+    checker.add_argument("--expected-core-commit", required=True)
     checker.set_defaults(handler=validate)
     args = parser.parse_args()
     if args.command == "validate":
-        if args.expected_manifest_sha256 and HEX.fullmatch(args.expected_manifest_sha256) is None:
+        if HEX.fullmatch(args.expected_manifest_sha256) is None:
             fail("Pinned manifest SHA-256 is invalid.")
-        if args.expected_core_commit and COMMIT.fullmatch(args.expected_core_commit) is None:
+        if COMMIT.fullmatch(args.expected_core_commit) is None:
             fail("Pinned Core commit is invalid.")
     args.handler(args)
 
