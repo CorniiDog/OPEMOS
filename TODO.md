@@ -326,6 +326,13 @@ index in the same commit.
   only with its SHA-256 sidecar. Implementation commit `c2bc400`; focused
   deterministic/hostile-input, consumer-contract, documentation, and Python
   compile validations passed through `heavy.sh` on 2026-09-06.
+  * [x] Add the standalone driver-only GitHub Release handoff manifest and
+    offline validator. It binds exact Core/source commits, target compatibility,
+    product/release schema versions, and the ordered product-tar/checksum asset
+    sizes and SHA-256 identities without publishing or creating a disk image.
+    Both independent pins are required validator inputs. Focused coverage
+    rejects omitted or changed pins, changed asset bytes, collisions, symlink
+    manifests, and missing assets.
 * [x] Define bounded self-describing release metadata and deterministic
   selection/rejection semantics for one driver tar without tag parsing or
   release-order dependence. Cover additive extensions, unknown required versus
