@@ -81,18 +81,29 @@ Build the SteamOS/Arch x86_64 binary:
 cargo build --locked --release --manifest-path interstitial/Cargo.toml
 ```
 
-Portable model, rasterizer, and contract tests run on macOS:
+Portable model and rasterizer tests remain separate from the browser preview:
 
 ```bash
 cargo test --locked --manifest-path interstitial/Cargo.toml
 python3 tests/interstitial.py
-./test_update_macos.sh
 ```
 
-The last command starts a loopback-only, time-bounded browser simulation. It
-does not install anything and does not claim macOS runtime compatibility. Use
-`./test_update_macos.sh --no-open --duration 5` for its automated health and
-content check.
+The root launchers provide the same 5–600 second, loopback-only browser
+simulation and assert the health response, bounded phase content, progress
+tracks, and canonical pill before reporting success:
+
+| Preview host | Browser command | Headless contract check | Scope |
+| --- | --- | --- | --- |
+| macOS | `./test_update_macos.sh` | `./test_update_macos.sh --no-open --duration 5` | Previews the Linux/SteamOS interstitial; it does not update macOS drivers. |
+| Linux | `./test_update_linux.sh` | `./test_update_linux.sh --no-open --duration 5` | Native loopback browser preview of the Linux/SteamOS interstitial; it performs no driver update. |
+| Windows PowerShell | `.\test_update_windows.ps1` | `.\test_update_windows.ps1 -NoOpen -Duration 5` | Previews the Linux/SteamOS interstitial; it does not update Windows drivers. |
+
+Use `--headless` as an alias for `--no-open` in the shell launchers, or `-Headless` as an alias for `-NoOpen` in PowerShell. Each launcher
+owns and cleans its temporary directory and server process. These commands
+install nothing and perform no disk, privilege, QEMU, driver, signing, release,
+trust, or production action. Windows and macOS display the Linux/SteamOS
+interstitial in the platform browser; they do not update native drivers or
+establish SteamOS runtime compatibility.
 
 The Fedora x86_64 appliance compiles the Linux DRM implementation and attempts
 the real KMS path when QEMU exposes a connected scanout:

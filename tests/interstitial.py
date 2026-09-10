@@ -189,6 +189,8 @@ assert 'src="/opemos-pill.svg"' in demo
 assert 'id="overall-track"' in demo and 'id="step-track"' in demo
 assert 'class="step-bar"' in demo
 assert 'id="percent"' not in demo and "Overall / current operation" not in demo
-assert "docs/assets/images/opemos-pill.svg" in (ROOT / "test_update_macos.sh").read_text()
+for launcher in ("test_update_macos.sh", "test_update_linux.sh"):
+    assert "docs/assets/images/opemos-pill.svg" in (ROOT / launcher).read_text()
+assert (ROOT / "test_update_windows.ps1").is_file()
 
 print("No-input interstitial contract checks passed.")

@@ -2,6 +2,19 @@ Below is the consolidated project checklist based on our work so far. I’m trea
 
 # OPEMOS — Master Checklist
 
+## Cross-platform interstitial preview launchers
+
+* [x] Add bounded root launchers for macOS, Linux, and Windows that serve the
+  static no-input Linux/SteamOS interstitial on loopback, assert health and
+  required content, optionally open the platform browser, emit platform-scoped
+  evidence, and clean owned processes and temporary state. Windows uses a
+  self-contained PowerShell TCP server because native Windows cannot assume
+  Python is installed. These previews perform no native driver update, install,
+  disk, privilege, QEMU, release, trust, or production action. Linux headless
+  execution, duration rejection, cross-platform static drift checks,
+  interstitial contracts, documentation limits, Python compilation, and shell
+  syntax passed through `heavy.sh` where applicable on 2026-09-10.
+
 ## Not yet resolved
 
 This is the active index. New unchecked work belongs here first so maintainers

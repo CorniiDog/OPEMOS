@@ -27,17 +27,25 @@ done
     printf 'Duration must be an integer between 5 and 600 seconds.\n' >&2
     exit 2
 }
+[[ "$(uname -s)" == Linux ]] || {
+    printf 'test_update_linux.sh requires Linux.\n' >&2
+    exit 2
+}
 command -v python3 >/dev/null 2>&1 || { printf 'python3 is required.\n' >&2; exit 2; }
 command -v curl >/dev/null 2>&1 || { printf 'curl is required.\n' >&2; exit 2; }
-if [[ "$OPEN_BROWSER" == 1 && "$(uname -s)" != Darwin ]]; then
-    printf 'The browser-opening mode is intended for macOS; use --no-open elsewhere.\n' >&2
-    exit 2
-fi
+BROWSER_COMMAND=""
 if [[ "$OPEN_BROWSER" == 1 ]]; then
-    command -v open >/dev/null 2>&1 || { printf 'macOS open command is unavailable.\n' >&2; exit 2; }
+    if command -v xdg-open >/dev/null 2>&1; then
+        BROWSER_COMMAND=xdg-open
+    elif command -v gio >/dev/null 2>&1; then
+        BROWSER_COMMAND=gio
+    else
+        printf 'xdg-open or gio is required; use --no-open for headless validation.\n' >&2
+        exit 2
+    fi
 fi
 
-RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/opemos-interstitial-demo.XXXXXX")"
+RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/opemos-interstitial-linux.XXXXXX")"
 SERVER_PID=""
 cleanup()
 {
@@ -58,19 +66,27 @@ python3 "$SCRIPT_DIR/tests/interstitial_demo_server.py" \
 SERVER_PID=$!
 deadline=$(( $(date +%s) + 10 ))
 while [[ ! -s "$RUNTIME/port" ]]; do
-    kill -0 "$SERVER_PID" 2>/dev/null || { printf 'Demo server exited before becoming ready.\n' >&2; exit 1; }
-    (( $(date +%s) < deadline )) || { printf 'Demo server did not become ready.\n' >&2; exit 1; }
+    kill -0 "$SERVER_PID" 2>/dev/null || {
+        printf 'Demo server exited before becoming ready.\n' >&2
+        exit 1
+    }
+    (( $(date +%s) < deadline )) || {
+        printf 'Demo server did not become ready.\n' >&2
+        exit 1
+    }
     sleep 0.1
 done
 PORT="$(tr -d '[:space:]' < "$RUNTIME/port")"
-[[ "$PORT" =~ ^[0-9]+$ ]] || { printf 'Demo server returned an invalid port.\n' >&2; exit 1; }
+[[ "$PORT" =~ ^[0-9]+$ ]] || {
+    printf 'Demo server returned an invalid port.\n' >&2
+    exit 1
+}
 URL="http://127.0.0.1:$PORT/"
 HEALTH="$(curl -fsS --max-time 5 "${URL}health")"
 [[ "$HEALTH" == '{"schemaVersion":1,"status":"ready"}' ]] || {
     printf 'Demo health contract failed.\n' >&2
     exit 1
 }
-
 PAGE="$(curl -fsS --max-time 5 "$URL")"
 [[ "$PAGE" == *'CHECKING EXACT NVIDIA SUPPORT'* &&
    "$PAGE" == *'GENERATING INITRAMFS'* &&
@@ -88,8 +104,12 @@ PILL="$(curl -fsS --max-time 5 "${URL}opemos-pill.svg")"
 
 if [[ "$OPEN_BROWSER" == 1 ]]; then
     printf 'Opening the Linux/SteamOS no-input update interstitial preview for %s seconds:\n%s\n' "$DURATION" "$URL"
-    open "$URL"
+    if [[ "$BROWSER_COMMAND" == gio ]]; then
+        gio open "$URL"
+    else
+        "$BROWSER_COMMAND" "$URL"
+    fi
     wait "$SERVER_PID"
     SERVER_PID=""
 fi
-printf '%s\n' '{"schemaVersion":1,"status":"passed","platform":"macos","macosBrowserSimulation":"passed","scope":"Linux/SteamOS interstitial preview; no macOS driver update performed"}'
+printf '%s\n' '{"schemaVersion":1,"status":"passed","platform":"linux","linuxBrowserSimulation":"passed","scope":"Linux/SteamOS interstitial preview; no driver update performed"}'
