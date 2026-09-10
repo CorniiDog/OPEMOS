@@ -36,8 +36,7 @@ rather than substituting a nearby kernel or unreviewed userspace payload.
 
 ## Start here
 
-Read the **[OPEMOS documentation](https://corniidog.github.io/OPEMOS/)**.
-
+**[OPEMOS documentation](https://corniidog.github.io/OPEMOS/)**
 - [Install from a Steam Deck terminal](docs/getting-started.md)
 - [Developer tutorials](docs/developer-guide.md)
 - [OPEMOS.EXE integration](docs/image-builder.md)
@@ -47,6 +46,14 @@ Read the **[OPEMOS documentation](https://corniidog.github.io/OPEMOS/)**.
 - [Trust, safety, and recovery model](docs/security.md)
 - [Complete technical reference](docs/technical-reference.md)
 - [Current roadmap](TODO.md)
+
+## Preview the no-input update interstitial
+
+| Host | Bounded headless command | Scope |
+| --- | --- | --- |
+| macOS | `./test_update_macos.sh --no-open --duration 5` | Linux/SteamOS preview; no macOS driver update. |
+| Linux | `./test_update_linux.sh --no-open --duration 5` | Loopback preview; no driver update or system change. |
+| Windows | `.\test_update_windows.ps1 -NoOpen -Duration 5` | Linux/SteamOS preview; no Windows driver update. |
 
 ## Steam Deck terminal installation
 

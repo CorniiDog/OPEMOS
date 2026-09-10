@@ -17,7 +17,7 @@ python3 tests/host_temp_storage.py
 python3 tests/setup_nvidia_prerequisites.py
 python3 tests/setup_nvidia_modes.py
 python3 tests/boundary_policy.py
-for script_file in bootstrap/*.sh lib/*.sh commit_myself.sh test_update_macos.sh tests/*.sh; do
+for script_file in bootstrap/*.sh lib/*.sh commit_myself.sh test_update_macos.sh test_update_linux.sh tests/*.sh; do
     bash -n "$script_file"
 done
 bash -n tests/vm/run-steamos-recovery.sh tests/vm/inspect-steamos-recovery.sh \
@@ -124,6 +124,7 @@ printf 'Checking canonical desktop update publisher...\n'
 python3 tests/desktop_update_publisher.py
 printf 'Checking no-input boot interstitial...\n'
 python3 tests/interstitial.py
+python3 tests/interstitial_launchers.py
 cargo test --locked --manifest-path interstitial/Cargo.toml
 cargo clippy --locked --manifest-path interstitial/Cargo.toml --all-targets -- -D warnings
 cargo fmt --manifest-path interstitial/Cargo.toml -- --check
