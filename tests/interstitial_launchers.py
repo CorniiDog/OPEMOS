@@ -2,6 +2,7 @@
 """Cross-platform interstitial preview launcher contract checks."""
 
 import json
+import os
 import platform
 import shutil
 import subprocess
@@ -99,9 +100,9 @@ if pwsh:
             "-NoLogo",
             "-NoProfile",
             "-Command",
-            "$e=$null;$t=$null;[System.Management.Automation.Language.Parser]::ParseFile($args[0],[ref]$t,[ref]$e)|Out-Null;if($e.Count){exit 1}",
-            str(WINDOWS),
+            "$e=$null;$t=$null;[System.Management.Automation.Language.Parser]::ParseFile($env:OPEMOS_PS_PARSE_PATH,[ref]$t,[ref]$e)|Out-Null;if($e.Count){$e|ForEach-Object{[Console]::Error.WriteLine($_.Message)};exit 1}",
         ],
+        env={**os.environ, "OPEMOS_PS_PARSE_PATH": str(WINDOWS)},
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         timeout=10,
