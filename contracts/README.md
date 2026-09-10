@@ -24,6 +24,11 @@ publisher evidence, and installed-device lifecycle.
   target compatibility, Core creator ownership, capabilities, payload and
   metadata hashes, install destination, initramfs requirement, and provenance.
 
+- `lib/driver_binary_bundle.py` creates and validates the canonical standalone
+  GitHub Release inventory for the compiled-driver product and checksum sidecar.
+  It binds exact Core and source commits, target compatibility, both schema
+  versions, and ordered asset names, sizes, and SHA-256 identities.
+
 - `schemas/resolver-result-v2.schema.json` describes the additive resolver
   result emitted by `lib/resolve_target.py`.
 - `fixtures/result-semantics-v1.json` links every accepted authoritative
@@ -272,6 +277,37 @@ hash-addressed reviewed build plan. The plan pins the NVIDIA version, source
 repository/ref/commit, and known-good baseline artifact identity. Targets with
 no reviewed plan return `no_reviewed_exact_target_build_plan`; publication-
 integrity failures never advertise a build fallback.
+
+## Compiled-driver GitHub Release bundle
+
+After `lib/build_driver_product.py` creates the driver-only product tar and
+SHA-256 sidecar, create its standalone handoff manifest without publishing:
+
+```bash
+python3 lib/driver_binary_bundle.py create \
+  --archive /path/to/opemos-driver-<tag>-x86_64.tar.gz \
+  --sidecar /path/to/opemos-driver-<tag>-x86_64.tar.gz.sha256 \
+  --release-tag <tag> \
+  --output /path/to/opemos-driver-<tag>-x86_64.release.json
+```
+
+The output is create-only canonical JSON. EXE pins its SHA-256 and the exact
+Core commit independently of transport, downloads exactly the two ordered
+assets, and validates them offline before opening the product archive:
+
+```bash
+python3 lib/driver_binary_bundle.py validate \
+  --manifest /path/to/opemos-driver-<tag>-x86_64.release.json \
+  --asset-dir /path/to/downloaded-assets \
+  --expected-manifest-sha256 <64-lowercase-hex> \
+  --expected-core-commit <40-lowercase-hex>
+```
+
+Validation requires regular bounded files, exact ordered inventory, exact sizes
+and hashes, the canonical checksum sidecar, canonical product member order, and
+matching internal Core, source, target, compatibility, and release identities.
+This contract performs no network request or publication and confers no
+production trust, signing authority, or permission to create a disk image.
 
 ## Installer bundle manifest
 
