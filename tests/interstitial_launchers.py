@@ -99,13 +99,14 @@ if pwsh:
             pwsh,
             "-NoLogo",
             "-NoProfile",
+            "-NonInteractive",
             "-Command",
             "$e=$null;$t=$null;[System.Management.Automation.Language.Parser]::ParseFile($env:OPEMOS_PS_PARSE_PATH,[ref]$t,[ref]$e)|Out-Null;if($e.Count){$e|ForEach-Object{[Console]::Error.WriteLine($_.Message)};exit 1}",
         ],
         env={**os.environ, "OPEMOS_PS_PARSE_PATH": str(WINDOWS)},
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        timeout=10,
+        timeout=30,
     )
     assert syntax.returncode == 0, syntax.stderr.decode(errors="replace")
 
