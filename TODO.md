@@ -346,6 +346,38 @@ index in the same commit.
     Both independent pins are required validator inputs. Focused coverage
     rejects omitted or changed pins, changed asset bytes, collisions, symlink
     manifests, and missing assets.
+  * [x] Prepare the exact authenticated driver-only Release product for the
+    EXE Windows partial-mode consumer without publishing it. A fresh Fedora 42
+    exact-target build was required because the existing SteamOS 3.8.14 assets
+    are immutably bound to the former support-repository identity and fail the
+    canonical current-repository validator; they cannot be wrapped.
+    Valve header package `linux-neptune-616-headers-6.16.12.valve24.4-1-x86_64.pkg.tar.zst`
+    SHA-256 `dd532330d2bb34d4ab6b00ffb249d245ec882841a37694ae703548dab6d09f17`
+    was verified with pinned signer
+    `889B5EBDDD505A683621900DAF1D2199EF0A3CCF`. The locally-built-verified
+    product binds Core `0b9550ab0ffc9ababe79800a407835c9c4a27dd0`, NVIDIA
+    source `40bd1b5d6d39ae4e4180b7a665df144b08854d14`, SteamOS `3.8.14`,
+    kernel `6.16.12-valve24.4-1-neptune-616-gfe145653a794`, NVIDIA
+    `575.64.05`, and x86_64. Proposed create-only tag:
+    `steamos-3.8.14-nvidia-575.64.05-k6.16.12-valve24.4-1-neptune-616-gfe145653a794-modules-zstd-r1`.
+    GitHub returned 404 for both the tag ref and release lookup on 2026-09-11.
+    Exact unpublished assets are
+    `opemos-driver-steamos-3.8.14-nvidia-575.64.05-k6.16.12-valve24.4-1-neptune-616-gfe145653a794-modules-zstd-r1-x86_64.tar.gz`
+    (21,644,970 bytes,
+    `7386fe50edbee2831a597b468e178a0deb9c6b0f821f098f340415dd7a99504a`),
+    its `.sha256` sidecar (189 bytes,
+    `96e3ab0175bf9dedff7732c6af70f9129299db8bced75acfc479f3001fc6c1c4`),
+    and
+    `opemos-driver-bundle-steamos-3.8.14-nvidia-575.64.05-k6.16.12-valve24.4-1-neptune-616-gfe145653a794-modules-zstd-r1-x86_64.manifest.json`
+    (1,251 bytes,
+    `3e36fc5490ca4186ec7dbd79e9bd5cb1453d56845aafefd7703f7730bed5bcc1`).
+    Canonical publish-input, product, and bundle validation passed through
+    `heavy.sh`; bundle validation reported schema 1/status validated, the
+    exact two ordered product assets, mandatory manifest-SHA/Core-commit pins,
+    and the expected release repository/tag. The local dry-run plan is
+    create-only and requires the tag/release to remain absent, revalidation of
+    all three hashes, and separate explicit publication approval before any tag,
+    push, or Release creation.
 * [x] Define bounded self-describing release metadata and deterministic
   selection/rejection semantics for one driver tar without tag parsing or
   release-order dependence. Cover additive extensions, unknown required versus
