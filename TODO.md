@@ -378,6 +378,24 @@ index in the same commit.
     create-only and requires the tag/release to remain absent, revalidation of
     all three hashes, and separate explicit publication approval before any tag,
     push, or Release creation.
+  * [x] Publish the separately approved exact compiled-driver-only Release from
+    the reviewed dry-run without altering the source release. GitHub Release
+    https://github.com/CorniiDog/OPEMOS/releases/tag/steamos-3.8.14-nvidia-575.64.05-k6.16.12-valve24.4-1-neptune-616-gfe145653a794-modules-zstd-r1
+    is non-draft, non-prerelease, and its lightweight tag resolves directly to
+    Core commit `0b9550ab0ffc9ababe79800a407835c9c4a27dd0`. Its exact
+    inventory contains only the reviewed archive (21,644,970 bytes,
+    `7386fe50edbee2831a597b468e178a0deb9c6b0f821f098f340415dd7a99504a`),
+    checksum sidecar (189 bytes,
+    `96e3ab0175bf9dedff7732c6af70f9129299db8bced75acfc479f3001fc6c1c4`),
+    and release manifest (1,251 bytes,
+    `3e36fc5490ca4186ec7dbd79e9bd5cb1453d56845aafefd7703f7730bed5bcc1`).
+    Immediately before publication, the canonical bundle validator passed
+    through `heavy.sh` with mandatory manifest-SHA and Core-commit pins.
+    GitHub's asset digests and an independent post-publication download matched
+    all three sizes and SHA-256 values on 2026-09-11. No combined SteamOS image,
+    production activation, signing/trust-policy change, or frozen-branch change
+    occurred. The broader raw-release repacker exercise remains open because
+    this driver-product Release does not publish its raw-module input Release.
 * [x] Define bounded self-describing release metadata and deterministic
   selection/rejection semantics for one driver tar without tag parsing or
   release-order dependence. Cover additive extensions, unknown required versus
