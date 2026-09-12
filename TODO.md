@@ -415,6 +415,20 @@ for `* [ ]` to enumerate them mechanically.
 
 ## Boundary decisions
 
+* [ ] 2026-09-11 user-authorized product-first review tiers: routine,
+  non-destructive documentation, isolated UI, developer-tooling, and test-harness
+  pull requests may merge after required CI without counterpart review; imaging,
+  disk/VM/process lifecycle, compatibility and cross-repository contracts retain
+  exact counterpart review; release, trust, production, physical-media, and
+  hardware work retain stronger gates and explicit authority. Standalone
+  evidence-only pull requests are prohibited. Core canonical-first synchronization
+  is staged against preceding EXE mirror commit
+  `507e23cf848cde3c74390f7e6c41ba09f9084a15`. The new canonical SHA-256 is
+  `c44a987b4931f413ee72cc6d94ff3797f746bbdba4bcf51c7d7aed9406ffd9f2`
+  and Git blob is `9b379788b1deadbb2088887eb10be325008254ac`;
+  PR/test evidence is recorded on this implementation branch before EXE mirrors
+  the bytes. See `docs/boundary-decision-2026-09-11.md`.
+
 * [x] 2026-09-06 user-authorized cross-repository merge governance:
   Core canonical SHA-256
   `8c882b9a25e3d53fc200d82fff0807a8746dc826410271563d37342542c01df0`, Git

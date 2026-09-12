@@ -9,10 +9,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 COUNTERPART_COMMIT = "507e23cf848cde3c74390f7e6c41ba09f9084a15"
-EXPECTED_GIT_BLOB = "2f8424a1df29fce2859126f7c42fd1885db8a425"
-EXPECTED_SHA256 = "8c882b9a25e3d53fc200d82fff0807a8746dc826410271563d37342542c01df0"
-COUNTERPART_EXPECTED_SHA256 = EXPECTED_SHA256
-MIRROR_SYNCHRONIZED = True
+EXPECTED_GIT_BLOB = "9b379788b1deadbb2088887eb10be325008254ac"
+EXPECTED_SHA256 = "c44a987b4931f413ee72cc6d94ff3797f746bbdba4bcf51c7d7aed9406ffd9f2"
+COUNTERPART_EXPECTED_SHA256 = "8c882b9a25e3d53fc200d82fff0807a8746dc826410271563d37342542c01df0"
+MIRROR_SYNCHRONIZED = False
 
 
 def git_blob_id(payload):
@@ -62,8 +62,11 @@ def main(local_only=False):
     assert "## A/B ownership" in text
     assert "## Cross-repository pull-request merge governance" in text
     assert "Only the owning repository primary lead may squash-merge" in text
+    assert "Routine pull requests may merge without counterpart-primary approval" in text
+    assert "Imaging-sensitive pull requests still require" in text
+    assert "Do not open a standalone evidence-only pull request" in text
     assert "Any new head commit, changed base commit, material scope change" in text
-    assert "the counterpart primary may instead record approval through the" in text
+    assert "the counterpart primary may instead record approval\nthrough the" in text
     assert "authenticated scheduler/handoff channel" in text
     assert "may delete only that exact merged topic branch" in text
     assert "## Artifact cleanup ownership" in text
