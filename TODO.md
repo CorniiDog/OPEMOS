@@ -2650,3 +2650,15 @@ booted into Gaming Mode on the RTX 2060 with the known-good project NVIDIA
 
 The infrastructure should now be actively dogfooded. The next major validation
 gate is a completely clean-stock one-command certified installation.
+
+* [x] Expose the Core-owned exact-target maintainer build/package/release dry-run
+  workflow as one deterministic capability plan. It binds the reviewed policy
+  hash, exact target/source, ordered existing Core entry points, non-remote step
+  semantics, separate publication authorization, and combined-image refusal.
+  Focused tests cover deterministic availability, unsupported targets, malformed
+  identities, architecture refusal, policy binding, ordered phases, and closed-schema
+  validation for both outcomes; the focused contract and Python syntax checks passed
+  through `heavy.sh` on 2026-09-12. EXE exact-head review then found the
+  step array was shape-bounded but not identity-bound; remediation binds each
+  ordered ID, entry point, result, and required-input array and rejects
+  substitution, duplication, reordering, input, and result mutations.
