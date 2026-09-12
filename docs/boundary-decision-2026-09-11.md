@@ -40,5 +40,14 @@ its integrity check to the immutable EXE squash commit. Core does not edit EXE.
 - SHA-256: `c44a987b4931f413ee72cc6d94ff3797f746bbdba4bcf51c7d7aed9406ffd9f2`
 - Git blob: `9b379788b1deadbb2088887eb10be325008254ac`
 
-The final EXE mirror commit remains pending until EXE completes its owned half
-of the synchronization.
+## Completed synchronization
+
+Core PR https://github.com/CorniiDog/OPEMOS/pull/35 preserved source commit
+`9fdcaf22d8be4d199807904f018f0f7c1b8a6bd9` and squash-merged as
+`e36e9052b982893b5fc89f6df0fa1c8671b7cad1` after exact EXE approval and
+passing required checks. EXE PR https://github.com/CorniiDog/OPEMOS.EXE/pull/86
+mirrored the exact authority bytes and squash-merged as
+`000fecbe271f9bd52d1ef6f0e62a1e440e0154df` after exact Core approval and ten applicable passing checks; deploy skipped. The EXE squash
+has parent `ead6703f85d7b3cd0bfc22e60f3c99e49a537c23`. Core's final repin replaces
+only the staged counterpart commit and synchronization flag; the preceding
+identities and review history remain preserved above.

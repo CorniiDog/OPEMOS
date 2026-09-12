@@ -415,7 +415,7 @@ for `* [ ]` to enumerate them mechanically.
 
 ## Boundary decisions
 
-* [ ] 2026-09-11 user-authorized product-first review tiers: routine,
+* [x] 2026-09-11 user-authorized product-first review tiers: routine,
   non-destructive documentation, isolated UI, developer-tooling, and test-harness
   pull requests may merge after required CI without counterpart review; imaging,
   disk/VM/process lifecycle, compatibility and cross-repository contracts retain
@@ -426,8 +426,15 @@ for `* [ ]` to enumerate them mechanically.
   `507e23cf848cde3c74390f7e6c41ba09f9084a15`. The new canonical SHA-256 is
   `c44a987b4931f413ee72cc6d94ff3797f746bbdba4bcf51c7d7aed9406ffd9f2`
   and Git blob is `9b379788b1deadbb2088887eb10be325008254ac`;
-  PR/test evidence is recorded on this implementation branch before EXE mirrors
-  the bytes. See `docs/boundary-decision-2026-09-11.md`.
+  Core PR https://github.com/CorniiDog/OPEMOS/pull/35 preserved source commit
+  `9fdcaf22d8be4d199807904f018f0f7c1b8a6bd9` and squash-merged as
+  `e36e9052b982893b5fc89f6df0fa1c8671b7cad1` after exact EXE approval and
+  passing checks. EXE PR https://github.com/CorniiDog/OPEMOS.EXE/pull/86
+  mirrored the exact bytes and squash-merged as
+  `000fecbe271f9bd52d1ef6f0e62a1e440e0154df` after exact Core
+  approval and ten applicable passing checks; deploy skipped. The final Core
+  repin validates that immutable EXE squash while preserving preceding pins and
+  review history. See `docs/boundary-decision-2026-09-11.md`.
 
 * [x] 2026-09-06 user-authorized cross-repository merge governance:
   Core canonical SHA-256
