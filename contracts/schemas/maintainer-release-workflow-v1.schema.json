@@ -1,0 +1,20 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://corniidog.github.io/OPEMOS/contracts/schemas/maintainer-release-workflow-v1.schema.json",
+  "title":"OPEMOS exact-target maintainer release workflow",
+  "type":"object","additionalProperties":false,
+  "required":["schemaVersion","kind","status","target","capability","contracts","publication","steps"],
+  "properties":{
+    "schemaVersion":{"const":1},"kind":{"const":"opemos-maintainer-release-workflow"},"status":{"enum":["available","unavailable"]},
+    "target":{"type":"object","additionalProperties":false,"required":["steamosVersion","kernelVersion","nvidiaVersion","architecture"],"properties":{"steamosVersion":{"type":"string","pattern":"^[0-9]+\\.[0-9]+\\.[0-9]+$"},"kernelVersion":{"type":"string","pattern":"^[A-Za-z0-9._+~-]{1,255}$"},"nvidiaVersion":{"type":"string","pattern":"^[0-9]+\\.[0-9]+(?:\\.[0-9]+)?$"},"architecture":{"const":"x86_64"}}},
+    "capability":{"type":"object","additionalProperties":false,"required":["id","available","policy"],"properties":{"id":{"const":"exact-target-driver-release-v1"},"available":{"type":"boolean"},"policy":{"type":"object","additionalProperties":false,"required":["name","sha256"],"properties":{"name":{"const":"exact-target-builds-v1.json"},"sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"}}}}},
+    "contracts":{"type":"object","additionalProperties":false,"required":["workflow","buildResult","releaseProgressResult"],"properties":{"workflow":{"const":"maintainer-release-workflow-v1.schema.json"},"buildResult":{"const":{"schemaVersion":1,"writer":"lib/write_build_result.py"}},"releaseProgressResult":{"const":{"schemaVersion":1,"schema":"contracts/schemas/release-operation-v1.schema.json","session":"lib/release_operation_session.py"}}}},
+    "publication":{"const":{"mode":"dry-run-only","requiresSeparateAuthorization":true,"combinedNvidiaSteamOsAsset":false}},
+    "source":{"type":"object","additionalProperties":false,"required":["repository","ref","commit"],"properties":{"repository":{"type":"string","pattern":"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"},"ref":{"type":"string","minLength":1,"maxLength":255},"commit":{"type":"string","pattern":"^[0-9a-f]{40}$"}}},
+    "steps":{"type":"array","maxItems":6,"items":{"type":"object","additionalProperties":false,"required":["id","entrypoint","result","requiredInputs","mutatesRemote"],"properties":{"id":{"type":"string"},"entrypoint":{"type":"string"},"result":{"type":"string"},"requiredInputs":{"type":"array","minItems":1,"uniqueItems":true,"items":{"type":"string","pattern":"^[A-Za-z][A-Za-z0-9]{0,63}$"}},"mutatesRemote":{"const":false}}}}
+  },
+  "allOf":[
+    {"if":{"properties":{"status":{"const":"available"}}},"then":{"required":["source"],"properties":{"capability":{"properties":{"available":{"const":true}}},"steps":{"minItems":6,"maxItems":6}}}},
+    {"if":{"properties":{"status":{"const":"unavailable"}}},"then":{"properties":{"capability":{"properties":{"available":{"const":false}}},"source":false,"steps":{"maxItems":0}}}}
+  ]
+}

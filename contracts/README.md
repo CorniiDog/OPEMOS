@@ -360,3 +360,9 @@ carry the canonical `CorniiDog/OPEMOS` identity.
 Only the explicit `--development-repository OWNER/REPO` option permits another
 release destination; it does not change the canonical repository identity
 embedded in the bundle manifest.
+
+- `lib/maintainer_release_workflow.py` exposes the reviewed exact-target build,
+  product packaging, bundle validation, and publication dry-run boundaries as
+  one deterministic Core-owned capability plan. It returns a closed unavailable
+  result for unreviewed targets, never authorizes publication, and never combines
+  NVIDIA payloads with SteamOS media.
