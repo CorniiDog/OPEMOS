@@ -13,6 +13,16 @@ def main():
  assert value["contracts"]["releaseProgressResult"]["schema"]=="contracts/schemas/release-operation-v1.schema.json"
  assert [s["id"] for s in value["steps"]]==["resolve","build","package","bundle","validate","release-dry-run"]
  assert all(not s["mutatesRemote"] and s["requiredInputs"] for s in value["steps"])
+ import copy
+ mutations=[]
+ for field,replacement in (("id","substituted"),("entrypoint","arbitrary/tool"),("result","arbitrary-result"),("requiredInputs",["wrongInput"])):
+  candidate=copy.deepcopy(value); candidate["steps"][2][field]=replacement; mutations.append((field,candidate))
+ duplicate=copy.deepcopy(value); duplicate["steps"][1]=copy.deepcopy(duplicate["steps"][0]); mutations.append(("duplicate",duplicate))
+ reordered=copy.deepcopy(value); reordered["steps"][0],reordered["steps"][1]=reordered["steps"][1],reordered["steps"][0]; mutations.append(("reordered",reordered))
+ for name,candidate in mutations:
+  try: jsonschema.validate(candidate,schema)
+  except jsonschema.ValidationError: pass
+  else: raise AssertionError(f"schema accepted {name} workflow mutation")
  assert value["steps"][-1]["requiredInputs"][-1]=="dryRun"
  assert value["capability"]["policy"]["sha256"]==hashlib.sha256((ROOT/"policies/exact-target-builds-v1.json").read_bytes()).hexdigest()
  missing=call("--steamos","3.8.15",*TARGET[2:]); assert missing.returncode==0,missing.stderr

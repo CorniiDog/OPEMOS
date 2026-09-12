@@ -1,20 +1,283 @@
 {
-  "$schema":"https://json-schema.org/draft/2020-12/schema",
-  "$id":"https://corniidog.github.io/OPEMOS/contracts/schemas/maintainer-release-workflow-v1.schema.json",
-  "title":"OPEMOS exact-target maintainer release workflow",
-  "type":"object","additionalProperties":false,
-  "required":["schemaVersion","kind","status","target","capability","contracts","publication","steps"],
-  "properties":{
-    "schemaVersion":{"const":1},"kind":{"const":"opemos-maintainer-release-workflow"},"status":{"enum":["available","unavailable"]},
-    "target":{"type":"object","additionalProperties":false,"required":["steamosVersion","kernelVersion","nvidiaVersion","architecture"],"properties":{"steamosVersion":{"type":"string","pattern":"^[0-9]+\\.[0-9]+\\.[0-9]+$"},"kernelVersion":{"type":"string","pattern":"^[A-Za-z0-9._+~-]{1,255}$"},"nvidiaVersion":{"type":"string","pattern":"^[0-9]+\\.[0-9]+(?:\\.[0-9]+)?$"},"architecture":{"const":"x86_64"}}},
-    "capability":{"type":"object","additionalProperties":false,"required":["id","available","policy"],"properties":{"id":{"const":"exact-target-driver-release-v1"},"available":{"type":"boolean"},"policy":{"type":"object","additionalProperties":false,"required":["name","sha256"],"properties":{"name":{"const":"exact-target-builds-v1.json"},"sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"}}}}},
-    "contracts":{"type":"object","additionalProperties":false,"required":["workflow","buildResult","releaseProgressResult"],"properties":{"workflow":{"const":"maintainer-release-workflow-v1.schema.json"},"buildResult":{"const":{"schemaVersion":1,"writer":"lib/write_build_result.py"}},"releaseProgressResult":{"const":{"schemaVersion":1,"schema":"contracts/schemas/release-operation-v1.schema.json","session":"lib/release_operation_session.py"}}}},
-    "publication":{"const":{"mode":"dry-run-only","requiresSeparateAuthorization":true,"combinedNvidiaSteamOsAsset":false}},
-    "source":{"type":"object","additionalProperties":false,"required":["repository","ref","commit"],"properties":{"repository":{"type":"string","pattern":"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"},"ref":{"type":"string","minLength":1,"maxLength":255},"commit":{"type":"string","pattern":"^[0-9a-f]{40}$"}}},
-    "steps":{"type":"array","maxItems":6,"items":{"type":"object","additionalProperties":false,"required":["id","entrypoint","result","requiredInputs","mutatesRemote"],"properties":{"id":{"type":"string"},"entrypoint":{"type":"string"},"result":{"type":"string"},"requiredInputs":{"type":"array","minItems":1,"uniqueItems":true,"items":{"type":"string","pattern":"^[A-Za-z][A-Za-z0-9]{0,63}$"}},"mutatesRemote":{"const":false}}}}
+  "$id": "https://corniidog.github.io/OPEMOS/contracts/schemas/maintainer-release-workflow-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "available"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "capability": {
+            "properties": {
+              "available": {
+                "const": true
+              }
+            }
+          },
+          "steps": {
+            "maxItems": 6,
+            "minItems": 6
+          }
+        },
+        "required": [
+          "source"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "unavailable"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "capability": {
+            "properties": {
+              "available": {
+                "const": false
+              }
+            }
+          },
+          "source": false,
+          "steps": {
+            "maxItems": 0
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "capability": {
+      "additionalProperties": false,
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "id": {
+          "const": "exact-target-driver-release-v1"
+        },
+        "policy": {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "const": "exact-target-builds-v1.json"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "sha256"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "available",
+        "policy"
+      ],
+      "type": "object"
+    },
+    "contracts": {
+      "additionalProperties": false,
+      "properties": {
+        "buildResult": {
+          "const": {
+            "schemaVersion": 1,
+            "writer": "lib/write_build_result.py"
+          }
+        },
+        "releaseProgressResult": {
+          "const": {
+            "schema": "contracts/schemas/release-operation-v1.schema.json",
+            "schemaVersion": 1,
+            "session": "lib/release_operation_session.py"
+          }
+        },
+        "workflow": {
+          "const": "maintainer-release-workflow-v1.schema.json"
+        }
+      },
+      "required": [
+        "workflow",
+        "buildResult",
+        "releaseProgressResult"
+      ],
+      "type": "object"
+    },
+    "kind": {
+      "const": "opemos-maintainer-release-workflow"
+    },
+    "publication": {
+      "const": {
+        "combinedNvidiaSteamOsAsset": false,
+        "mode": "dry-run-only",
+        "requiresSeparateAuthorization": true
+      }
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "source": {
+      "additionalProperties": false,
+      "properties": {
+        "commit": {
+          "pattern": "^[0-9a-f]{40}$",
+          "type": "string"
+        },
+        "ref": {
+          "maxLength": 255,
+          "minLength": 1,
+          "type": "string"
+        },
+        "repository": {
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "repository",
+        "ref",
+        "commit"
+      ],
+      "type": "object"
+    },
+    "status": {
+      "enum": [
+        "available",
+        "unavailable"
+      ]
+    },
+    "steps": {
+      "items": false,
+      "maxItems": 6,
+      "prefixItems": [
+        {
+          "const": {
+            "entrypoint": "bootstrap/build_for_target.sh",
+            "id": "resolve",
+            "mutatesRemote": false,
+            "requiredInputs": [
+              "target",
+              "source"
+            ],
+            "result": "build-plan-json"
+          }
+        },
+        {
+          "const": {
+            "entrypoint": "bootstrap/build_for_target.sh",
+            "id": "build",
+            "mutatesRemote": false,
+            "requiredInputs": [
+              "target",
+              "source",
+              "authenticatedHeaders"
+            ],
+            "result": "build-result-v1"
+          }
+        },
+        {
+          "const": {
+            "entrypoint": "lib/build_driver_product.py",
+            "id": "package",
+            "mutatesRemote": false,
+            "requiredInputs": [
+              "buildArtifacts",
+              "provenance"
+            ],
+            "result": "compiled-driver-product-v1"
+          }
+        },
+        {
+          "const": {
+            "entrypoint": "lib/driver_binary_bundle.py",
+            "id": "bundle",
+            "mutatesRemote": false,
+            "requiredInputs": [
+              "compiledDriverProduct",
+              "releaseIdentity"
+            ],
+            "result": "driver-binary-bundle-v1"
+          }
+        },
+        {
+          "const": {
+            "entrypoint": "lib/validate_publish_inputs.py",
+            "id": "validate",
+            "mutatesRemote": false,
+            "requiredInputs": [
+              "canonicalAssetSet",
+              "repository"
+            ],
+            "result": "publication-plan-v1"
+          }
+        },
+        {
+          "const": {
+            "entrypoint": "bootstrap/publish_artifacts.sh",
+            "id": "release-dry-run",
+            "mutatesRemote": false,
+            "requiredInputs": [
+              "canonicalAssetSet",
+              "dryRun"
+            ],
+            "result": "publication-plan-v1"
+          }
+        }
+      ],
+      "type": "array"
+    },
+    "target": {
+      "additionalProperties": false,
+      "properties": {
+        "architecture": {
+          "const": "x86_64"
+        },
+        "kernelVersion": {
+          "pattern": "^[A-Za-z0-9._+~-]{1,255}$",
+          "type": "string"
+        },
+        "nvidiaVersion": {
+          "pattern": "^[0-9]+\\.[0-9]+(?:\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "steamosVersion": {
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "steamosVersion",
+        "kernelVersion",
+        "nvidiaVersion",
+        "architecture"
+      ],
+      "type": "object"
+    }
   },
-  "allOf":[
-    {"if":{"properties":{"status":{"const":"available"}}},"then":{"required":["source"],"properties":{"capability":{"properties":{"available":{"const":true}}},"steps":{"minItems":6,"maxItems":6}}}},
-    {"if":{"properties":{"status":{"const":"unavailable"}}},"then":{"properties":{"capability":{"properties":{"available":{"const":false}}},"source":false,"steps":{"maxItems":0}}}}
-  ]
+  "required": [
+    "schemaVersion",
+    "kind",
+    "status",
+    "target",
+    "capability",
+    "contracts",
+    "publication",
+    "steps"
+  ],
+  "title": "OPEMOS exact-target maintainer release workflow",
+  "type": "object"
 }
