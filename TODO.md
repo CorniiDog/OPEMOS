@@ -2,6 +2,19 @@ Below is the consolidated project checklist based on our work so far. I’m trea
 
 # OPEMOS — Master Checklist
 
+## Blocked-lead Resolver escalation
+
+* [ ] Synchronize the explicitly authorized boundary rule requiring either
+  primary to summon Resolver immediately when reporting `blocked`, `resource`,
+  or `approval`. Core lands the canonical authority first, EXE mirrors the
+  exact bytes, and Core then pins the immutable EXE mirror commit. The hourly
+  scan remains fallback and the escalation grants no new approval authority.
+  Staged Core authority SHA-256
+  `80cc89afcc2dfd467d3a52c492c246cfc4e1a03b7fd73219172ed0bbfa9d6dfb`
+  and Git blob `b4d4711321590d39756b2850a3b25c26e8117d3e` match the
+  finalized bytes. Canonical-only boundary validation, Python compilation, and
+  diff checks passed on 2026-09-13; counterpart synchronization remains open.
+
 ## Cross-platform interstitial preview launchers
 
 * [x] Add bounded root launchers for macOS, Linux, and Windows that serve the
