@@ -4,7 +4,7 @@ Below is the consolidated project checklist based on our work so far. I’m trea
 
 ## Blocked-lead Resolver escalation
 
-* [ ] Synchronize the explicitly authorized boundary rule requiring either
+* [x] Synchronize the explicitly authorized boundary rule requiring either
   primary to summon Resolver immediately when reporting `blocked`, `resource`,
   or `approval`. Core lands the canonical authority first, EXE mirrors the
   exact bytes, and Core then pins the immutable EXE mirror commit. The hourly
@@ -12,8 +12,16 @@ Below is the consolidated project checklist based on our work so far. I’m trea
   Staged Core authority SHA-256
   `80cc89afcc2dfd467d3a52c492c246cfc4e1a03b7fd73219172ed0bbfa9d6dfb`
   and Git blob `b4d4711321590d39756b2850a3b25c26e8117d3e` match the
-  finalized bytes. Canonical-only boundary validation, Python compilation, and
-  diff checks passed on 2026-09-13; counterpart synchronization remains open.
+  finalized bytes. Core PR https://github.com/CorniiDog/OPEMOS/pull/38
+  preserved source commit `701b1c8398e5decb5b900bc6788cb91446306816`
+  and squash-merged as `aeec707b8cb3dc6f592cedd7164c58c75a50aa8b`
+  after exact EXE approval and passing required checks. EXE PR
+  https://github.com/CorniiDog/OPEMOS.EXE/pull/91 mirrored the exact bytes and
+  squash-merged as `2461acb2b38dc1ae5dc2dfc46898aee2e5f8032d`
+  after exact Core approval. The final Core repin validates that immutable EXE
+  squash while preserving preceding pins and review history. Canonical-only
+  and synchronized boundary validation, Python compilation, and diff checks
+  passed on 2026-09-13.
 
 ## Cross-platform interstitial preview launchers
 
