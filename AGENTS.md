@@ -2,10 +2,10 @@
 
 `BOUNDARIES.md` is the read-only ownership authority. Its current canonical
 SHA-256 is `80cc89afcc2dfd467d3a52c492c246cfc4e1a03b7fd73219172ed0bbfa9d6dfb`
-and Git blob is `b4d4711321590d39756b2850a3b25c26e8117d3e`. Synchronization is staged:
-OPEMOS.EXE still contains the preceding boundary bytes at pinned counterpart
-commit `000fecbe271f9bd52d1ef6f0e62a1e440e0154df` until its reviewed mirror lands.
-The preceding counterpart pins
+and Git blob is `b4d4711321590d39756b2850a3b25c26e8117d3e`. OPEMOS.EXE mirrors these exact
+bytes at pinned counterpart commit
+`2461acb2b38dc1ae5dc2dfc46898aee2e5f8032d`. The preceding counterpart pins
+`000fecbe271f9bd52d1ef6f0e62a1e440e0154df`,
 `064d1d54c7ef2eda3d56e80c67e9f8e78a554725` and
 `c6733c7c80a104f57b44411d2d4223c2d624818d`, plus the 2026-09-04
 cleanup-ownership decision, remain preserved in

@@ -41,6 +41,12 @@ primary owns changes and pull-request actions in its repository.
 
 ## Synchronization status
 
-The Core source pull request, EXE mirror pull request, and final Core
-counterpart repin are pending. Their exact reviewed heads, checks, and squash
-commits will be recorded here as the synchronization completes.
+Core PR https://github.com/CorniiDog/OPEMOS/pull/38 preserved source commit
+`701b1c8398e5decb5b900bc6788cb91446306816` and squash-merged as
+`aeec707b8cb3dc6f592cedd7164c58c75a50aa8b` after exact EXE approval and
+passing required checks. EXE PR https://github.com/CorniiDog/OPEMOS.EXE/pull/91
+mirrored the exact authority bytes and squash-merged as
+`2461acb2b38dc1ae5dc2dfc46898aee2e5f8032d` after exact Core approval. The
+EXE squash has parent `45ef093807c4c714ba8b4a9f46573f9e948d3899`. Core's final repin replaces
+only the staged counterpart commit and synchronization flag; the preceding
+identities and review history remain preserved above.
