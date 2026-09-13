@@ -9,10 +9,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 COUNTERPART_COMMIT = "000fecbe271f9bd52d1ef6f0e62a1e440e0154df"
-EXPECTED_GIT_BLOB = "9b379788b1deadbb2088887eb10be325008254ac"
-EXPECTED_SHA256 = "c44a987b4931f413ee72cc6d94ff3797f746bbdba4bcf51c7d7aed9406ffd9f2"
-COUNTERPART_EXPECTED_SHA256 = EXPECTED_SHA256
-MIRROR_SYNCHRONIZED = True
+EXPECTED_GIT_BLOB = "b4d4711321590d39756b2850a3b25c26e8117d3e"
+EXPECTED_SHA256 = "80cc89afcc2dfd467d3a52c492c246cfc4e1a03b7fd73219172ed0bbfa9d6dfb"
+COUNTERPART_EXPECTED_SHA256 = "c44a987b4931f413ee72cc6d94ff3797f746bbdba4bcf51c7d7aed9406ffd9f2"
+MIRROR_SYNCHRONIZED = False
 
 
 def git_blob_id(payload):
@@ -61,6 +61,9 @@ def main(local_only=False):
     assert "## Source intent and Core authorization" in text
     assert "## A/B ownership" in text
     assert "## Cross-repository pull-request merge governance" in text
+    assert "## Blocked-lead Resolver escalation" in text
+    assert "must immediately summon the existing Resolver" in text
+    assert "cannot approve or merge pull requests" in text
     assert "Only the owning repository primary lead may squash-merge" in text
     assert "Routine pull requests may merge without counterpart-primary approval" in text
     assert "Imaging-sensitive pull requests still require" in text

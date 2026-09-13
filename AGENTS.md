@@ -1,17 +1,19 @@
 # Repository agent instructions
 
 `BOUNDARIES.md` is the read-only ownership authority. Its current canonical
-SHA-256 is `c44a987b4931f413ee72cc6d94ff3797f746bbdba4bcf51c7d7aed9406ffd9f2`
-and Git blob is `9b379788b1deadbb2088887eb10be325008254ac`. OPEMOS.EXE mirrors these exact
-bytes at pinned counterpart commit
-`000fecbe271f9bd52d1ef6f0e62a1e440e0154df`. The preceding counterpart pins
+SHA-256 is `80cc89afcc2dfd467d3a52c492c246cfc4e1a03b7fd73219172ed0bbfa9d6dfb`
+and Git blob is `b4d4711321590d39756b2850a3b25c26e8117d3e`. Synchronization is staged:
+OPEMOS.EXE still contains the preceding boundary bytes at pinned counterpart
+commit `000fecbe271f9bd52d1ef6f0e62a1e440e0154df` until its reviewed mirror lands.
+The preceding counterpart pins
 `064d1d54c7ef2eda3d56e80c67e9f8e78a554725` and
 `c6733c7c80a104f57b44411d2d4223c2d624818d`, plus the 2026-09-04
 cleanup-ownership decision, remain preserved in
 `docs/boundary-decision-2026-09-04.md`; the preceding synchronized merge-
 governance decision is recorded in `docs/boundary-decision-2026-09-06.md`, and
 the staged product-first synchronization in
-`docs/boundary-decision-2026-09-11.md`. Do not modify the authority, integrity
+`docs/boundary-decision-2026-09-11.md`, and the immediate blocked-lead Resolver
+escalation in `docs/boundary-decision-2026-09-13.md`. Do not modify the authority, integrity
 test, or counterpart reference during ordinary work. A change requires explicit
 user approval plus synchronized source commit, counterpart commit, Git blob, and
 SHA-256 references. Do not infer permission from a task that touches both
