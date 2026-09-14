@@ -1,10 +1,30 @@
 #!/usr/bin/env python3
 """Closed non-production end-to-end release-session fixture."""
-import json, os, subprocess, tempfile
+import errno, importlib.util, json, os, subprocess, sys, tempfile, types
 from pathlib import Path
 import publisher
 ROOT=Path(__file__).resolve().parent.parent
 TOOL=ROOT/"lib/release_operation_session.py"
+
+def windows_lock_regression(root):
+    sys.path.insert(0,str(ROOT/"lib"))
+    spec=importlib.util.spec_from_file_location("release_operation_session",TOOL)
+    module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+    attempts=[]
+    fake=types.SimpleNamespace(LK_NBLCK=1,LK_UNLCK=2)
+    def locking(descriptor,mode,count):
+        attempts.append((mode,count,os.lseek(descriptor,0,os.SEEK_CUR)))
+        if mode==fake.LK_NBLCK and len(attempts)==1: raise OSError(errno.EACCES,"contended")
+    fake.locking=locking;sys.modules["msvcrt"]=fake
+    lock=root/"windows.lock";descriptor=os.open(lock,os.O_RDWR|os.O_CREAT,0o600)
+    original_sleep=module.time.sleep;module.time.sleep=lambda seconds: attempts.append(("sleep",seconds))
+    try:
+        module.lock_descriptor(descriptor,windows=True)
+        assert lock.read_bytes()==b"\0"
+        module.unlock_descriptor(descriptor,windows=True)
+        assert attempts==[(1,1,0),("sleep",0.05),(1,1,0),(2,1,0)]
+    finally:
+        module.time.sleep=original_sleep;os.close(descriptor);sys.modules.pop("msvcrt",None)
 
 def call(root,command,*extra):
     return subprocess.run([str(TOOL),command,"--state",str(root/"state.json"),*map(str,extra)],text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
@@ -15,7 +35,7 @@ def inventory(document):
 
 def main():
   with tempfile.TemporaryDirectory(prefix="release-session-") as temporary:
-    root=Path(temporary);paths=publisher.fixture(root/"assets")
+    root=Path(temporary);windows_lock_regression(root);paths=publisher.fixture(root/"assets")
     validated=publisher.command(paths,"--dry-run");assert validated.returncode==0,validated.stderr
     plan=root/"plan.json";plan.write_text(validated.stdout)
     started=call(root,"execute","--plan",plan);assert started.returncode==0,started.stderr
@@ -68,6 +88,11 @@ def main():
     (hostile/"state.json").symlink_to(root/"state.json")
     refused=call(hostile,"status")
     assert refused.returncode!=0 and "bounded regular file" in refused.stderr
+
+    unsafe_lock=root/"unsafe-lock";unsafe_lock.mkdir()
+    (unsafe_lock/"state.json.lock").symlink_to(root/"state.json")
+    refused_lock=call(unsafe_lock,"status")
+    assert refused_lock.returncode!=0 and "lock is unsafe" in refused_lock.stderr
 
     complete_root=root/"complete";complete_root.mkdir()
     execute=call(complete_root,"execute","--plan",plan);document=json.loads(execute.stdout)

@@ -1,11 +1,39 @@
 #!/usr/bin/env python3
 """Durable, network-free execution/status boundary for immutable releases."""
-import argparse, fcntl, json, os, re, tempfile
+import argparse, errno, json, os, re, tempfile, time
 from pathlib import Path
 from release_operation import operation, strict_object
 
 FIELDS = {"schemaVersion","operationId","repository","tag","targetCommit","attempt","lifecycle","decision","progress","assets","message"}
 TERMINAL = {"succeeded","failed","cancelled"}
+NOFOLLOW = getattr(os,"O_NOFOLLOW",0)
+
+def lock_descriptor(descriptor,windows=os.name=="nt"):
+    if windows:
+        import msvcrt
+        if os.fstat(descriptor).st_size == 0:
+            os.write(descriptor,b"\0");os.fsync(descriptor)
+        while True:
+            try:
+                os.lseek(descriptor,0,os.SEEK_SET)
+                msvcrt.locking(descriptor,msvcrt.LK_NBLCK,1)
+                return
+            except OSError as error:
+                if error.errno not in {errno.EACCES,errno.EAGAIN}:
+                    raise
+                time.sleep(0.05)
+    else:
+        import fcntl
+        fcntl.flock(descriptor,fcntl.LOCK_EX)
+
+def unlock_descriptor(descriptor,windows=os.name=="nt"):
+    if windows:
+        import msvcrt
+        os.lseek(descriptor,0,os.SEEK_SET)
+        msvcrt.locking(descriptor,msvcrt.LK_UNLCK,1)
+    else:
+        import fcntl
+        fcntl.flock(descriptor,fcntl.LOCK_UN)
 
 def fail(message): raise SystemExit(message)
 
@@ -72,20 +100,21 @@ def write_state(path,value,create=False):
     data=(json.dumps(validate_state(value),sort_keys=True,separators=(",",":"))+"\n").encode()
     if create:
         try:
-            fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+            fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL|NOFOLLOW,0o600)
         except FileExistsError: return False
         with os.fdopen(fd,"wb") as stream:
             stream.write(data);stream.flush();os.fsync(stream.fileno())
         return True
     fd,name=tempfile.mkstemp(prefix=".release-operation.",dir=path.parent)
     try:
-        os.fchmod(fd,0o600)
+        if hasattr(os,"fchmod"): os.fchmod(fd,0o600)
         with os.fdopen(fd,"wb") as stream:
             stream.write(data);stream.flush();os.fsync(stream.fileno())
         os.replace(name,path)
-        directory=os.open(path.parent,os.O_RDONLY|os.O_DIRECTORY)
-        try: os.fsync(directory)
-        finally: os.close(directory)
+        if hasattr(os,"O_DIRECTORY"):
+            directory=os.open(path.parent,os.O_RDONLY|os.O_DIRECTORY)
+            try: os.fsync(directory)
+            finally: os.close(directory)
     finally:
         try: os.unlink(name)
         except FileNotFoundError: pass
@@ -103,9 +132,12 @@ def main():
     args=parser.parse_args()
     lock=Path(str(args.state)+".lock")
     lock.parent.mkdir(mode=0o700,parents=True,exist_ok=True)
-    descriptor=os.open(lock,os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW,0o600)
+    if lock.is_symlink(): fail("Release operation lock is unsafe.")
+    descriptor=os.open(lock,os.O_RDWR|os.O_CREAT|NOFOLLOW,0o600)
+    locked=False
     try:
-        os.fchmod(descriptor,0o600);fcntl.flock(descriptor,fcntl.LOCK_EX)
+        if hasattr(os,"fchmod"): os.fchmod(descriptor,0o600)
+        lock_descriptor(descriptor);locked=True
         if args.command=="status":
             if args.plan or args.observed or args.attempt!=1: fail("Status accepts only --state.")
             emit(read_state(args.state));return
@@ -131,6 +163,7 @@ def main():
         if current["lifecycle"]=="cancelled": fail("Cancelled release operations cannot be reconciled.")
         write_state(args.state,candidate);emit(candidate)
     finally:
+        if locked: unlock_descriptor(descriptor)
         os.close(descriptor)
 
 if __name__=="__main__": main()

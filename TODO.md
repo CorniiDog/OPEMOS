@@ -2672,6 +2672,19 @@ booted into Gaming Mode on the RTX 2060 with the known-good project NVIDIA
 The infrastructure should now be actively dogfooded. The next major validation
 gate is a completely clean-stock one-command certified installation.
 
+* [x] Make the schema-1 network-free release-operation session directly
+  executable by the Windows maintainer adapter without changing its durable
+  identity or lifecycle contract. The same entry point now selects Windows
+  byte-range locking or POSIX flock at runtime, retries Windows contention,
+  releases an acquired lock on every command outcome, avoids unavailable
+  Windows-only file flags and directory fsync calls, and preserves atomic state
+  replacement. The focused fixture proves Windows lock initialization,
+  contention/retry/release and the unchanged create/status/reconcile/cancel,
+  restart, terminal-state, malformed-state, and symlink-refusal behavior.
+  Serialized syntax and focused validation passed through `heavy.sh` on
+  2026-09-14; immutable commit, PR checks, counterpart review, and squash
+  evidence are retained in the implementation PR and authenticated handoff.
+
 * [x] Expose the Core-owned exact-target maintainer build/package/release dry-run
   workflow as one deterministic capability plan. It binds the reviewed policy
   hash, exact target/source, ordered existing Core entry points, non-remote step
