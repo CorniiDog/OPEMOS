@@ -1,0 +1,68 @@
+name: Windows publisher zstd contract
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/windows-publisher-zstd.yml
+      - contracts/windows-publisher-zstd-v1.json
+      - lib/validate_publish_inputs.py
+      - runtime-dependencies/windows/zstd-1.5.7/**
+      - tests/windows_publisher_zstd_dependency.py
+  pull_request:
+    paths:
+      - .github/workflows/windows-publisher-zstd.yml
+      - contracts/windows-publisher-zstd-v1.json
+      - lib/validate_publish_inputs.py
+      - runtime-dependencies/windows/zstd-1.5.7/**
+      - tests/windows_publisher_zstd_dependency.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    env:
+      INPUT_DIR: release-inputs/steamos-3.8.14-nvidia-575.64.05-r2
+      ARCHIVE: nvidia-open-steamos-3.8.14-nvidia-575.64.05-k6.16.12-valve24.4-1-neptune-616-gfe145653a794-modules-zstd-r2-x86_64.tar.gz
+      STEM: nvidia-open-steamos-3.8.14-nvidia-575.64.05-k6.16.12-valve24.4-1-neptune-616-gfe145653a794-modules-zstd-r2-x86_64
+    steps:
+      - name: Check out exact source commit
+        uses: actions/checkout@v4
+
+      - name: Verify retained dependency contract and payload
+        run: python tests/windows_publisher_zstd_dependency.py
+
+      - name: Activate exact zstd executable
+        shell: pwsh
+        run: |
+          $destination = Join-Path $env:RUNNER_TEMP "opemos-zstd"
+          Expand-Archive -LiteralPath "runtime-dependencies/windows/zstd-1.5.7/zstd-v1.5.7-win64.zip" -DestinationPath $destination
+          $bin = Join-Path $destination "zstd-v1.5.7-win64"
+          $version = & (Join-Path $bin "zstd.exe") --version
+          if ($LASTEXITCODE -ne 0 -or $version -notmatch "v1\.5\.7") {
+            throw "Exact zstd executable did not report v1.5.7"
+          }
+          $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Validate real r2 publisher inputs on Windows
+        shell: pwsh
+        run: |
+          python lib/validate_publish_inputs.py `
+            --archive "$env:INPUT_DIR/$env:ARCHIVE" `
+            --checksum "$env:INPUT_DIR/$env:ARCHIVE.sha256" `
+            --build-info "$env:INPUT_DIR/$env:STEM.build-info.txt" `
+            --provenance "$env:INPUT_DIR/$env:STEM.provenance.json" `
+            --repository CorniiDog/OPEMOS |
+            Set-Content -LiteralPath "$env:RUNNER_TEMP/r2-plan.json" -Encoding utf8
+          if ($LASTEXITCODE -ne 0) {
+            throw "Windows publisher validation failed"
+          }
+          $plan = Get-Content -Raw -LiteralPath "$env:RUNNER_TEMP/r2-plan.json" | ConvertFrom-Json
+          if ($plan.schemaVersion -ne 1 -or $plan.status -ne "ready" -or
+              $plan.tag -ne "steamos-3.8.14-nvidia-575.64.05-k6.16.12-valve24.4-1-neptune-616-gfe145653a794-modules-zstd-r2") {
+            throw "Windows publisher validation returned the wrong identity"
+          }

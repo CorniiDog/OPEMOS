@@ -274,6 +274,8 @@ python3 tests/provenance.py
 
 printf 'Checking canonical artifact publisher...\n'
 python3 tests/publisher.py
+printf 'Checking exact Windows publisher zstd dependency...\n'
+python3 tests/windows_publisher_zstd_dependency.py
 printf 'Checking single compiled-driver product artifact...\n'
 python3 tests/driver_product.py
 printf 'Checking compiled-driver Release bundle manifest...\n'

@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "kind": "opemos-windows-publisher-zstd-dependency",
+  "platform": "windows-x86_64",
+  "component": {
+    "name": "zstd",
+    "version": "1.5.7",
+    "license": "BSD-3-Clause"
+  },
+  "source": {
+    "repository": "facebook/zstd",
+    "tag": "v1.5.7",
+    "releaseId": 201293731,
+    "publishedAt": "2025-02-19T21:50:11Z",
+    "asset": {
+      "name": "zstd-v1.5.7-win64.zip",
+      "url": "https://github.com/facebook/zstd/releases/download/v1.5.7/zstd-v1.5.7-win64.zip",
+      "localPath": "runtime-dependencies/windows/zstd-1.5.7/zstd-v1.5.7-win64.zip",
+      "size": 1747181,
+      "sha256": "acb4e8111511749dc7a3ebedca9b04190e37a17afeb73f55d4425dbf0b90fad9"
+    }
+  },
+  "payload": {
+    "member": "zstd-v1.5.7-win64/zstd.exe",
+    "runtimePath": "bin/zstd.exe",
+    "size": 1601409,
+    "sha256": "8076aae03feac7c66b319579e82172eed168deed2a3f25e5e2d3c60f55e84111",
+    "peMachine": "x86_64",
+    "argv": [
+      "zstd.exe",
+      "-q",
+      "-d",
+      "-c",
+      "{input}"
+    ]
+  },
+  "license": {
+    "sourceUrl": "https://raw.githubusercontent.com/facebook/zstd/v1.5.7/LICENSE",
+    "gitBlob": "75800288cc243f164b9d130f125e2ffae28f8e39",
+    "localPath": "runtime-dependencies/windows/zstd-1.5.7/LICENSE",
+    "runtimePath": "licenses/zstd-1.5.7-LICENSE",
+    "size": 1549,
+    "sha256": "7055266497633c9025b777c78eb7235af13922117480ed5c674677adc381c9d8"
+  },
+  "consumer": {
+    "entryPoint": "lib/validate_publish_inputs.py",
+    "resolution": "PATH",
+    "requiredOperation": "streaming zstd decompression with bounded decoded size and SHA-256 payload verification"
+  }
+}
