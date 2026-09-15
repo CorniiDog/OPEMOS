@@ -1,0 +1,49 @@
+open-gpu-kernel-modules-steamos build information
+
+schema_version=1
+build_started_at=2026-09-14T21:33:45+00:00
+build_completed_at=2026-09-14T21:45:16+00:00
+steamos_version=3.8.14
+kernel_version=6.16.12-valve24.4-1-neptune-616-gfe145653a794
+nvidia_version=575.64.05
+release_tag=steamos-3.8.14-nvidia-575.64.05-k6.16.12-valve24.4-1-neptune-616-gfe145653a794-modules-zstd-r2
+release_asset=nvidia-open-steamos-3.8.14-nvidia-575.64.05-k6.16.12-valve24.4-1-neptune-616-gfe145653a794-modules-zstd-r2-x86_64.tar.gz
+source_repository=CorniiDog/open-gpu-kernel-modules-steamos
+source_branch=nvidia/575.64.05
+source_commit=40bd1b5d6d39ae4e4180b7a665df144b08854d14
+source_dirty=0
+support_repository=CorniiDog/OPEMOS
+support_commit=f66c374cf224b8e01c723304ad8ee2d5354f69d4
+support_dirty=0
+build_mode=offline-target-fedora
+build_architecture=x86_64
+build_os=Fedora Linux 42 (Container Image)
+trust_classification=locally-built-verified
+compiler_command=gcc
+compiler_version=15.2.1
+kernel_compiler_version=15.1.1
+compiler_major_match=1
+kernel_compiler_definition=#define LINUX_COMPILER		"gcc (GCC) 15.1.1 20250425, GNU ld (GNU Binutils) 2.45"
+binutils_version=GNU ld version 2.44-12.fc42
+make_version=GNU Make 4.4.1
+kmod_version=kmod version 33
+header_package=linux-neptune-616-headers-6.16.12.valve24.4-1-x86_64.pkg.tar.zst
+header_url=https://steamdeck-packages.steamos.cloud/archlinux-mirror/jupiter-3.8.1x/os/x86_64/linux-neptune-616-headers-6.16.12.valve24.4-1-x86_64.pkg.tar.zst
+header_sha256=dd532330d2bb34d4ab6b00ffb249d245ec882841a37694ae703548dab6d09f17
+header_package_name=linux-neptune-616-headers
+header_package_version=6.16.12.valve24.4-1
+header_package_architecture=x86_64
+header_signature_status=verified
+header_signing_key_fingerprint=889B5EBDDD505A683621900DAF1D2199EF0A3CCF
+header_primary_key_fingerprint=889B5EBDDD505A683621900DAF1D2199EF0A3CCF
+header_authentication=detached-signature-verified-with-pinned-keyring
+
+modules:
+  2779437b0dec3e6c38ab9d0f0feec670922b145e04f0d4b25609a2c686419a68  nvidia-drm.ko  version=575.64.05  architecture=x86_64  vermagic=6.16.12-valve24.4-1-neptune-616-gfe145653a794 SMP preempt mod_unload 
+  60c13343d47e7bc131707d745b19a8117d40ffc6148d0aed71b80be15efe747a  nvidia-modeset.ko  version=575.64.05  architecture=x86_64  vermagic=6.16.12-valve24.4-1-neptune-616-gfe145653a794 SMP preempt mod_unload 
+  94e3caff13dd9ff215be32865afdee91d3d07e1fb52079c5b400b71050c74c15  nvidia-peermem.ko  version=575.64.05  architecture=x86_64  vermagic=6.16.12-valve24.4-1-neptune-616-gfe145653a794 SMP preempt mod_unload 
+  277a1b6b597cb41f429c85c61cf9c9c8d3c66523fb0c46c050a54afde3092795  nvidia-uvm.ko  version=575.64.05  architecture=x86_64  vermagic=6.16.12-valve24.4-1-neptune-616-gfe145653a794 SMP preempt mod_unload 
+  1eed5f0f21a3e2c40b3b7036714ca9272280757b9b4b541176dc330657ea7c23  nvidia.ko  version=575.64.05  architecture=x86_64  vermagic=6.16.12-valve24.4-1-neptune-616-gfe145653a794 SMP preempt mod_unload 
+module_representation=ko.zst
+repack_revision=2
+repack_source_archive_sha256=75f5b28623cc6c44cf8e1ec0875c5150569857cb55566d6a18472a8964b2eb65

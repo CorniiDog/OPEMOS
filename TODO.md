@@ -2672,6 +2672,14 @@ booted into Gaming Mode on the RTX 2060 with the known-good project NVIDIA
 The infrastructure should now be actively dogfooded. The next major validation
 gate is a completely clean-stock one-command certified installation.
 
+* [ ] Deliver the fresh exact-target SteamOS 3.8.14/NVIDIA 575.64.05 r2
+  four-file publisher product as a canonical authenticated GitHub Actions
+  artifact bound to an immutable Core main commit and run. The workflow must
+  verify the closed file set, exact sizes and SHA-256 identities, schema-1
+  create-only publication plan, and continued absence of the derived release
+  tag before upload. This delivery does not publish the release or authorize
+  any tag, asset, beta, media, trust, production, or hardware action.
+
 * [x] Make the schema-1 network-free release-operation session directly
   executable by the Windows maintainer adapter without changing its durable
   identity or lifecycle contract. The same entry point now selects Windows

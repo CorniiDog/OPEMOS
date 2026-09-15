@@ -1,0 +1,108 @@
+name: Exact maintainer r2 publisher inputs
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/maintainer-r2-artifact.yml
+      - release-inputs/steamos-3.8.14-nvidia-575.64.05-r2/**
+  pull_request:
+    paths:
+      - .github/workflows/maintainer-r2-artifact.yml
+      - release-inputs/steamos-3.8.14-nvidia-575.64.05-r2/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-and-upload:
+    runs-on: ubuntu-latest
+    env:
+      INPUT_DIR: release-inputs/steamos-3.8.14-nvidia-575.64.05-r2
+      RELEASE_TAG: steamos-3.8.14-nvidia-575.64.05-k6.16.12-valve24.4-1-neptune-616-gfe145653a794-modules-zstd-r2
+      ARCHIVE: nvidia-open-steamos-3.8.14-nvidia-575.64.05-k6.16.12-valve24.4-1-neptune-616-gfe145653a794-modules-zstd-r2-x86_64.tar.gz
+      STEM: nvidia-open-steamos-3.8.14-nvidia-575.64.05-k6.16.12-valve24.4-1-neptune-616-gfe145653a794-modules-zstd-r2-x86_64
+    steps:
+      - name: Check out exact source commit
+        uses: actions/checkout@v4
+
+      - name: Verify closed input set, sizes, and hashes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["INPUT_DIR"])
+          archive = os.environ["ARCHIVE"]
+          expected = {
+              archive: (21_548_909, "cc4b30e5ba65dd61b1c0cf8089531f6393fae1372025af5fe96697b9d6937c3b"),
+              archive + ".sha256": (187, "8917c875f024cefdcf68f9b25aae1295febd0c605831b30d83d902916d21c27d"),
+              archive.removesuffix(".tar.gz") + ".build-info.txt": (3_084, "cf736bb3f5baeccd2f4f82b96e7e9d56081038c04916fdadd371f4b6267ccad6"),
+              archive.removesuffix(".tar.gz") + ".provenance.json": (4_370, "f10da35050bcad092ae68c08392e798dba9f77be3fda9efbe704493707a62184"),
+          }
+          found = {item.name for item in root.iterdir()}
+          if found != set(expected):
+              raise SystemExit(f"unexpected publisher input set: {sorted(found)}")
+          for name, (size, digest) in expected.items():
+              path = root / name
+              if path.is_symlink() or not path.is_file() or path.stat().st_nlink != 1:
+                  raise SystemExit(f"unsafe publisher input: {name}")
+              data = path.read_bytes()
+              if len(data) != size or hashlib.sha256(data).hexdigest() != digest:
+                  raise SystemExit(f"publisher input identity mismatch: {name}")
+          PY
+
+      - name: Validate exact create-only publication plan
+        shell: bash
+        run: |
+          python3 lib/validate_publish_inputs.py \
+            --archive "$INPUT_DIR/$ARCHIVE" \
+            --checksum "$INPUT_DIR/$ARCHIVE.sha256" \
+            --build-info "$INPUT_DIR/$STEM.build-info.txt" \
+            --provenance "$INPUT_DIR/$STEM.provenance.json" \
+            --repository CorniiDog/OPEMOS > /tmp/r2-plan.json
+          python3 - <<'PY'
+          import json
+          import os
+
+          with open("/tmp/r2-plan.json", encoding="utf-8") as stream:
+              plan = json.load(stream)
+          if plan.get("schemaVersion") != 1 or plan.get("status") != "ready":
+              raise SystemExit("publisher validation did not return schema-1 ready")
+          if plan.get("tag") != os.environ["RELEASE_TAG"]:
+              raise SystemExit("publisher release tag differs from exact r2 identity")
+          PY
+
+      - name: Require the create-only release tag to remain absent
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          status="$(curl --silent --show-error --output /tmp/r2-release.json \
+            --write-out '%{http_code}' \
+            --header 'Accept: application/vnd.github+json' \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/CorniiDog/OPEMOS/releases/tags/$RELEASE_TAG")"
+          test "$status" = 404 || {
+            cat /tmp/r2-release.json
+            echo "Exact create-only tag is present or absence could not be authenticated (HTTP $status)." >&2
+            exit 1
+          }
+
+      - name: Upload exact four-file publisher product
+        uses: actions/upload-artifact@v4
+        with:
+          name: steamos-3.8.14-nvidia-575.64.05-r2-publisher-inputs
+          path: |
+            ${{ env.INPUT_DIR }}/${{ env.ARCHIVE }}
+            ${{ env.INPUT_DIR }}/${{ env.ARCHIVE }}.sha256
+            ${{ env.INPUT_DIR }}/${{ env.STEM }}.build-info.txt
+            ${{ env.INPUT_DIR }}/${{ env.STEM }}.provenance.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 90
