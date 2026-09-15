@@ -2672,6 +2672,13 @@ booted into Gaming Mode on the RTX 2060 with the known-good project NVIDIA
 The infrastructure should now be actively dogfooded. The next major validation
 gate is a completely clean-stock one-command certified installation.
 
+* [ ] Supply the exact Windows x86_64 zstd 1.5.7 publisher dependency required
+  by the unchanged Core compressed-module validator. Pin the official release
+  asset, retained archive and executable identities, tag-bound license, PATH
+  placement, and exact bounded decompression argv in a closed schema-1 contract;
+  verify the real PE payload and retained files without weakening decompressed
+  module SHA-256 validation.
+
 * [ ] Deliver the fresh exact-target SteamOS 3.8.14/NVIDIA 575.64.05 r2
   four-file publisher product as a canonical authenticated GitHub Actions
   artifact bound to an immutable Core main commit and run. The workflow must
