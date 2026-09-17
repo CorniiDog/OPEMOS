@@ -2679,13 +2679,22 @@ gate is a completely clean-stock one-command certified installation.
   verify the real PE payload and retained files without weakening decompressed
   module SHA-256 validation.
 
-* [ ] Deliver the fresh exact-target SteamOS 3.8.14/NVIDIA 575.64.05 r2
+* [x] Deliver the fresh exact-target SteamOS 3.8.14/NVIDIA 575.64.05 r2
   four-file publisher product as a canonical authenticated GitHub Actions
   artifact bound to an immutable Core main commit and run. The workflow must
   verify the closed file set, exact sizes and SHA-256 identities, schema-1
   create-only publication plan, and continued absence of the derived release
   tag before upload. This delivery does not publish the release or authorize
   any tag, asset, beta, media, trust, production, or hardware action.
+  The refreshed closed product preserves the authenticated five compressed
+  driver-module payloads byte-for-byte while binding embedded and external
+  provenance to canonical Core main
+  `f6871104ea83d8afa620b133b362a0578ff4a6a8`. The focused publisher validator
+  returns schema-1 `ready`, the unchanged r2 create-only tag, and that exact
+  target commit; the workflow now enforces all four file identities and the
+  target commit before upload. Immutable workflow run, artifact ID, PR/check,
+  squash, and final file evidence are retained in the implementation PR and
+  authenticated handoff.
 
 * [x] Make the schema-1 network-free release-operation session directly
   executable by the Windows maintainer adapter without changing its durable
