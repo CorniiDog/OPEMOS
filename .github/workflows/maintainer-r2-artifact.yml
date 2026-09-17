@@ -39,10 +39,10 @@ jobs:
           root = Path(os.environ["INPUT_DIR"])
           archive = os.environ["ARCHIVE"]
           expected = {
-              archive: (21_548_909, "cc4b30e5ba65dd61b1c0cf8089531f6393fae1372025af5fe96697b9d6937c3b"),
-              archive + ".sha256": (187, "8917c875f024cefdcf68f9b25aae1295febd0c605831b30d83d902916d21c27d"),
-              archive.removesuffix(".tar.gz") + ".build-info.txt": (3_084, "cf736bb3f5baeccd2f4f82b96e7e9d56081038c04916fdadd371f4b6267ccad6"),
-              archive.removesuffix(".tar.gz") + ".provenance.json": (4_370, "f10da35050bcad092ae68c08392e798dba9f77be3fda9efbe704493707a62184"),
+              archive: (21_548_454, "1acc07b901994175538f85e1b01b8b7045b2d737f945a2a5ce468832185dedc7"),
+              archive + ".sha256": (187, "e641bd3b2fbfa38c58b1d2e0398292772f55e205ed80ca6425f37964dd89dae8"),
+              archive.removesuffix(".tar.gz") + ".build-info.txt": (3_084, "1345320efd6584998565a31976098d9269facd2b1731e22a0996758d336f5c0c"),
+              archive.removesuffix(".tar.gz") + ".provenance.json": (4_370, "91677d5cf8924df633546058b46f4f317179955bc44dc3073ca3e1a5890d7ce2"),
           }
           found = {item.name for item in root.iterdir()}
           if found != set(expected):
@@ -75,6 +75,8 @@ jobs:
               raise SystemExit("publisher validation did not return schema-1 ready")
           if plan.get("tag") != os.environ["RELEASE_TAG"]:
               raise SystemExit("publisher release tag differs from exact r2 identity")
+          if plan.get("targetCommit") != "f6871104ea83d8afa620b133b362a0578ff4a6a8":
+              raise SystemExit("publisher plan does not target canonical Core main")
           PY
 
       - name: Require the create-only release tag to remain absent
