@@ -2672,6 +2672,31 @@ booted into Gaming Mode on the RTX 2060 with the known-good project NVIDIA
 The infrastructure should now be actively dogfooded. The next major validation
 gate is a completely clean-stock one-command certified installation.
 
+* [x] Provide the canonical lossless consumer for the published r1 compiled-
+  driver product used by the Windows maintainer workflow. Product schema 1's
+  immutable member path is `payload/nvidia-driver.tar.zst`, but the exact member
+  bytes are the provenance-named gzip module archive accepted by the offline
+  installer. The network-free materializer requires independent release-
+  manifest SHA-256 and Core-commit pins plus the exact requested target; it
+  cross-binds the bundle, product manifest, provenance, validation receipt,
+  source, release, install contract, gzip container, embedded metadata, exact
+  five-module inventory, zstd representation magic, and every compressed-
+  module SHA-256 before emitting byte-identical `.tar.gz`, checksum,
+  provenance, and build-info inputs under a closed schema-1 result. Focused
+  hostile cases cover pin/target drift, a fully rehashed non-gzip payload,
+  provenance drift, non-zstd module bytes, unsupported source names, product
+  tampering, collisions, and partial-output cleanup. On 2026-09-19 the focused
+  materializer, existing product/bundle, documentation, and consumer-contract
+  tests passed through `heavy.sh`. The real published r1 product bound to Core
+  `0b9550ab0ffc9ababe79800a407835c9c4a27dd0` materialized without conversion
+  to the 21,634,427-byte gzip archive SHA-256
+  `3412cf68ee79450f58afd4bb09e6c8dc9ed1f20ef4410118127ff98211727784`;
+  the unchanged canonical publisher validator then returned schema 1/status
+  `ready` for the exact SteamOS 3.8.14, kernel, NVIDIA 575.64.05, source commit,
+  Core commit, tag, provenance, and five compressed modules. Immutable PR,
+  required checks, counterpart review, and squash evidence are retained in the
+  implementation PR and authenticated handoff.
+
 * [ ] Supply the exact Windows x86_64 zstd 1.5.7 publisher dependency required
   by the unchanged Core compressed-module validator. Pin the official release
   asset, retained archive and executable identities, tag-bound license, PATH
