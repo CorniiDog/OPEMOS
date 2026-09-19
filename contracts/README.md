@@ -29,6 +29,10 @@ publisher evidence, and installed-device lifecycle.
   It binds exact Core and source commits, target compatibility, both schema
   versions, and ordered asset names, sizes, and SHA-256 identities.
 
+- `schemas/driver-product-materialization-v1.schema.json` describes the closed
+  result from losslessly materializing a validated compiled-driver product into
+  the four canonical inputs consumed by the offline installer.
+
 - `schemas/resolver-result-v2.schema.json` describes the additive resolver
   result emitted by `lib/resolve_target.py`.
 - `fixtures/result-semantics-v1.json` links every accepted authoritative
@@ -308,6 +312,36 @@ and hashes, the canonical checksum sidecar, canonical product member order, and
 matching internal Core, source, target, compatibility, and release identities.
 This contract performs no network request or publication and confers no
 production trust, signing authority, or permission to create a disk image.
+
+The schema-1 product uses `payload/nvidia-driver.tar.zst` as its immutable
+member path even though the member bytes are the gzip module archive named by
+`payload.sourceName`. Consumers must not infer compression from that legacy
+member path. Materialize installer inputs only through the Core validator:
+
+```bash
+python3 lib/materialize_driver_product.py \
+  --manifest /path/to/opemos-driver-bundle-<tag>-x86_64.manifest.json \
+  --asset-dir /path/to/downloaded-assets \
+  --expected-manifest-sha256 <64-lowercase-hex> \
+  --expected-core-commit <40-lowercase-hex> \
+  --expected-steamos <version> \
+  --expected-kernel <exact-kernel> \
+  --expected-nvidia <version> \
+  --expected-architecture x86_64 \
+  --output-dir /path/to/private-installer-inputs
+```
+
+The command repeats the bundle and product validation, requires the exact
+requested target, cross-binds product metadata, provenance, receipt, Core and
+source identities, and verifies that the payload is a canonical gzip tar with
+the exact five zstd module representations and matching embedded metadata. It
+then writes the payload byte-for-byte under its provenance-bound `.tar.gz`
+source name, plus a fresh checksum sidecar and the identical provenance and
+build-info bytes. Existing outputs fail closed and partial outputs are removed.
+The schema-1 result identifies this as `none-byte-identical`; no recompression
+or format conversion occurs. The offline installer remains responsible for its
+independent decompressed module, vermagic, target, userspace, and mutation-time
+validation.
 
 ## Installer bundle manifest
 
