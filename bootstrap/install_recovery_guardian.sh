@@ -68,6 +68,9 @@ python3 "$SUPPORT_ROOT/lib/validate_recovery_install_path.py" --root / \
     --path "${DEST#/}/lib/recovery_status.py" \
     --path "${DEST#/}/lib/recovery_policy.py" \
     --path "${DEST#/}/lib/recovery_fallback_state.py" \
+    --path "${DEST#/}/lib/run_in_process_group.py" \
+    --path "${DEST#/}/lib/payload_receipt.py" \
+    --path "${DEST#/}/lib/atomic_output.py" \
     --path "${DEST#/}/lib/desktop_update_generations.py" \
     --path "${DEST#/}/lib/open_opemos_contract.py" \
     --path "${DEST#/}/lib/interstitial_progress.py" \

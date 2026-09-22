@@ -55,7 +55,8 @@ index in the same commit.
   guardian, repair, and interstitial services. Focused
   installation coverage proves fail-closed missing-root behavior, separated
   persistent placement, closure completeness, service environment, enabled
-  unit links, repeat installation, and unchanged inactive-slot paths.
+  unit links, repeat installation, unchanged inactive-slot paths, and live-
+  installer refusal of symlinked destinations for every newly added helper.
 
 ### Immediate image-builder blockers
 

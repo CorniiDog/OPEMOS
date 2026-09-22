@@ -13,6 +13,7 @@ WRITER = ROOT / "lib/interstitial_progress.py"
 VALIDATOR = ROOT / "lib/validate_interstitial_binary.py"
 INSTALLER = ROOT / "bootstrap/install_recovery_guardian_to_root.sh"
 LIVE_INSTALLER = ROOT / "bootstrap/install_recovery_guardian.sh"
+PATH_VALIDATOR = ROOT / "lib/validate_recovery_install_path.py"
 SERVICE = ROOT / "support/recovery/opemos-interstitial.service.in"
 GUARDIAN_SERVICE = ROOT / "support/recovery/opemos-nvidia-guardian.service.in"
 DEMO = ROOT / "interstitial/demo/index.html"
@@ -184,6 +185,25 @@ assert "validate_interstitial_binary.py" in live_installer
 assert "run_in_process_group.py" in live_installer
 assert "payload_receipt.py" in live_installer
 assert "atomic_output.py" in live_installer
+for helper in ("run_in_process_group.py", "payload_receipt.py", "atomic_output.py"):
+    assert f'--path "${{DEST#/}}/lib/{helper}"' in live_installer
+
+with tempfile.TemporaryDirectory(prefix="opemos-live-guardian-confinement-") as temporary:
+    root = Path(temporary) / "root"
+    library = root / "home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/lib"
+    library.mkdir(parents=True)
+    outside = Path(temporary) / "outside"
+    outside.write_text("do not replace\n", encoding="utf-8")
+    for helper in ("run_in_process_group.py", "payload_receipt.py", "atomic_output.py"):
+        destination = library / helper
+        destination.symlink_to(outside)
+        rejected = subprocess.run([
+            "python3", str(PATH_VALIDATOR), "--root", str(root), "--test-owner",
+            "--path", f"home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/{helper}",
+        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        assert rejected.returncode != 0
+        assert outside.read_text(encoding="utf-8") == "do not replace\n"
+        destination.unlink()
 
 service = SERVICE.read_text(encoding="utf-8")
 assert "Before=display-manager.service graphical.target" in service
