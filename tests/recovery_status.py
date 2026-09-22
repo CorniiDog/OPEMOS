@@ -1027,23 +1027,31 @@ with tempfile.TemporaryDirectory(prefix="opemos-recovery-plan-") as temporary:
 
 with tempfile.TemporaryDirectory(prefix="opemos-recovery-stage-") as temporary:
     target = Path(temporary) / "root"
+    persistent_home = Path(temporary) / "persistent-home"
+    persistent_etc = Path(temporary) / "persistent-etc"
     target.mkdir()
+    persistent_home.mkdir()
+    persistent_etc.mkdir()
     subprocess.run([
         str(STAGE), "--root", str(target), "--support-revision", "b" * 40,
-        "--nvidia", NVIDIA,
+        "--nvidia", NVIDIA, "--persistent-home-root", str(persistent_home),
+        "--persistent-etc-root", str(persistent_etc),
     ], env={**os.environ, "PROJECT_TEST_MODE": "1"}, check=True)
-    persistent = target / "home/.steamos/open-gpu-kernel-modules-steamos-support/recovery"
+    persistent = persistent_home / ".steamos/open-gpu-kernel-modules-steamos-support/recovery"
     assert (persistent / "support-revision").read_text().strip() == "b" * 40
     assert (persistent / "nvidia-version").read_text().strip() == NVIDIA
     assert (persistent / "lib/open_opemos_contract.py").is_file()
     assert (persistent / "lib/recovery_policy.py").is_file()
     assert (persistent / "lib/recovery_fallback_state.py").is_file()
+    assert (persistent / "lib/run_in_process_group.py").is_file()
+    assert (persistent / "lib/payload_receipt.py").is_file()
+    assert (persistent / "lib/atomic_output.py").is_file()
     assert (persistent / "lib/desktop_update_generations.py").is_file()
     assert (persistent / "bootstrap/launch_desktop_companion.sh").is_file()
     assert json.loads((persistent / "trust/desktop-update-signers.json").read_text())["status"] == "unconfigured"
-    assert (target / "etc/systemd/system/opemos-nvidia-guardian.service").is_file()
-    assert (target / "etc/systemd/system/multi-user.target.wants/opemos-nvidia-guardian.service").is_symlink()
-    assert (target / "etc/NetworkManager/dispatcher.d/90-opemos-nvidia-repair").stat().st_mode & 0o111
+    assert (persistent_etc / "systemd/system/opemos-nvidia-guardian.service").is_file()
+    assert (persistent_etc / "systemd/system/multi-user.target.wants/opemos-nvidia-guardian.service").is_symlink()
+    assert (persistent_etc / "NetworkManager/dispatcher.d/90-opemos-nvidia-repair").stat().st_mode & 0o111
 
 with tempfile.TemporaryDirectory(prefix="open-opemos-contract-") as temporary:
     status_path = Path(temporary) / "status.json"
