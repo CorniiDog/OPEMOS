@@ -108,28 +108,58 @@ with tempfile.TemporaryDirectory(prefix="opemos-interstitial-") as temporary:
     ).returncode != 0
 
     target = base / "target"
+    persistent_home = base / "persistent-home"
+    persistent_etc = base / "persistent-etc"
     target.mkdir()
+    persistent_home.mkdir()
+    persistent_etc.mkdir()
+    missing_persistence = subprocess.run([
+        str(INSTALLER), "--root", str(target), "--support-revision", "a" * 40,
+        "--nvidia", "575.64.05", "--interstitial-binary", str(binary),
+        "--interstitial-sha256", digest,
+    ], env={**os.environ, "PROJECT_TEST_MODE": "1"},
+       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert missing_persistence.returncode != 0
     subprocess.run([
         str(INSTALLER), "--root", str(target), "--support-revision", "a" * 40,
         "--nvidia", "575.64.05", "--interstitial-binary", str(binary),
         "--interstitial-sha256", digest,
+        "--persistent-home-root", str(persistent_home),
+        "--persistent-etc-root", str(persistent_etc),
     ], env={**os.environ, "PROJECT_TEST_MODE": "1"}, check=True)
-    destination = target / "home/.steamos/open-gpu-kernel-modules-steamos-support/recovery"
+    destination = persistent_home / ".steamos/open-gpu-kernel-modules-steamos-support/recovery"
     assert (destination / "bin/opemos-interstitial").read_bytes() == bytes(elf)
     assert (destination / "bin/opemos-interstitial").stat().st_mode & 0o777 == 0o755
     assert (destination / "lib/interstitial_progress.py").is_file()
     assert (destination / "lib/validate_interstitial_binary.py").is_file()
+    assert (destination / "lib/run_in_process_group.py").is_file()
+    assert (destination / "lib/payload_receipt.py").is_file()
+    assert (destination / "lib/atomic_output.py").is_file()
+    subprocess.run([
+        "python3", "-c", "import recovery_status, payload_receipt",
+    ], env={**os.environ, "PYTHONPATH": str(destination / "lib")}, check=True)
     assert (destination / "bootstrap/launch_interstitial.sh").is_file()
     assert (destination / "interstitial.sha256").read_text().strip() == digest
     assert (destination / "bootstrap/run_guardian_with_interstitial.sh").is_file()
-    assert (target / "etc/systemd/system/multi-user.target.wants/opemos-interstitial.service").is_symlink()
-    installed_service = (target / "etc/systemd/system/opemos-interstitial.service").read_text()
+    assert (persistent_etc / "systemd/system/multi-user.target.wants/opemos-interstitial.service").is_symlink()
+    installed_service = (persistent_etc / "systemd/system/opemos-interstitial.service").read_text()
     assert "@DEST@" not in installed_service
+    assert "Environment=HOME=/root" in installed_service
+    assert "Environment=HOME=/root" in (
+        persistent_etc / "systemd/system/opemos-nvidia-guardian.service"
+    ).read_text()
+    assert "Environment=HOME=/root" in (
+        persistent_etc / "systemd/system/opemos-nvidia-repair.service"
+    ).read_text()
+    assert not (target / "home/.steamos").exists()
+    assert not (target / "etc/systemd/system/opemos-interstitial.service").exists()
     # A repeat with the exact payload is idempotent.
     subprocess.run([
         str(INSTALLER), "--root", str(target), "--support-revision", "a" * 40,
         "--nvidia", "575.64.05", "--interstitial-binary", str(binary),
         "--interstitial-sha256", digest,
+        "--persistent-home-root", str(persistent_home),
+        "--persistent-etc-root", str(persistent_etc),
     ], env={**os.environ, "PROJECT_TEST_MODE": "1"}, check=True)
     installed_binary = destination / "bin/opemos-interstitial"
     installed_binary.write_bytes(installed_binary.read_bytes()[:-1] + b"X")
@@ -151,6 +181,9 @@ assert pair_rejected.returncode != 0 and "must be supplied together" in pair_rej
 live_installer = LIVE_INSTALLER.read_text(encoding="utf-8")
 assert "enable opemos-interstitial.service" in live_installer
 assert "validate_interstitial_binary.py" in live_installer
+assert "run_in_process_group.py" in live_installer
+assert "payload_receipt.py" in live_installer
+assert "atomic_output.py" in live_installer
 
 service = SERVICE.read_text(encoding="utf-8")
 assert "Before=display-manager.service graphical.target" in service
@@ -164,10 +197,12 @@ assert "ProtectSystem=strict" in service and "NoNewPrivileges=yes" in service
 assert "ProtectHome=read-only" in service and "ProtectHome=yes" not in service
 assert "CapabilityBoundingSet=\n" in service and "PrivateNetwork=yes" in service
 assert "WantedBy=multi-user.target" in service
+assert "Environment=HOME=/root" in service
 assert "keyboard" not in service.lower() and "mouse" not in service.lower()
 guardian_service = GUARDIAN_SERVICE.read_text(encoding="utf-8")
 assert "run_guardian_with_interstitial.sh" in guardian_service
 assert "After=opemos-interstitial.service" in guardian_service
+assert "Environment=HOME=/root" in guardian_service
 
 demo = DEMO.read_text(encoding="utf-8")
 schema = json.loads(SCHEMA.read_text(encoding="utf-8"))

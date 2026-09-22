@@ -122,11 +122,20 @@ The recovery guardian installer accepts an optional authenticated executable:
 ```bash
 ./bootstrap/install_recovery_guardian_to_root.sh \
   --root /mounted/root \
+  --persistent-home-root /mounted/persistent-home \
+  --persistent-etc-root /mounted/persistent-etc \
   --support-revision FULL_40_CHARACTER_COMMIT \
   --nvidia 575.64.05 \
   --interstitial-binary /staging/opemos-interstitial \
   --interstitial-sha256 EXACT_SHA256
 ```
+
+The two persistent roots are required. They must be the mounted filesystems or
+overlays that appear as `/home` and `/etc` after boot and remain active across
+a normal SteamOS A/B update. The installer deliberately refuses to infer them
+from the inactive slot root: files written to that slot's `/home` can be masked
+at boot, and files written to its `/etc` disappear when the other slot becomes
+active.
 
 The binary and hash must be supplied together. The installer snapshots the
 input into a private directory, validates the exact hash and x86_64 ELF

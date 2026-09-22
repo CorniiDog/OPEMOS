@@ -8,6 +8,7 @@ ConditionPathExists=@DEST@/interstitial.sha256
 
 [Service]
 Type=simple
+Environment=HOME=/root
 ExecStartPre=/usr/bin/install -d -o root -g root -m 0755 /run/opemos/interstitial
 ExecStartPre=/usr/bin/python3 @DEST@/lib/interstitial_progress.py reset --state /run/opemos/interstitial/progress.json
 ExecStart=@DEST@/bootstrap/launch_interstitial.sh

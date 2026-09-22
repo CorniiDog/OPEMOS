@@ -43,6 +43,20 @@ and agents do not need to scan the completed historical checklist. When an item
 is completed, mark its detailed checklist entry below and remove it from this
 index in the same commit.
 
+## SteamOS A/B recovery persistence
+
+* [x] Correct the mounted-target guardian installer after contained KVM
+  acceptance proved that inactive-slot `/home` is masked at boot and
+  inactive-slot `/etc` is lost on a normal A/B switch. The installer now
+  requires explicit mounted persistent home and `/etc` roots, leaves the slot
+  copies untouched, installs the complete directly required recovery closure
+  including `run_in_process_group.py` and `payload_receipt.py`, and supplies
+  the latter's `atomic_output.py` dependency. It supplies `HOME=/root` to
+  guardian, repair, and interstitial services. Focused
+  installation coverage proves fail-closed missing-root behavior, separated
+  persistent placement, closure completeness, service environment, enabled
+  unit links, repeat installation, and unchanged inactive-slot paths.
+
 ### Immediate image-builder blockers
 
 * [ ] Complete OPEMOS.EXE equivalence against the deterministic development-

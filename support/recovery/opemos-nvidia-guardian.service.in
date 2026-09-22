@@ -7,6 +7,7 @@ After=opemos-interstitial.service
 
 [Service]
 Type=oneshot
+Environment=HOME=/root
 ExecStart=@DEST@/bootstrap/run_guardian_with_interstitial.sh
 TimeoutStartSec=300
 
