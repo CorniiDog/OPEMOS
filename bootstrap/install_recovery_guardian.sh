@@ -68,6 +68,9 @@ python3 "$SUPPORT_ROOT/lib/validate_recovery_install_path.py" --root / \
     --path "${DEST#/}/lib/recovery_status.py" \
     --path "${DEST#/}/lib/recovery_policy.py" \
     --path "${DEST#/}/lib/recovery_fallback_state.py" \
+    --path "${DEST#/}/lib/run_in_process_group.py" \
+    --path "${DEST#/}/lib/payload_receipt.py" \
+    --path "${DEST#/}/lib/atomic_output.py" \
     --path "${DEST#/}/lib/desktop_update_generations.py" \
     --path "${DEST#/}/lib/open_opemos_contract.py" \
     --path "${DEST#/}/lib/interstitial_progress.py" \
@@ -108,6 +111,9 @@ sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/open_opemos_contract.py"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/interstitial_progress.py" "$DEST/lib/interstitial_progress.py"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/validate_interstitial_binary.py" "$DEST/lib/validate_interstitial_binary.py"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/validate_recovery_install_path.py" "$DEST/lib/validate_recovery_install_path.py"
+sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/run_in_process_group.py" "$DEST/lib/run_in_process_group.py"
+sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/payload_receipt.py" "$DEST/lib/payload_receipt.py"
+sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/atomic_output.py" "$DEST/lib/atomic_output.py"
 sudo install -o root -g root -m 0644 "$SUPPORT_ROOT/trust/desktop-update-signers.json" "$DEST/trust/desktop-update-signers.json"
 if [[ -n "$INTERSTITIAL_BINARY" ]]; then
     sudo install -o root -g root -m 0755 "$STAGING/opemos-interstitial" "$DEST/bin/opemos-interstitial"

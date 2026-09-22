@@ -5,6 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+Environment=HOME=/root
 ExecStart=@DEST@/bootstrap/recoveryctl.sh repair-auto --json
 SuccessExitStatus=75
 TimeoutStartSec=7200

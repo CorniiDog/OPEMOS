@@ -4,6 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SUPPORT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 ROOT=""
+PERSISTENT_HOME_ROOT=""
+PERSISTENT_ETC_ROOT=""
 REVISION=""
 NVIDIA=""
 INTERSTITIAL_BINARY=""
@@ -11,11 +13,13 @@ INTERSTITIAL_SHA256=""
 
 usage()
 {
-    printf 'Usage: %s --root PATH --support-revision COMMIT --nvidia VERSION [--interstitial-binary FILE --interstitial-sha256 HASH]\n' "$0"
+    printf 'Usage: %s --root PATH --persistent-home-root PATH --persistent-etc-root PATH --support-revision COMMIT --nvidia VERSION [--interstitial-binary FILE --interstitial-sha256 HASH]\n' "$0"
 }
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --root) [[ $# -ge 2 ]] || { usage >&2; exit 2; }; ROOT="$2"; shift 2 ;;
+        --persistent-home-root) [[ $# -ge 2 ]] || { usage >&2; exit 2; }; PERSISTENT_HOME_ROOT="$2"; shift 2 ;;
+        --persistent-etc-root) [[ $# -ge 2 ]] || { usage >&2; exit 2; }; PERSISTENT_ETC_ROOT="$2"; shift 2 ;;
         --support-revision) [[ $# -ge 2 ]] || { usage >&2; exit 2; }; REVISION="$2"; shift 2 ;;
         --nvidia) [[ $# -ge 2 ]] || { usage >&2; exit 2; }; NVIDIA="$2"; shift 2 ;;
         --interstitial-binary) [[ $# -ge 2 ]] || { usage >&2; exit 2; }; INTERSTITIAL_BINARY="$2"; shift 2 ;;
@@ -25,6 +29,12 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 [[ -d "$ROOT" && ! -L "$ROOT" ]] || { echo "Target root is unsafe." >&2; exit 1; }
+[[ -d "$PERSISTENT_HOME_ROOT" && ! -L "$PERSISTENT_HOME_ROOT" ]] || {
+    echo "Persistent home root is unsafe." >&2; exit 1;
+}
+[[ -d "$PERSISTENT_ETC_ROOT" && ! -L "$PERSISTENT_ETC_ROOT" ]] || {
+    echo "Persistent etc root is unsafe." >&2; exit 1;
+}
 [[ "$REVISION" =~ ^[0-9a-f]{40}$ ]] || { echo "Support revision is malformed." >&2; exit 1; }
 [[ "$NVIDIA" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || { echo "NVIDIA version is malformed." >&2; exit 1; }
 if ! { [[ -z "$INTERSTITIAL_BINARY" && -z "$INTERSTITIAL_SHA256" ]] ||
@@ -50,45 +60,53 @@ if [[ -n "$INTERSTITIAL_BINARY" ]]; then
         --binary "$STAGING/opemos-interstitial" --sha256 "$INTERSTITIAL_SHA256" >/dev/null
 fi
 
-DEST="$ROOT/home/.steamos/open-gpu-kernel-modules-steamos-support/recovery"
-PATH_CHECK_ARGS=(--root "$ROOT")
-[[ "${PROJECT_TEST_MODE:-0}" != 1 ]] || PATH_CHECK_ARGS+=(--test-owner)
-python3 "$SUPPORT_ROOT/lib/validate_recovery_install_path.py" "${PATH_CHECK_ARGS[@]}" \
-    --path home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/support-revision \
-    --path home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/interstitial.sha256 \
-    --path home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/bootstrap/recoveryctl.sh \
-    --path home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/bootstrap/launch_desktop_companion.sh \
-    --path home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/bootstrap/run_guardian_with_interstitial.sh \
-    --path home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/bootstrap/launch_interstitial.sh \
-    --path home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/recovery_status.py \
-    --path home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/recovery_policy.py \
-    --path home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/recovery_fallback_state.py \
-    --path home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/desktop_update_generations.py \
-    --path home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/open_opemos_contract.py \
-    --path home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/interstitial_progress.py \
-    --path home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/validate_interstitial_binary.py \
-    --path home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/bin/opemos-interstitial \
-    --path home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/trust/desktop-update-signers.json \
-    --path etc/systemd/system/opemos-nvidia-guardian.service \
-    --path etc/systemd/system/opemos-interstitial.service \
-    --path etc/systemd/system/opemos-nvidia-repair.service \
-    --path etc/NetworkManager/dispatcher.d/90-opemos-nvidia-repair \
-    --expected-symlink etc/systemd/system/multi-user.target.wants/opemos-nvidia-guardian.service=../opemos-nvidia-guardian.service \
-    --expected-symlink etc/systemd/system/multi-user.target.wants/opemos-interstitial.service=../opemos-interstitial.service \
-    --expected-symlink etc/systemd/system/timers.target.wants/opemos-nvidia-repair.timer=../opemos-nvidia-repair.timer
+DEST="$PERSISTENT_HOME_ROOT/.steamos/open-gpu-kernel-modules-steamos-support/recovery"
+HOME_PATH_CHECK_ARGS=(--root "$PERSISTENT_HOME_ROOT")
+ETC_PATH_CHECK_ARGS=(--root "$PERSISTENT_ETC_ROOT")
+if [[ "${PROJECT_TEST_MODE:-0}" == 1 ]]; then
+    HOME_PATH_CHECK_ARGS+=(--test-owner)
+    ETC_PATH_CHECK_ARGS+=(--test-owner)
+fi
+python3 "$SUPPORT_ROOT/lib/validate_recovery_install_path.py" "${HOME_PATH_CHECK_ARGS[@]}" \
+    --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/support-revision \
+    --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/interstitial.sha256 \
+    --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/bootstrap/recoveryctl.sh \
+    --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/bootstrap/launch_desktop_companion.sh \
+    --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/bootstrap/run_guardian_with_interstitial.sh \
+    --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/bootstrap/launch_interstitial.sh \
+    --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/recovery_status.py \
+    --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/recovery_policy.py \
+    --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/recovery_fallback_state.py \
+    --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/run_in_process_group.py \
+    --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/payload_receipt.py \
+    --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/atomic_output.py \
+    --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/desktop_update_generations.py \
+    --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/open_opemos_contract.py \
+    --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/interstitial_progress.py \
+    --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/validate_interstitial_binary.py \
+    --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/bin/opemos-interstitial \
+    --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/trust/desktop-update-signers.json
+python3 "$SUPPORT_ROOT/lib/validate_recovery_install_path.py" "${ETC_PATH_CHECK_ARGS[@]}" \
+    --path systemd/system/opemos-nvidia-guardian.service \
+    --path systemd/system/opemos-interstitial.service \
+    --path systemd/system/opemos-nvidia-repair.service \
+    --path NetworkManager/dispatcher.d/90-opemos-nvidia-repair \
+    --expected-symlink systemd/system/multi-user.target.wants/opemos-nvidia-guardian.service=../opemos-nvidia-guardian.service \
+    --expected-symlink systemd/system/multi-user.target.wants/opemos-interstitial.service=../opemos-interstitial.service \
+    --expected-symlink systemd/system/timers.target.wants/opemos-nvidia-repair.timer=../opemos-nvidia-repair.timer
 OWNERSHIP=(-o 0 -g 0)
 [[ "${PROJECT_TEST_MODE:-0}" != 1 ]] || OWNERSHIP=(-o "$(id -u)" -g "$(id -g)")
 install -d "${OWNERSHIP[@]}" -m 0755 "$DEST/bin" "$DEST/bootstrap" "$DEST/lib" "$DEST/trust" \
-    "$ROOT/etc/systemd/system/multi-user.target.wants" \
-    "$ROOT/etc/systemd/system/timers.target.wants" \
-    "$ROOT/etc/NetworkManager/dispatcher.d" "$ROOT/etc/atomic-update.conf.d"
+    "$PERSISTENT_ETC_ROOT/systemd/system/multi-user.target.wants" \
+    "$PERSISTENT_ETC_ROOT/systemd/system/timers.target.wants" \
+    "$PERSISTENT_ETC_ROOT/NetworkManager/dispatcher.d" "$PERSISTENT_ETC_ROOT/atomic-update.conf.d"
 install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/recoveryctl.sh" "$DEST/bootstrap/recoveryctl.sh"
 install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/launch_desktop_companion.sh" "$DEST/bootstrap/launch_desktop_companion.sh"
 install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/run_guardian_with_interstitial.sh" "$DEST/bootstrap/run_guardian_with_interstitial.sh"
 install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/launch_interstitial.sh" "$DEST/bootstrap/launch_interstitial.sh"
 install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/online_install.sh" "$DEST/bootstrap/online_install.sh"
 install "${OWNERSHIP[@]}" -m 0644 "$SUPPORT_ROOT/lib/common.sh" "$DEST/lib/common.sh"
-for helper in recovery_status.py recovery_policy.py recovery_fallback_state.py recovery_transaction.py recovery_release_plan.py validate_github_meta.py update_recovery_grub_args.py open_opemos_contract.py validate_recovery_install_path.py desktop_update_generations.py interstitial_progress.py validate_interstitial_binary.py; do
+for helper in recovery_status.py recovery_policy.py recovery_fallback_state.py recovery_transaction.py recovery_release_plan.py validate_github_meta.py update_recovery_grub_args.py open_opemos_contract.py validate_recovery_install_path.py desktop_update_generations.py interstitial_progress.py validate_interstitial_binary.py run_in_process_group.py payload_receipt.py atomic_output.py; do
     install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/lib/$helper" "$DEST/lib/$helper"
 done
 if [[ -n "$INTERSTITIAL_BINARY" ]]; then
@@ -103,22 +121,22 @@ chmod 0644 "$DEST/support-revision" "$DEST/nvidia-version"
 
 sed "s|@DEST@|/home/.steamos/open-gpu-kernel-modules-steamos-support/recovery|g" \
     "$SUPPORT_ROOT/support/recovery/opemos-nvidia-guardian.service.in" \
-    > "$ROOT/etc/systemd/system/opemos-nvidia-guardian.service"
+    > "$PERSISTENT_ETC_ROOT/systemd/system/opemos-nvidia-guardian.service"
 sed "s|@DEST@|/home/.steamos/open-gpu-kernel-modules-steamos-support/recovery|g" \
     "$SUPPORT_ROOT/support/recovery/opemos-interstitial.service.in" \
-    > "$ROOT/etc/systemd/system/opemos-interstitial.service"
+    > "$PERSISTENT_ETC_ROOT/systemd/system/opemos-interstitial.service"
 sed "s|@DEST@|/home/.steamos/open-gpu-kernel-modules-steamos-support/recovery|g" \
     "$SUPPORT_ROOT/support/recovery/opemos-nvidia-repair.service.in" \
-    > "$ROOT/etc/systemd/system/opemos-nvidia-repair.service"
+    > "$PERSISTENT_ETC_ROOT/systemd/system/opemos-nvidia-repair.service"
 install "${OWNERSHIP[@]}" -m 0644 "$SUPPORT_ROOT/support/recovery/opemos-nvidia-repair.timer" \
-    "$ROOT/etc/systemd/system/opemos-nvidia-repair.timer"
+    "$PERSISTENT_ETC_ROOT/systemd/system/opemos-nvidia-repair.timer"
 install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/support/recovery/90-opemos-nvidia-repair" \
-    "$ROOT/etc/NetworkManager/dispatcher.d/90-opemos-nvidia-repair"
+    "$PERSISTENT_ETC_ROOT/NetworkManager/dispatcher.d/90-opemos-nvidia-repair"
 install "${OWNERSHIP[@]}" -m 0644 "$SUPPORT_ROOT/support/recovery/90-opemos-nvidia-guardian.conf" \
-    "$ROOT/etc/atomic-update.conf.d/90-opemos-nvidia-guardian.conf"
+    "$PERSISTENT_ETC_ROOT/atomic-update.conf.d/90-opemos-nvidia-guardian.conf"
 ln -sfn ../opemos-nvidia-guardian.service \
-    "$ROOT/etc/systemd/system/multi-user.target.wants/opemos-nvidia-guardian.service"
+    "$PERSISTENT_ETC_ROOT/systemd/system/multi-user.target.wants/opemos-nvidia-guardian.service"
 ln -sfn ../opemos-interstitial.service \
-    "$ROOT/etc/systemd/system/multi-user.target.wants/opemos-interstitial.service"
+    "$PERSISTENT_ETC_ROOT/systemd/system/multi-user.target.wants/opemos-interstitial.service"
 ln -sfn ../opemos-nvidia-repair.timer \
-    "$ROOT/etc/systemd/system/timers.target.wants/opemos-nvidia-repair.timer"
+    "$PERSISTENT_ETC_ROOT/systemd/system/timers.target.wants/opemos-nvidia-repair.timer"
