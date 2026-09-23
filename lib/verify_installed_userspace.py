@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import selectors
 import stat
 import subprocess
 import sys
@@ -26,6 +27,8 @@ SAFE_NAME = re.compile(r"[A-Za-z0-9@._+:-]{1,256}")
 SAFE_VERSION = re.compile(r"[A-Za-z0-9@._+:-]{1,256}")
 MAX_PROGRESS_ATTEMPT = 1_000_000
 MAX_RESULT_BYTES = 256 * 1024
+MAX_PACMAN_DIAGNOSTIC_BYTES = 64 * 1024
+RECONCILABLE_QKK_DIRECTORIES = frozenset({"usr/lib"})
 
 
 def unique_object(pairs):
@@ -201,7 +204,9 @@ def compare_streams(source, target, deadline):
             return True
 
 
-def verify_package_payload(root, package, deadline, nvidia_version):
+def verify_package_payload(
+    root, package, deadline, nvidia_version, qkk_directory_entries=()
+):
     process = None
     archive = None
     package_stream = None
@@ -214,6 +219,7 @@ def verify_package_payload(root, package, deadline, nvidia_version):
         "sharedLibraries": 0,
     }
     gsp_firmware = []
+    unmatched_qkk_directories = set(qkk_directory_entries)
     try:
         if package.name.endswith(".zst"):
             process = subprocess.Popen(
@@ -239,6 +245,7 @@ def verify_package_payload(root, package, deadline, nvidia_version):
                 target = confined_target(root, normalized)
                 if not target.is_dir() or target.is_symlink():
                     fail("An installed userspace directory is invalid.")
+                unmatched_qkk_directories.discard(normalized)
                 counts["directories"] += 1
                 continue
             if member.issym():
@@ -294,6 +301,11 @@ def verify_package_payload(root, package, deadline, nvidia_version):
             package_stream.close()
             if process.wait() != 0:
                 fail("An installed userspace package is unreadable.")
+        if unmatched_qkk_directories:
+            fail(
+                "Package database integrity diagnostics do not describe "
+                "package directories."
+            )
     except (OSError, tarfile.TarError):
         fail("Installed userspace payload verification could not complete.")
     finally:
@@ -312,6 +324,118 @@ def publish(path, document):
     atomic_write_bytes(path, payload)
 
 
+def publish_mismatch(path, package_name, invalid_fields, affected_entries, message):
+    publish(path, {
+        "schemaVersion": 1,
+        "status": "failed",
+        "reason": "installed_userspace_mismatch",
+        "message": message,
+        "packageMismatches": [{
+            "packageName": package_name,
+            "invalidFields": invalid_fields,
+            "affectedEntries": sorted(set(affected_entries))[:16],
+        }],
+    })
+
+
+def parse_pacman_integrity_diagnostics(name, output):
+    try:
+        lines = output.decode("utf-8").splitlines()
+    except UnicodeDecodeError:
+        return None
+    entries = []
+    altered = None
+    warning = re.compile(
+        rf"warning: {re.escape(name)}: "
+        r"(/[A-Za-z0-9._+~/-]{1,512}) "
+        r"\((?:Permissions|UID|GID|Modification time) mismatch\)"
+    )
+    summary = re.compile(
+        rf"{re.escape(name)}: [0-9]+ total files, ([0-9]+) altered files?"
+    )
+    for line in lines:
+        match = warning.fullmatch(line)
+        if match is not None:
+            relative = match.group(1).removeprefix("/")
+            path = PurePosixPath(relative)
+            if not relative or ".." in path.parts:
+                return None
+            entries.append(relative)
+            continue
+        match = summary.fullmatch(line)
+        if match is not None and altered is None:
+            altered = int(match.group(1), 10)
+            continue
+        return None
+    unique = sorted(set(entries))
+    if (altered is None or altered != len(unique)
+            or not 1 <= len(unique) <= 16
+            or not set(unique) <= RECONCILABLE_QKK_DIRECTORIES):
+        return None
+    return unique
+
+
+def run_pacman_captured(command, deadline, limit):
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        fail("Installed userspace verification exceeded its time limit.")
+    environment = os.environ.copy()
+    environment.update({"LANG": "C", "LC_ALL": "C", "SYSTEMD_OFFLINE": "1"})
+    process = None
+    selector = selectors.DefaultSelector()
+    streams = {"stdout": bytearray(), "stderr": bytearray()}
+    overflow = False
+    try:
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment,
+        )
+        for name, stream in (("stdout", process.stdout), ("stderr", process.stderr)):
+            selector.register(stream, selectors.EVENT_READ, name)
+        while selector.get_map():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired(command, MAX_TOTAL_SECONDS)
+            events = selector.select(timeout=min(1, remaining))
+            if not events and process.poll() is not None:
+                events = [
+                    (key, selectors.EVENT_READ)
+                    for key in selector.get_map().values()
+                ]
+            for key, _ in events:
+                chunk = os.read(key.fileobj.fileno(), 8192)
+                if not chunk:
+                    selector.unregister(key.fileobj)
+                    key.fileobj.close()
+                    continue
+                captured = sum(len(value) for value in streams.values())
+                capacity = max(0, limit + 1 - captured)
+                streams[key.data].extend(chunk[:capacity])
+                if len(chunk) > capacity or captured + len(chunk) > limit:
+                    overflow = True
+                    process.kill()
+                    break
+            if overflow:
+                break
+        returncode = process.wait(timeout=max(0.1, deadline - time.monotonic()))
+    except (OSError, subprocess.TimeoutExpired):
+        if process is not None and process.poll() is None:
+            process.kill()
+            process.wait()
+        fail("Installed userspace verification could not complete.")
+    finally:
+        selector.close()
+        for stream in (() if process is None else (process.stdout, process.stderr)):
+            if stream is not None and not stream.closed:
+                stream.close()
+    return subprocess.CompletedProcess(
+        command, returncode, bytes(streams["stdout"]), bytes(streams["stderr"])
+    ), overflow
+
+
 def run_pacman(command, deadline, *, capture=False):
     remaining = deadline - time.monotonic()
     if remaining <= 0:
@@ -324,7 +448,7 @@ def run_pacman(command, deadline, *, capture=False):
             check=False,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE if capture else subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE if capture else subprocess.DEVNULL,
             timeout=min(120, remaining),
             env=environment,
         )
@@ -367,16 +491,53 @@ def main():
         ], deadline, capture=True)
         if (query.returncode != 0 or len(query.stdout) > 1024
                 or query.stdout != f"{name} {expected_version}\n".encode()):
+            publish_mismatch(
+                args.output, name, ["query"], [],
+                "An installed userspace package does not match the reviewed lock.",
+            )
             fail("An installed userspace package does not match the reviewed lock.")
-        integrity = run_pacman([
+        integrity, integrity_overflow = run_pacman_captured([
             "pacman", "--root", str(args.root), "--dbpath", str(database),
             "-Qkk", name,
-        ], deadline)
+        ], deadline, MAX_PACMAN_DIAGNOSTIC_BYTES)
+        integrity_output = integrity.stdout + integrity.stderr
+        integrity_entries = []
         if integrity.returncode != 0:
-            fail("An installed userspace package failed its integrity check.")
-        counts, gsp_firmware = verify_package_payload(
-            args.root, package, deadline, nvidia_version
-        )
+            if not integrity_overflow:
+                integrity_entries = parse_pacman_integrity_diagnostics(
+                    name, integrity_output
+                )
+            if not integrity_entries:
+                publish_mismatch(
+                    args.output, name, ["databaseIntegrity"], [],
+                    "Package database integrity diagnostics could not be reconciled.",
+                )
+                fail("An installed userspace package failed its integrity check.")
+        try:
+            counts, gsp_firmware = verify_package_payload(
+                args.root, package, deadline, nvidia_version, integrity_entries
+            )
+        except SystemExit as error:
+            fields = ["databaseIntegrity"]
+            message = str(error)
+            if "symlink" in message or "hardlink" in message:
+                fields.append("payloadLink")
+            elif "metadata" in message:
+                fields.extend(["payloadHash", "payloadMode", "payloadOwnership"])
+            elif "file differs" in message:
+                fields.append("payloadHash")
+            else:
+                fields.append("payloadPath")
+            publish_mismatch(
+                args.output, name, fields,
+                integrity_entries, message,
+            )
+            raise
+        # pacman -Qkk can report inherited directory metadata from the SteamOS
+        # base as altered even though every package member is present and the
+        # authoritative incoming archive comparison above succeeds.  Only that
+        # complete byte/link/metadata comparison may reconcile a nonzero Qkk;
+        # any payload discrepancy publishes a bounded failure document.
         all_gsp_firmware.extend(gsp_firmware)
         if sha256(package, deadline) != expected_digest:
             fail("An incoming userspace package changed during verification.")

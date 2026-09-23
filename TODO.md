@@ -60,6 +60,25 @@ index in the same commit.
 
 ### Immediate image-builder blockers
 
+* [x] Preserve actionable installed-userspace integrity evidence and reconcile
+  the SteamOS 3.8.14 `pacman -Qkk` false failure only after Core's independent
+  archive-to-installed-tree verifier proves every package member and each
+  applicable link, mode, owner, and byte. An unexplained `Qkk` failure and every real payload mismatch
+  still fail closed; capture is capped while the command runs, every diagnostic
+  line must match the exact package grammar, and every reconciled path must be
+  both the narrow shared `usr/lib` directory and a directory member of that
+  same authenticated archive. The verifier first
+  publishes the existing bounded schema-1 `packageMismatches` document with
+  confined affected entries. The regression
+  reproduces the observed `nvidia-utils` inherited-directory diagnostic, proves
+  it can pass only with an exact installed payload, proves empty, oversized,
+  mixed, unrelated-path, and non-directory integrity failures remain terminal,
+  and proves actual payload corruption is surfaced in the installer result.
+  Preserved PR124 appliance evidence hashes
+  authenticate the original six-package SteamOS 3.8.14 failure and complete
+  mount/process cleanup. Exact PR, required checks, counterpart review, squash,
+  and Core-main consumption evidence are retained in the implementation PR and
+  authenticated handoff.
 * [ ] Complete OPEMOS.EXE equivalence against the deterministic development-
   only userspace generation and Core's appliance consumer, then remove the
   builder's duplicated package-selection/lock translation only after its
