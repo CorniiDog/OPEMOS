@@ -26,6 +26,7 @@ SAFE_NAME = re.compile(r"[A-Za-z0-9@._+:-]{1,256}")
 SAFE_VERSION = re.compile(r"[A-Za-z0-9@._+:-]{1,256}")
 MAX_PROGRESS_ATTEMPT = 1_000_000
 MAX_RESULT_BYTES = 256 * 1024
+MAX_PACMAN_DIAGNOSTIC_BYTES = 64 * 1024
 
 
 def unique_object(pairs):
@@ -312,6 +313,37 @@ def publish(path, document):
     atomic_write_bytes(path, payload)
 
 
+def publish_mismatch(path, package_name, invalid_fields, affected_entries, message):
+    publish(path, {
+        "schemaVersion": 1,
+        "status": "failed",
+        "reason": "installed_userspace_mismatch",
+        "message": message,
+        "packageMismatches": [{
+            "packageName": package_name,
+            "invalidFields": invalid_fields,
+            "affectedEntries": sorted(set(affected_entries))[:16],
+        }],
+    })
+
+
+def pacman_affected_entries(output):
+    if len(output) > MAX_PACMAN_DIAGNOSTIC_BYTES:
+        return []
+    entries = []
+    for raw_line in output.decode("utf-8", errors="replace").splitlines():
+        match = re.search(r": (/[^\x00-\x1f\x7f ]{1,512})(?: |$)", raw_line)
+        if match is None:
+            continue
+        relative = match.group(1).removeprefix("/")
+        candidate = PurePosixPath(relative)
+        if (not relative or ".." in candidate.parts
+                or re.fullmatch(r"[A-Za-z0-9._+~/-]+", relative) is None):
+            continue
+        entries.append(relative)
+    return sorted(set(entries))[:16]
+
+
 def run_pacman(command, deadline, *, capture=False):
     remaining = deadline - time.monotonic()
     if remaining <= 0:
@@ -324,7 +356,7 @@ def run_pacman(command, deadline, *, capture=False):
             check=False,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE if capture else subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE if capture else subprocess.DEVNULL,
             timeout=min(120, remaining),
             env=environment,
         )
@@ -367,16 +399,48 @@ def main():
         ], deadline, capture=True)
         if (query.returncode != 0 or len(query.stdout) > 1024
                 or query.stdout != f"{name} {expected_version}\n".encode()):
+            publish_mismatch(
+                args.output, name, ["query"], [],
+                "An installed userspace package does not match the reviewed lock.",
+            )
             fail("An installed userspace package does not match the reviewed lock.")
         integrity = run_pacman([
             "pacman", "--root", str(args.root), "--dbpath", str(database),
             "-Qkk", name,
-        ], deadline)
-        if integrity.returncode != 0:
+        ], deadline, capture=True)
+        integrity_output = integrity.stdout + integrity.stderr
+        try:
+            counts, gsp_firmware = verify_package_payload(
+                args.root, package, deadline, nvidia_version
+            )
+        except SystemExit as error:
+            fields = ["databaseIntegrity"]
+            message = str(error)
+            if "symlink" in message or "hardlink" in message:
+                fields.append("payloadLink")
+            elif "metadata" in message:
+                fields.extend(["payloadHash", "payloadMode", "payloadOwnership"])
+            elif "file differs" in message:
+                fields.append("payloadHash")
+            else:
+                fields.append("payloadPath")
+            publish_mismatch(
+                args.output, name, fields,
+                pacman_affected_entries(integrity_output), message,
+            )
+            raise
+        integrity_entries = pacman_affected_entries(integrity_output)
+        if integrity.returncode != 0 and not integrity_entries:
+            publish_mismatch(
+                args.output, name, ["databaseIntegrity"], [],
+                "Package database integrity diagnostics could not be reconciled.",
+            )
             fail("An installed userspace package failed its integrity check.")
-        counts, gsp_firmware = verify_package_payload(
-            args.root, package, deadline, nvidia_version
-        )
+        # pacman -Qkk can report inherited directory metadata from the SteamOS
+        # base as altered even though every package member is present and the
+        # authoritative incoming archive comparison above succeeds.  Only that
+        # complete byte/link/metadata comparison may reconcile a nonzero Qkk;
+        # any payload discrepancy publishes a bounded failure document.
         all_gsp_firmware.extend(gsp_firmware)
         if sha256(package, deadline) != expected_digest:
             fail("An incoming userspace package changed during verification.")

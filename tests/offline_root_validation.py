@@ -402,6 +402,15 @@ done
 printf '%s\n' "$*" >> "$MOCK_PACMAN_LOG"
 case " $* " in
   *" -Dk "*) [ "${MOCK_FAIL_DATABASE_CHECK:-0}" = 0 ];;
+  *" -Qkk nvidia-utils "*)
+    if [ "${MOCK_POSTINSTALL_QKK_DIRECTORY_WARNING:-0}" != 0 ]; then
+      echo 'warning: nvidia-utils: /usr/lib (Permissions mismatch)' >&2
+      echo 'nvidia-utils: 42 total files, 1 altered file'
+      exit 1
+    fi
+    [ "${MOCK_POSTINSTALL_QKK_EMPTY_FAILURE:-0}" = 0 ] || exit 1
+    [ "${MOCK_FAIL_QKK:-0}" = 0 ]
+    ;;
   *" -Qkk "*) [ "${MOCK_FAIL_QKK:-0}" = 0 ];;
   *" -U "*)
     for runtime in dev proc sys var/tmp; do
@@ -2438,6 +2447,20 @@ def main():
         assert corrupt_installed_payload["cleanup"][
             "compressionPolicyRestored"
         ] is True
+        assert corrupt_installed_payload["userspaceVerification"] == {
+            "schemaVersion": 1,
+            "status": "failed",
+            "reason": "installed_userspace_mismatch",
+            "message": "An installed userspace file's metadata differs from its package.",
+            "packageMismatches": [{
+                "packageName": "nvidia-utils",
+                "invalidFields": [
+                    "databaseIntegrity", "payloadHash", "payloadMode",
+                    "payloadOwnership",
+                ],
+                "affectedEntries": [],
+            }],
+        }
         inconsistent_database = run_installer(
             profile_paths,
             binaries,
@@ -3440,6 +3463,41 @@ def main():
             "initramfs",
             MOCK_CHROOT_DELAY="30",
         )
+
+        reconciled_qkk = run_installer(
+            paths,
+            binaries,
+            temporary / "install-qkk-directory-warning.json",
+            True,
+            MOCK_POSTINSTALL_QKK_DIRECTORY_WARNING="1",
+        )
+        assert reconciled_qkk["status"] == "success"
+        assert reconciled_qkk["userspaceVerification"]["status"] == "verified"
+        assert reconciled_qkk["userspaceVerification"]["packages"][0][
+            "packageName"
+        ] == "nvidia-utils"
+        assert reconciled_qkk["userspaceVerification"]["packages"][0][
+            "pacmanIntegrityVerified"
+        ] is True
+        unexplained_qkk = run_installer(
+            paths,
+            binaries,
+            temporary / "install-qkk-unexplained-failure.json",
+            False,
+            MOCK_POSTINSTALL_QKK_EMPTY_FAILURE="1",
+        )
+        assert unexplained_qkk["reason"] == "userspace_verification"
+        assert unexplained_qkk["userspaceVerification"] == {
+            "schemaVersion": 1,
+            "status": "failed",
+            "reason": "installed_userspace_mismatch",
+            "message": "Package database integrity diagnostics could not be reconciled.",
+            "packageMismatches": [{
+                "packageName": "nvidia-utils",
+                "invalidFields": ["databaseIntegrity"],
+                "affectedEntries": [],
+            }],
+        }
 
 
 if __name__ == "__main__":
