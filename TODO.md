@@ -66,7 +66,8 @@ index in the same commit.
   applicable link, mode, owner, and byte. An unexplained `Qkk` failure and every real payload mismatch
   still fail closed; capture is capped while the command runs, every diagnostic
   line must match the exact package grammar, and every reconciled path must be
-  a directory member of that same authenticated archive. The verifier first
+  both the narrow shared `usr/lib` directory and a directory member of that
+  same authenticated archive. The verifier first
   publishes the existing bounded schema-1 `packageMismatches` document with
   confined affected entries. The regression
   reproduces the observed `nvidia-utils` inherited-directory diagnostic, proves

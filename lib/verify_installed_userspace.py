@@ -28,6 +28,7 @@ SAFE_VERSION = re.compile(r"[A-Za-z0-9@._+:-]{1,256}")
 MAX_PROGRESS_ATTEMPT = 1_000_000
 MAX_RESULT_BYTES = 256 * 1024
 MAX_PACMAN_DIAGNOSTIC_BYTES = 64 * 1024
+RECONCILABLE_QKK_DIRECTORIES = frozenset({"usr/lib"})
 
 
 def unique_object(pairs):
@@ -367,7 +368,9 @@ def parse_pacman_integrity_diagnostics(name, output):
             continue
         return None
     unique = sorted(set(entries))
-    if altered is None or altered != len(unique) or not 1 <= len(unique) <= 16:
+    if (altered is None or altered != len(unique)
+            or not 1 <= len(unique) <= 16
+            or not set(unique) <= RECONCILABLE_QKK_DIRECTORIES):
         return None
     return unique
 
