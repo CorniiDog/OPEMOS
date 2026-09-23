@@ -135,6 +135,10 @@ def make_package(
                 + "".join(f"provides = {provided}\n" for provided in provides)
             ).encode(),
         )
+        shared_directory = tarfile.TarInfo("usr/lib/")
+        shared_directory.type = tarfile.DIRTYPE
+        shared_directory.mode = 0o755
+        archive.addfile(shared_directory)
         add_bytes(archive, f"usr/lib/{name}/fixture", b"userspace\n")
         if duplicate_member:
             add_bytes(archive, f"usr/lib/{name}/fixture", b"duplicate\n")
@@ -403,11 +407,28 @@ printf '%s\n' "$*" >> "$MOCK_PACMAN_LOG"
 case " $* " in
   *" -Dk "*) [ "${MOCK_FAIL_DATABASE_CHECK:-0}" = 0 ];;
   *" -Qkk nvidia-utils "*)
-    if [ "${MOCK_POSTINSTALL_QKK_DIRECTORY_WARNING:-0}" != 0 ]; then
-      echo 'warning: nvidia-utils: /usr/lib (Permissions mismatch)' >&2
-      echo 'nvidia-utils: 42 total files, 1 altered file'
-      exit 1
-    fi
+    case "${MOCK_POSTINSTALL_QKK_DIAGNOSTIC:-}" in
+      directory)
+        echo 'warning: nvidia-utils: /usr/lib (Permissions mismatch)' >&2
+        echo 'nvidia-utils: 42 total files, 1 altered file'
+        exit 1;;
+      mixed)
+        echo 'warning: nvidia-utils: /usr/lib (Permissions mismatch)' >&2
+        echo 'error: database is unavailable' >&2
+        echo 'nvidia-utils: 42 total files, 1 altered file'
+        exit 1;;
+      unrelated)
+        echo 'warning: nvidia-utils: /opt/unrelated (Permissions mismatch)' >&2
+        echo 'nvidia-utils: 42 total files, 1 altered file'
+        exit 1;;
+      file)
+        echo 'warning: nvidia-utils: /usr/lib/nvidia-utils/fixture (Permissions mismatch)' >&2
+        echo 'nvidia-utils: 42 total files, 1 altered file'
+        exit 1;;
+      oversized)
+        head -c 70000 /dev/zero | tr '\0' x
+        exit 1;;
+    esac
     [ "${MOCK_POSTINSTALL_QKK_EMPTY_FAILURE:-0}" = 0 ] || exit 1
     [ "${MOCK_FAIL_QKK:-0}" = 0 ]
     ;;
@@ -3469,7 +3490,7 @@ def main():
             binaries,
             temporary / "install-qkk-directory-warning.json",
             True,
-            MOCK_POSTINSTALL_QKK_DIRECTORY_WARNING="1",
+            MOCK_POSTINSTALL_QKK_DIAGNOSTIC="directory",
         )
         assert reconciled_qkk["status"] == "success"
         assert reconciled_qkk["userspaceVerification"]["status"] == "verified"
@@ -3498,6 +3519,32 @@ def main():
                 "affectedEntries": [],
             }],
         }
+        for diagnostic, expected_entries in (
+            ("mixed", []),
+            ("oversized", []),
+            ("unrelated", ["opt/unrelated"]),
+            ("file", ["usr/lib/nvidia-utils/fixture"]),
+        ):
+            rejected_qkk = run_installer(
+                paths,
+                binaries,
+                temporary / f"install-qkk-{diagnostic}.json",
+                False,
+                MOCK_POSTINSTALL_QKK_DIAGNOSTIC=diagnostic,
+            )
+            assert rejected_qkk["reason"] == "userspace_verification"
+            mismatch = rejected_qkk["userspaceVerification"]
+            assert mismatch["status"] == "failed"
+            assert mismatch["reason"] == "installed_userspace_mismatch"
+            assert mismatch["packageMismatches"][0]["packageName"] == "nvidia-utils"
+            assert mismatch["packageMismatches"][0]["invalidFields"] == (
+                ["databaseIntegrity"]
+                if diagnostic in {"mixed", "oversized"}
+                else ["databaseIntegrity", "payloadPath"]
+            )
+            assert mismatch["packageMismatches"][0]["affectedEntries"] == (
+                expected_entries
+            )
 
 
 if __name__ == "__main__":
