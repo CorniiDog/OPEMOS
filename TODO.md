@@ -2820,6 +2820,7 @@ gate is a completely clean-stock one-command certified installation.
     plan binds the existing immutable 575 source commit and known-good 3.8.16
     baseline identities. Focused maintainer-workflow and source-intent tests
     prove the workflow is available and the resolver emits the same exact
-    target, source, baseline, and policy hash; both passed through `heavy.sh`
+    target, source, baseline, and policy hash. Both focused tests and the
+    canonical cross-frontend consumer-contract suite passed through `heavy.sh`
     on 2026-09-24. Immutable PR/check/review/merge evidence follows in the
     implementation record.
