@@ -144,13 +144,13 @@ acquire_lifecycle_lock
 TARGET_DIR="$(project_system_path "/usr/lib/modules/${CURRENT_KERNEL}/updates/open-gpu-kernel-modules-steamos")"
 STATE_ROOT="$(project_system_path "/var/lib/open-gpu-kernel-modules-steamos-support")"
 STAMP="$(date +%Y%m%d-%H%M%S)"
-CACHE_ROOT="${HOME}/.cache/${PROJECT_ID}"
-BACKUP_ROOT="${CACHE_ROOT}/backups/${CURRENT_KERNEL}"
+BACKUP_ROOT="${STATE_ROOT}/backups/${CURRENT_KERNEL}"
 BACKUP_DIR=""
 RO_WAS_ENABLED=0
 TARGET_TOUCHED=0
 STATE_TOUCHED=0
 INSTALL_COMPLETE=0
+ROLLBACK_COMPLETE=1
 STAGE=""
 
 restore_readonly()
@@ -172,31 +172,53 @@ cleanup()
     if [[ "$INSTALL_COMPLETE" != "1" && "$TARGET_TOUCHED" == "1" ]]; then
         warn "Install failed; restoring previous updates directory."
 
-        sudo rm -rf "$TARGET_DIR" || true
-
-        if [[ -d "$BACKUP_DIR/modules" ]]; then
-            sudo mkdir -p "$(dirname "$TARGET_DIR")" || true
-            sudo cp -a "$BACKUP_DIR/modules" "$TARGET_DIR" || true
+        if ! sudo rm -rf "$TARGET_DIR"; then
+            ROLLBACK_COMPLETE=0
         fi
 
-        sudo depmod -a "$CURRENT_KERNEL" || true
+        if [[ -d "$BACKUP_DIR/modules" ]]; then
+            if ! sudo mkdir -p "$(dirname "$TARGET_DIR")" ||
+               ! sudo cp -a "$BACKUP_DIR/modules" "$TARGET_DIR"; then
+                ROLLBACK_COMPLETE=0
+            fi
+        fi
+
+        if ! sudo depmod -a "$CURRENT_KERNEL"; then
+            ROLLBACK_COMPLETE=0
+        fi
 
         if command -v mkinitcpio >/dev/null 2>&1; then
-            sudo mkinitcpio -P >/dev/null 2>&1 || true
+            if ! sudo mkinitcpio -P >/dev/null 2>&1; then
+                ROLLBACK_COMPLETE=0
+            fi
         fi
     fi
 
     if [[ "$INSTALL_COMPLETE" != "1" && "$STATE_TOUCHED" == "1" ]]; then
         warn "Restoring previous install state metadata."
 
-        sudo rm -f \
+        if ! sudo rm -f \
             "${STATE_ROOT}/installed-build-info.txt" \
             "${STATE_ROOT}/installed-archive.txt" \
             "${STATE_ROOT}/installed-kernel.txt" \
-            "${STATE_ROOT}/installed-nvidia.txt" || true
+            "${STATE_ROOT}/installed-nvidia.txt"; then
+            ROLLBACK_COMPLETE=0
+        fi
 
         if [[ -d "$BACKUP_DIR/state" ]]; then
-            sudo cp -a "$BACKUP_DIR/state/." "$STATE_ROOT/" || true
+            if ! sudo cp -a "$BACKUP_DIR/state/." "$STATE_ROOT/"; then
+                ROLLBACK_COMPLETE=0
+            fi
+        fi
+    fi
+
+    if [[ "$INSTALL_COMPLETE" != "1" && -n "$BACKUP_DIR" &&
+          -d "$BACKUP_DIR" ]]; then
+        if [[ "$ROLLBACK_COMPLETE" == "1" ]]; then
+            sudo rm -rf "$BACKUP_DIR" ||
+                warn "Could not remove the completed failed-attempt rollback generation."
+        else
+            warn "Rollback was incomplete; preserving generation: $BACKUP_DIR"
         fi
     fi
 
@@ -230,8 +252,9 @@ if command -v steamos-readonly >/dev/null 2>&1 &&
     sudo steamos-readonly disable
 fi
 
-mkdir -p "$BACKUP_ROOT"
-BACKUP_DIR="$(mktemp -d "${BACKUP_ROOT}/${STAMP}.XXXXXX")"
+sudo mkdir -p "$BACKUP_ROOT"
+BACKUP_DIR="$(sudo mktemp -d "${BACKUP_ROOT}/${STAMP}.XXXXXX")"
+sudo chown "$(id -u):$(id -g)" "$BACKUP_DIR"
 
 if [[ -d "$TARGET_DIR" ]]; then
     sudo cp -a "$TARGET_DIR" "$BACKUP_DIR/modules"
@@ -335,7 +358,7 @@ printf '%s\n' "$ARCHIVE" | sudo tee "${STATE_ROOT}/installed-archive.txt" >/dev/
 printf '%s\n' "$CURRENT_KERNEL" | sudo tee "${STATE_ROOT}/installed-kernel.txt" >/dev/null
 printf '%s\n' "$BUILD_NVIDIA" | sudo tee "${STATE_ROOT}/installed-nvidia.txt" >/dev/null
 
-python3 "$SUPPORT_ROOT/lib/prune_backup_generations.py" \
+sudo python3 "$SUPPORT_ROOT/lib/prune_backup_generations.py" \
     --root "$BACKUP_ROOT" --protect "$(basename "$BACKUP_DIR")" \
     --keep 10 --max-age-days 90 ||
     warn "Backup retention could not be applied; preserved all generations."

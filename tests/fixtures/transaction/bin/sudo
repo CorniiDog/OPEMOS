@@ -12,7 +12,8 @@ shift
 
 failure_marker="${MOCK_FAILURE_MARKER:?}"
 
-if [[ "${MOCK_FAIL_POINT:-}" == "target-copy" &&
+if [[ ( "${MOCK_FAIL_POINT:-}" == "target-copy" ||
+        "${MOCK_FAIL_POINT:-}" == "target-copy-rollback-fail" ) &&
       "$command_name" == "cp" &&
       ! -e "$failure_marker" ]]; then
     destination="${*: -1}"
@@ -33,6 +34,13 @@ if [[ "${MOCK_FAIL_POINT:-}" == "target-copy" &&
         printf 'Injected partial target copy failure.\n' >&2
         exit 88
     fi
+fi
+
+if [[ "${MOCK_FAIL_POINT:-}" == "target-copy-rollback-fail" &&
+      "$command_name" == "cp" &&
+      -e "$failure_marker" && "$*" == *"/backups/"*"/modules"* ]]; then
+    printf 'Injected rollback copy failure.\n' >&2
+    exit 91
 fi
 
 if [[ "${MOCK_FAIL_POINT:-}" == "state-write" &&

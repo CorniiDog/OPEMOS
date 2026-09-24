@@ -2869,3 +2869,12 @@ gate is a completely clean-stock one-command certified installation.
     recovery, state stress, syntax, and compile validation pass through
     `heavy.sh`; immutable PR/check/review/merge evidence follows in the
     implementation record.
+  * [x] Place live rollback generations in the service-owned writable state
+    tree instead of `/root`. A fully restored failed attempt removes its new
+    generation so the system tree returns byte-for-byte; an incomplete rollback
+    preserves the exact prior modules for diagnosis and recovery. Executable
+    transaction coverage proves both outcomes, while the real cached automatic
+    retry regression starts with immutable HOME, restores all five exact
+    valve24.5 modules without curl or online installation, and leaves HOME
+    untouched. Immutable PR/check/review/merge evidence follows in the
+    implementation record.
