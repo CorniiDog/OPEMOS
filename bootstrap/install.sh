@@ -230,7 +230,7 @@ fi
 
 if [[ -d "$TARGET_DIR" ]]; then
     sudo cp -a "$TARGET_DIR" "$BACKUP_DIR/modules"
-    sudo chown -R "$USER":"$(id -gn)" "$BACKUP_DIR"
+    sudo chown -R "$(id -u):$(id -g)" "$BACKUP_DIR"
 fi
 
 STAGE="$(project_mktemp_dir install-stage)"
@@ -322,7 +322,7 @@ do
     fi
 done
 
-sudo chown -R "$USER":"$(id -gn)" "$BACKUP_DIR"
+sudo chown -R "$(id -u):$(id -g)" "$BACKUP_DIR"
 
 STATE_TOUCHED=1
 sudo cp "$INFO" "${STATE_ROOT}/installed-build-info.txt"

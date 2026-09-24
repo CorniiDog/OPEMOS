@@ -2847,3 +2847,14 @@ gate is a completely clean-stock one-command certified installation.
     canonical cross-frontend consumer-contract suite passed through `heavy.sh`
     on 2026-09-24. Immutable PR/check/review/merge evidence follows in the
     implementation record.
+  * [x] Make automatic exact-cache recovery independent of the interactive
+    `USER` environment. The system service now assigns backup ownership from
+    the installer's effective numeric UID/GID, so an unset `USER` cannot abort
+    after module mutation and trigger rollback. The executable cached-product
+    regression starts from a real `retry_scheduled` automatic failure, stages a
+    valid exact five-module product, retries through `repair-auto` with `USER`
+    absent, and proves restored terminal state, retained modules, and no curl or
+    online-installer execution. Focused cached recovery, recovery-state stress,
+    shell syntax, and Python compile checks passed through `heavy.sh` on
+    2026-09-24; immutable PR/check/review/merge evidence follows in the
+    implementation record.
