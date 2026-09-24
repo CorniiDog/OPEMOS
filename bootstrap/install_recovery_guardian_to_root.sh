@@ -61,12 +61,16 @@ if [[ -n "$INTERSTITIAL_BINARY" ]]; then
 fi
 
 DEST="$PERSISTENT_HOME_ROOT/.steamos/open-gpu-kernel-modules-steamos-support/recovery"
+ROOT_PATH_CHECK_ARGS=(--root "$ROOT")
 HOME_PATH_CHECK_ARGS=(--root "$PERSISTENT_HOME_ROOT")
 ETC_PATH_CHECK_ARGS=(--root "$PERSISTENT_ETC_ROOT")
 if [[ "${PROJECT_TEST_MODE:-0}" == 1 ]]; then
+    ROOT_PATH_CHECK_ARGS+=(--test-owner)
     HOME_PATH_CHECK_ARGS+=(--test-owner)
     ETC_PATH_CHECK_ARGS+=(--test-owner)
 fi
+python3 "$SUPPORT_ROOT/lib/validate_recovery_install_path.py" "${ROOT_PATH_CHECK_ARGS[@]}" \
+    --path etc/atomic-update.conf.d/90-opemos-nvidia-guardian.conf
 python3 "$SUPPORT_ROOT/lib/validate_recovery_install_path.py" "${HOME_PATH_CHECK_ARGS[@]}" \
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/support-revision \
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/interstitial.sha256 \
@@ -87,6 +91,7 @@ python3 "$SUPPORT_ROOT/lib/validate_recovery_install_path.py" "${HOME_PATH_CHECK
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/bin/opemos-interstitial \
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/trust/desktop-update-signers.json
 python3 "$SUPPORT_ROOT/lib/validate_recovery_install_path.py" "${ETC_PATH_CHECK_ARGS[@]}" \
+    --path atomic-update.conf.d/90-opemos-nvidia-guardian.conf \
     --path systemd/system/opemos-nvidia-guardian.service \
     --path systemd/system/opemos-interstitial.service \
     --path systemd/system/opemos-nvidia-repair.service \
@@ -94,12 +99,40 @@ python3 "$SUPPORT_ROOT/lib/validate_recovery_install_path.py" "${ETC_PATH_CHECK_
     --expected-symlink systemd/system/multi-user.target.wants/opemos-nvidia-guardian.service=../opemos-nvidia-guardian.service \
     --expected-symlink systemd/system/multi-user.target.wants/opemos-interstitial.service=../opemos-interstitial.service \
     --expected-symlink systemd/system/timers.target.wants/opemos-nvidia-repair.timer=../opemos-nvidia-repair.timer
+LEGACY_KEEP_LIST_DIR="$PERSISTENT_ETC_ROOT/atomic-update.conf.d"
+LEGACY_KEEP_LIST="$LEGACY_KEEP_LIST_DIR/90-opemos-nvidia-guardian.conf"
+if [[ -e "$LEGACY_KEEP_LIST_DIR" || -L "$LEGACY_KEEP_LIST_DIR" ]]; then
+    [[ -d "$LEGACY_KEEP_LIST_DIR" && ! -L "$LEGACY_KEEP_LIST_DIR" ]] || {
+        echo "Legacy guardian keep-list directory is unsafe." >&2
+        exit 1
+    }
+    shopt -s nullglob dotglob
+    LEGACY_ENTRIES=("$LEGACY_KEEP_LIST_DIR"/*)
+    shopt -u nullglob dotglob
+    [[ ${#LEGACY_ENTRIES[@]} -eq 1 && "${LEGACY_ENTRIES[0]}" == "$LEGACY_KEEP_LIST" ]] || {
+        echo "Legacy guardian keep-list directory contains unexpected data." >&2
+        exit 1
+    }
+    [[ -f "$LEGACY_KEEP_LIST" && ! -L "$LEGACY_KEEP_LIST" ]] || {
+        echo "Legacy guardian keep-list is unsafe." >&2
+        exit 1
+    }
+    [[ "$(stat -c '%a' "$LEGACY_KEEP_LIST")" == 644 ]] || {
+        echo "Legacy guardian keep-list mode is unexpected." >&2
+        exit 1
+    }
+    cmp -s "$SUPPORT_ROOT/support/recovery/90-opemos-nvidia-guardian.conf" "$LEGACY_KEEP_LIST" || {
+        echo "Legacy guardian keep-list content is unexpected." >&2
+        exit 1
+    }
+fi
 OWNERSHIP=(-o 0 -g 0)
 [[ "${PROJECT_TEST_MODE:-0}" != 1 ]] || OWNERSHIP=(-o "$(id -u)" -g "$(id -g)")
 install -d "${OWNERSHIP[@]}" -m 0755 "$DEST/bin" "$DEST/bootstrap" "$DEST/lib" "$DEST/trust" \
+    "$ROOT/etc/atomic-update.conf.d" \
     "$PERSISTENT_ETC_ROOT/systemd/system/multi-user.target.wants" \
     "$PERSISTENT_ETC_ROOT/systemd/system/timers.target.wants" \
-    "$PERSISTENT_ETC_ROOT/NetworkManager/dispatcher.d" "$PERSISTENT_ETC_ROOT/atomic-update.conf.d"
+    "$PERSISTENT_ETC_ROOT/NetworkManager/dispatcher.d"
 install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/recoveryctl.sh" "$DEST/bootstrap/recoveryctl.sh"
 install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/launch_desktop_companion.sh" "$DEST/bootstrap/launch_desktop_companion.sh"
 install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/run_guardian_with_interstitial.sh" "$DEST/bootstrap/run_guardian_with_interstitial.sh"
@@ -133,7 +166,11 @@ install "${OWNERSHIP[@]}" -m 0644 "$SUPPORT_ROOT/support/recovery/opemos-nvidia-
 install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/support/recovery/90-opemos-nvidia-repair" \
     "$PERSISTENT_ETC_ROOT/NetworkManager/dispatcher.d/90-opemos-nvidia-repair"
 install "${OWNERSHIP[@]}" -m 0644 "$SUPPORT_ROOT/support/recovery/90-opemos-nvidia-guardian.conf" \
-    "$PERSISTENT_ETC_ROOT/atomic-update.conf.d/90-opemos-nvidia-guardian.conf"
+    "$ROOT/etc/atomic-update.conf.d/90-opemos-nvidia-guardian.conf"
+if [[ -e "$LEGACY_KEEP_LIST" ]]; then
+    rm -- "$LEGACY_KEEP_LIST"
+    rmdir -- "$LEGACY_KEEP_LIST_DIR"
+fi
 ln -sfn ../opemos-nvidia-guardian.service \
     "$PERSISTENT_ETC_ROOT/systemd/system/multi-user.target.wants/opemos-nvidia-guardian.service"
 ln -sfn ../opemos-interstitial.service \
