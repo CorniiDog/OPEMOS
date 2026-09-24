@@ -1573,8 +1573,21 @@ This remains a major future area, represented by three distinct gates:
   that are irrelevant to the selected transaction/plan command, and stress
   concurrent deterministic reads, lock contention, repeated retarget/cancel,
   plus SIGTERM/SIGKILL lock-owner death without corrupting durable state.
-* [ ] Connect the reviewed authenticated-cache bundle to on-device repair and
+* [x] Connect the reviewed authenticated-cache bundle to on-device repair and
   test exact cached repair with GitHub, Valve, and Arch endpoints unavailable.
+
+  * 2026-09-24: the PR131 automatic-heal blocker is closed by a create-only
+    cached-repair contract for the existing validated driver-product
+    materialization result. The persistent guardian verifies the exact Core,
+    SteamOS, kernel, NVIDIA, representation, closed inventory, file types,
+    sizes, hashes, canonical checksum, ownership, modes, links, and directory
+    contents before selecting the existing local installer ahead of any
+    connectivity probe. Invalid cache state stops with fallback retained;
+    absent cache state preserves the published-artifact network path. Focused
+    `recovery_cached_product`, `recovery_state_stress`, guardian/interstitial,
+    authenticated installer-bundle, and product-materialization checks passed
+    through `heavy.sh` on branch `core/cached-exact-repair-20260924`; final PR,
+    review, and squash evidence is retained in the authenticated handoff.
 * [x] Run delayed-network fault injection for absent/flapping connectivity,
   captive portal, DNS/TLS failure, reboot mid-wait/download, and identity drift.
 

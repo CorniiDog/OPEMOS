@@ -63,6 +63,8 @@ python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/recovery_release_plan.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/recovery_cached_product.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/validate_github_meta.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/snapshot_install_input.py
@@ -251,6 +253,7 @@ python3 tests/payload_receipt.py
 printf 'Checking installed-system recovery contract...\n'
 python3 tests/recovery_status.py
 python3 tests/recovery_state_stress.py
+python3 tests/recovery_cached_product.py
 python3 tests/cache_root_contract.py
 
 printf 'Checking target-owned execution trust...\n'
