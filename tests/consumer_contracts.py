@@ -734,6 +734,10 @@ def validate_resolver_fixture(document):
 
 def main():
     validate_inventory(FILES)
+    inventory_paths = {relative for relative, _role, _mode in FILES}
+    assert "bootstrap/install_recovery_guardian_to_root.sh" in inventory_paths
+    assert "bootstrap/install.sh" in inventory_paths
+    assert "lib/recovery_cached_product.py" in inventory_paths
     for relative, _role, expected_mode in FILES:
         path = ROOT / relative
         info = path.lstat()

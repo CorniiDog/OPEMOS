@@ -25,6 +25,7 @@ SAFE_PATH = re.compile(r"[A-Za-z0-9_.+-]+(?:/[A-Za-z0-9_.+-]+)*")
 # bounded; consumers must use paths, modes, sizes, and hashes as authority.
 FILES = (
     ("bootstrap/install_to_root.sh", "installer-entrypoint", "0755"),
+    ("bootstrap/install.sh", "installer-entrypoint", "0755"),
     ("bootstrap/install_recovery_guardian_to_root.sh", "installer-entrypoint", "0755"),
     ("bootstrap/launch_desktop_companion.sh", "device-entrypoint", "0755"),
     ("bootstrap/launch_interstitial.sh", "device-entrypoint", "0755"),
