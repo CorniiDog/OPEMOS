@@ -144,7 +144,7 @@ acquire_lifecycle_lock
 TARGET_DIR="$(project_system_path "/usr/lib/modules/${CURRENT_KERNEL}/updates/open-gpu-kernel-modules-steamos")"
 STATE_ROOT="$(project_system_path "/var/lib/open-gpu-kernel-modules-steamos-support")"
 STAMP="$(date +%Y%m%d-%H%M%S)"
-CACHE_ROOT="${INSTALL_TMP_ROOT%/}/${PROJECT_ID}"
+CACHE_ROOT="${HOME}/.cache/${PROJECT_ID}"
 BACKUP_ROOT="${CACHE_ROOT}/backups/${CURRENT_KERNEL}"
 BACKUP_DIR=""
 RO_WAS_ENABLED=0
@@ -230,9 +230,8 @@ if command -v steamos-readonly >/dev/null 2>&1 &&
     sudo steamos-readonly disable
 fi
 
-sudo mkdir -p "$BACKUP_ROOT"
-BACKUP_DIR="$(sudo mktemp -d "${BACKUP_ROOT}/${STAMP}.XXXXXX")"
-sudo chown "$(id -u):$(id -g)" "$BACKUP_DIR"
+mkdir -p "$BACKUP_ROOT"
+BACKUP_DIR="$(mktemp -d "${BACKUP_ROOT}/${STAMP}.XXXXXX")"
 
 if [[ -d "$TARGET_DIR" ]]; then
     sudo cp -a "$TARGET_DIR" "$BACKUP_DIR/modules"
@@ -336,16 +335,16 @@ printf '%s\n' "$ARCHIVE" | sudo tee "${STATE_ROOT}/installed-archive.txt" >/dev/
 printf '%s\n' "$CURRENT_KERNEL" | sudo tee "${STATE_ROOT}/installed-kernel.txt" >/dev/null
 printf '%s\n' "$BUILD_NVIDIA" | sudo tee "${STATE_ROOT}/installed-nvidia.txt" >/dev/null
 
+python3 "$SUPPORT_ROOT/lib/prune_backup_generations.py" \
+    --root "$BACKUP_ROOT" --protect "$(basename "$BACKUP_DIR")" \
+    --keep 10 --max-age-days 90 ||
+    warn "Backup retention could not be applied; preserved all generations."
 restore_readonly
 INSTALL_COMPLETE=1
 rm -rf "$TMP" "$STAGE"
 TMP=""
 STAGE=""
 trap - EXIT INT TERM
-sudo python3 "$SUPPORT_ROOT/lib/prune_backup_generations.py" \
-    --root "$BACKUP_ROOT" --protect "$(basename "$BACKUP_DIR")" \
-    --keep 10 --max-age-days 90 ||
-    warn "Backup retention could not be applied; preserved all generations."
 
 ok "NVIDIA open kernel modules installed successfully."
 log "Reboot is required before the new modules will be used."

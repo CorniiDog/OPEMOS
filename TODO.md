@@ -2860,13 +2860,12 @@ gate is a completely clean-stock one-command certified installation.
     implementation record.
   * [x] Remove the remaining immutable-root dependency from the automatic
     cached installer. Extraction and staging use the service-safe temporary
-    filesystem, while rollback generations live in the Core-owned service-safe
-    `/var/tmp` cache tree and retention runs with the same administrative
-    authority. The real-path regression begins read-only with `HOME` mapped to
+    filesystem, while rollback generation creation and retention occur only
+    during the existing bounded writable-root window. The real-path regression begins read-only with `HOME` mapped to
     an immutable simulated `/root`, records a failed cached automatic attempt,
     then proves the network-free retry disables read-only mode, installs and
     retains all five modules, restores read-only mode, reaches terminal
-    `restored`, and leaves no cache or backup data under `HOME`. Focused cached
+    `restored`, and leaves no temporary installer data behind. Focused cached
     recovery, state stress, syntax, and compile validation pass through
     `heavy.sh`; immutable PR/check/review/merge evidence follows in the
     implementation record.
