@@ -60,6 +60,16 @@ index in the same commit.
 
 ### Immediate image-builder blockers
 
+* [x] Keep the SteamOS A/B guardian migration list outside the persistent
+  `/etc` upper layer after exact PR131 tracing proved Valve freezes `/var`
+  before reopening `/etc/atomic-update.conf.d`. The mounted-target installer
+  now validates and writes the exact immutable keep-list into each slot root
+  while services and hooks remain in the persistent `/etc` root. Focused
+  coverage proves exact bytes and mode, repeat installation, absence from the
+  `/var`-backed upper layer, and fail-closed refusal of a symlinked slot-root
+  destination. `python3 tests/interstitial.py`, shell syntax, and diff hygiene
+  pass through `heavy.sh` where substantive; the broader shell suite reached
+  unrelated header validation and stopped because local `bsdtar` is absent.
 * [x] Preserve actionable installed-userspace integrity evidence and reconcile
   the SteamOS 3.8.14 `pacman -Qkk` false failure only after Core's independent
   archive-to-installed-tree verifier proves every package member and each

@@ -155,9 +155,11 @@ normal NVIDIA configuration before regeneration.
 The executable snapshot is root-owned on the shared home filesystem rather
 than inside the replaceable root slot. Its systemd entry point and NVIDIA
 configuration paths are registered through SteamOS's supported
-`/etc/atomic-update.conf.d` migration list. This is the persistence boundary;
-putting the service only in `/usr` would lose it when an update replaces the
-inactive rootfs.
+`/etc/atomic-update.conf.d` migration list. Offline installation writes that
+immutable keep-list into each slot root, outside the `/var`-backed persistent
+`/etc` upper layer, so Valve's post-install handler can read it after freezing
+`/var`. This is the persistence boundary; putting the service only in `/usr`
+would lose it when an update replaces the inactive rootfs.
 
 Guardian installation validates every existing destination and ancestor before
 root mutation. Symlink ancestors, non-regular destinations, writable or

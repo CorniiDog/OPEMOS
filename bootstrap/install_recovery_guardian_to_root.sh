@@ -61,12 +61,16 @@ if [[ -n "$INTERSTITIAL_BINARY" ]]; then
 fi
 
 DEST="$PERSISTENT_HOME_ROOT/.steamos/open-gpu-kernel-modules-steamos-support/recovery"
+ROOT_PATH_CHECK_ARGS=(--root "$ROOT")
 HOME_PATH_CHECK_ARGS=(--root "$PERSISTENT_HOME_ROOT")
 ETC_PATH_CHECK_ARGS=(--root "$PERSISTENT_ETC_ROOT")
 if [[ "${PROJECT_TEST_MODE:-0}" == 1 ]]; then
+    ROOT_PATH_CHECK_ARGS+=(--test-owner)
     HOME_PATH_CHECK_ARGS+=(--test-owner)
     ETC_PATH_CHECK_ARGS+=(--test-owner)
 fi
+python3 "$SUPPORT_ROOT/lib/validate_recovery_install_path.py" "${ROOT_PATH_CHECK_ARGS[@]}" \
+    --path etc/atomic-update.conf.d/90-opemos-nvidia-guardian.conf
 python3 "$SUPPORT_ROOT/lib/validate_recovery_install_path.py" "${HOME_PATH_CHECK_ARGS[@]}" \
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/support-revision \
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/interstitial.sha256 \
@@ -97,9 +101,10 @@ python3 "$SUPPORT_ROOT/lib/validate_recovery_install_path.py" "${ETC_PATH_CHECK_
 OWNERSHIP=(-o 0 -g 0)
 [[ "${PROJECT_TEST_MODE:-0}" != 1 ]] || OWNERSHIP=(-o "$(id -u)" -g "$(id -g)")
 install -d "${OWNERSHIP[@]}" -m 0755 "$DEST/bin" "$DEST/bootstrap" "$DEST/lib" "$DEST/trust" \
+    "$ROOT/etc/atomic-update.conf.d" \
     "$PERSISTENT_ETC_ROOT/systemd/system/multi-user.target.wants" \
     "$PERSISTENT_ETC_ROOT/systemd/system/timers.target.wants" \
-    "$PERSISTENT_ETC_ROOT/NetworkManager/dispatcher.d" "$PERSISTENT_ETC_ROOT/atomic-update.conf.d"
+    "$PERSISTENT_ETC_ROOT/NetworkManager/dispatcher.d"
 install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/recoveryctl.sh" "$DEST/bootstrap/recoveryctl.sh"
 install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/launch_desktop_companion.sh" "$DEST/bootstrap/launch_desktop_companion.sh"
 install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/run_guardian_with_interstitial.sh" "$DEST/bootstrap/run_guardian_with_interstitial.sh"
@@ -133,7 +138,7 @@ install "${OWNERSHIP[@]}" -m 0644 "$SUPPORT_ROOT/support/recovery/opemos-nvidia-
 install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/support/recovery/90-opemos-nvidia-repair" \
     "$PERSISTENT_ETC_ROOT/NetworkManager/dispatcher.d/90-opemos-nvidia-repair"
 install "${OWNERSHIP[@]}" -m 0644 "$SUPPORT_ROOT/support/recovery/90-opemos-nvidia-guardian.conf" \
-    "$PERSISTENT_ETC_ROOT/atomic-update.conf.d/90-opemos-nvidia-guardian.conf"
+    "$ROOT/etc/atomic-update.conf.d/90-opemos-nvidia-guardian.conf"
 ln -sfn ../opemos-nvidia-guardian.service \
     "$PERSISTENT_ETC_ROOT/systemd/system/multi-user.target.wants/opemos-nvidia-guardian.service"
 ln -sfn ../opemos-interstitial.service \

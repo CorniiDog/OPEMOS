@@ -16,6 +16,7 @@ LIVE_INSTALLER = ROOT / "bootstrap/install_recovery_guardian.sh"
 PATH_VALIDATOR = ROOT / "lib/validate_recovery_install_path.py"
 SERVICE = ROOT / "support/recovery/opemos-interstitial.service.in"
 GUARDIAN_SERVICE = ROOT / "support/recovery/opemos-nvidia-guardian.service.in"
+GUARDIAN_KEEP_LIST = ROOT / "support/recovery/90-opemos-nvidia-guardian.conf"
 DEMO = ROOT / "interstitial/demo/index.html"
 SCHEMA = ROOT / "interstitial/progress-schema-v1.json"
 
@@ -152,6 +153,10 @@ with tempfile.TemporaryDirectory(prefix="opemos-interstitial-") as temporary:
     assert "Environment=HOME=/root" in (
         persistent_etc / "systemd/system/opemos-nvidia-repair.service"
     ).read_text()
+    installed_keep_list = target / "etc/atomic-update.conf.d/90-opemos-nvidia-guardian.conf"
+    assert installed_keep_list.read_bytes() == GUARDIAN_KEEP_LIST.read_bytes()
+    assert installed_keep_list.stat().st_mode & 0o777 == 0o644
+    assert not (persistent_etc / "atomic-update.conf.d").exists()
     assert not (target / "home/.steamos").exists()
     assert not (target / "etc/systemd/system/opemos-interstitial.service").exists()
     # A repeat with the exact payload is idempotent.
@@ -168,6 +173,27 @@ with tempfile.TemporaryDirectory(prefix="opemos-interstitial-") as temporary:
         [str(destination / "bootstrap/launch_interstitial.sh")],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
     ).returncode != 0
+
+with tempfile.TemporaryDirectory(prefix="opemos-slot-keep-list-confinement-") as temporary:
+    base = Path(temporary)
+    target = base / "target"
+    persistent_home = base / "persistent-home"
+    persistent_etc = base / "persistent-etc"
+    outside = base / "outside"
+    target.mkdir()
+    persistent_home.mkdir()
+    persistent_etc.mkdir()
+    outside.mkdir()
+    (target / "etc").mkdir()
+    (target / "etc/atomic-update.conf.d").symlink_to(outside)
+    rejected = subprocess.run([
+        str(INSTALLER), "--root", str(target), "--support-revision", "a" * 40,
+        "--nvidia", "575.64.05", "--persistent-home-root", str(persistent_home),
+        "--persistent-etc-root", str(persistent_etc),
+    ], env={**os.environ, "PROJECT_TEST_MODE": "1"},
+       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert rejected.returncode != 0
+    assert not (outside / "90-opemos-nvidia-guardian.conf").exists()
 
 help_result = subprocess.run(
     [str(LIVE_INSTALLER), "--help"], text=True,
