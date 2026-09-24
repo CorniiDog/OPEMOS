@@ -153,6 +153,9 @@ print(json.dumps({
 
         def recovery(cache, test_root):
             test_root.mkdir()
+            (test_root / "etc").mkdir()
+            (test_root / "etc/os-release").write_text(
+                f'ID=steamos\nVERSION_ID="{STEAMOS}"\n', encoding="utf-8")
             (test_root / "var/lib/open-gpu-kernel-modules-steamos-support/recovery").mkdir(
                 parents=True)
             environment = {
@@ -193,6 +196,36 @@ print(json.dumps({
             "action": "retry_scheduled", "reason": "network_unavailable",
             "schemaVersion": 1, "status": "offline_waiting",
         }
+
+        # A validated exact cached product skips acquisition and may enter the
+        # installer directly from the initial offline-waiting transaction. The
+        # deliberately non-archive fixture then makes the real installer fail
+        # before mutation, proving recoveryctl reached it and recorded the
+        # existing bounded retry outcome without touching either network path.
+        curl_marker.unlink()
+        cached_source = flow / "cached-source"
+        cached_materialization, _ = fixture(cached_source)
+        cached_product = flow / "exact-cache"
+        run("stage", *exact_args(), "--materialization", cached_materialization,
+            "--input-dir", cached_source, "--destination", cached_product)
+        cached_failure_root = flow / "cached-failure-root"
+        cached_failure = recovery(cached_product, cached_failure_root)
+        assert cached_failure.returncode == 75, (
+            cached_failure.stdout, cached_failure.stderr)
+        assert json.loads(cached_failure.stdout) == {
+            "action": "timer_and_connectivity",
+            "reason": "exact_cached_repair_failed",
+            "schemaVersion": 1,
+            "status": "retry_scheduled",
+        }
+        transaction = json.loads((cached_failure_root /
+            "var/lib/open-gpu-kernel-modules-steamos-support/recovery/transaction.json"
+        ).read_text(encoding="utf-8"))
+        assert transaction["phase"] == "retry_scheduled"
+        assert transaction["reason"] == "exact_cached_repair_failed"
+        assert transaction["attempt"] == 2
+        assert transaction["automaticRetry"] is True
+        assert not curl_marker.exists() and not online_marker.exists()
 
 
 if __name__ == "__main__":

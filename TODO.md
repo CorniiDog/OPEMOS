@@ -1597,6 +1597,17 @@ This remains a major future area, represented by three distinct gates:
     authenticated installer-bundle, and product-materialization checks passed
     through `heavy.sh` on branch `core/cached-exact-repair-20260924`; final PR,
     review, and squash evidence is retained in the authenticated handoff.
+  * 2026-09-24: exact PR131 execution exposed the remaining transaction edge:
+    a validated local product correctly bypasses acquisition, but the state
+    machine rejected `offline_waiting` to `installing` before invoking the
+    installer. The transition now permits that exact cached path. An executable
+    `repair-auto` regression validates the cache, reaches the real installer,
+    records its deliberate pre-mutation fixture failure as retry-scheduled with
+    two transitions, and proves neither curl nor the online installer ran.
+    Focused cached-product, transaction stress, Python compilation, shell
+    syntax, and diff checks passed through `heavy.sh`; the broader local check
+    suite reached the unchanged host limitation at exact header validation
+    because `bsdtar` is unavailable, before any related failure.
 * [x] Run delayed-network fault injection for absent/flapping connectivity,
   captive portal, DNS/TLS failure, reboot mid-wait/download, and identity drift.
 
