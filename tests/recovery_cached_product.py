@@ -337,9 +337,10 @@ esac
         assert retried_transaction["reason"] == "exact_nvidia_restored"
         assert retried_transaction["attempt"] >= 4
         assert retried_transaction["active"] is False
-        backup_root = (immutable_home / ".cache" /
+        backup_root = (cached_failure_root / "var/lib" /
             "open-gpu-kernel-modules-steamos-support/backups" / KERNEL)
         assert len(list(backup_root.iterdir())) == 1
+        assert not any(immutable_home.iterdir())
         assert not any(installer_tmp.iterdir())
         assert readonly_marker.is_file()
         assert readonly_log.read_text(encoding="utf-8").splitlines() == [

@@ -276,6 +276,40 @@ run_install_failure_case()
     assert_fake_state_restored "$before" "$after"
 }
 
+run_install_incomplete_rollback_case()
+{
+    local backup_root before output rc
+
+    printf 'Testing preservation of an incomplete install rollback generation...\n'
+    reset_case install-incomplete-rollback
+    before="${WORK_ROOT}/install-incomplete-rollback.before"
+    snapshot_fake_state "$before"
+    export MOCK_FAIL_POINT=target-copy-rollback-fail
+
+    set +e
+    output="$(
+        "${PROJECT_ROOT}/bootstrap/install.sh" \
+            --archive "$RELEASE_ARCHIVE" \
+            --checksum "${RELEASE_ARCHIVE}.sha256" --yes 2>&1
+    )"
+    rc=$?
+    set -e
+
+    (( rc != 0 )) || die "Expected install and rollback copy failure."
+    [[ "$output" == *"Rollback was incomplete; preserving generation"* ]] || {
+        printf '%s\n' "$output" >&2
+        die "Incomplete rollback did not report preserved evidence."
+    }
+    backup_root="${MOCK_STATE_ROOT}/backups/${REAL_KERNEL}"
+    mapfile -t preserved < <(
+        find "$backup_root" -mindepth 1 -maxdepth 1 -type d -print
+    )
+    (( ${#preserved[@]} == 1 )) ||
+        die "Incomplete rollback did not preserve exactly one generation."
+    [[ -d "${preserved[0]}/modules" ]] ||
+        die "Incomplete rollback evidence omitted the prior module tree."
+}
+
 run_install_signal_case()
 {
     local before="${WORK_ROOT}/install-signal.before"
@@ -437,11 +471,19 @@ run_successful_lifecycle()
         die "Reinstall after uninstall did not restore project modules."
 
     mapfile -t backup_generations < <(
-        find "${HOME}/.cache/${PROJECT_ID}/backups/${REAL_KERNEL}" \
+        find "${MOCK_STATE_ROOT}/backups/${REAL_KERNEL}" \
             -mindepth 1 -maxdepth 1 -type d -print
     )
-    (( ${#backup_generations[@]} == 3 )) ||
-        die "Sequential lifecycle operations did not create unique backup generations."
+    (( ${#backup_generations[@]} == 2 )) ||
+        die "Sequential installs did not create unique service-state backup generations."
+    (( $(grep -c '^sudo python3 .*prune_backup_generations.py' "$MOCK_COMMAND_LOG") >= 2 )) ||
+        die "Service-state backup retention did not run with state-tree authority."
+    mapfile -t uninstall_generations < <(
+        find "${HOME}/.cache/${PROJECT_ID}/backups/${REAL_KERNEL}" \
+            -mindepth 1 -maxdepth 1 -type d -name 'uninstall-*' -print
+    )
+    (( ${#uninstall_generations[@]} == 1 )) ||
+        die "Successful uninstall did not retain its existing rollback generation."
 }
 
 ORIGINAL_PATH="$PATH"
@@ -454,6 +496,7 @@ run_install_failure_case install-initramfs initramfs
 run_install_failure_case install-legacy-raw-target initramfs raw
 run_install_failure_case install-state-write state-write
 run_install_failure_case install-readonly-restore readonly-enable
+run_install_incomplete_rollback_case
 run_install_signal_case
 run_uninstall_failure_case
 run_uninstall_readonly_failure_case
