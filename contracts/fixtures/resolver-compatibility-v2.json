@@ -102,7 +102,7 @@
               "releaseTag": "steamos-3.8.16-nvidia-575.64.05-k6.16.12-valve24.5-1-neptune-616-gb2f7cfe85e45",
               "trust": "locally-built-verified"
             },
-            "policy": {"name": "exact-target-builds-v1.json", "sha256": "3c43dd181aa36cf74a009c7a211a9ec60c7d81a5596af0870b023f281f0edecc"},
+            "policy": {"name": "exact-target-builds-v1.json", "sha256": "c9d89d494678185989029d4223562e080904e0e0b1aca43fb740ea1c8f7158ca"},
             "schemaVersion": 1,
             "source": {
               "commit": "40bd1b5d6d39ae4e4180b7a665df144b08854d14",
