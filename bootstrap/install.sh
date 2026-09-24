@@ -144,7 +144,8 @@ acquire_lifecycle_lock
 TARGET_DIR="$(project_system_path "/usr/lib/modules/${CURRENT_KERNEL}/updates/open-gpu-kernel-modules-steamos")"
 STATE_ROOT="$(project_system_path "/var/lib/open-gpu-kernel-modules-steamos-support")"
 STAMP="$(date +%Y%m%d-%H%M%S)"
-BACKUP_ROOT="${STATE_ROOT}/backups/${CURRENT_KERNEL}"
+CACHE_ROOT="${INSTALL_TMP_ROOT%/}/${PROJECT_ID}"
+BACKUP_ROOT="${CACHE_ROOT}/backups/${CURRENT_KERNEL}"
 BACKUP_DIR=""
 RO_WAS_ENABLED=0
 TARGET_TOUCHED=0
