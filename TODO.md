@@ -60,6 +60,15 @@ index in the same commit.
 
 ### Immediate image-builder blockers
 
+* [x] Close the canonical installer-bundle inventory over cached automatic
+  repair. PR48 made the persistent guardian copy and execute
+  `bootstrap/install.sh`; the canonical manifest now includes that exact
+  executable alongside `lib/recovery_cached_product.py`, and consumer-contract
+  coverage binds all three guardian installer/cache/install paths before an
+  EXE pin may claim the complete Core bundle closure. Focused consumer-contract
+  and installer-bundle validation passed through `heavy.sh` on branch
+  `core/close-cached-repair-bundle-20260924`; final PR, review, and squash
+  evidence is retained in the authenticated handoff.
 * [x] Keep the SteamOS A/B guardian migration list outside the persistent
   `/etc` upper layer after exact PR131 tracing proved Valve freezes `/var`
   before reopening `/etc/atomic-update.conf.d`. The mounted-target installer
