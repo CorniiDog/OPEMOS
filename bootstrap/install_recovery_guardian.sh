@@ -61,12 +61,14 @@ python3 "$SUPPORT_ROOT/lib/validate_recovery_install_path.py" --root / \
     --path "${DEST#/}/support-revision" --path "${DEST#/}/nvidia-version" \
     --path "${DEST#/}/interstitial.sha256" \
     --path "${DEST#/}/bootstrap/recoveryctl.sh" \
+    --path "${DEST#/}/bootstrap/install.sh" \
     --path "${DEST#/}/bootstrap/launch_desktop_companion.sh" \
     --path "${DEST#/}/bootstrap/launch_interstitial.sh" \
     --path "${DEST#/}/bootstrap/run_guardian_with_interstitial.sh" \
     --path "${DEST#/}/bin/opemos-interstitial" \
     --path "${DEST#/}/lib/recovery_status.py" \
     --path "${DEST#/}/lib/recovery_policy.py" \
+    --path "${DEST#/}/lib/recovery_cached_product.py" \
     --path "${DEST#/}/lib/recovery_fallback_state.py" \
     --path "${DEST#/}/lib/run_in_process_group.py" \
     --path "${DEST#/}/lib/payload_receipt.py" \
@@ -94,6 +96,7 @@ sudo install -d -o root -g root -m 0755 "$DEST/bin" "$DEST/bootstrap" "$DEST/lib
     /etc/systemd/system /etc/atomic-update.conf.d \
     /var/lib/open-gpu-kernel-modules-steamos-support/recovery
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/bootstrap/recoveryctl.sh" "$DEST/bootstrap/recoveryctl.sh"
+sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/bootstrap/install.sh" "$DEST/bootstrap/install.sh"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/bootstrap/launch_desktop_companion.sh" "$DEST/bootstrap/launch_desktop_companion.sh"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/bootstrap/launch_interstitial.sh" "$DEST/bootstrap/launch_interstitial.sh"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/bootstrap/run_guardian_with_interstitial.sh" "$DEST/bootstrap/run_guardian_with_interstitial.sh"
@@ -106,6 +109,7 @@ sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/desktop_update_generatio
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/update_recovery_grub_args.py" "$DEST/lib/update_recovery_grub_args.py"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/recovery_transaction.py" "$DEST/lib/recovery_transaction.py"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/recovery_release_plan.py" "$DEST/lib/recovery_release_plan.py"
+sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/recovery_cached_product.py" "$DEST/lib/recovery_cached_product.py"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/validate_github_meta.py" "$DEST/lib/validate_github_meta.py"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/open_opemos_contract.py" "$DEST/lib/open_opemos_contract.py"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/interstitial_progress.py" "$DEST/lib/interstitial_progress.py"

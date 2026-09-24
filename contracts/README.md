@@ -343,6 +343,24 @@ or format conversion occurs. The offline installer remains responsible for its
 independent decompressed module, vermagic, target, userspace, and mutation-time
 validation.
 
+To make those already-validated bytes available to the persistent automatic
+guardian while the network is unavailable, save the command's canonical JSON
+result and stage its four outputs into the installed recovery root:
+
+```bash
+python3 lib/recovery_cached_product.py stage \
+  --materialization /path/to/materialization.json \
+  --input-dir /path/to/private-installer-inputs \
+  --destination /home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/cached-repair \
+  --steamos <version> --kernel <exact-kernel> --nvidia <version> \
+  --support-revision <exact-core-commit>
+```
+
+Staging is create-only. Automatic repair accepts the cache before probing the
+network only when the closed result, Core revision, exact target, inventory,
+file types, sizes, hashes, modes, and checksum all validate. An invalid staged
+cache fails closed with fallback retained.
+
 ## Installer bundle manifest
 
 `lib/installer_bundle_manifest.py` creates the canonical consumer bundle from

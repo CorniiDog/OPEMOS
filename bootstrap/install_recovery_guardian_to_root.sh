@@ -75,11 +75,13 @@ python3 "$SUPPORT_ROOT/lib/validate_recovery_install_path.py" "${HOME_PATH_CHECK
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/support-revision \
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/interstitial.sha256 \
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/bootstrap/recoveryctl.sh \
+    --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/bootstrap/install.sh \
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/bootstrap/launch_desktop_companion.sh \
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/bootstrap/run_guardian_with_interstitial.sh \
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/bootstrap/launch_interstitial.sh \
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/recovery_status.py \
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/recovery_policy.py \
+    --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/recovery_cached_product.py \
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/recovery_fallback_state.py \
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/run_in_process_group.py \
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/payload_receipt.py \
@@ -134,12 +136,13 @@ install -d "${OWNERSHIP[@]}" -m 0755 "$DEST/bin" "$DEST/bootstrap" "$DEST/lib" "
     "$PERSISTENT_ETC_ROOT/systemd/system/timers.target.wants" \
     "$PERSISTENT_ETC_ROOT/NetworkManager/dispatcher.d"
 install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/recoveryctl.sh" "$DEST/bootstrap/recoveryctl.sh"
+install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/install.sh" "$DEST/bootstrap/install.sh"
 install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/launch_desktop_companion.sh" "$DEST/bootstrap/launch_desktop_companion.sh"
 install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/run_guardian_with_interstitial.sh" "$DEST/bootstrap/run_guardian_with_interstitial.sh"
 install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/launch_interstitial.sh" "$DEST/bootstrap/launch_interstitial.sh"
 install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/online_install.sh" "$DEST/bootstrap/online_install.sh"
 install "${OWNERSHIP[@]}" -m 0644 "$SUPPORT_ROOT/lib/common.sh" "$DEST/lib/common.sh"
-for helper in recovery_status.py recovery_policy.py recovery_fallback_state.py recovery_transaction.py recovery_release_plan.py validate_github_meta.py update_recovery_grub_args.py open_opemos_contract.py validate_recovery_install_path.py desktop_update_generations.py interstitial_progress.py validate_interstitial_binary.py run_in_process_group.py payload_receipt.py atomic_output.py; do
+for helper in recovery_status.py recovery_policy.py recovery_fallback_state.py recovery_transaction.py recovery_release_plan.py recovery_cached_product.py validate_github_meta.py update_recovery_grub_args.py open_opemos_contract.py validate_recovery_install_path.py desktop_update_generations.py interstitial_progress.py validate_interstitial_binary.py run_in_process_group.py payload_receipt.py atomic_output.py; do
     install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/lib/$helper" "$DEST/lib/$helper"
 done
 if [[ -n "$INTERSTITIAL_BINARY" ]]; then
