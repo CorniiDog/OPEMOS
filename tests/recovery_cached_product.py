@@ -166,6 +166,12 @@ print(json.dumps({
         mockbin.mkdir()
         curl_marker = flow / "curl-called"
         online_marker = flow / "online-called"
+        readonly_marker = flow / "readonly-enabled"
+        readonly_log = flow / "readonly.log"
+        immutable_home = flow / "root-home"
+        immutable_home.mkdir()
+        installer_tmp = flow / "var-tmp"
+        installer_tmp.mkdir()
         (mockbin / "flock").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         (mockbin / "curl").write_text(
             f"#!/bin/sh\ntouch {str(curl_marker)!r}\nexit 1\n", encoding="utf-8")
@@ -181,6 +187,22 @@ print(json.dumps({
             "#!/bin/sh\n[ \"${1:-}\" = -q ] && [ \"${2:-}\" = -t ] && exit 0\nexit 1\n",
             encoding="utf-8")
         (mockbin / "depmod").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        (mockbin / "mkdir").write_text("""#!/bin/sh
+case " $* " in
+  *" $PROJECT_TEST_IMMUTABLE_HOME"*|*" $PROJECT_TEST_IMMUTABLE_HOME/"*)
+    [ ! -e "$PROJECT_TEST_READONLY_MARKER" ] || exit 30 ;;
+esac
+exec /usr/bin/mkdir "$@"
+""", encoding="utf-8")
+        (mockbin / "steamos-readonly").write_text("""#!/bin/sh
+printf '%s\n' "${1:-}" >> "$PROJECT_TEST_READONLY_LOG"
+case "${1:-}" in
+  status) [ -e "$PROJECT_TEST_READONLY_MARKER" ] && echo enabled || echo disabled ;;
+  disable) rm -f "$PROJECT_TEST_READONLY_MARKER" ;;
+  enable) : > "$PROJECT_TEST_READONLY_MARKER" ;;
+  *) exit 2 ;;
+esac
+""", encoding="utf-8")
         (mockbin / "modinfo").write_text("""#!/bin/sh
 case "$1:$2" in
   -F:vermagic) printf '%s SMP\n' "$PROJECT_TEST_KERNEL" ;;
@@ -189,7 +211,8 @@ case "$1:$2" in
   *) exit 1 ;;
 esac
 """, encoding="utf-8")
-        for command in ("flock", "curl", "sudo", "uname", "zstd", "depmod", "modinfo"):
+        for command in ("flock", "curl", "sudo", "uname", "zstd", "depmod", "mkdir",
+                        "steamos-readonly", "modinfo"):
             (mockbin / command).chmod(0o755)
         online.chmod(0o755)
 
@@ -220,6 +243,11 @@ esac
                 "PROJECT_TEST_ONLINE_INSTALL": str(online),
                 "PROJECT_TEST_KERNEL": KERNEL,
                 "PROJECT_TEST_NVIDIA": NVIDIA,
+                "PROJECT_TEST_IMMUTABLE_HOME": str(immutable_home),
+                "PROJECT_TEST_READONLY_MARKER": str(readonly_marker),
+                "PROJECT_TEST_READONLY_LOG": str(readonly_log),
+                "HOME": str(immutable_home),
+                "TMPDIR": str(installer_tmp),
             }
             environment.pop("USER", None)
             return subprocess.run(
@@ -263,6 +291,7 @@ esac
         run("stage", *exact_args(), "--materialization", cached_materialization,
             "--input-dir", cached_source, "--destination", cached_product)
         cached_failure_root = flow / "cached-failure-root"
+        readonly_marker.touch()
         cached_failure = recovery(cached_product, cached_failure_root)
         assert cached_failure.returncode == 75, (
             cached_failure.stdout, cached_failure.stderr)
@@ -308,6 +337,14 @@ esac
         assert retried_transaction["reason"] == "exact_nvidia_restored"
         assert retried_transaction["attempt"] >= 4
         assert retried_transaction["active"] is False
+        backup_root = (immutable_home / ".cache" /
+            "open-gpu-kernel-modules-steamos-support/backups" / KERNEL)
+        assert len(list(backup_root.iterdir())) == 1
+        assert not any(installer_tmp.iterdir())
+        assert readonly_marker.is_file()
+        assert readonly_log.read_text(encoding="utf-8").splitlines() == [
+            "status", "disable", "enable",
+        ]
         assert not curl_marker.exists() and not online_marker.exists()
 
 
