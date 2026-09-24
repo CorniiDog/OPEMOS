@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import subprocess
+import tarfile
 import tempfile
 from pathlib import Path
 
@@ -26,10 +27,10 @@ def canonical(value):
     return (json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n").encode()
 
 
-def fixture(root):
+def fixture(root, archive_payload=b"exact gzip fixture"):
     root.mkdir(mode=0o700)
     files = {
-        "archive": ("nvidia-open-exact.tar.gz", b"exact gzip fixture"),
+        "archive": ("nvidia-open-exact.tar.gz", archive_payload),
         "checksum": ("nvidia-open-exact.tar.gz.sha256", b""),
         "provenance": ("nvidia-open-exact.provenance.json", b'{"exact":true}\n'),
         "buildInfo": ("nvidia-open-exact.build-info.txt", b"exact=true\n"),
@@ -57,6 +58,23 @@ def fixture(root):
     materialization = root / "result.json"
     materialization.write_bytes(canonical(result))
     return materialization, result
+
+
+def valid_archive(root):
+    payload = root / "valid-driver.tar.gz"
+    staging = root / "valid-driver"
+    modules = staging / "modules"
+    modules.mkdir(parents=True)
+    (staging / "BUILD-INFO.txt").write_text(
+        f"steamos_version={STEAMOS}\nkernel_version={KERNEL}\n"
+        f"nvidia_version={NVIDIA}\n", encoding="utf-8")
+    for name in ("nvidia", "nvidia-drm", "nvidia-modeset", "nvidia-peermem",
+                 "nvidia-uvm"):
+        (modules / f"{name}.ko.zst").write_bytes((name + " fixture\n").encode())
+    with tarfile.open(payload, "w:gz") as archive:
+        archive.add(staging / "BUILD-INFO.txt", arcname="BUILD-INFO.txt")
+        archive.add(modules, arcname="modules")
+    return payload.read_bytes()
 
 
 def run(*arguments, success=True):
@@ -127,15 +145,22 @@ def main():
         status = flow / "status.py"
         status.write_text("""#!/usr/bin/env python3
 import json
+import os
+from pathlib import Path
+root = Path(os.environ["PROJECT_TEST_ROOT"])
+module_dir = root / %r
+verified = module_dir.is_dir() and len(list(module_dir.glob("*.ko.zst"))) == 5
 print(json.dumps({
     "schemaVersion": 1, "status": "fallback-active",
-    "reason": "module_payload_mismatch",
+    "reason": "exact_nvidia_ready" if verified else "module_payload_mismatch",
     "target": {"kernelVersion": %r, "nvidiaVersion": %r},
-    "moduleVerification": {"status": "failed", "records": []},
+    "moduleVerification": {"status": "verified" if verified else "failed",
+                           "records": []},
     "fallback": {"active": True, "profile": "console"},
-    "actions": ["repair-exact-kernel"],
+    "actions": ["disable-fallback"] if verified else ["repair-exact-kernel"],
 }, sort_keys=True, separators=(",", ":")))
-""" % (KERNEL, NVIDIA), encoding="utf-8")
+""" % ("usr/lib/modules/" + KERNEL + "/updates/open-gpu-kernel-modules-steamos",
+         KERNEL, NVIDIA), encoding="utf-8")
         status.chmod(0o755)
         mockbin = flow / "bin"
         mockbin.mkdir()
@@ -147,8 +172,25 @@ print(json.dumps({
         online = flow / "online-install"
         online.write_text(
             f"#!/bin/sh\ntouch {str(online_marker)!r}\nexit 1\n", encoding="utf-8")
-        (mockbin / "flock").chmod(0o755)
-        (mockbin / "curl").chmod(0o755)
+        (mockbin / "sudo").write_text(
+            "#!/bin/sh\n[ \"${1:-}\" = -v ] && exit 0\nexec \"$@\"\n", encoding="utf-8")
+        (mockbin / "uname").write_text(
+            f"#!/bin/sh\n[ \"${{1:-}}\" = -r ] && printf '%s\\n' {KERNEL!r} && exit 0\n"
+            "exec /usr/bin/uname \"$@\"\n", encoding="utf-8")
+        (mockbin / "zstd").write_text(
+            "#!/bin/sh\n[ \"${1:-}\" = -q ] && [ \"${2:-}\" = -t ] && exit 0\nexit 1\n",
+            encoding="utf-8")
+        (mockbin / "depmod").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        (mockbin / "modinfo").write_text("""#!/bin/sh
+case "$1:$2" in
+  -F:vermagic) printf '%s SMP\n' "$PROJECT_TEST_KERNEL" ;;
+  -F:version) printf '%s\n' "$PROJECT_TEST_NVIDIA" ;;
+  -n:nvidia) printf '%s/usr/lib/modules/%s/updates/open-gpu-kernel-modules-steamos/nvidia.ko.zst\n' "$PROJECT_TEST_ROOT" "$PROJECT_TEST_KERNEL" ;;
+  *) exit 1 ;;
+esac
+""", encoding="utf-8")
+        for command in ("flock", "curl", "sudo", "uname", "zstd", "depmod", "modinfo"):
+            (mockbin / command).chmod(0o755)
         online.chmod(0o755)
 
         def recovery(cache, test_root):
@@ -156,7 +198,16 @@ print(json.dumps({
             (test_root / "etc").mkdir(exist_ok=True)
             (test_root / "etc/os-release").write_text(
                 f'ID=steamos\nVERSION_ID="{STEAMOS}"\n', encoding="utf-8")
-            (test_root / "var/lib/open-gpu-kernel-modules-steamos-support/recovery").mkdir(
+            recovery_root = (test_root /
+                "var/lib/open-gpu-kernel-modules-steamos-support/recovery")
+            recovery_root.mkdir(parents=True, exist_ok=True)
+            state = recovery_root / "state.json"
+            if not state.exists():
+                state.write_text(
+                    '{"active":true,"profile":"console","schemaVersion":1}\n',
+                    encoding="utf-8")
+                state.chmod(0o644)
+            (test_root / "usr/lib/modules" / KERNEL / "updates").mkdir(
                 parents=True, exist_ok=True)
             environment = {
                 **os.environ,
@@ -167,7 +218,10 @@ print(json.dumps({
                 "PROJECT_TEST_STATUS_TOOL": str(status),
                 "PROJECT_TEST_CACHED_PRODUCT": str(cache),
                 "PROJECT_TEST_ONLINE_INSTALL": str(online),
+                "PROJECT_TEST_KERNEL": KERNEL,
+                "PROJECT_TEST_NVIDIA": NVIDIA,
             }
+            environment.pop("USER", None)
             return subprocess.run(
                 [str(CONTROL), "repair-auto", "--json"], env=environment,
                 text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -228,27 +282,32 @@ print(json.dumps({
         assert transaction["automaticRetry"] is True
         assert not curl_marker.exists() and not online_marker.exists()
 
-        # The intact exact cache remains eligible for the next automatic timer
-        # after a bounded installer failure. It re-enters installation from
-        # retry_scheduled, carries the same pinned target into the driver-absent
-        # installer, and records two more durable transitions without network.
-        cached_retry = recovery(cached_product, cached_failure_root)
-        assert cached_retry.returncode == 75, (
+        # A new exact validated materialization can service the next automatic
+        # timer after the bounded failure. Run the real installer with USER
+        # absent, as it is for the systemd repair service, and prove the five
+        # exact modules survive the successful retry without either network path.
+        valid_source = flow / "valid-source"
+        archive_payload = valid_archive(flow)
+        valid_materialization, _ = fixture(valid_source, archive_payload)
+        valid_product = flow / "valid-cache"
+        run("stage", *exact_args(), "--materialization", valid_materialization,
+            "--input-dir", valid_source, "--destination", valid_product)
+        cached_retry = recovery(valid_product, cached_failure_root)
+        assert cached_retry.returncode == 0, (
             cached_retry.stdout, cached_retry.stderr)
-        assert "Could not determine NVIDIA userspace driver version" not in cached_retry.stderr
-        assert json.loads(cached_retry.stdout) == {
-            "action": "timer_and_connectivity",
-            "reason": "exact_cached_repair_failed",
-            "schemaVersion": 1,
-            "status": "retry_scheduled",
-        }
+        target = (cached_failure_root / "usr/lib/modules" / KERNEL / "updates" /
+                  "open-gpu-kernel-modules-steamos")
+        assert sorted(path.name for path in target.glob("*.ko.zst")) == [
+            "nvidia-drm.ko.zst", "nvidia-modeset.ko.zst", "nvidia-peermem.ko.zst",
+            "nvidia-uvm.ko.zst", "nvidia.ko.zst",
+        ]
         retried_transaction = json.loads((cached_failure_root /
             "var/lib/open-gpu-kernel-modules-steamos-support/recovery/transaction.json"
         ).read_text(encoding="utf-8"))
-        assert retried_transaction["phase"] == "retry_scheduled"
-        assert retried_transaction["reason"] == "exact_cached_repair_failed"
-        assert retried_transaction["attempt"] == 4
-        assert retried_transaction["automaticRetry"] is True
+        assert retried_transaction["phase"] == "restored"
+        assert retried_transaction["reason"] == "exact_nvidia_restored"
+        assert retried_transaction["attempt"] >= 4
+        assert retried_transaction["active"] is False
         assert not curl_marker.exists() and not online_marker.exists()
 
 
