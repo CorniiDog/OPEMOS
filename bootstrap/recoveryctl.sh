@@ -479,7 +479,8 @@ case "$COMMAND" in
             cached_archive="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["paths"]["archive"])' "$cached_result")"
             cached_checksum="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["paths"]["checksum"])' "$cached_result")"
             transaction_tool set --phase installing --reason canonical_exact_cached_install >/dev/null
-            if ! run_cancellable "$SUPPORT_ROOT/bootstrap/install.sh" \
+            if ! OPEMOS_PINNED_NVIDIA_VERSION="$nvidia" \
+                run_cancellable "$SUPPORT_ROOT/bootstrap/install.sh" \
                     --archive "$cached_archive" --checksum "$cached_checksum" -y; then
                 transaction_tool set --phase retry_scheduled --reason exact_cached_repair_failed >/dev/null
                 emit_result retry_scheduled exact_cached_repair_failed timer_and_connectivity

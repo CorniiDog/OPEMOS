@@ -51,7 +51,8 @@ need_cmd zstd
 
 CURRENT_STEAMOS="$(get_steamos_version)"
 CURRENT_KERNEL="$(get_kernel_version)"
-CURRENT_NVIDIA="$(get_nvidia_version)"
+CURRENT_NVIDIA="${OPEMOS_PINNED_NVIDIA_VERSION:-}"
+[[ -n "$CURRENT_NVIDIA" ]] || CURRENT_NVIDIA="$(get_nvidia_version)"
 
 if [[ -n "$CHECKSUM" ]]; then
     EXPECTED_SHA="$(awk '{print $1}' "$CHECKSUM" | head -n1)"

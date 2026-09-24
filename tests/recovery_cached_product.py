@@ -152,12 +152,12 @@ print(json.dumps({
         online.chmod(0o755)
 
         def recovery(cache, test_root):
-            test_root.mkdir()
-            (test_root / "etc").mkdir()
+            test_root.mkdir(exist_ok=True)
+            (test_root / "etc").mkdir(exist_ok=True)
             (test_root / "etc/os-release").write_text(
                 f'ID=steamos\nVERSION_ID="{STEAMOS}"\n', encoding="utf-8")
             (test_root / "var/lib/open-gpu-kernel-modules-steamos-support/recovery").mkdir(
-                parents=True)
+                parents=True, exist_ok=True)
             environment = {
                 **os.environ,
                 "PATH": f"{mockbin}:{os.environ['PATH']}",
@@ -212,6 +212,7 @@ print(json.dumps({
         cached_failure = recovery(cached_product, cached_failure_root)
         assert cached_failure.returncode == 75, (
             cached_failure.stdout, cached_failure.stderr)
+        assert "Could not determine NVIDIA userspace driver version" not in cached_failure.stderr
         assert json.loads(cached_failure.stdout) == {
             "action": "timer_and_connectivity",
             "reason": "exact_cached_repair_failed",
@@ -225,6 +226,29 @@ print(json.dumps({
         assert transaction["reason"] == "exact_cached_repair_failed"
         assert transaction["attempt"] == 2
         assert transaction["automaticRetry"] is True
+        assert not curl_marker.exists() and not online_marker.exists()
+
+        # The intact exact cache remains eligible for the next automatic timer
+        # after a bounded installer failure. It re-enters installation from
+        # retry_scheduled, carries the same pinned target into the driver-absent
+        # installer, and records two more durable transitions without network.
+        cached_retry = recovery(cached_product, cached_failure_root)
+        assert cached_retry.returncode == 75, (
+            cached_retry.stdout, cached_retry.stderr)
+        assert "Could not determine NVIDIA userspace driver version" not in cached_retry.stderr
+        assert json.loads(cached_retry.stdout) == {
+            "action": "timer_and_connectivity",
+            "reason": "exact_cached_repair_failed",
+            "schemaVersion": 1,
+            "status": "retry_scheduled",
+        }
+        retried_transaction = json.loads((cached_failure_root /
+            "var/lib/open-gpu-kernel-modules-steamos-support/recovery/transaction.json"
+        ).read_text(encoding="utf-8"))
+        assert retried_transaction["phase"] == "retry_scheduled"
+        assert retried_transaction["reason"] == "exact_cached_repair_failed"
+        assert retried_transaction["attempt"] == 4
+        assert retried_transaction["automaticRetry"] is True
         assert not curl_marker.exists() and not online_marker.exists()
 
 
