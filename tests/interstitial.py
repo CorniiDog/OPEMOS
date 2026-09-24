@@ -115,6 +115,10 @@ with tempfile.TemporaryDirectory(prefix="opemos-interstitial-") as temporary:
     target.mkdir()
     persistent_home.mkdir()
     persistent_etc.mkdir()
+    legacy_keep_list = persistent_etc / "atomic-update.conf.d/90-opemos-nvidia-guardian.conf"
+    legacy_keep_list.parent.mkdir()
+    legacy_keep_list.write_bytes(GUARDIAN_KEEP_LIST.read_bytes())
+    legacy_keep_list.chmod(0o644)
     missing_persistence = subprocess.run([
         str(INSTALLER), "--root", str(target), "--support-revision", "a" * 40,
         "--nvidia", "575.64.05", "--interstitial-binary", str(binary),
@@ -194,6 +198,46 @@ with tempfile.TemporaryDirectory(prefix="opemos-slot-keep-list-confinement-") as
        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     assert rejected.returncode != 0
     assert not (outside / "90-opemos-nvidia-guardian.conf").exists()
+
+for legacy_kind in ("symlink", "directory", "altered", "mode", "extra"):
+    with tempfile.TemporaryDirectory(prefix=f"opemos-legacy-keep-list-{legacy_kind}-") as temporary:
+        base = Path(temporary)
+        target = base / "target"
+        persistent_home = base / "persistent-home"
+        persistent_etc = base / "persistent-etc"
+        target.mkdir()
+        persistent_home.mkdir()
+        legacy_dir = persistent_etc / "atomic-update.conf.d"
+        legacy_dir.mkdir(parents=True)
+        legacy = legacy_dir / "90-opemos-nvidia-guardian.conf"
+        if legacy_kind == "symlink":
+            outside = base / "outside"
+            outside.write_bytes(GUARDIAN_KEEP_LIST.read_bytes())
+            legacy.symlink_to(outside)
+        elif legacy_kind == "directory":
+            legacy.mkdir()
+        else:
+            legacy.write_bytes(GUARDIAN_KEEP_LIST.read_bytes())
+            legacy.chmod(0o644)
+            if legacy_kind == "altered":
+                legacy.write_bytes(b"altered\n")
+            elif legacy_kind == "mode":
+                legacy.chmod(0o600)
+            else:
+                (legacy_dir / "user-owned.conf").write_text("preserve\n", encoding="utf-8")
+        rejected = subprocess.run([
+            str(INSTALLER), "--root", str(target), "--support-revision", "a" * 40,
+            "--nvidia", "575.64.05", "--persistent-home-root", str(persistent_home),
+            "--persistent-etc-root", str(persistent_etc),
+        ], env={**os.environ, "PROJECT_TEST_MODE": "1"},
+           stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        assert rejected.returncode != 0
+        assert legacy.exists() or legacy.is_symlink()
+        if legacy_kind == "symlink":
+            assert outside.read_bytes() == GUARDIAN_KEEP_LIST.read_bytes()
+        if legacy_kind == "extra":
+            assert (legacy_dir / "user-owned.conf").read_text(encoding="utf-8") == "preserve\n"
+        assert not (target / "etc/atomic-update.conf.d/90-opemos-nvidia-guardian.conf").exists()
 
 help_result = subprocess.run(
     [str(LIVE_INSTALLER), "--help"], text=True,
