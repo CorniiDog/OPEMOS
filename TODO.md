@@ -2814,3 +2814,12 @@ gate is a completely clean-stock one-command certified installation.
   step array was shape-bounded but not identity-bound; remediation binds each
   ordered ID, entry point, result, and required-input array and rejects
   substitution, duplication, reordering, input, and result mutations.
+  * [x] Add the reviewed SteamOS 3.8.16 / kernel
+    6.16.12-valve24.5-1-neptune-616-gb2f7cfe85e45 / NVIDIA 575.64.05 /
+    x86_64 plan while preserving the existing 3.8.14 authorization. The new
+    plan binds the existing immutable 575 source commit and known-good 3.8.16
+    baseline identities. Focused maintainer-workflow and source-intent tests
+    prove the workflow is available and the resolver emits the same exact
+    target, source, baseline, and policy hash; both passed through `heavy.sh`
+    on 2026-09-24. Immutable PR/check/review/merge evidence follows in the
+    implementation record.
