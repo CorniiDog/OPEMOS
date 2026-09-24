@@ -21,7 +21,7 @@ PHASES = {
 ACTIVE_PHASES = PHASES - {"restored", "cancelled"}
 TRANSITIONS = {
     "offline_waiting": {"retry_scheduled", "downloading", "installing", "cancelled"},
-    "retry_scheduled": {"retry_scheduled", "downloading", "cancelled"},
+    "retry_scheduled": {"retry_scheduled", "downloading", "installing", "cancelled"},
     "downloading": {"rebuilding", "installing", "retry_scheduled", "failed", "cancelled"},
     "rebuilding": {"installing", "retry_scheduled", "failed", "cancelled"},
     "installing": {"verifying", "retry_scheduled", "failed", "cancelled"},

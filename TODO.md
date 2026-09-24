@@ -1608,6 +1608,18 @@ This remains a major future area, represented by three distinct gates:
     syntax, and diff checks passed through `heavy.sh`; the broader local check
     suite reached the unchanged host limitation at exact header validation
     because `bsdtar` is unavailable, before any related failure.
+  * 2026-09-24: the automatic-only PR131 run then proved two coupled cached
+    retry gaps. Cached repair now passes the already reviewed exact NVIDIA
+    target into the local installer when no userspace driver is detectable, and
+    `retry_scheduled` may return directly to `installing` after the intact cache
+    is revalidated. The executable regression performs two automatic cached
+    attempts on a driver-absent fake target, proves both reach the real installer,
+    verifies durable attempt 2 then attempt 4 retry state, and excludes curl and
+    the online installer throughout. The focused cached-product regression,
+    recovery-state stress, Python compilation, shell syntax, and diff hygiene
+    pass through `heavy.sh`; the broader local check suite reaches the unchanged
+    host limitation at exact header validation because `bsdtar` is unavailable,
+    after all preceding checks pass.
 * [x] Run delayed-network fault injection for absent/flapping connectivity,
   captive portal, DNS/TLS failure, reboot mid-wait/download, and identity drift.
 
