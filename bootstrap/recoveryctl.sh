@@ -70,9 +70,12 @@ STATE_ROOT="$(project_system_path /var/lib/$PROJECT_ID/recovery)"
 TRANSACTION="$SUPPORT_ROOT/transaction.json"
 RELEASE_PLAN="$SUPPORT_ROOT/release-plan.json"
 CACHED_PRODUCT="$SUPPORT_ROOT/cached-repair"
+ONLINE_INSTALL="$SUPPORT_ROOT/bootstrap/online_install.sh"
 if [[ "${PROJECT_TEST_MODE:-0}" == 1 ]]; then
     TRANSACTION="$STATE_ROOT/transaction.json"
     RELEASE_PLAN="$STATE_ROOT/release-plan.json"
+    [[ -z "${PROJECT_TEST_CACHED_PRODUCT:-}" ]] || CACHED_PRODUCT="$PROJECT_TEST_CACHED_PRODUCT"
+    [[ -z "${PROJECT_TEST_ONLINE_INSTALL:-}" ]] || ONLINE_INSTALL="$PROJECT_TEST_ONLINE_INSTALL"
 fi
 RECOVERY_CONFIG="$(project_system_path /etc/modprobe.d/98-opemos-recovery.conf)"
 NVIDIA_CONFIG="$(project_system_path /etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf)"
@@ -406,7 +409,8 @@ case "$COMMAND" in
     enable-fallback) enable_fallback ;;
     disable-fallback) disable_fallback ;;
     repair-online|repair-auto)
-        [[ "$ROOT" == / ]] || die "Online repair is supported only on the running SteamOS system."
+        [[ "$ROOT" == / || "${PROJECT_TEST_MODE:-0}" == 1 ]] ||
+            die "Online repair is supported only on the running SteamOS system."
         acquire_recovery_operation_lock
         policy_args=(--root "$POLICY_ROOT")
         [[ "${PROJECT_TEST_MODE:-0}" != 1 ]] || policy_args+=(--test-owner)
@@ -465,7 +469,7 @@ case "$COMMAND" in
                 "$existing" "$kernel" "$nvidia" "$revision"
         fi
         cached_result=""
-        if [[ -d "$CACHED_PRODUCT" ]]; then
+        if [[ -e "$CACHED_PRODUCT" || -L "$CACHED_PRODUCT" ]]; then
             cached_result="$(python3 "$SUPPORT_ROOT/lib/recovery_cached_product.py" show \
                 --directory "$CACHED_PRODUCT" --steamos "$(get_steamos_version)" \
                 --kernel "$kernel" --nvidia "$nvidia" --support-revision "$revision")" ||
@@ -492,7 +496,7 @@ case "$COMMAND" in
         transaction_tool set --phase installing --reason canonical_exact_kernel_install >/dev/null
         if ! SUPPORT_REVISION="$revision" OPEMOS_PINNED_NVIDIA_VERSION="$nvidia" \
              OPEMOS_RECOVERY_PLAN_FILE="$RELEASE_PLAN" \
-             run_cancellable "$SUPPORT_ROOT/bootstrap/online_install.sh" -y; then
+             run_cancellable "$ONLINE_INSTALL" -y; then
             transaction_tool set --phase retry_scheduled --reason exact_repair_failed >/dev/null
             emit_result retry_scheduled exact_repair_failed timer_and_connectivity
             exit 75

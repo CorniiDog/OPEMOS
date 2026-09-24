@@ -103,7 +103,7 @@ def main():
         assert run("show", *exact_args(), "--directory", hostile, success=False).returncode != 0
 
     control = CONTROL.read_text(encoding="utf-8")
-    cached = control.index('if [[ -d "$CACHED_PRODUCT" ]]')
+    cached = control.index('if [[ -e "$CACHED_PRODUCT" || -L "$CACHED_PRODUCT" ]]')
     network = control.index("curl -fsS --connect-timeout 10 --max-time 20")
     assert cached < network
     cached_block = control[cached:network]
@@ -111,7 +111,88 @@ def main():
     assert 'bootstrap/install.sh"' in cached_block
     assert "canonical_exact_cached_install" in cached_block
     assert "exact_cached_repair_failed" in cached_block
-    assert "online_install.sh" not in cached_block
+    assert 'run_cancellable "$ONLINE_INSTALL"' not in cached_block
+
+    # Execute the automatic recovery entry point: every object at the exact
+    # cache location is validated before networking, while true absence alone
+    # preserves the network path.
+    with tempfile.TemporaryDirectory(prefix="recovery-cache-flow-") as temporary:
+        flow = Path(temporary)
+        policy = flow / "policy"
+        policy.mkdir(mode=0o755)
+        (policy / "support-revision").write_text(REVISION + "\n", encoding="utf-8")
+        (policy / "nvidia-version").write_text(NVIDIA + "\n", encoding="utf-8")
+        (policy / "support-revision").chmod(0o644)
+        (policy / "nvidia-version").chmod(0o644)
+        status = flow / "status.py"
+        status.write_text("""#!/usr/bin/env python3
+import json
+print(json.dumps({
+    "schemaVersion": 1, "status": "fallback-active",
+    "reason": "module_payload_mismatch",
+    "target": {"kernelVersion": %r, "nvidiaVersion": %r},
+    "moduleVerification": {"status": "failed", "records": []},
+    "fallback": {"active": True, "profile": "console"},
+    "actions": ["repair-exact-kernel"],
+}, sort_keys=True, separators=(",", ":")))
+""" % (KERNEL, NVIDIA), encoding="utf-8")
+        status.chmod(0o755)
+        mockbin = flow / "bin"
+        mockbin.mkdir()
+        curl_marker = flow / "curl-called"
+        online_marker = flow / "online-called"
+        (mockbin / "flock").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        (mockbin / "curl").write_text(
+            f"#!/bin/sh\ntouch {str(curl_marker)!r}\nexit 1\n", encoding="utf-8")
+        online = flow / "online-install"
+        online.write_text(
+            f"#!/bin/sh\ntouch {str(online_marker)!r}\nexit 1\n", encoding="utf-8")
+        (mockbin / "flock").chmod(0o755)
+        (mockbin / "curl").chmod(0o755)
+        online.chmod(0o755)
+
+        def recovery(cache, test_root):
+            test_root.mkdir()
+            (test_root / "var/lib/open-gpu-kernel-modules-steamos-support/recovery").mkdir(
+                parents=True)
+            environment = {
+                **os.environ,
+                "PATH": f"{mockbin}:{os.environ['PATH']}",
+                "PROJECT_TEST_MODE": "1",
+                "PROJECT_TEST_ROOT": str(test_root),
+                "PROJECT_TEST_POLICY_ROOT": str(policy),
+                "PROJECT_TEST_STATUS_TOOL": str(status),
+                "PROJECT_TEST_CACHED_PRODUCT": str(cache),
+                "PROJECT_TEST_ONLINE_INSTALL": str(online),
+            }
+            return subprocess.run(
+                [str(CONTROL), "repair-auto", "--json"], env=environment,
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+
+        wrong_type = flow / "wrong-type"
+        wrong_type.write_text("not a cache directory", encoding="utf-8")
+        rejected = recovery(wrong_type, flow / "wrong-root")
+        assert rejected.returncode != 0
+        assert "invalid" in rejected.stderr.lower(), rejected.stderr
+        assert not curl_marker.exists() and not online_marker.exists()
+
+        dangling = flow / "dangling"
+        dangling.symlink_to(flow / "missing-target")
+        rejected = recovery(dangling, flow / "dangling-root")
+        assert rejected.returncode != 0
+        assert "invalid" in rejected.stderr.lower(), rejected.stderr
+        assert not curl_marker.exists() and not online_marker.exists()
+
+        absent = flow / "absent"
+        offline = recovery(absent, flow / "absent-root")
+        assert offline.returncode == 75, (offline.stdout, offline.stderr)
+        assert curl_marker.is_file()
+        assert not online_marker.exists()
+        assert json.loads(offline.stdout) == {
+            "action": "retry_scheduled", "reason": "network_unavailable",
+            "schemaVersion": 1, "status": "offline_waiting",
+        }
 
 
 if __name__ == "__main__":
