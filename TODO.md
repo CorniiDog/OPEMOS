@@ -2886,3 +2886,13 @@ gate is a completely clean-stock one-command certified installation.
     network-free retry installs all five valve24.5 modules while retaining the
     immutable-HOME and read-only restoration guarantees. Immutable
     PR/check/review/merge evidence follows in the implementation record.
+  * [x] Make the installed exact NVIDIA module path ordinarily traversable
+    independent of the repair service's restrictive umask. The installer
+    assigns explicit `0755` modes to the newly created `updates` parent and
+    target after the archive-preserving copy, which otherwise reapplies the
+    private staging-directory mode. The real automatic cached-repair regression
+    runs `repair-auto` with umask `077`, requires unprivileged exact `modinfo`
+    verification across both directories, restores all five valve24.5 modules,
+    and reaches terminal `restored` without curl or online installation.
+    Immutable PR/check/review/merge evidence follows in the implementation
+    record.

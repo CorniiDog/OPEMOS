@@ -313,8 +313,9 @@ printf '[%s]   Required with reserve:  %d MiB\n\n' "$PROJECT_NAME" "$((REQUIRED_
 
 TARGET_TOUCHED=1
 sudo rm -rf "$TARGET_DIR"
-sudo mkdir -p "$TARGET_DIR"
+sudo install -d -m 0755 "$(dirname "$TARGET_DIR")" "$TARGET_DIR"
 sudo cp -a "$STAGE/." "$TARGET_DIR/"
+sudo install -d -m 0755 "$TARGET_DIR"
 
 for staged_module in "$STAGE"/*.ko.zst; do
     installed_module="$TARGET_DIR/$(basename "$staged_module")"
