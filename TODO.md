@@ -2896,3 +2896,12 @@ gate is a completely clean-stock one-command certified installation.
     and reaches terminal `restored` without curl or online installation.
     Immutable PR/check/review/merge evidence follows in the implementation
     record.
+  * [x] Commit a strict cached-repair receipt before automatic post-install
+    verification. The receipt binds the authenticated cache's exact Core,
+    source, target, archive, provenance, build-info, and five installed
+    compressed-module identities; verification accepts it only for the exact
+    support revision and byte-identical installed paths. The fallback-active,
+    driver-absent real installer regression now requires receipt creation before
+    exact verification, terminal restored state, fallback removal, and no curl
+    or online installer. Immutable PR/check/review/merge evidence follows in the
+    implementation record.

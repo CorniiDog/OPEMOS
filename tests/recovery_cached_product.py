@@ -151,7 +151,8 @@ from pathlib import Path
 root = Path(os.environ["PROJECT_TEST_ROOT"])
 module_dir = root / %r
 modules = list(module_dir.glob("*.ko.zst"))
-verified = module_dir.is_dir() and len(modules) == 5 and all(
+receipt = root / "var/lib/open-gpu-kernel-modules-steamos-support/recovery/cached-repair-receipt.json"
+verified = receipt.is_file() and module_dir.is_dir() and len(modules) == 5 and all(
     subprocess.run(["modinfo", "-F", "version", str(module)], text=True,
                    stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout.strip() == %r
     for module in modules
@@ -354,6 +355,47 @@ esac
         ]
         assert target.parent.stat().st_mode & 0o777 == 0o755
         assert target.stat().st_mode & 0o777 == 0o755
+        receipt = (cached_failure_root / "var/lib" /
+            "open-gpu-kernel-modules-steamos-support/recovery/cached-repair-receipt.json")
+        assert receipt.is_file() and receipt.stat().st_mode & 0o777 == 0o644
+        verified_receipt = subprocess.run([
+            "python3", str(ROOT / "lib/recovery_cached_receipt.py"), "verify",
+            "--root", str(cached_failure_root), "--kernel", KERNEL,
+            "--nvidia", NVIDIA, "--support-revision", REVISION,
+        ], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        assert verified_receipt.returncode == 0, verified_receipt.stderr
+        assert json.loads(verified_receipt.stdout)["modules"] == [
+            {"bytes": path.stat().st_size, "name": name,
+             "path": str(path.relative_to(cached_failure_root)),
+             "sha256": digest(path.read_bytes())}
+            for name in ("nvidia", "nvidia-drm", "nvidia-modeset", "nvidia-peermem", "nvidia-uvm")
+            for path in (target / f"{name}.ko.zst",)
+        ]
+        strict_status = subprocess.run([
+            "python3", str(ROOT / "lib/recovery_status.py"),
+            "--root", str(cached_failure_root), "--kernel", KERNEL,
+            "--expected-nvidia", NVIDIA, "--expected-support-revision", REVISION,
+            "--require-payload-receipt",
+        ], env={**os.environ, "PATH": f"{mockbin}:{os.environ['PATH']}",
+                "PROJECT_TEST_ROOT": str(cached_failure_root),
+                "PROJECT_TEST_KERNEL": KERNEL, "PROJECT_TEST_NVIDIA": NVIDIA},
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        assert strict_status.returncode == 0, strict_status.stderr
+        strict_document = json.loads(strict_status.stdout)
+        assert strict_document["status"] == "healthy"
+        assert strict_document["moduleVerification"]["status"] == "verified"
+        original_module = (target / "nvidia.ko.zst").read_bytes()
+        (target / "nvidia.ko.zst").write_bytes(b"changed after receipt\n")
+        rejected_receipt = subprocess.run([
+            "python3", str(ROOT / "lib/recovery_cached_receipt.py"), "verify",
+            "--root", str(cached_failure_root), "--kernel", KERNEL,
+            "--nvidia", NVIDIA, "--support-revision", REVISION,
+        ], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        assert rejected_receipt.returncode != 0
+        (target / "nvidia.ko.zst").write_bytes(original_module)
+        (target / "nvidia.ko.zst").chmod(0o644)
+        assert not (cached_failure_root / "var/lib" /
+            "open-gpu-kernel-modules-steamos-support/recovery/state.json").exists()
         retried_transaction = json.loads((cached_failure_root /
             "var/lib/open-gpu-kernel-modules-steamos-support/recovery/transaction.json"
         ).read_text(encoding="utf-8"))
