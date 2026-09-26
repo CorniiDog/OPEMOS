@@ -146,10 +146,16 @@ def main():
         status.write_text("""#!/usr/bin/env python3
 import json
 import os
+import subprocess
 from pathlib import Path
 root = Path(os.environ["PROJECT_TEST_ROOT"])
 module_dir = root / %r
-verified = module_dir.is_dir() and len(list(module_dir.glob("*.ko.zst"))) == 5
+modules = list(module_dir.glob("*.ko.zst"))
+verified = module_dir.is_dir() and len(modules) == 5 and all(
+    subprocess.run(["modinfo", "-F", "version", str(module)], text=True,
+                   stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout.strip() == %r
+    for module in modules
+)
 print(json.dumps({
     "schemaVersion": 1, "status": "fallback-active",
     "reason": "exact_nvidia_ready" if verified else "module_payload_mismatch",
@@ -160,7 +166,7 @@ print(json.dumps({
     "actions": ["disable-fallback"] if verified else ["repair-exact-kernel"],
 }, sort_keys=True, separators=(",", ":")))
 """ % ("usr/lib/modules/" + KERNEL + "/updates/open-gpu-kernel-modules-steamos",
-         KERNEL, NVIDIA), encoding="utf-8")
+         NVIDIA, KERNEL, NVIDIA), encoding="utf-8")
         status.chmod(0o755)
         mockbin = flow / "bin"
         mockbin.mkdir()
@@ -204,6 +210,16 @@ case "${1:-}" in
 esac
 """, encoding="utf-8")
         (mockbin / "modinfo").write_text("""#!/bin/sh
+if [ "${1:-}:${2:-}" = "-F:version" ] &&
+   [ "${3:-}" != "" ] &&
+   [ "${3#"$PROJECT_TEST_ROOT/usr/lib/modules/"}" != "$3" ]; then
+  target_dir=$(dirname "$3")
+  updates_dir=$(dirname "$target_dir")
+  for directory in "$updates_dir" "$target_dir"; do
+    mode=$(stat -c %a "$directory") || exit 1
+    case "${mode#${mode%?}}" in 1|3|5|7) ;; *) echo "Permission denied" >&2; exit 1 ;; esac
+  done
+fi
 case "$1:$2" in
   -F:vermagic) printf '%s SMP\n' "$PROJECT_TEST_KERNEL" ;;
   -F:version) printf '%s\n' "$PROJECT_TEST_NVIDIA" ;;
@@ -255,6 +271,7 @@ esac
             return subprocess.run(
                 [str(CONTROL), "repair-auto", "--json"], env=environment,
                 text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                preexec_fn=lambda: os.umask(0o077),
             )
 
         wrong_type = flow / "wrong-type"
@@ -335,6 +352,8 @@ esac
             "nvidia-drm.ko.zst", "nvidia-modeset.ko.zst", "nvidia-peermem.ko.zst",
             "nvidia-uvm.ko.zst", "nvidia.ko.zst",
         ]
+        assert target.parent.stat().st_mode & 0o777 == 0o755
+        assert target.stat().st_mode & 0o777 == 0o755
         retried_transaction = json.loads((cached_failure_root /
             "var/lib/open-gpu-kernel-modules-steamos-support/recovery/transaction.json"
         ).read_text(encoding="utf-8"))
