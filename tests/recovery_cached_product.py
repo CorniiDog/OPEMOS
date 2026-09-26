@@ -217,20 +217,22 @@ esac
         online.chmod(0o755)
 
         def recovery(cache, test_root):
-            test_root.mkdir(exist_ok=True)
+            test_root.mkdir(mode=0o700, exist_ok=True)
             (test_root / "etc").mkdir(exist_ok=True)
             (test_root / "etc/os-release").write_text(
                 f'ID=steamos\nVERSION_ID="{STEAMOS}"\n', encoding="utf-8")
             recovery_root = (test_root /
                 "var/lib/open-gpu-kernel-modules-steamos-support/recovery")
-            recovery_root.mkdir(parents=True, exist_ok=True)
+            recovery_root.mkdir(mode=0o700, parents=True, exist_ok=True)
             state = recovery_root / "state.json"
             if not state.exists():
                 state.write_text(
                     '{"active":true,"profile":"console","schemaVersion":1}\n',
                     encoding="utf-8")
                 state.chmod(0o644)
-            (test_root / "usr/lib/modules" / KERNEL / "updates").mkdir(
+            # Match a driver-absent SteamOS target: the active kernel directory
+            # exists, while its updates parent and NVIDIA target do not.
+            (test_root / "usr/lib/modules" / KERNEL).mkdir(
                 parents=True, exist_ok=True)
             environment = {
                 **os.environ,
@@ -321,6 +323,9 @@ esac
         valid_product = flow / "valid-cache"
         run("stage", *exact_args(), "--materialization", valid_materialization,
             "--input-dir", valid_source, "--destination", valid_product)
+        missing_updates = (
+            cached_failure_root / "usr/lib/modules" / KERNEL / "updates")
+        assert not missing_updates.exists()
         cached_retry = recovery(valid_product, cached_failure_root)
         assert cached_retry.returncode == 0, (
             cached_retry.stdout, cached_retry.stderr)
