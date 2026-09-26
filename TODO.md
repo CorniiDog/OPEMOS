@@ -2878,3 +2878,11 @@ gate is a completely clean-stock one-command certified installation.
     valve24.5 modules without curl or online installation, and leaves HOME
     untouched. Immutable PR/check/review/merge evidence follows in the
     implementation record.
+  * [x] Make the installer space preflight accept a driver-absent exact target
+    whose kernel directory exists but whose `updates` parent and NVIDIA target
+    do not. The preflight now measures the nearest existing ancestor without
+    creating the target before mutation. The real automatic cached-repair
+    regression starts with that exact missing-parent layout and proves the
+    network-free retry installs all five valve24.5 modules while retaining the
+    immutable-HOME and read-only restoration guarantees. Immutable
+    PR/check/review/merge evidence follows in the implementation record.

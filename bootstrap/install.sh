@@ -282,7 +282,14 @@ for module in "${MODULES[@]}"; do
 done
 
 NEW_BYTES="$(du -s -B1 "$STAGE" | awk '{print $1}')"
-AVAILABLE_BYTES="$(df -B1 --output=avail "$(dirname "$TARGET_DIR")" | tail -n1 | tr -d ' ')"
+SPACE_CHECK_DIR="$(dirname "$TARGET_DIR")"
+while [[ ! -d "$SPACE_CHECK_DIR" ]]; do
+    PARENT_DIR="$(dirname "$SPACE_CHECK_DIR")"
+    [[ "$PARENT_DIR" != "$SPACE_CHECK_DIR" ]] ||
+        die "Could not find an existing parent for the module target."
+    SPACE_CHECK_DIR="$PARENT_DIR"
+done
+AVAILABLE_BYTES="$(df -B1 --output=avail "$SPACE_CHECK_DIR" | tail -n1 | tr -d ' ')"
 CURRENT_BYTES=0
 
 if [[ -d "$TARGET_DIR" ]]; then
