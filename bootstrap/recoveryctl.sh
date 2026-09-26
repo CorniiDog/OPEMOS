@@ -94,7 +94,9 @@ status_json()
     nvidia="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["nvidiaVersion"])' "$policy")"
     status_code=0
     base="$(python3 "$STATUS_TOOL" --root "$ROOT" --kernel "$(get_kernel_version)" \
-        --expected-nvidia "$nvidia" --require-payload-receipt)" || status_code=$?
+        --expected-nvidia "$nvidia" --expected-support-revision \
+        "$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["supportRevision"])' "$policy")" \
+        --require-payload-receipt)" || status_code=$?
     if [[ "$status_code" != 0 ]]; then
         printf '%s\n' "$base"
         return "$status_code"
@@ -486,6 +488,13 @@ case "$COMMAND" in
                 emit_result retry_scheduled exact_cached_repair_failed timer_and_connectivity
                 exit 75
             fi
+            python3 "$SUPPORT_ROOT/lib/recovery_cached_receipt.py" commit \
+                --root "$ROOT" --cache "$CACHED_PRODUCT" \
+                --steamos "$(get_steamos_version)" --kernel "$kernel" --nvidia "$nvidia" \
+                --support-revision "$revision" >/dev/null || {
+                transaction_tool set --phase failed --reason cached_receipt_commit_failed >/dev/null
+                die "Installed repair receipt could not be committed; fallback remains active."
+            }
         else
         if ! curl -fsS --connect-timeout 10 --max-time 20 https://api.github.com/meta \
             | python3 "$SUPPORT_ROOT/lib/validate_github_meta.py"; then

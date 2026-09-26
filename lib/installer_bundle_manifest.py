@@ -45,6 +45,7 @@ FILES = (
     ("lib/recovery_transaction.py", "runtime-helper", "0755"),
     ("lib/recovery_release_plan.py", "runtime-helper", "0755"),
     ("lib/recovery_cached_product.py", "runtime-helper", "0755"),
+    ("lib/recovery_cached_receipt.py", "runtime-helper", "0755"),
     ("lib/validate_github_meta.py", "runtime-helper", "0755"),
     ("lib/recovery_fallback_state.py", "runtime-helper", "0755"),
     ("lib/update_recovery_grub_args.py", "runtime-helper", "0755"),

@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 from payload_receipt import verify_receipt_evidence
+from recovery_cached_receipt import verify as verify_cached_repair_receipt
 
 SCHEMA_VERSION = 1
 MODULES = (
@@ -266,12 +267,21 @@ def module_payload_sha256(root: Path, path: Path) -> str:
             os.close(descriptor)
 
 
-def verify_receipt_modules(root, kernel, expected_version, installed_paths):
+def verify_receipt_modules(root, kernel, expected_version, installed_paths,
+                           support_revision=None):
     try:
         receipt, evidence = verify_receipt_evidence(
             root, allow_live_root=root == Path("/"),
         )
     except (OSError, UnicodeError, ValueError) as error:
+        if support_revision:
+            try:
+                verify_cached_repair_receipt(
+                    root, kernel, expected_version, support_revision,
+                )
+                return "cached-repair"
+            except (OSError, UnicodeError, ValueError):
+                pass
         raise ValueError("installed payload receipt is unavailable or invalid") from error
     target = receipt["target"]
     if (target.get("kernelVersion") != kernel
@@ -421,7 +431,8 @@ def inspect(args):
 
     if args.require_payload_receipt:
         try:
-            verify_receipt_modules(root, kernel, expected_version, installed_paths)
+            verify_receipt_modules(root, kernel, expected_version, installed_paths,
+                                   args.expected_support_revision)
         except ValueError as error:
             reason = (
                 "module_payload_mismatch"
@@ -464,6 +475,7 @@ def main():
     parser.add_argument("--expected-nvidia")
     parser.add_argument("--expected-nvidia-file")
     parser.add_argument("--require-payload-receipt", action="store_true")
+    parser.add_argument("--expected-support-revision")
     parser.add_argument("--output")
     args = parser.parse_args()
     try:

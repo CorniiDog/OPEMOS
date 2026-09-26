@@ -55,6 +55,8 @@ python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/recovery_status.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+    lib/recovery_cached_receipt.py
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/recovery_policy.py
 python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
     lib/update_recovery_grub_args.py
