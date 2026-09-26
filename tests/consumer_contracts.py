@@ -738,6 +738,7 @@ def main():
     assert "bootstrap/install_recovery_guardian_to_root.sh" in inventory_paths
     assert "bootstrap/install.sh" in inventory_paths
     assert "lib/recovery_cached_product.py" in inventory_paths
+    assert "lib/recovery_cached_receipt.py" in inventory_paths
     for relative, _role, expected_mode in FILES:
         path = ROOT / relative
         info = path.lstat()

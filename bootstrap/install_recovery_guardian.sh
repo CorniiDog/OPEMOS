@@ -69,6 +69,7 @@ python3 "$SUPPORT_ROOT/lib/validate_recovery_install_path.py" --root / \
     --path "${DEST#/}/lib/recovery_status.py" \
     --path "${DEST#/}/lib/recovery_policy.py" \
     --path "${DEST#/}/lib/recovery_cached_product.py" \
+    --path "${DEST#/}/lib/recovery_cached_receipt.py" \
     --path "${DEST#/}/lib/recovery_fallback_state.py" \
     --path "${DEST#/}/lib/run_in_process_group.py" \
     --path "${DEST#/}/lib/payload_receipt.py" \
@@ -110,6 +111,7 @@ sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/update_recovery_grub_arg
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/recovery_transaction.py" "$DEST/lib/recovery_transaction.py"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/recovery_release_plan.py" "$DEST/lib/recovery_release_plan.py"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/recovery_cached_product.py" "$DEST/lib/recovery_cached_product.py"
+sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/recovery_cached_receipt.py" "$DEST/lib/recovery_cached_receipt.py"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/validate_github_meta.py" "$DEST/lib/validate_github_meta.py"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/open_opemos_contract.py" "$DEST/lib/open_opemos_contract.py"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/interstitial_progress.py" "$DEST/lib/interstitial_progress.py"
