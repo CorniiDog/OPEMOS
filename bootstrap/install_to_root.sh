@@ -1296,6 +1296,11 @@ run_mutation_command python3 "$SUPPORT_ROOT/lib/verify_initramfs.py" \
 }
 emit_progress_items initramfs 1 1
 
+PHASE=graphical_session_fallback
+guard_target_mount_identities
+run_mutation_command python3 "$SUPPORT_ROOT/lib/configure_gamescope_fallback.py" \
+    --root "$ROOT" --runtime "$SUPPORT_ROOT/lib/gamescope_visible_fallback.py"
+
 PHASE=state_write
 guard_target_mount_identities
 emit_progress_indeterminate installation_state

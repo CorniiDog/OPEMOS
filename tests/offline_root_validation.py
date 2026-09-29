@@ -172,6 +172,24 @@ def make_fixture(root):
     (target / "usr/bin/mkinitcpio").chmod(0o755)
     (target / "usr/bin/lsinitcpio").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     (target / "usr/bin/lsinitcpio").chmod(0o755)
+    for executable in ("start-gamescope-session", "startplasma-wayland"):
+        path = target / "usr/bin" / executable
+        path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        path.chmod(0o755)
+    plasma_runner = target / "usr/lib/plasma-dbus-run-session-if-needed"
+    plasma_runner.parent.mkdir(parents=True, exist_ok=True)
+    plasma_runner.write_text("#!/bin/sh\nexec \"$@\"\n", encoding="utf-8")
+    plasma_runner.chmod(0o755)
+    session_root = target / "usr/share/wayland-sessions"
+    session_root.mkdir(parents=True)
+    (session_root / "gamescope-wayland.desktop").write_text(
+        "[Desktop Entry]\nExec=start-gamescope-session\n", encoding="utf-8"
+    )
+    (session_root / "plasma.desktop").write_text(
+        "[Desktop Entry]\nExec=/usr/lib/plasma-dbus-run-session-if-needed "
+        "/usr/bin/startplasma-wayland\n",
+        encoding="utf-8",
+    )
     (target / "usr/lib/initcpio").mkdir(parents=True)
     (target / "usr/share/libalpm/hooks").mkdir(parents=True)
     (target / "etc/mkinitcpio.conf").write_text("HOOKS=(base)\n", encoding="utf-8")
@@ -1496,6 +1514,20 @@ def main():
         paths["lib32_sig"].write_bytes(b"lib32-signature-with-a-different-size\n")
         paths["keyring"].write_bytes(b"reviewed-keyring-fixture-with-distinct-size\n")
         run(paths, binaries, temporary / "valid.json", True)
+        fallback_runtime = (
+            paths["target"] / "usr/local/libexec/opemos-gamescope-visible-fallback"
+        )
+        fallback_desktop = (
+            paths["target"]
+            / "usr/local/share/wayland-sessions/opemos-gamescope-wayland.desktop"
+        )
+        fallback_config = (
+            paths["target"] / "etc/sddm.conf.d/zz-opemos-visible-session.conf"
+        )
+        assert fallback_runtime.is_file() and not fallback_runtime.is_symlink()
+        assert stat.S_IMODE(fallback_runtime.stat().st_mode) == 0o755
+        assert "opemos-gamescope-visible-fallback" in fallback_desktop.read_text()
+        assert "Session=opemos-gamescope-wayland.desktop" in fallback_config.read_text()
         valid = json.loads((temporary / "valid.json").read_text())
         authenticated_inputs = [
             paths[name] for name in (

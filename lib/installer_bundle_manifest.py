@@ -55,6 +55,8 @@ FILES = (
     ("lib/verify_bind_mount.py", "installer-helper", "0755"),
     ("lib/update_grub_nvidia_args.py", "installer-helper", "0755"),
     ("lib/configure_display_initramfs.py", "installer-helper", "0755"),
+    ("lib/configure_gamescope_fallback.py", "installer-helper", "0755"),
+    ("lib/gamescope_visible_fallback.py", "runtime-helper", "0755"),
     ("lib/validate_install_inputs.py", "installer-helper", "0755"),
     ("lib/authenticated_cache_bundle.py", "installer-helper", "0644"),
     ("lib/resolve_authenticated_install_bundle.py", "installer-helper", "0755"),

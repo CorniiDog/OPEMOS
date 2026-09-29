@@ -48,6 +48,12 @@ index in the same commit.
   of the NVIDIA PRIME-offload modules. Headless `graphical.target`, SDDM, and
   deck-session evidence remains insufficient; acceptance requires visible
   output on the real hybrid display path and must retain NVIDIA-only behavior.
+  The exact PR155 KVM install additionally reproduced a Gamescope restart loop
+  when its emulated display selected radv/amdgpu and Vulkan device creation
+  failed. The focused correction preserves normal Gamescope sessions and
+  selects the existing Plasma Wayland session with bounded software rendering
+  only when the just-finished user-journal slice contains that Vulkan failure.
+  Visible installed output after repin/reinstall remains required.
 
 ## SteamOS A/B recovery persistence
 
