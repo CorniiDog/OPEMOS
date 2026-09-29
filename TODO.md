@@ -43,6 +43,12 @@ and agents do not need to scan the completed historical checklist. When an item
 is completed, mark its detailed checklist entry below and remove it from this
 index in the same commit.
 
+* [ ] Confirm visible installed graphical boot on the Intel i915 + NVIDIA RTX
+  2060 HP OMEN panel after the installer orders the detected i915 sink ahead
+  of the NVIDIA PRIME-offload modules. Headless `graphical.target`, SDDM, and
+  deck-session evidence remains insufficient; acceptance requires visible
+  output on the real hybrid display path and must retain NVIDIA-only behavior.
+
 ## SteamOS A/B recovery persistence
 
 * [x] Correct the mounted-target guardian installer after contained KVM
