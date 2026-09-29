@@ -825,6 +825,7 @@ rm -f "$RESULT_FIXTURE" "${RESULT_FIXTURE}.invalid"
 
 printf 'Checking offline-root installer contract...\n'
 ./bootstrap/install_to_root.sh --help >/dev/null
+python3 tests/gamescope_visible_fallback.py
 ./lib/verify_installed_userspace.py --help >/dev/null
 ./lib/verify_installed_modules.py --help >/dev/null
 ./lib/check_initramfs_workspace.py --help >/dev/null
