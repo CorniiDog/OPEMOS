@@ -266,6 +266,7 @@ python3 tests/initramfs_workspace.py
 
 printf 'Checking exact initramfs verification...\n'
 python3 tests/initramfs_verification.py
+python3 tests/display_initramfs.py
 python3 tests/bounded_capture.py
 
 printf 'Checking optional SteamOS recovery provenance...\n'
