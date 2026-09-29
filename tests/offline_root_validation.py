@@ -1514,20 +1514,6 @@ def main():
         paths["lib32_sig"].write_bytes(b"lib32-signature-with-a-different-size\n")
         paths["keyring"].write_bytes(b"reviewed-keyring-fixture-with-distinct-size\n")
         run(paths, binaries, temporary / "valid.json", True)
-        fallback_runtime = (
-            paths["target"] / "usr/local/libexec/opemos-gamescope-visible-fallback"
-        )
-        fallback_desktop = (
-            paths["target"]
-            / "usr/local/share/wayland-sessions/opemos-gamescope-wayland.desktop"
-        )
-        fallback_config = (
-            paths["target"] / "etc/sddm.conf.d/zz-opemos-visible-session.conf"
-        )
-        assert fallback_runtime.is_file() and not fallback_runtime.is_symlink()
-        assert stat.S_IMODE(fallback_runtime.stat().st_mode) == 0o755
-        assert "opemos-gamescope-visible-fallback" in fallback_desktop.read_text()
-        assert "Session=opemos-gamescope-wayland.desktop" in fallback_config.read_text()
         valid = json.loads((temporary / "valid.json").read_text())
         authenticated_inputs = [
             paths[name] for name in (
@@ -1629,6 +1615,21 @@ def main():
             temporary / "workspace-missing-install.json",
             True,
         )
+        fallback_runtime = (
+            missing_paths["target"]
+            / "usr/local/libexec/opemos-gamescope-visible-fallback"
+        )
+        fallback_desktop = (
+            missing_paths["target"]
+            / "usr/local/share/wayland-sessions/opemos-gamescope-wayland.desktop"
+        )
+        fallback_config = (
+            missing_paths["target"] / "etc/sddm.conf.d/zz-opemos-visible-session.conf"
+        )
+        assert fallback_runtime.is_file() and not fallback_runtime.is_symlink()
+        assert stat.S_IMODE(fallback_runtime.stat().st_mode) == 0o755
+        assert "opemos-gamescope-visible-fallback" in fallback_desktop.read_text()
+        assert "Session=opemos-gamescope-wayland.desktop" in fallback_config.read_text()
         assert missing_installed["initramfsWorkspace"]["status"] == "verified"
         assert stat.S_IMODE((missing_paths["target"] / "var/tmp").stat().st_mode) == 0o1777
         missing_repeated = run_installer(
