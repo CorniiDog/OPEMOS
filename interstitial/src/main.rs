@@ -13,6 +13,7 @@ mod linux {
     use opemos_interstitial::{
         render, Frame, Phase, Progress, ProgressTracker, Status, MAX_PROGRESS_BYTES,
     };
+    use std::ffi::OsStr;
     use std::fs::{File, OpenOptions};
     use std::io::{self, Read};
     use std::os::fd::{AsFd, BorrowedFd};
@@ -83,6 +84,13 @@ mod linux {
                 .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW)
                 .open(path)?;
             let card = Card(file);
+            let driver = card.get_driver()?;
+            if !is_firmware_display_driver(driver.name()) {
+                return Err(io::Error::new(
+                    io::ErrorKind::Unsupported,
+                    "DRM device is not the firmware simpledrm display",
+                ));
+            }
             if card.get_driver_capability(drm::DriverCapability::DumbBuffer)? == 0 {
                 return Err(io::Error::new(
                     io::ErrorKind::Unsupported,
@@ -205,6 +213,10 @@ mod linux {
             }
             Ok(())
         }
+    }
+
+    fn is_firmware_display_driver(name: &OsStr) -> bool {
+        name == OsStr::new("simpledrm")
     }
 
     impl Drop for Display {
@@ -419,6 +431,20 @@ mod linux {
             thread::sleep(Duration::from_millis(100));
         }
         Ok(())
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::is_firmware_display_driver;
+        use std::ffi::OsStr;
+
+        #[test]
+        fn recovery_display_accepts_only_simpledrm() {
+            assert!(is_firmware_display_driver(OsStr::new("simpledrm")));
+            for driver in ["i915", "nvidia-drm", "nouveau", "amdgpu", "virtio_gpu", ""] {
+                assert!(!is_firmware_display_driver(OsStr::new(driver)), "{driver}");
+            }
+        }
     }
 }
 
