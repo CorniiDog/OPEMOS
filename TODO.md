@@ -2769,6 +2769,17 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
 
 # Overall state
 
+* [x] Restrict the no-input recovery interface to the UEFI firmware-selected
+  `simpledrm` device and its connected mode. The existing software dumb-buffer
+  renderer remains unchanged; vendor DRM devices are refused so recovery does
+  not select or bind a vendor GPU merely to display status. When simpledrm or a
+  connected firmware mode is unavailable, the renderer exits through the
+  existing console/headless fail-open path. The exact renderer test suite
+  passed 12/12, warnings-denied Clippy and formatting passed, and the canonical
+  installer-bundle publisher test passed through `heavy.sh` on 2026-09-30.
+  Immutable PR, exact counterpart review, and merge evidence follow in the
+  implementation record.
+
 * [ ] Prevent early NVIDIA DRM from competing with modular i915 for the muxless internal-panel handoff. On detected Intel+NVIDIA targets with modular i915, the generated initramfs now contains only i915; the NVIDIA stack binds through ordinary rootfs device discovery after Intel owns the panel. NVIDIA-only, built-in-i915, and fail-safe unavailable-i915 behavior remain unchanged. Focused and integration evidence follows in the implementation PR; VM visible boot cannot prove the physical RTX 2060/internal-panel path.
 
 The project has crossed the bring-up threshold. SteamOS 3.8.16 has successfully

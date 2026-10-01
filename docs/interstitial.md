@@ -28,10 +28,12 @@ desktop exists; the interstitial is designed specifically not to require one.
 
 ## Display architecture
 
-The Linux executable opens a DRM primary node, finds a connected bounded mode,
-creates an XRGB8888 dumb buffer, draws the OPEMOS interface entirely in
-software, and applies a legacy KMS modeset. It does not initialize OpenGL,
-Vulkan, CUDA, X11, Wayland, Gamescope, or any input device.
+The Linux executable opens only a DRM primary node whose kernel driver reports
+`simpledrm`, finds a connected bounded mode, creates an XRGB8888 dumb buffer,
+draws the OPEMOS interface entirely in software, and applies a legacy KMS
+modeset. This preserves the UEFI GOP-selected display during recovery without
+binding or selecting a vendor GPU. It does not initialize OpenGL, Vulkan, CUDA,
+X11, Wayland, Gamescope, or any input device.
 
 The renderer scans only `/dev/dri/card0` through `card15`, caps a mode at
 8192×8192 and 33,554,432 pixels, accounts for the device pitch, and restores
@@ -44,8 +46,9 @@ The systemd service is ordered before `display-manager.service` and
 `graphical.target`. The guardian starts after the interstitial process has
 launched and writes its status through a root-owned runtime document. Renderer
 failure is deliberately fail-open for presentation: it is recorded in the
-journal, DRM is released, and the authoritative guardian still chooses normal
-graphics or its console-safe fallback.
+journal, DRM is released, and the authoritative guardian continues through the
+existing framebuffer/text console where one is available, or headlessly when
+firmware exposes no local framebuffer.
 
 ## Progress contract
 
@@ -150,19 +153,20 @@ policy. CI output is a development artifact.
 
 ## Failure behavior
 
-- Missing DRM, no connected mode, invalid pitch, or a modeset error releases
-  resources and lets boot continue without the cosmetic interface.
+- Missing `simpledrm`, no connected firmware mode, invalid pitch, or a modeset
+  error releases resources and lets boot continue through the existing
+  framebuffer/text console or headlessly.
 - Missing, malformed, excessive, writable, regressed, or contradictory progress
   stops the renderer and leaves the guardian authoritative.
 - A failed guardian state is shown as `RECOVERY NEEDS ATTENTION`; the guardian
   selects its console-safe fallback independently.
-- The renderer never enables a driver, changes a systemd default target, runs a
-  repair command, or accepts user input.
+- The renderer refuses vendor DRM drivers and never enables a driver, changes a
+  systemd default target, runs a repair command, or accepts user input.
 
 ## Remaining hardware gate
 
 The portable and Fedora contracts do not replace physical validation. Before
-enabling the service in a normal-user release, test simpledrm and intended iGPU
-paths on real SteamOS hardware, display hotplug, internal/external displays,
+enabling the service in a normal-user release, test simpledrm on real SteamOS
+hardware, display hotplug, internal/external displays,
 suspend/resume boundaries, abrupt power loss, renderer SIGKILL, and verified
 handoff into both Gaming and Desktop Mode.
