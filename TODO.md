@@ -2769,6 +2769,8 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
 
 # Overall state
 
+* [ ] Prevent early NVIDIA DRM from competing with modular i915 for the muxless internal-panel handoff. On detected Intel+NVIDIA targets with modular i915, the generated initramfs now contains only i915; the NVIDIA stack binds through ordinary rootfs device discovery after Intel owns the panel. NVIDIA-only, built-in-i915, and fail-safe unavailable-i915 behavior remain unchanged. Focused and integration evidence follows in the implementation PR; VM visible boot cannot prove the physical RTX 2060/internal-panel path.
+
 The project has crossed the bring-up threshold. SteamOS 3.8.16 has successfully
 booted into Gaming Mode on the RTX 2060 with the known-good project NVIDIA
 575.64.05 path and pristine upstream NVIDIA 580.119.02 as a control.

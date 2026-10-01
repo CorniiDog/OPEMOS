@@ -18,6 +18,13 @@ def pci_device(sysfs: Path, address: str, vendor: str, device_class: str) -> Non
     (device / "class").write_text(device_class + "\n")
 
 
+def internal_panel(sysfs: Path, name: str, vendor: str, status: str = "connected") -> None:
+    connector = sysfs / "class/drm" / name
+    (connector / "device").mkdir(parents=True)
+    (connector / "status").write_text(status + "\n")
+    (connector / "device/vendor").write_text(vendor + "\n")
+
+
 def execute(root: Path, sysfs: Path) -> tuple[str, str]:
     output = root / "etc/mkinitcpio.conf.d/90-open-gpu-kernel-modules-steamos.conf"
     completed = subprocess.run(
@@ -46,10 +53,37 @@ def main() -> None:
         i915.write_bytes(b"fixture")
         pci_device(sysfs, "0000:00:02.0", "0x8086", "0x030000")
         pci_device(sysfs, "0000:01:00.0", "0x10de", "0x030200")
+        internal_panel(sysfs, "card0-eDP-1", "0x8086")
+        content, diagnostic = execute(root, sysfs)
+        assert "MODULES=(i915)" in content
+        assert "nvidia" not in content.split("MODULES=(", 1)[1].split(")", 1)[0]
+        assert "hybrid-intel-panel-i915-early-nvidia-rootfs" in content
+        assert "hybrid-intel-panel-i915-early-nvidia-rootfs" in diagnostic
+
+    with tempfile.TemporaryDirectory(prefix="display-initramfs-ambiguous-hybrid-") as temporary:
+        root, sysfs = fixture(temporary)
+        i915 = root / "usr/lib/modules" / KERNEL / "kernel/drivers/gpu/drm/i915/i915.ko.zst"
+        i915.parent.mkdir(parents=True)
+        i915.write_bytes(b"fixture")
+        pci_device(sysfs, "0000:00:02.0", "0x8086", "0x030000")
+        pci_device(sysfs, "0000:01:00.0", "0x10de", "0x030200")
+        internal_panel(sysfs, "card1-eDP-1", "0x10de")
         content, diagnostic = execute(root, sysfs)
         assert "MODULES=(i915 nvidia nvidia_modeset nvidia_uvm nvidia_drm)" in content
-        assert "hybrid-intel-nvidia-i915-early" in content
-        assert "hybrid-intel-nvidia-i915-early" in diagnostic
+        assert "hybrid-topology-unclassified-i915-nvidia-early" in content
+        assert "hybrid-topology-unclassified-i915-nvidia-early" in diagnostic
+
+    with tempfile.TemporaryDirectory(prefix="display-initramfs-disconnected-intel-panel-") as temporary:
+        root, sysfs = fixture(temporary)
+        i915 = root / "usr/lib/modules" / KERNEL / "kernel/drivers/gpu/drm/i915/i915.ko.zst"
+        i915.parent.mkdir(parents=True)
+        i915.write_bytes(b"fixture")
+        pci_device(sysfs, "0000:00:02.0", "0x8086", "0x030000")
+        pci_device(sysfs, "0000:01:00.0", "0x10de", "0x030200")
+        internal_panel(sysfs, "card0-eDP-1", "0x8086", "disconnected")
+        content, _ = execute(root, sysfs)
+        assert "MODULES=(i915 nvidia nvidia_modeset nvidia_uvm nvidia_drm)" in content
+        assert "hybrid-topology-unclassified-i915-nvidia-early" in content
 
     with tempfile.TemporaryDirectory(prefix="display-initramfs-discrete-") as temporary:
         root, sysfs = fixture(temporary)

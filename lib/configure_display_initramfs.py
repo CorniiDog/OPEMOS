@@ -40,6 +40,25 @@ def display_vendors(sysfs: Path) -> set[int]:
     return vendors
 
 
+def intel_internal_panel_connected(sysfs: Path) -> bool:
+    drm = sysfs / "class/drm"
+    try:
+        connectors = tuple(drm.iterdir())
+    except OSError:
+        return False
+    for connector in connectors:
+        name = connector.name.lower()
+        if not any(marker in name for marker in ("-edp-", "-lvds-", "-dsi-")):
+            continue
+        try:
+            status = (connector / "status").read_text(encoding="ascii").strip()
+        except (OSError, UnicodeError):
+            continue
+        if status == "connected" and read_hex(connector / "device/vendor") == 0x8086:
+            return True
+    return False
+
+
 def i915_availability(root: Path, kernel: str) -> str:
     module_root = root / "usr/lib/modules" / kernel
     for suffix in ("", ".xz", ".gz", ".zst"):
@@ -60,9 +79,16 @@ def render(root: Path, kernel: str, sysfs: Path) -> tuple[str, str]:
     hybrid = 0x8086 in vendors and 0x10DE in vendors
     availability = i915_availability(root, kernel) if hybrid else "not-required"
     modules = list(NVIDIA_MODULES)
-    if hybrid and availability == "module":
+    if hybrid and availability == "module" and intel_internal_panel_connected(sysfs):
+        # A connected Intel internal panel is direct evidence that i915 owns
+        # scanout. Keep NVIDIA DRM out of this pre-root handoff so it binds
+        # normally after the real root is available instead of competing for
+        # early fbdev/KMS.
+        modules = ["i915"]
+        decision = "hybrid-intel-panel-i915-early-nvidia-rootfs"
+    elif hybrid and availability == "module":
         modules.insert(0, "i915")
-        decision = "hybrid-intel-nvidia-i915-early"
+        decision = "hybrid-topology-unclassified-i915-nvidia-early"
     elif hybrid and availability == "builtin":
         decision = "hybrid-intel-nvidia-i915-builtin"
     elif hybrid:
