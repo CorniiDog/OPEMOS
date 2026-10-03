@@ -247,8 +247,12 @@ trap cancel_recovery HUP INT TERM
 
 has_valid_igpu()
 {
-    local vendor boot
-    for vendor_file in /sys/class/drm/card*/device/vendor; do
+    local vendor boot drm_class_root=/sys/class/drm
+    if [[ "${PROJECT_TEST_MODE:-0}" == 1 ]]; then
+        [[ -n "${PROJECT_TEST_DRM_CLASS_ROOT:-}" ]] || return 1
+        drm_class_root="$PROJECT_TEST_DRM_CLASS_ROOT"
+    fi
+    for vendor_file in "$drm_class_root"/card*/device/vendor; do
         [[ -r "$vendor_file" ]] || continue
         vendor="$(tr -d '[:space:]' < "$vendor_file")"
         boot="$(cat "${vendor_file%/vendor}/boot_vga" 2>/dev/null || true)"
@@ -385,6 +389,9 @@ guard_enable_fallback()
         return 0
     fi
     PROFILE=console
+    if has_valid_igpu; then
+        PROFILE=igpu-desktop
+    fi
     YES=1
     enable_fallback
 }

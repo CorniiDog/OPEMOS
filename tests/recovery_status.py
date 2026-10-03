@@ -5,6 +5,7 @@ import json
 import fcntl
 import hashlib
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -96,10 +97,12 @@ esac
         raw_payloads[name] = raw
         source = Path(temporary) / f"{name}.ko"
         source.write_bytes(raw)
+        installed = modules / f"{name}.ko.zst"
         subprocess.run(
-            ["zstd", "-q", "-f", str(source), "-o", str(modules / f"{name}.ko.zst")],
+            ["zstd", "-q", "-f", str(source), "-o", str(installed)],
             check=True,
         )
+        installed.chmod(0o644)
     evidence_root = Path(temporary) / "receipt-evidence"
     evidence_root.mkdir()
     evidence = {
@@ -166,6 +169,7 @@ esac
         "zstd", "-q", "-f", str(changed_source),
         "-o", str(modules / "nvidia.ko.zst"),
     ], check=True)
+    (modules / "nvidia.ko.zst").chmod(0o644)
     code, document = run(root, mockbin, require_receipt=True)
     assert code == 0
     assert document["status"] == "recovery-required"
@@ -175,6 +179,7 @@ esac
         "zstd", "-q", "-f", str(source),
         "-o", str(modules / "nvidia.ko.zst"),
     ], check=True)
+    (modules / "nvidia.ko.zst").chmod(0o644)
 
     duplicate_directory = modules / "duplicate"
     duplicate_directory.mkdir()
@@ -489,6 +494,7 @@ with tempfile.TemporaryDirectory(prefix="opemos-disable-race-", dir="/tmp") as t
         '{"active":true,"profile":"console","schemaVersion":1}\n',
         encoding="utf-8",
     )
+    recovery_state.chmod(0o644)
     recovery_config = race_root / "etc/modprobe.d/98-opemos-recovery.conf"
     recovery_config.parent.mkdir(parents=True)
     recovery_config.write_text("fallback remains active\n", encoding="utf-8")
@@ -594,22 +600,54 @@ print(json.dumps({{
     assert status_counter.read_text() == "2"
     assert not recovery_config.exists() and not recovery_state.exists()
 
-    # A second failed observation made while both locks are held remains a
-    # fail-safe transition to the console recovery profile.
-    status_counter.unlink(missing_ok=True)
-    failed = subprocess.run(
-        [str(CONTROL), "guard", "--json"],
-        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        env={**race_environment, "MOCK_RECOVERY_STATUS": "guard-fails"},
-        check=False,
-    )
-    assert failed.returncode == 0, failed.stderr
-    assert json.loads(failed.stdout) == {
-        "action": "console", "reason": "fallback_enabled",
-        "schemaVersion": 1, "status": "fallback-active",
-    }
-    assert status_counter.read_text() == "2"
-    assert recovery_config.is_file() and recovery_state.is_file()
+    # A second failed observation made while both locks are held selects a
+    # visible iGPU desktop only for an exact boot-VGA Intel or AMD device.
+    # Missing, non-boot, and unsupported devices retain console fail-safety.
+    def run_guard_failure(drm_devices):
+        status_counter.unlink(missing_ok=True)
+        recovery_config.unlink(missing_ok=True)
+        recovery_state.unlink(missing_ok=True)
+        drm_root = Path(temporary) / "drm"
+        if drm_root.exists():
+            shutil.rmtree(drm_root)
+        drm_root.mkdir()
+        for card, vendor, boot_vga in drm_devices:
+            device = drm_root / card / "device"
+            device.mkdir(parents=True)
+            (device / "vendor").write_text(vendor + "\n", encoding="utf-8")
+            (device / "boot_vga").write_text(boot_vga + "\n", encoding="utf-8")
+        failed = subprocess.run(
+            [str(CONTROL), "guard", "--json"],
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            env={
+                **race_environment,
+                "MOCK_RECOVERY_STATUS": "guard-fails",
+                "PROJECT_TEST_DRM_CLASS_ROOT": str(drm_root),
+            },
+            check=False,
+        )
+        assert failed.returncode == 0, failed.stderr
+        assert status_counter.read_text() == "2"
+        assert recovery_config.is_file() and recovery_state.is_file()
+        result = json.loads(failed.stdout)
+        assert json.loads(recovery_state.read_text())["profile"] == result["action"]
+        return result
+
+    for vendor in ("0x8086", "0x1002"):
+        assert run_guard_failure((("card0", vendor, "1"),)) == {
+            "action": "igpu-desktop", "reason": "fallback_enabled",
+            "schemaVersion": 1, "status": "fallback-active",
+        }
+    for devices in (
+        (),
+        (("card0", "0x8086", "0"),),
+        (("card0", "0x10de", "1"),),
+        (("card0", "0x10de", "1"), ("card1", "0x8086", "0")),
+    ):
+        assert run_guard_failure(devices) == {
+            "action": "console", "reason": "fallback_enabled",
+            "schemaVersion": 1, "status": "fallback-active",
+        }
 
 with tempfile.TemporaryDirectory(prefix="opemos-guardian-", dir="/tmp") as temporary:
     guard_root = Path(temporary) / "root"
