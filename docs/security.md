@@ -144,12 +144,14 @@ must consume the same status and action contract instead of reimplementing
 kernel compatibility decisions.
 
 The guardian runs before the display manager. A newly active A/B slot that
-lacks an exact module set is classified `recovery-required` and enters the
-`console` profile. That profile blacklists NVIDIA and Nouveau together and
-removes the forced NVIDIA initramfs fragment before rebuilding initramfs. It
-therefore cannot race two DRM drivers for one GPU. `igpu-desktop` additionally
-requires a boot-VGA Intel or AMD device. `nouveau-experimental` is never
-automatic and requires explicit authorization; it preserves and disables the
+lacks an exact module set is classified `recovery-required`. The guardian
+selects `igpu-desktop` only when the running machine exposes a boot-VGA Intel or
+AMD device; otherwise it enters `console`. Both profiles blacklist NVIDIA and
+Nouveau together and remove the forced NVIDIA initramfs fragment before
+rebuilding initramfs, so they cannot race two DRM drivers for one GPU. The iGPU
+profile preserves graphical boot while the console profile remains the
+fail-safe for missing, non-boot-VGA, or unsupported display hardware.
+`nouveau-experimental` is never automatic and requires explicit authorization; it preserves and disables the
 normal NVIDIA configuration before regeneration.
 
 The executable snapshot is root-owned on the shared home filesystem rather
@@ -174,9 +176,10 @@ checkout or rewrites a detected device name into executable shell code.
 At boot, conflicting NVIDIA identity markers across persistent and active-slot
 locations are rejected rather than resolved by precedence. A malformed,
 missing, or pinned-policy-mismatched identity makes inspection fail closed, and
-the guardian enables the mutually exclusive console fallback even when the
-status helper exits nonzero. Identity records and fallback state are read from
-confined descriptors; symlinks, hardlinks, unsafe modes or owners, excessive
+the guardian enables a mutually exclusive fallback even when the status
+helper exits nonzero, choosing the validated boot-VGA Intel/AMD graphical
+profile when available and the console profile otherwise. Identity records and
+fallback state are read from confined descriptors; symlinks, hardlinks, unsafe modes or owners, excessive
 files, and replacement during a read are rejected. Fallback state is also
 closed canonical JSON: ambiguous keys, fields, activation types, or profiles
 fail inspection rather than selecting recovery behavior. Its dedicated mutator

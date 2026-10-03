@@ -635,13 +635,16 @@ operation cleans only bounded, owner-controlled abandoned fallback temporaries.
 The boot guardian observes every installed NVIDIA identity marker rather than
 accepting the first readable value. Missing, malformed, conflicting, or
 expected-policy-mismatched identities make status `unknown`. A failed or
-unknown status subprocess is itself a console-fallback condition; shell
+unknown status subprocess is itself an automatic-fallback condition; shell
 `errexit` must never terminate the guardian before the safe profile is enabled.
+The guardian selects `igpu-desktop` only for a live boot-VGA Intel or AMD
+device and selects `console` otherwise; Nouveau remains manual-only.
 The guardian treats that initial observation as provisional: before activating
 fallback it acquires the recovery-operation lock followed by the global
 lifecycle lock and repeats receipt-bound module verification. If the exact
 payload recovered while it waited, no fallback mutation occurs. A repeated
-failure or an indeterminate recheck still activates the console profile.
+failure or an indeterminate recheck activates the validated boot-VGA Intel/AMD
+profile when available and the console profile otherwise.
 The installed guardian always supplies its pinned `nvidia-version` policy by
 confined relative name. Once supplied, that policy file is mandatory and must
 exactly match the independently observed installed identity; it cannot fall
