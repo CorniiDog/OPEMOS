@@ -1703,6 +1703,11 @@ This remains a major future area, represented by three distinct gates:
     known operation-wide counters back to indeterminate state. This closes the
     known-to-unknown-to-lower-known loophole that could make one install appear
     to move backward while retaining honest indeterminate current-stage work.
+  * 2026-10-03 regression follow-up: unknown-total bars use a stationary striped
+    track. They remain visibly indeterminate without traveling backward and
+    forward or jumping to the start on an animation cycle. A raster regression
+    compares separate animation ticks byte-for-byte while retaining distinct
+    overall and current-stage colors.
 
 ---
 
