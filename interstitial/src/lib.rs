@@ -454,7 +454,10 @@ impl ProgressTracker {
                 return Err("progress completion regressed");
             }
         }
-        if self.current.completed.is_some() && next.completed.is_none() {
+        if next.status == Status::Working
+            && self.current.completed.is_some()
+            && next.completed.is_none()
+        {
             return Err("determinate progress became indeterminate");
         }
         if next.phase == self.current.phase {
@@ -620,6 +623,28 @@ mod tests {
                 Some(2),
             ))
             .is_err());
+    }
+
+    #[test]
+    fn terminal_failure_may_clear_determinate_counters() {
+        let mut tracker = ProgressTracker::new(value(
+            2,
+            Status::Working,
+            Phase::InstallingModules,
+            Some(3),
+            Some(4),
+        ));
+        tracker
+            .update(value(
+                3,
+                Status::Failed,
+                Phase::RecoveryRequired,
+                None,
+                None,
+            ))
+            .unwrap();
+        assert_eq!(tracker.current().status, Status::Failed);
+        assert_eq!(tracker.current().phase, Phase::RecoveryRequired);
     }
 
     #[test]
