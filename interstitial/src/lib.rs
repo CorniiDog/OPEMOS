@@ -228,7 +228,7 @@ impl Frame<'_> {
     }
 }
 
-pub fn render(frame: &mut Frame<'_>, progress: &Progress, pulse: f32) {
+pub fn render(frame: &mut Frame<'_>, progress: &Progress, _pulse: f32) {
     frame.clear(CANVAS);
     let margin = (frame.width / 16).max(20);
     let card_width = frame.width.saturating_sub(margin * 2);
@@ -289,8 +289,6 @@ pub fn render(frame: &mut Frame<'_>, progress: &Progress, pulse: f32) {
         bar_height,
         color,
         progress.fraction(),
-        pulse,
-        4,
     );
     let step_label_y = overall_bar_y + bar_height + bar_gap;
     frame.text(bar_x, step_label_y, "CURRENT STAGE", label_scale, MUTED);
@@ -308,8 +306,6 @@ pub fn render(frame: &mut Frame<'_>, progress: &Progress, pulse: f32) {
         bar_height,
         step_color,
         progress.step_fraction(),
-        (pulse + 0.17).fract(),
-        5,
     );
 }
 
@@ -322,8 +318,6 @@ fn draw_progress_bar(
     height: u32,
     color: u32,
     progress: Option<f32>,
-    pulse: f32,
-    indeterminate_divisor: u32,
 ) {
     frame.rect(x, y, width, height, PANEL_EDGE);
     let inner_width = width.saturating_sub(4);
@@ -332,12 +326,22 @@ fn draw_progress_bar(
         let filled = (inner_width as f32 * fraction.clamp(0.0, 1.0)) as u32;
         frame.rect(x + 2, y + 2, filled, inner_height, color);
     } else {
-        let segment = (width / indeterminate_divisor.max(1))
-            .max(8)
-            .min(inner_width);
-        let travel = inner_width.saturating_sub(segment);
-        let offset = (travel as f32 * pulse.clamp(0.0, 1.0)) as u32;
-        frame.rect(x + 2 + offset, y + 2, segment, inner_height, color);
+        // Unknown totals remain visibly distinct without suggesting measured
+        // progress. A stationary striped track cannot appear to move backward
+        // or jump when the renderer refreshes.
+        let stripe = inner_height.max(4).min(inner_width);
+        let stride = stripe.saturating_mul(2).max(1);
+        let mut offset = 0;
+        while offset < inner_width {
+            frame.rect(
+                x + 2 + offset,
+                y + 2,
+                stripe.min(inner_width - offset),
+                inner_height,
+                color,
+            );
+            offset = offset.saturating_add(stride);
+        }
     }
 }
 
@@ -692,6 +696,34 @@ mod tests {
             .any(|pixel| (*pixel & 0x0000ff00) > 0x00007000));
         assert!(pixels.contains(&STEAM_BLUE));
         assert!(pixels.contains(&NVIDIA_GREEN));
+    }
+
+    #[test]
+    fn indeterminate_bars_are_stationary_across_animation_ticks() {
+        let progress = value(0, Status::Working, Phase::Starting, None, None);
+        let mut first = vec![0; 640 * 400];
+        let mut later = vec![0; 640 * 400];
+        render(
+            &mut Frame {
+                width: 640,
+                height: 400,
+                pixels: &mut first,
+            },
+            &progress,
+            0.0,
+        );
+        render(
+            &mut Frame {
+                width: 640,
+                height: 400,
+                pixels: &mut later,
+            },
+            &progress,
+            0.95,
+        );
+        assert_eq!(first, later);
+        assert!(first.contains(&STEAM_BLUE));
+        assert!(first.contains(&NVIDIA_GREEN));
     }
 
     #[test]

@@ -80,6 +80,10 @@ be root-owned and not group- or world-writable. `interstitial_progress.py`
 serializes concurrent writers with a private lock and publishes each update by
 fsync followed by atomic replacement.
 
+Unknown totals render as a stationary striped track. This preserves an honest
+indeterminate state without making either bar travel backward, jump to its
+starting edge, or imply a measured fraction that Core does not have.
+
 ## Build and test
 
 Build the SteamOS/Arch x86_64 binary:
