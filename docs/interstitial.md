@@ -60,8 +60,12 @@ The renderer accepts only a bounded schema-1 document at:
 
 The canonical fields are `schemaVersion`, `sequence`, `status`, `phase`,
 `completed`, `total`, `stepCompleted`, and `stepTotal`. The first counter pair
-drives the blue, operation-wide bar. The optional second pair drives the green
-current-step bar; an absent pair is rendered as bounded indeterminate motion.
+drives the labeled blue, operation-wide bar. Once these counters become known,
+they cannot return to indeterminate state or decrease during that run. The
+optional second pair drives the separately labeled green current-stage bar; an
+absent pair is rendered as bounded indeterminate motion. This keeps unknown
+stage totals honest without making a phase transition look like the whole
+operation moved backward.
 Step progress may reset only when the enumerated phase changes. Schema-1
 consumers accept documents produced before the optional step pair was added,
 while current producers always emit both step fields. There are no

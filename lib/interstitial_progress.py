@@ -167,6 +167,8 @@ def main():
                     raise ValueError("step progress counters must be supplied together")
                 validate_counters(args.completed, args.total, "progress")
                 validate_counters(args.step_completed, args.step_total, "step progress")
+                if value["completed"] is not None and args.completed is None:
+                    raise ValueError("determinate progress cannot become indeterminate")
                 if args.completed is not None and value["completed"] is not None:
                     if args.completed * value["total"] < value["completed"] * args.total:
                         raise ValueError("progress completion regressed")

@@ -268,10 +268,14 @@ pub fn render(frame: &mut Frame<'_>, progress: &Progress, pulse: f32) {
     );
 
     let bar_x = left;
-    let bar_y = card_y + card_height.saturating_sub((card_height / 5).max(52));
+    let progress_y = card_y + card_height.saturating_sub((card_height / 5).max(52));
     let bar_width = card_width.saturating_sub((left - margin) * 2);
     let bar_height = (frame.height / 110).clamp(5, 10);
     let bar_gap = (bar_height / 2).max(3);
+    let label_scale = scale.max(2) - 1;
+    let label_height = 8 * label_scale;
+    frame.text(bar_x, progress_y, "OVERALL", label_scale, MUTED);
+    let overall_bar_y = progress_y + label_height;
     let color = if progress.status == Status::Failed {
         FAILURE_RED
     } else {
@@ -280,7 +284,7 @@ pub fn render(frame: &mut Frame<'_>, progress: &Progress, pulse: f32) {
     draw_progress_bar(
         frame,
         bar_x,
-        bar_y,
+        overall_bar_y,
         bar_width,
         bar_height,
         color,
@@ -288,6 +292,9 @@ pub fn render(frame: &mut Frame<'_>, progress: &Progress, pulse: f32) {
         pulse,
         4,
     );
+    let step_label_y = overall_bar_y + bar_height + bar_gap;
+    frame.text(bar_x, step_label_y, "CURRENT STAGE", label_scale, MUTED);
+    let step_y = step_label_y + label_height;
     let step_color = if progress.status == Status::Failed {
         FAILURE_RED
     } else {
@@ -296,7 +303,7 @@ pub fn render(frame: &mut Frame<'_>, progress: &Progress, pulse: f32) {
     draw_progress_bar(
         frame,
         bar_x,
-        bar_y + bar_height + bar_gap,
+        step_y,
         bar_width,
         bar_height,
         step_color,
@@ -447,6 +454,12 @@ impl ProgressTracker {
                 return Err("progress completion regressed");
             }
         }
+        if next.status == Status::Working
+            && self.current.completed.is_some()
+            && next.completed.is_none()
+        {
+            return Err("determinate progress became indeterminate");
+        }
         if next.phase == self.current.phase {
             if let ((Some(previous), Some(previous_total)), (Some(completed), Some(total))) = (
                 (self.current.step_completed, self.current.step_total),
@@ -583,6 +596,55 @@ mod tests {
                 Some(10),
             ))
             .is_err());
+    }
+
+    #[test]
+    fn overall_progress_cannot_drop_its_known_total_and_restart_lower() {
+        let mut tracker = ProgressTracker::new(value(
+            2,
+            Status::Working,
+            Phase::Downloading,
+            Some(3),
+            Some(4),
+        ));
+        assert_eq!(
+            tracker
+                .update(value(3, Status::Working, Phase::Verifying, None, None))
+                .unwrap_err(),
+            "determinate progress became indeterminate"
+        );
+        assert_eq!(tracker.current().fraction(), Some(0.75));
+        assert!(tracker
+            .update(value(
+                4,
+                Status::Working,
+                Phase::Verifying,
+                Some(1),
+                Some(2),
+            ))
+            .is_err());
+    }
+
+    #[test]
+    fn terminal_failure_may_clear_determinate_counters() {
+        let mut tracker = ProgressTracker::new(value(
+            2,
+            Status::Working,
+            Phase::InstallingModules,
+            Some(3),
+            Some(4),
+        ));
+        tracker
+            .update(value(
+                3,
+                Status::Failed,
+                Phase::RecoveryRequired,
+                None,
+                None,
+            ))
+            .unwrap();
+        assert_eq!(tracker.current().status, Status::Failed);
+        assert_eq!(tracker.current().phase, Phase::RecoveryRequired);
     }
 
     #[test]
