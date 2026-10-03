@@ -1698,6 +1698,11 @@ This remains a major future area, represented by three distinct gates:
   fail-open systemd ordering, optional exact-ELF installation, macOS browser
   simulation, and Fedora VM build/KMS harness are implemented. Physical
   SteamOS display and power-loss validation remains in the top unresolved list.
+  * 2026-10-03 follow-up: the renderer now labels its independent overall and
+    current-stage bars, and both producer and consumer reject a transition from
+    known operation-wide counters back to indeterminate state. This closes the
+    known-to-unknown-to-lower-known loophole that could make one install appear
+    to move backward while retaining honest indeterminate current-stage work.
 
 ---
 

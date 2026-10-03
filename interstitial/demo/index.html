@@ -22,10 +22,11 @@
     .pill { display:block; width:clamp(96px,14vw,192px); height:auto; }
     h1 { font-size:clamp(20px,3.2vw,40px); margin:52px 0 12px; letter-spacing:.055em; }
     p { color:var(--muted); margin:0; font-size:clamp(14px,1.8vw,21px); letter-spacing:.04em; }
-    .progress-stack { height:24px; margin-top:70px; padding:3px; overflow:hidden; display:grid;
-      grid-template-rows:1fr 1fr; gap:2px; border:1px solid var(--edge); border-radius:999px;
-      background:rgba(10,20,29,.48); }
-    .track { min-height:0; overflow:hidden; border-radius:999px; background:rgba(52,76,98,.72); }
+    .progress-stack { margin-top:54px; display:grid; gap:7px; }
+    .progress-label { color:var(--muted); font-size:clamp(11px,1.2vw,14px); font-weight:750;
+      letter-spacing:.09em; text-transform:uppercase; }
+    .track { height:10px; overflow:hidden; border:1px solid var(--edge); border-radius:999px;
+      background:rgba(52,76,98,.72); }
     .bar { height:100%; width:0; border-radius:999px; background:linear-gradient(90deg,var(--steam),#1a9fff);
       transition:width .55s cubic-bezier(.2,.8,.2,1); }
     .step-bar { height:100%; width:0; border-radius:999px;
@@ -45,7 +46,9 @@
     </div>
     <div>
       <div class="progress-stack" aria-hidden="true">
+        <div class="progress-label">Overall</div>
         <div class="track" id="overall-track"><div class="bar" id="bar"></div></div>
+        <div class="progress-label">Current stage</div>
         <div class="track" id="step-track"><div class="step-bar" id="step-bar"></div></div>
       </div>
     </div>

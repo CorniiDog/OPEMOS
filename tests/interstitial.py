@@ -53,6 +53,10 @@ with tempfile.TemporaryDirectory(prefix="opemos-interstitial-") as temporary:
     value = run_writer(state, "set", "--phase", "building", "--completed", "3", "--total", "5",
                        "--step-completed", "1", "--step-total", "4")
     assert value["stepCompleted"] == 1
+    # Once operation-wide evidence is known, a later phase cannot erase it and
+    # then restart from a lower percentage. Unknown current-stage work remains
+    # expressible through the independent step counters.
+    run_writer(state, "set", "--phase", "installing_modules", success=False)
     run_writer(state, "set", "--phase", "building", "--completed", "1", "--total", "5", success=False)
     value = run_writer(state, "succeed")
     assert value["status"] == "succeeded" and value["completed"] == value["total"] == 1
@@ -313,7 +317,8 @@ assert "addEventListener" not in demo and "<input" not in demo and "<button" not
 assert 'src="/opemos-pill.svg"' in demo
 assert 'id="overall-track"' in demo and 'id="step-track"' in demo
 assert 'class="step-bar"' in demo
-assert 'id="percent"' not in demo and "Overall / current operation" not in demo
+assert 'id="percent"' not in demo
+assert ">Overall<" in demo and ">Current stage<" in demo
 for launcher in ("test_update_macos.sh", "test_update_linux.sh"):
     assert "docs/assets/images/opemos-pill.svg" in (ROOT / launcher).read_text()
 assert (ROOT / "test_update_windows.ps1").is_file()
