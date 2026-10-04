@@ -8,6 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 TOOL = ROOT / "lib/configure_display_initramfs.py"
+INSTALLER = ROOT / "bootstrap/install_to_root.sh"
 KERNEL = "6.16.12-valve-fixture"
 
 
@@ -25,11 +26,17 @@ def internal_panel(sysfs: Path, name: str, vendor: str, status: str = "connected
     (connector / "device/vendor").write_text(vendor + "\n")
 
 
-def execute(root: Path, sysfs: Path) -> tuple[str, str]:
+def execute(root: Path, sysfs: Path, *, portable: bool = False) -> tuple[str, str]:
     output = root / "etc/mkinitcpio.conf.d/90-open-gpu-kernel-modules-steamos.conf"
+    arguments = [
+        str(TOOL), "--root", str(root), "--kernel", KERNEL,
+        "--sysfs", str(sysfs),
+    ]
+    if portable:
+        arguments.append("--portable-image")
+    arguments.extend(["--output", str(output)])
     completed = subprocess.run(
-        [str(TOOL), "--root", str(root), "--kernel", KERNEL,
-         "--sysfs", str(sysfs), "--output", str(output)],
+        arguments,
         text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
     )
     assert completed.returncode == 0, completed.stderr
@@ -46,6 +53,12 @@ def fixture(temporary: str) -> tuple[Path, Path]:
 
 
 def main() -> None:
+    installer = INSTALLER.read_text(encoding="utf-8")
+    invocation = installer.split("configure_display_initramfs.py", 1)[1].split(
+        "snapshot_target_execution.py", 1
+    )[0]
+    assert "--portable-image" in invocation
+
     with tempfile.TemporaryDirectory(prefix="display-initramfs-hybrid-") as temporary:
         root, sysfs = fixture(temporary)
         i915 = root / "usr/lib/modules" / KERNEL / "kernel/drivers/gpu/drm/i915/i915.ko.zst"
@@ -112,6 +125,29 @@ def main() -> None:
         content, _ = execute(root, sysfs)
         assert "MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm)" in content
         assert "hybrid-intel-nvidia-i915-builtin" in content
+
+    with tempfile.TemporaryDirectory(prefix="display-initramfs-portable-") as temporary:
+        root, sysfs = fixture(temporary)
+        module_root = root / "usr/lib/modules" / KERNEL / "kernel/drivers/gpu/drm"
+        i915 = module_root / "i915/i915.ko.zst"
+        amdgpu = module_root / "amd/amdgpu/amdgpu.ko.zst"
+        i915.parent.mkdir(parents=True)
+        amdgpu.parent.mkdir(parents=True)
+        i915.write_bytes(b"fixture")
+        amdgpu.write_bytes(b"fixture")
+        # This is the builder appliance topology, not the eventual target.
+        pci_device(sysfs, "0000:00:01.0", "0x1234", "0x030000")
+        content, diagnostic = execute(root, sysfs, portable=True)
+        assert "MODULES=(i915 amdgpu)" in content
+        assert "nvidia" not in content.split("MODULES=(", 1)[1].split(")", 1)[0]
+        assert "portable-integrated-early-nvidia-rootfs" in diagnostic
+
+    with tempfile.TemporaryDirectory(prefix="display-initramfs-portable-builtin-") as temporary:
+        root, sysfs = fixture(temporary)
+        modules = root / "usr/lib/modules" / KERNEL / "modules.builtin"
+        modules.write_text("kernel/drivers/gpu/drm/i915/i915.ko\n")
+        content, _ = execute(root, sysfs, portable=True)
+        assert "MODULES=()" in content
 
 
 if __name__ == "__main__":

@@ -2793,6 +2793,29 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   implementation record.
 
 * [ ] Prevent early NVIDIA DRM from competing with modular i915 for the muxless internal-panel handoff. On detected Intel+NVIDIA targets with modular i915, the generated initramfs now contains only i915; the NVIDIA stack binds through ordinary rootfs device discovery after Intel owns the panel. NVIDIA-only, built-in-i915, and fail-safe unavailable-i915 behavior remain unchanged. Focused and integration evidence follows in the implementation PR; VM visible boot cannot prove the physical RTX 2060/internal-panel path.
+  * [ ] Stop portable-image construction from using the managed appliance's
+    unrelated PCI topology. The portable initramfs must include each available
+    modular integrated-display driver from the target kernel and defer NVIDIA
+    DRM until the real root, so the builder VM cannot bake its virtual GPU
+    decision into an Intel/NVIDIA OMEN image. The exact retained PR159 image
+    manifest demonstrates the regression: it embeds Core `6a0128e` and was
+    constructed in the appliance before the later Core pin could affect its
+    bytes. Focused validation, a freshly constructed exact-Core image, and the
+    install/update/reboot lifecycle remain required before completion.
+    The authenticated Core `01407aa` image then completed a clean 32-GiB
+    sole-NVMe install and first boot from SteamOS build `20260707.10`, kernel
+    `6.16.12-valve24.4`, rootfs-B; the display manager was active and recovery
+    returned `exact_nvidia_already_healthy`. A normal `steamos-update` completed
+    and rebooted to build `20260922.1`, kernel `6.18.50-valve2`, rootfs-A. The
+    guardian rebuilt both initramfs images, selected its validated console
+    fallback for the VM's unsupported virtual display adapter, and scheduled
+    delayed repair after the exact new-kernel NVIDIA product was unavailable;
+    a subsequent reboot reproduced that stable userspace state. The clean
+    pre-update qcow snapshot remains present, the image is clean/non-corrupt,
+    and no QEMU survives. This proves the update/reboot path reaches guardian
+    userspace rather than firmware in the VM, but cannot certify the OMEN's
+    Intel/NVIDIA internal-panel path. Fresh PR66 image consumption and physical
+    confirmation remain required.
 
 The project has crossed the bring-up threshold. SteamOS 3.8.16 has successfully
 booted into Gaming Mode on the RTX 2060 with the known-good project NVIDIA
