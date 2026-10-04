@@ -179,6 +179,7 @@ print(json.dumps({
         immutable_home.mkdir()
         installer_tmp = flow / "var-tmp"
         installer_tmp.mkdir()
+        meta_response = flow / "github-meta.json"
         (mockbin / "flock").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         (mockbin / "curl").write_text(
             f"#!/bin/sh\ntouch {str(curl_marker)!r}\nexit 1\n", encoding="utf-8")
@@ -265,6 +266,7 @@ esac
                 "PROJECT_TEST_IMMUTABLE_HOME": str(immutable_home),
                 "PROJECT_TEST_READONLY_MARKER": str(readonly_marker),
                 "PROJECT_TEST_READONLY_LOG": str(readonly_log),
+                "PROJECT_TEST_META_RESPONSE": str(meta_response),
                 "HOME": str(immutable_home),
                 "TMPDIR": str(installer_tmp),
             }
@@ -299,12 +301,51 @@ esac
             "schemaVersion": 1, "status": "offline_waiting",
         }
 
+        # Reproduce the physical OMEN path: exact modules are absent and the
+        # valid GitHub Meta response is 154,628 bytes. Connectivity validation
+        # must reach the online repair, which must install and verify all five
+        # modules before fallback is removed.
+        prefix = b'{"hooks":["192.30.252.0/22"],"future":"'
+        suffix = b'"}'
+        meta_response.write_bytes(
+            prefix + b"x" * (154_628 - len(prefix) - len(suffix)) + suffix
+        )
+        curl_marker.unlink()
+        (mockbin / "curl").write_text(
+            f"#!/bin/sh\ntouch {str(curl_marker)!r}\ncat \"$PROJECT_TEST_META_RESPONSE\"\n",
+            encoding="utf-8")
+        online.write_text(f"""#!/bin/sh
+set -eu
+touch {str(online_marker)!r}
+target="$PROJECT_TEST_ROOT/usr/lib/modules/$PROJECT_TEST_KERNEL/updates/open-gpu-kernel-modules-steamos"
+mkdir -p "$target"
+chmod 0755 "$(dirname "$target")" "$target"
+for module in nvidia nvidia-drm nvidia-modeset nvidia-uvm nvidia-peermem; do
+  : > "$target/$module.ko.zst"
+done
+receipt="$PROJECT_TEST_ROOT/var/lib/open-gpu-kernel-modules-steamos-support/recovery/cached-repair-receipt.json"
+: > "$receipt"
+""", encoding="utf-8")
+        online.chmod(0o755)
+        online_root = flow / "online-root"
+        online_repair = recovery(absent, online_root)
+        assert online_repair.returncode == 0, (
+            online_repair.stdout, online_repair.stderr)
+        assert curl_marker.is_file() and online_marker.is_file()
+        online_modules = (online_root / "usr/lib/modules" / KERNEL / "updates" /
+                          "open-gpu-kernel-modules-steamos")
+        assert sorted(path.name for path in online_modules.glob("*.ko.zst")) == [
+            "nvidia-drm.ko.zst", "nvidia-modeset.ko.zst", "nvidia-peermem.ko.zst",
+            "nvidia-uvm.ko.zst", "nvidia.ko.zst",
+        ]
+
         # A validated exact cached product skips acquisition and may enter the
         # installer directly from the initial offline-waiting transaction. The
         # deliberately non-archive fixture then makes the real installer fail
         # before mutation, proving recoveryctl reached it and recorded the
         # existing bounded retry outcome without touching either network path.
         curl_marker.unlink()
+        online_marker.unlink()
         cached_source = flow / "cached-source"
         cached_materialization, _ = fixture(cached_source)
         cached_product = flow / "exact-cache"

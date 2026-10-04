@@ -2779,6 +2779,22 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
 
 # Overall state
 
+* [ ] Recover the physical OMEN after the SteamOS A/B update without falsely
+  classifying a valid GitHub connectivity response as offline or silently
+  omitting the fullscreen recovery renderer. Physical read-only diagnosis on
+  2026-10-04 found GitHub `/meta` returned valid strict JSON at 154,628 bytes,
+  while the installed validator rejected every response above 65,536 bytes;
+  updated rootfs A consequently remained at `offline_waiting` with its exact
+  kernel 6.18 NVIDIA modules absent. The bounded validator now accepts at most
+  256 KiB while retaining duplicate-key, object, hook-count, CIDR, string-size,
+  UTF-8, and JSON checks. Portable-image construction now fails closed unless
+  both the renderer and its exact SHA-256 are supplied, preventing an enabled
+  interstitial service whose `ConditionPathExists` can only skip. Focused
+  154,628-byte, excessive-response, omission, and installed-renderer tests plus
+  an actual missing-driver online-repair regression pass through `heavy.sh`;
+  exact image consumption, installed fullscreen evidence, counterpart review,
+  and user-coordinated physical confirmation remain required.
+
 * [x] Select the validated boot-VGA Intel/AMD `igpu-desktop` profile for an automatic guardian fallback after a post-update NVIDIA verification failure, retaining console fallback for missing, non-boot-VGA, or unsupported display hardware and retaining manual-only Nouveau. Physical HP OMEN evidence shows installation and first boot succeed but the next SteamOS A/B update remains at firmware splash. The executable recovery regression covers Intel, AMD, unsupported-vendor, non-boot-VGA, missing-device, locked recheck, and durable selected-profile state and passes through `heavy.sh`. The bounded repository check passed every preceding contract through exact header validation, where the unchanged host lacks `bsdtar`; local ShellCheck is likewise unavailable and remains a required CI gate. The receipt fixture now sets its claimed module and fallback-state modes explicitly so it is deterministic under the wrapper's `0077` umask; clean main passes under its previously implicit `0022` assumption. VM/software validation cannot certify the RTX 2060 internal-panel path. Exact PR, counterpart review, checks, squash merge, and consumption evidence will remain in the implementation PR and authenticated handoff.
 
 * [x] Restrict the no-input recovery interface to the UEFI firmware-selected

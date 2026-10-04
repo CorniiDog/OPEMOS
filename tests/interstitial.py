@@ -113,6 +113,25 @@ with tempfile.TemporaryDirectory(prefix="opemos-interstitial-") as temporary:
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
     ).returncode != 0
 
+    # Portable images must never install a recovery service that will silently
+    # skip because its authenticated fullscreen renderer was omitted.
+    omitted_target = base / "omitted-target"
+    omitted_home = base / "omitted-home"
+    omitted_etc = base / "omitted-etc"
+    omitted_target.mkdir()
+    omitted_home.mkdir()
+    omitted_etc.mkdir()
+    omitted = subprocess.run([
+        str(INSTALLER), "--root", str(omitted_target),
+        "--persistent-home-root", str(omitted_home),
+        "--persistent-etc-root", str(omitted_etc),
+        "--support-revision", "a" * 40, "--nvidia", "575.64.05",
+    ], env={**os.environ, "PROJECT_TEST_MODE": "1"},
+       stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    assert omitted.returncode == 2
+    assert "requires an interstitial binary and SHA-256" in omitted.stderr
+    assert not (omitted_home / ".steamos").exists()
+
     target = base / "target"
     persistent_home = base / "persistent-home"
     persistent_etc = base / "persistent-etc"

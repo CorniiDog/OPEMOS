@@ -13,7 +13,7 @@ INTERSTITIAL_SHA256=""
 
 usage()
 {
-    printf 'Usage: %s --root PATH --persistent-home-root PATH --persistent-etc-root PATH --support-revision COMMIT --nvidia VERSION [--interstitial-binary FILE --interstitial-sha256 HASH]\n' "$0"
+    printf 'Usage: %s --root PATH --persistent-home-root PATH --persistent-etc-root PATH --support-revision COMMIT --nvidia VERSION --interstitial-binary FILE --interstitial-sha256 HASH\n' "$0"
 }
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -37,9 +37,8 @@ done
 }
 [[ "$REVISION" =~ ^[0-9a-f]{40}$ ]] || { echo "Support revision is malformed." >&2; exit 1; }
 [[ "$NVIDIA" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || { echo "NVIDIA version is malformed." >&2; exit 1; }
-if ! { [[ -z "$INTERSTITIAL_BINARY" && -z "$INTERSTITIAL_SHA256" ]] ||
-       [[ -n "$INTERSTITIAL_BINARY" && -n "$INTERSTITIAL_SHA256" ]]; }; then
-    echo "Interstitial binary and SHA-256 must be supplied together." >&2
+if [[ -z "$INTERSTITIAL_BINARY" || -z "$INTERSTITIAL_SHA256" ]]; then
+    echo "Portable recovery requires an interstitial binary and SHA-256." >&2
     exit 2
 fi
 
@@ -51,14 +50,12 @@ cleanup_staging()
 trap cleanup_staging EXIT
 trap 'cleanup_staging; exit 130' INT
 trap 'cleanup_staging; exit 143' TERM
-if [[ -n "$INTERSTITIAL_BINARY" ]]; then
-    STAGING="$(mktemp -d "${TMPDIR:-/tmp}/opemos-interstitial.XXXXXX")"
-    python3 "$SUPPORT_ROOT/lib/snapshot_install_input.py" \
-        --source "$INTERSTITIAL_BINARY" --destination "$STAGING/opemos-interstitial" \
-        --max-bytes 33554432
-    python3 "$SUPPORT_ROOT/lib/validate_interstitial_binary.py" \
-        --binary "$STAGING/opemos-interstitial" --sha256 "$INTERSTITIAL_SHA256" >/dev/null
-fi
+STAGING="$(mktemp -d "${TMPDIR:-/tmp}/opemos-interstitial.XXXXXX")"
+python3 "$SUPPORT_ROOT/lib/snapshot_install_input.py" \
+    --source "$INTERSTITIAL_BINARY" --destination "$STAGING/opemos-interstitial" \
+    --max-bytes 33554432
+python3 "$SUPPORT_ROOT/lib/validate_interstitial_binary.py" \
+    --binary "$STAGING/opemos-interstitial" --sha256 "$INTERSTITIAL_SHA256" >/dev/null
 
 DEST="$PERSISTENT_HOME_ROOT/.steamos/open-gpu-kernel-modules-steamos-support/recovery"
 ROOT_PATH_CHECK_ARGS=(--root "$ROOT")
@@ -146,11 +143,9 @@ install "${OWNERSHIP[@]}" -m 0644 "$SUPPORT_ROOT/lib/common.sh" "$DEST/lib/commo
 for helper in recovery_status.py recovery_policy.py recovery_fallback_state.py recovery_transaction.py recovery_release_plan.py recovery_cached_product.py recovery_cached_receipt.py validate_github_meta.py update_recovery_grub_args.py open_opemos_contract.py validate_recovery_install_path.py desktop_update_generations.py interstitial_progress.py validate_interstitial_binary.py run_in_process_group.py payload_receipt.py atomic_output.py; do
     install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/lib/$helper" "$DEST/lib/$helper"
 done
-if [[ -n "$INTERSTITIAL_BINARY" ]]; then
-    install "${OWNERSHIP[@]}" -m 0755 "$STAGING/opemos-interstitial" "$DEST/bin/opemos-interstitial"
-    printf '%s\n' "$INTERSTITIAL_SHA256" > "$DEST/interstitial.sha256"
-    chmod 0644 "$DEST/interstitial.sha256"
-fi
+install "${OWNERSHIP[@]}" -m 0755 "$STAGING/opemos-interstitial" "$DEST/bin/opemos-interstitial"
+printf '%s\n' "$INTERSTITIAL_SHA256" > "$DEST/interstitial.sha256"
+chmod 0644 "$DEST/interstitial.sha256"
 install "${OWNERSHIP[@]}" -m 0644 "$SUPPORT_ROOT/trust/desktop-update-signers.json" "$DEST/trust/desktop-update-signers.json"
 printf '%s\n' "$REVISION" > "$DEST/support-revision"
 printf '%s\n' "$NVIDIA" > "$DEST/nvidia-version"
