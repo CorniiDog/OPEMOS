@@ -2808,6 +2808,11 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
     `tests/installer_bundle_publisher.py` pass. The cached-product regression
     proves both an offline terminal failure and an exact five-module repair
     ending at visible `complete`; fresh image and VM display evidence remain.
+    EXE review then found that the service's 7,200-second repair lifetime
+    exceeded the renderer parser's previous 900-second CLI bound. The parser
+    now accepts the same bounded 7,200-second maximum, the launcher test binds
+    that exact value, and the CI workflow invokes the compiled production
+    parser with `--timeout 7200 --smoke-test` so this mismatch cannot recur.
   * [ ] Stop portable-image construction from using the managed appliance's
     unrelated PCI topology. The portable initramfs must include each available
     modular integrated-display driver from the target kernel and defer NVIDIA

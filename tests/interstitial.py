@@ -288,6 +288,7 @@ with tempfile.TemporaryDirectory(prefix="opemos-live-guardian-confinement-") as 
         destination.unlink()
 
 service = SERVICE.read_text(encoding="utf-8")
+launcher = (ROOT / "bootstrap/launch_interstitial.sh").read_text(encoding="utf-8")
 assert "Before=display-manager.service graphical.target" in service
 assert "StandardInput=null" in service
 assert "bootstrap/launch_interstitial.sh" in service
@@ -301,6 +302,8 @@ assert "CapabilityBoundingSet=\n" in service and "PrivateNetwork=yes" in service
 assert "WantedBy=multi-user.target" in service
 assert "Environment=HOME=/root" in service
 assert "Environment=OPEMOS_INTERSTITIAL_TIMEOUT_SEC=7200" in service
+assert '"$TIMEOUT" -le 7200' in launcher
+assert 'exec "$BINARY" --timeout "$TIMEOUT"' in launcher
 assert "keyboard" not in service.lower() and "mouse" not in service.lower()
 guardian_service = GUARDIAN_SERVICE.read_text(encoding="utf-8")
 assert "run_guardian_with_interstitial.sh" in guardian_service
