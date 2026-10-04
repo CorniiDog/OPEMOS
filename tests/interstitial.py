@@ -151,16 +151,24 @@ with tempfile.TemporaryDirectory(prefix="opemos-interstitial-") as temporary:
     assert (destination / "bootstrap/launch_interstitial.sh").is_file()
     assert (destination / "interstitial.sha256").read_text().strip() == digest
     assert (destination / "bootstrap/run_guardian_with_interstitial.sh").is_file()
+    assert (destination / "bootstrap/run_repair_with_interstitial.sh").is_file()
     assert (persistent_etc / "systemd/system/multi-user.target.wants/opemos-interstitial.service").is_symlink()
     installed_service = (persistent_etc / "systemd/system/opemos-interstitial.service").read_text()
     assert "@DEST@" not in installed_service
     assert "Environment=HOME=/root" in installed_service
+    assert "Environment=OPEMOS_INTERSTITIAL_TIMEOUT_SEC=7200" in installed_service
+    assert "RuntimeMaxSec=7215" in installed_service
     assert "Environment=HOME=/root" in (
         persistent_etc / "systemd/system/opemos-nvidia-guardian.service"
     ).read_text()
     assert "Environment=HOME=/root" in (
         persistent_etc / "systemd/system/opemos-nvidia-repair.service"
     ).read_text()
+    repair_service = (
+        persistent_etc / "systemd/system/opemos-nvidia-repair.service"
+    ).read_text()
+    assert "Wants=network-online.target opemos-interstitial.service" in repair_service
+    assert "run_repair_with_interstitial.sh" in repair_service
     installed_keep_list = target / "etc/atomic-update.conf.d/90-opemos-nvidia-guardian.conf"
     assert installed_keep_list.read_bytes() == GUARDIAN_KEEP_LIST.read_bytes()
     assert installed_keep_list.stat().st_mode & 0o777 == 0o644
@@ -284,7 +292,7 @@ assert "Before=display-manager.service graphical.target" in service
 assert "StandardInput=null" in service
 assert "bootstrap/launch_interstitial.sh" in service
 assert "ConditionPathExists=@DEST@/interstitial.sha256" in service
-assert "RuntimeMaxSec=315" in service
+assert "RuntimeMaxSec=7215" in service
 assert "SuccessExitStatus=1 124 130 143" in service
 assert "DevicePolicy=closed" in service
 assert "ProtectSystem=strict" in service and "NoNewPrivileges=yes" in service
@@ -292,6 +300,7 @@ assert "ProtectHome=read-only" in service and "ProtectHome=yes" not in service
 assert "CapabilityBoundingSet=\n" in service and "PrivateNetwork=yes" in service
 assert "WantedBy=multi-user.target" in service
 assert "Environment=HOME=/root" in service
+assert "Environment=OPEMOS_INTERSTITIAL_TIMEOUT_SEC=7200" in service
 assert "keyboard" not in service.lower() and "mouse" not in service.lower()
 guardian_service = GUARDIAN_SERVICE.read_text(encoding="utf-8")
 assert "run_guardian_with_interstitial.sh" in guardian_service

@@ -78,6 +78,7 @@ python3 "$SUPPORT_ROOT/lib/validate_recovery_install_path.py" "${HOME_PATH_CHECK
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/bootstrap/install.sh \
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/bootstrap/launch_desktop_companion.sh \
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/bootstrap/run_guardian_with_interstitial.sh \
+    --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/bootstrap/run_repair_with_interstitial.sh \
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/bootstrap/launch_interstitial.sh \
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/recovery_status.py \
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/recovery_policy.py \
@@ -140,6 +141,7 @@ install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/recoveryctl.sh" "$DES
 install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/install.sh" "$DEST/bootstrap/install.sh"
 install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/launch_desktop_companion.sh" "$DEST/bootstrap/launch_desktop_companion.sh"
 install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/run_guardian_with_interstitial.sh" "$DEST/bootstrap/run_guardian_with_interstitial.sh"
+install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/run_repair_with_interstitial.sh" "$DEST/bootstrap/run_repair_with_interstitial.sh"
 install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/launch_interstitial.sh" "$DEST/bootstrap/launch_interstitial.sh"
 install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/online_install.sh" "$DEST/bootstrap/online_install.sh"
 install "${OWNERSHIP[@]}" -m 0644 "$SUPPORT_ROOT/lib/common.sh" "$DEST/lib/common.sh"

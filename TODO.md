@@ -2793,6 +2793,12 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   implementation record.
 
 * [ ] Prevent early NVIDIA DRM from competing with modular i915 for the muxless internal-panel handoff. On detected Intel+NVIDIA targets with modular i915, the generated initramfs now contains only i915; the NVIDIA stack binds through ordinary rootfs device discovery after Intel owns the panel. NVIDIA-only, built-in-i915, and fail-safe unavailable-i915 behavior remain unchanged. Focused and integration evidence follows in the implementation PR; VM visible boot cannot prove the physical RTX 2060/internal-panel path.
+  * [ ] Keep the existing fullscreen recovery renderer active for delayed
+    post-update repair and publish the real inspection, network, download,
+    module-install, verification, boot-update, and terminal recovery states.
+    Prove that an exact cached new-kernel repair reaches terminal restored
+    state and that unavailable recovery remains visibly terminal without
+    claiming physical OMEN display certification.
   * [ ] Stop portable-image construction from using the managed appliance's
     unrelated PCI topology. The portable initramfs must include each available
     modular integrated-display driver from the target kernel and defer NVIDIA
