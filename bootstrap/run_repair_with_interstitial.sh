@@ -19,11 +19,10 @@ if [[ $# -ne 0 ]]; then
     exit 2
 fi
 
-# The interstitial service resets this document before systemd starts this
-# ordered unit. Tests use the same explicit reset without systemd.
-if [[ "${PROJECT_TEST_MODE:-0}" == 1 ]]; then
-    python3 "$WRITER" reset --state "$PROGRESS" >/dev/null || exit 1
-fi
+# Guardian and delayed repair are distinct attempts that share one visible
+# document.  Guardian may leave a terminal result before systemd starts this
+# ordered unit, so begin the repair attempt explicitly in every environment.
+python3 "$WRITER" reset --state "$PROGRESS" >/dev/null || exit 1
 
 status=0
 OPEMOS_RECOVERY_PROGRESS_STATE="$PROGRESS" \

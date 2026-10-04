@@ -310,6 +310,11 @@ assert "Environment=HOME=/root" in service
 assert "Environment=OPEMOS_INTERSTITIAL_TIMEOUT_SEC=7200" in service
 assert '"$TIMEOUT" -le 7200' in launcher
 assert 'exec "$BINARY" --timeout "$TIMEOUT"' in launcher
+repair_launcher = (ROOT / "bootstrap/run_repair_with_interstitial.sh").read_text(
+    encoding="utf-8"
+)
+assert 'python3 "$WRITER" reset --state "$PROGRESS"' in repair_launcher
+assert 'if [[ "${PROJECT_TEST_MODE:-0}" == 1 ]]' not in repair_launcher
 assert "keyboard" not in service.lower() and "mouse" not in service.lower()
 guardian_service = GUARDIAN_SERVICE.read_text(encoding="utf-8")
 assert "run_guardian_with_interstitial.sh" in guardian_service

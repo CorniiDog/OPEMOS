@@ -2818,7 +2818,13 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
     create `/run/opemos/interstitial`. The unit now assigns that exact path as
     a systemd runtime directory so it exists before service sandbox setup; the
     installed-unit regression binds the runtime-directory mode and writable
-    path together. Exact changed-head checks and VM evidence follow in PR 67.
+    path together. The same clean boot then showed the guardian leaving the
+    shared progress record terminal before delayed repair began, causing the
+    repair wrapper to reject its first phase. Delayed repair now explicitly
+    resets the shared document for its distinct attempt in production as well
+    as tests; the existing cached retry regression proves a terminal failure
+    can begin a new attempt and reach visible `complete`. Exact changed-head
+    checks and VM evidence follow in PR 67.
   * [ ] Stop portable-image construction from using the managed appliance's
     unrelated PCI topology. The portable initramfs must include each available
     modular integrated-display driver from the target kernel and defer NVIDIA
