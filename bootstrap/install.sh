@@ -47,6 +47,7 @@ need_cmd modinfo
 need_cmd depmod
 need_cmd find
 need_cmd install
+need_cmd stat
 need_cmd zstd
 
 CURRENT_STEAMOS="$(get_steamos_version)"
@@ -315,6 +316,8 @@ TARGET_TOUCHED=1
 sudo rm -rf "$TARGET_DIR"
 sudo install -d -m 0755 "$(dirname "$TARGET_DIR")" "$TARGET_DIR"
 sudo cp -a "$STAGE/." "$TARGET_DIR/"
+sudo chown root:root "$TARGET_DIR"/*.ko.zst
+sudo chmod 0644 "$TARGET_DIR"/*.ko.zst
 sudo install -d -m 0755 "$TARGET_DIR"
 
 for staged_module in "$STAGE"/*.ko.zst; do
@@ -325,6 +328,15 @@ for staged_module in "$STAGE"/*.ko.zst; do
 
     [[ "$(sha256_file "$staged_module")" == "$(sha256_file "$installed_module")" ]] ||
         die "Installed module checksum verification failed: $(basename "$staged_module")"
+
+    installed_identity="$(stat -c '%u:%g:%a:%h' "$installed_module")"
+    if [[ "${PROJECT_TEST_MODE:-0}" == 1 ]]; then
+        expected_identity="$(id -u):$(id -g):644:1"
+    else
+        expected_identity="0:0:644:1"
+    fi
+    [[ "$installed_identity" == "$expected_identity" ]] ||
+        die "Installed module ownership or mode verification failed: $(basename "$staged_module")"
 done
 
 log "Refreshing module dependency database..."

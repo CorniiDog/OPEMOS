@@ -432,6 +432,13 @@ run_successful_lifecycle()
     )
     validate_nvidia_module_set "${installed_modules[@]}" ||
         die "Successful install produced the wrong module set."
+    (( $(grep -c '^sudo chown root:root .*\.ko\.zst' "$MOCK_COMMAND_LOG") >= 1 )) ||
+        die "Successful install did not normalize module ownership to root."
+    for installed_module in "${installed_modules[@]}"; do
+        [[ "$(stat -c '%u:%g:%a:%h' "$installed_module")" == \
+           "$(id -u):$(id -g):644:1" ]] ||
+            die "Successful install did not enforce safe module identity."
+    done
     [[ "$(<"${MOCK_STATE_ROOT}/installed-nvidia.txt")" == "$MOCK_NVIDIA" ]] ||
         die "Successful install wrote incorrect state metadata."
     [[ "$(<"$MOCK_READONLY_STATE")" == "enabled" ]] ||

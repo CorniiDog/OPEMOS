@@ -38,6 +38,17 @@ Below is the consolidated project checklist based on our work so far. I’m trea
 
 ## Not yet resolved
 
+* [ ] Complete PR68 missing-driver recovery after exact VM acceptance exposed
+  two post-download installer defects: certified release rows were parsed with
+  a literal tab command expansion, and successful noninteractive installs read
+  a reboot prompt from closed stdin. Those fixes are on the PR branch. The
+  subsequent live-root trace proved correct module bytes were copied with
+  archive UID/GID 1000, causing the receipt-bound verifier to reject them as
+  unsafe and leave recovery active. Normalize the five installed modules to
+  root:root mode 0644, verify their ownership/mode/link identity before depmod,
+  rerun the failed stage, then require a fresh exact-head image for final
+  missing-driver/interstitial acceptance and counterpart review.
+
 This is the active index. New unchecked work belongs here first so maintainers
 and agents do not need to scan the completed historical checklist. When an item
 is completed, mark its detailed checklist entry below and remove it from this
