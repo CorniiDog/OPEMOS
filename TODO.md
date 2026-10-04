@@ -46,6 +46,14 @@ Below is the consolidated project checklist based on our work so far. I’m trea
   when any payload is missing, linked, or ambiguous. Require focused generation
   and verification regressions, immutable PR checks, exact EXE counterpart
   review, and a failed-stage rerun with the changed Core product.
+  Physical fresh-recovery-USB evidence on the RTX 2060 Mobile then proved the
+  four retained module objects can load before the real root and fail because
+  `gsp_tu10x.bin` is absent from the initramfs even though it exists on rootfs.
+  Close the portable boot dependency set over both NVIDIA GSP firmware payloads
+  and make the production verifier reject every image missing or duplicating
+  either payload. Preserve the NVIDIA-free early `MODULES` decision; require a
+  changed Core product, exact EXE review, failed-stage rerun, and physical
+  follow-up before claiming visible OMEN recovery boot.
 
 This is the active index. New unchecked work belongs here first so maintainers
 and agents do not need to scan the completed historical checklist. When an item

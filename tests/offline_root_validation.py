@@ -151,11 +151,12 @@ def make_package(
             member.type = tarfile.FIFOTYPE
             archive.addfile(member)
         if gsp:
-            add_bytes(
-                archive,
-                f"usr/lib/firmware/nvidia/{firmware_version or version}/gsp_ga10x.bin",
-                b"firmware\n",
-            )
+            for firmware in ("gsp_tu10x.bin", "gsp_ga10x.bin"):
+                add_bytes(
+                    archive,
+                    f"usr/lib/firmware/nvidia/{firmware_version or version}/{firmware}",
+                    b"firmware\n",
+                )
         if link_target:
             member = tarfile.TarInfo("usr/lib/nvidia-fixture-link")
             member.type = tarfile.SYMTYPE
@@ -658,6 +659,8 @@ eval target=\${$#}; grep -F -q "$target" "$MOCK_MOUNT_STATE" 2>/dev/null
         "#!/bin/sh\nif [ \"$2\" = /usr/bin/lsinitcpio ]; then\n"
         "  if [ \"${MOCK_BAD_INITRAMFS_LISTING:-0}\" != 0 ]; then printf 'etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf\\n'; exit 0; fi\n"
         "  for module in nvidia nvidia-modeset nvidia-uvm nvidia-drm; do printf 'usr/lib/modules/%s/%s.ko.zst\\n' \"$MOCK_KERNEL\" \"$module\"; done\n"
+        "  printf 'usr/lib/firmware/nvidia/575.64.05/gsp_tu10x.bin\\n'\n"
+        "  printf 'usr/lib/firmware/nvidia/575.64.05/gsp_ga10x.bin\\n'\n"
         "  printf 'etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf\\n'\n  exit 0\nfi\n"
         "printf active > \"$MOCK_CHROOT_STATE\"\nsleep \"${MOCK_CHROOT_DELAY:-0}\"\n[ \"${MOCK_FAIL_CHROOT:-0}\" = 0 ] || exit 1\nfor runtime in dev proc sys var/tmp; do grep -F -x -q \"$1/$runtime\" \"$MOCK_MOUNT_STATE\" || exit 97; done\nworkspace=\"$1/var/tmp/explicit-mkinitcpio.$$\"\n: > \"$workspace\" || exit 98\nrm -f \"$workspace\"\nprintf '%s\\n' mkinitcpio >> \"$MOCK_TRANSACTION_LOG\"\nmkdir -p \"$1/boot\"; echo initramfs > \"$1/boot/initramfs-fixture.img\"\nif [ \"${MOCK_UNSAFE_RECEIPT_AFTER_INITRAMFS:-0}\" != 0 ]; then\n  receipt=\"$1/usr/lib/open-gpu-kernel-modules-steamos-support/offline-install\"\n  saved=\"${receipt}.mock-saved\"\n  [ ! -e \"$saved\" ] || exit 99\n  mv \"$receipt\" \"$saved\" || exit 99\n  ln -s /tmp \"$receipt\" || exit 99\nfi\n[ \"${MOCK_DRIFT_COMPRESSION:-0}\" = 0 ] || : > \"$MOCK_COMPRESSION_STATE\"\n",
         encoding="utf-8",
@@ -3164,7 +3167,10 @@ def main():
         assert successful["userspaceVerification"]["gspFirmware"]["version"] == NVIDIA
         assert successful["userspaceVerification"]["gspFirmware"][
             "targetRelativeFiles"
-        ] == [f"usr/lib/firmware/nvidia/{NVIDIA}/gsp_ga10x.bin"]
+        ] == [
+            f"usr/lib/firmware/nvidia/{NVIDIA}/gsp_ga10x.bin",
+            f"usr/lib/firmware/nvidia/{NVIDIA}/gsp_tu10x.bin",
+        ]
         assert successful["initramfsWorkspace"]["status"] == "verified"
         assert successful["initramfsWorkspace"]["phase"] == "mounted_workspace"
         assert successful["initramfsWorkspace"]["mode"] == "1777"

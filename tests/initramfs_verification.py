@@ -20,6 +20,10 @@ REQUIRED_MODULES = (
 ROOTFS_ONLY_MODULE = "nvidia-peermem.ko"
 IMAGE_NAMES = ("initramfs-linux.img", "initramfs-linux-fallback.img")
 CONFIG = "etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf"
+REQUIRED_FIRMWARE = (
+    "usr/lib/firmware/nvidia/575.64.05/gsp_tu10x.bin",
+    "usr/lib/firmware/nvidia/575.64.05/gsp_ga10x.bin",
+)
 
 
 def sha(path):
@@ -45,6 +49,7 @@ def fixture(root):
         f"usr/lib/modules/{KERNEL}/{module}.zst" for module in REQUIRED_MODULES
     ]
     listing.extend((CONFIG, "usr/bin/busybox"))
+    listing.extend(REQUIRED_FIRMWARE)
     for index in range(len(IMAGE_NAMES)):
         (root / f"listing-{index}").write_text("\n".join(listing) + "\n")
     config = root / CONFIG
@@ -93,6 +98,10 @@ def main():
     rejected(lambda root: (root / "listing-1").write_text(
         (root / "listing-1").read_text()
         + f"usr/lib/modules/{KERNEL}/{ROOTFS_ONLY_MODULE}.zst\n"))
+    rejected(lambda root: (root / "listing-0").write_text(
+        (root / "listing-0").read_text().replace(REQUIRED_FIRMWARE[0] + "\n", "")))
+    rejected(lambda root: (root / "listing-1").write_text(
+        (root / "listing-1").read_text() + REQUIRED_FIRMWARE[1] + "\n"))
     rejected(lambda root: (root / CONFIG).write_text("options nvidia NVreg=hostile\n"))
 
     def duplicate_manifest(root):
