@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parent.parent
 TOOL = ROOT / "lib/configure_display_initramfs.py"
 INSTALLER = ROOT / "bootstrap/install_to_root.sh"
 KERNEL = "6.16.12-valve-fixture"
+NVIDIA_PAYLOADS = ("nvidia", "nvidia-modeset", "nvidia-uvm", "nvidia-drm")
 
 
 def pci_device(sysfs: Path, address: str, vendor: str, device_class: str) -> None:
@@ -43,6 +44,20 @@ def execute(root: Path, sysfs: Path, *, portable: bool = False) -> tuple[str, st
     return output.read_text(), completed.stderr
 
 
+def execute_failure(root: Path, sysfs: Path) -> str:
+    output = root / "etc/mkinitcpio.conf.d/90-open-gpu-kernel-modules-steamos.conf"
+    completed = subprocess.run(
+        [
+            str(TOOL), "--root", str(root), "--kernel", KERNEL,
+            "--sysfs", str(sysfs), "--portable-image", "--output", str(output),
+        ],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    assert completed.returncode != 0
+    assert not output.exists()
+    return completed.stderr
+
+
 def fixture(temporary: str) -> tuple[Path, Path]:
     base = Path(temporary)
     root = base / "root"
@@ -50,6 +65,20 @@ def fixture(temporary: str) -> tuple[Path, Path]:
     (root / "usr/lib/modules" / KERNEL).mkdir(parents=True)
     (sysfs / "bus/pci/devices").mkdir(parents=True)
     return root, sysfs
+
+
+def add_nvidia_payloads(root: Path, suffix: str = ".zst") -> tuple[str, ...]:
+    directory = (
+        root / "usr/lib/modules" / KERNEL
+        / "updates/open-gpu-kernel-modules-steamos"
+    )
+    directory.mkdir(parents=True)
+    paths = []
+    for module in NVIDIA_PAYLOADS:
+        payload = directory / f"{module}.ko{suffix}"
+        payload.write_bytes(b"fixture")
+        paths.append("/" + payload.relative_to(root).as_posix())
+    return tuple(paths)
 
 
 def main() -> None:
@@ -128,6 +157,7 @@ def main() -> None:
 
     with tempfile.TemporaryDirectory(prefix="display-initramfs-portable-") as temporary:
         root, sysfs = fixture(temporary)
+        nvidia_payloads = add_nvidia_payloads(root)
         module_root = root / "usr/lib/modules" / KERNEL / "kernel/drivers/gpu/drm"
         i915 = module_root / "i915/i915.ko.zst"
         amdgpu = module_root / "amd/amdgpu/amdgpu.ko.zst"
@@ -140,14 +170,51 @@ def main() -> None:
         content, diagnostic = execute(root, sysfs, portable=True)
         assert "MODULES=(i915 amdgpu)" in content
         assert "nvidia" not in content.split("MODULES=(", 1)[1].split(")", 1)[0]
+        assert f"FILES=({' '.join(nvidia_payloads)})" in content
         assert "portable-integrated-early-nvidia-rootfs" in diagnostic
 
     with tempfile.TemporaryDirectory(prefix="display-initramfs-portable-builtin-") as temporary:
         root, sysfs = fixture(temporary)
+        nvidia_payloads = add_nvidia_payloads(root, suffix="")
         modules = root / "usr/lib/modules" / KERNEL / "modules.builtin"
         modules.write_text("kernel/drivers/gpu/drm/i915/i915.ko\n")
         content, _ = execute(root, sysfs, portable=True)
         assert "MODULES=()" in content
+        assert f"FILES=({' '.join(nvidia_payloads)})" in content
+
+    with tempfile.TemporaryDirectory(prefix="display-initramfs-portable-missing-") as temporary:
+        root, sysfs = fixture(temporary)
+        add_nvidia_payloads(root)
+        missing = (
+            root / "usr/lib/modules" / KERNEL
+            / "updates/open-gpu-kernel-modules-steamos/nvidia-drm.ko.zst"
+        )
+        missing.unlink()
+        diagnostic = execute_failure(root, sysfs)
+        assert "requires exactly one regular nvidia-drm.ko payload; found 0" in diagnostic
+
+    with tempfile.TemporaryDirectory(prefix="display-initramfs-portable-ambiguous-") as temporary:
+        root, sysfs = fixture(temporary)
+        add_nvidia_payloads(root)
+        duplicate = (
+            root / "usr/lib/modules" / KERNEL
+            / "updates/open-gpu-kernel-modules-steamos/nvidia.ko"
+        )
+        duplicate.write_bytes(b"duplicate")
+        diagnostic = execute_failure(root, sysfs)
+        assert "requires exactly one regular nvidia.ko payload; found 2" in diagnostic
+
+    with tempfile.TemporaryDirectory(prefix="display-initramfs-portable-linked-") as temporary:
+        root, sysfs = fixture(temporary)
+        add_nvidia_payloads(root)
+        payload = (
+            root / "usr/lib/modules" / KERNEL
+            / "updates/open-gpu-kernel-modules-steamos/nvidia-uvm.ko.zst"
+        )
+        payload.unlink()
+        payload.symlink_to("nvidia.ko.zst")
+        diagnostic = execute_failure(root, sysfs)
+        assert "requires exactly one regular nvidia-uvm.ko payload; found 0" in diagnostic
 
 
 if __name__ == "__main__":

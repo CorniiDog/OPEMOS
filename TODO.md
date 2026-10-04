@@ -38,16 +38,14 @@ Below is the consolidated project checklist based on our work so far. I’m trea
 
 ## Not yet resolved
 
-* [ ] Complete PR68 missing-driver recovery after exact VM acceptance exposed
-  two post-download installer defects: certified release rows were parsed with
-  a literal tab command expansion, and successful noninteractive installs read
-  a reboot prompt from closed stdin. Those fixes are on the PR branch. The
-  subsequent live-root trace proved correct module bytes were copied with
-  archive UID/GID 1000, causing the receipt-bound verifier to reject them as
-  unsafe and leave recovery active. Normalize the five installed modules to
-  root:root mode 0644, verify their ownership/mode/link identity before depmod,
-  rerun the failed stage, then require a fresh exact-head image for final
-  missing-driver/interstitial acceptance and counterpart review.
+* [ ] Correct portable initramfs construction after the exact EXE PR163 partial
+  reached the production verifier and proved that the generated archive omitted
+  `nvidia.ko`. Preserve the PR66 muxless-panel behavior by keeping NVIDIA out of
+  the early `MODULES` array, include the exact four verifier-required NVIDIA
+  payloads through mkinitcpio's `FILES` array, and fail closed before generation
+  when any payload is missing, linked, or ambiguous. Require focused generation
+  and verification regressions, immutable PR checks, exact EXE counterpart
+  review, and a failed-stage rerun with the changed Core product.
 
 This is the active index. New unchecked work belongs here first so maintainers
 and agents do not need to scan the completed historical checklist. When an item
@@ -2890,6 +2888,15 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
     userspace rather than firmware in the VM, but cannot certify the OMEN's
     Intel/NVIDIA internal-panel path. Fresh PR66 image consumption and physical
     confirmation remain required.
+    The exact EXE PR163 coherent partial later exercised the portable path with
+    Core `9cbca4e` and failed at `initramfs_verification`: the generated archive
+    did not contain exactly one `nvidia.ko`. Portable construction intentionally
+    kept NVIDIA out of `MODULES` to protect the muxless panel, but it did not
+    separately retain the four payloads required by the established verifier.
+    The bounded correction keeps the early-load decision unchanged, supplies
+    those exact payload paths through `FILES`, and rejects missing, linked, or
+    duplicate payloads before `mkinitcpio` runs. Exact PR, checks, changed Core
+    product, counterpart review, and failed-stage partial evidence remain.
 
 The project has crossed the bring-up threshold. SteamOS 3.8.16 has successfully
 booted into Gaming Mode on the RTX 2060 with the known-good project NVIDIA

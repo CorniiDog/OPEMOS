@@ -9,6 +9,8 @@ from pathlib import Path
 
 
 NVIDIA_MODULES = ("nvidia", "nvidia_modeset", "nvidia_uvm", "nvidia_drm")
+NVIDIA_PAYLOADS = ("nvidia", "nvidia-modeset", "nvidia-uvm", "nvidia-drm")
+MODULE_SUFFIXES = ("", ".xz", ".gz", ".zst")
 DISPLAY_CLASS = 0x030000
 DISPLAY_CLASS_MASK = 0xFF0000
 
@@ -61,7 +63,7 @@ def intel_internal_panel_connected(sysfs: Path) -> bool:
 
 def module_availability(root: Path, kernel: str, module: str, relative: str) -> str:
     module_root = root / "usr/lib/modules" / kernel
-    for suffix in ("", ".xz", ".gz", ".zst"):
+    for suffix in MODULE_SUFFIXES:
         if (module_root / f"{relative}/{module}.ko{suffix}").is_file():
             return "module"
     builtin = module_root / "modules.builtin"
@@ -72,6 +74,28 @@ def module_availability(root: Path, kernel: str, module: str, relative: str) -> 
     if any(record.endswith(f"/{module}.ko") for record in records):
         return "builtin"
     return "unavailable"
+
+
+def portable_nvidia_payloads(root: Path, kernel: str) -> tuple[str, ...]:
+    relative_directory = Path(
+        "usr/lib/modules"
+    ) / kernel / "updates/open-gpu-kernel-modules-steamos"
+    directory = root / relative_directory
+    payloads = []
+    for module in NVIDIA_PAYLOADS:
+        matches = [
+            directory / f"{module}.ko{suffix}"
+            for suffix in MODULE_SUFFIXES
+            if (directory / f"{module}.ko{suffix}").is_file()
+            and not (directory / f"{module}.ko{suffix}").is_symlink()
+        ]
+        if len(matches) != 1:
+            raise ValueError(
+                "portable image requires exactly one regular "
+                f"{module}.ko payload; found {len(matches)}"
+            )
+        payloads.append("/" + matches[0].relative_to(root).as_posix())
+    return tuple(payloads)
 
 
 def i915_availability(root: Path, kernel: str) -> str:
@@ -90,6 +114,7 @@ def portable_render(root: Path, kernel: str) -> tuple[str, str]:
         for module, relative in candidates
         if module_availability(root, kernel, module, relative) == "module"
     ]
+    nvidia_payloads = portable_nvidia_payloads(root, kernel)
     # Image construction runs inside a managed appliance whose PCI topology is
     # unrelated to the eventual device. Include the target kernel's available
     # integrated-display drivers and defer NVIDIA DRM until the real root so a
@@ -100,6 +125,10 @@ def portable_render(root: Path, kernel: str) -> tuple[str, str]:
         "# Display boot decision: portable-integrated-early-nvidia-rootfs\n"
         "# Hardware selection deferred to target boot\n"
         f"MODULES=({' '.join(modules)})\n"
+        # Preserve the verified NVIDIA recovery payload in each generated
+        # initramfs without asking mkinitcpio to load NVIDIA before the real
+        # target chooses its display owner.
+        f"FILES=({' '.join(nvidia_payloads)})\n"
     )
     return content, "portable-integrated-early-nvidia-rootfs"
 
@@ -144,10 +173,13 @@ def main() -> int:
     args = parser.parse_args()
     if not re.fullmatch(r"[A-Za-z0-9._+-]{1,128}", args.kernel):
         parser.error("kernel version is invalid")
-    if args.portable_image:
-        content, decision = portable_render(args.root, args.kernel)
-    else:
-        content, decision = render(args.root, args.kernel, args.sysfs)
+    try:
+        if args.portable_image:
+            content, decision = portable_render(args.root, args.kernel)
+        else:
+            content, decision = render(args.root, args.kernel, args.sysfs)
+    except ValueError as error:
+        parser.error(str(error))
     args.output.parent.mkdir(parents=True, exist_ok=True)
     temporary = args.output.with_name(f".{args.output.name}.{os.getpid()}.tmp")
     try:
