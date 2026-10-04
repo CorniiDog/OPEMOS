@@ -2799,6 +2799,15 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
     Prove that an exact cached new-kernel repair reaches terminal restored
     state and that unavailable recovery remains visibly terminal without
     claiming physical OMEN display certification.
+    Commit `a8932a1` routes the delayed repair service through the installed
+    interstitial, publishes the real recovery phases, keeps the renderer alive
+    for the repair service's bounded two-hour lifetime, and forces every
+    unsuccessful attempt to the visible `recovery_required` terminal state.
+    Through `heavy.sh`, `tests/interstitial.py`,
+    `tests/recovery_cached_product.py`, `tests/recovery_status.py`, and
+    `tests/installer_bundle_publisher.py` pass. The cached-product regression
+    proves both an offline terminal failure and an exact five-module repair
+    ending at visible `complete`; fresh image and VM display evidence remain.
   * [ ] Stop portable-image construction from using the managed appliance's
     unrelated PCI topology. The portable initramfs must include each available
     modular integrated-display driver from the target kernel and defer NVIDIA
