@@ -25,4 +25,9 @@ EXPECTED_SHA256="$(tr -d '[:space:]' < "$HASH_FILE")"
 }
 python3 "$SUPPORT_ROOT/lib/validate_interstitial_binary.py" \
     --binary "$BINARY" --sha256 "$EXPECTED_SHA256" >/dev/null
-exec "$BINARY" --timeout 300
+TIMEOUT="${OPEMOS_INTERSTITIAL_TIMEOUT_SEC:-300}"
+[[ "$TIMEOUT" =~ ^[0-9]+$ && "$TIMEOUT" -ge 60 && "$TIMEOUT" -le 7200 ]] || {
+    printf 'Interstitial timeout is outside the supported range.\n' >&2
+    exit 1
+}
+exec "$BINARY" --timeout "$TIMEOUT"

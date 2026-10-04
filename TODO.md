@@ -2809,6 +2809,38 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   implementation record.
 
 * [ ] Prevent early NVIDIA DRM from competing with modular i915 for the muxless internal-panel handoff. On detected Intel+NVIDIA targets with modular i915, the generated initramfs now contains only i915; the NVIDIA stack binds through ordinary rootfs device discovery after Intel owns the panel. NVIDIA-only, built-in-i915, and fail-safe unavailable-i915 behavior remain unchanged. Focused and integration evidence follows in the implementation PR; VM visible boot cannot prove the physical RTX 2060/internal-panel path.
+  * [ ] Keep the existing fullscreen recovery renderer active for delayed
+    post-update repair and publish the real inspection, network, download,
+    module-install, verification, boot-update, and terminal recovery states.
+    Prove that an exact cached new-kernel repair reaches terminal restored
+    state and that unavailable recovery remains visibly terminal without
+    claiming physical OMEN display certification.
+    Commit `a8932a1` routes the delayed repair service through the installed
+    interstitial, publishes the real recovery phases, keeps the renderer alive
+    for the repair service's bounded two-hour lifetime, and forces every
+    unsuccessful attempt to the visible `recovery_required` terminal state.
+    Through `heavy.sh`, `tests/interstitial.py`,
+    `tests/recovery_cached_product.py`, `tests/recovery_status.py`, and
+    `tests/installer_bundle_publisher.py` pass. The cached-product regression
+    proves both an offline terminal failure and an exact five-module repair
+    ending at visible `complete`; fresh image and VM display evidence remain.
+    EXE review then found that the service's 7,200-second repair lifetime
+    exceeded the renderer parser's previous 900-second CLI bound. The parser
+    now accepts the same bounded 7,200-second maximum, the launcher test binds
+    that exact value, and the CI workflow invokes the compiled production
+    parser with `--timeout 7200 --smoke-test` so this mismatch cannot recur.
+    Fresh installed-image validation then reproduced a first-start namespace
+    failure because `ReadWritePaths` was applied before `ExecStartPre` could
+    create `/run/opemos/interstitial`. The unit now assigns that exact path as
+    a systemd runtime directory so it exists before service sandbox setup; the
+    installed-unit regression binds the runtime-directory mode and writable
+    path together. The same clean boot then showed the guardian leaving the
+    shared progress record terminal before delayed repair began, causing the
+    repair wrapper to reject its first phase. Delayed repair now explicitly
+    resets the shared document for its distinct attempt in production as well
+    as tests; the existing cached retry regression proves a terminal failure
+    can begin a new attempt and reach visible `complete`. Exact changed-head
+    checks and VM evidence follow in PR 67.
   * [ ] Stop portable-image construction from using the managed appliance's
     unrelated PCI topology. The portable initramfs must include each available
     modular integrated-display driver from the target kernel and defer NVIDIA

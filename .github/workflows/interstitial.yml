@@ -7,8 +7,11 @@ on:
       - lib/interstitial_progress.py
       - lib/validate_interstitial_binary.py
       - bootstrap/run_guardian_with_interstitial.sh
+      - bootstrap/run_repair_with_interstitial.sh
+      - bootstrap/launch_interstitial.sh
       - bootstrap/install_recovery_guardian_to_root.sh
       - support/recovery/opemos-interstitial.service.in
+      - support/recovery/opemos-nvidia-repair.service.in
       - tests/interstitial.py
       - .github/workflows/interstitial.yml
   pull_request:
@@ -17,8 +20,11 @@ on:
       - lib/interstitial_progress.py
       - lib/validate_interstitial_binary.py
       - bootstrap/run_guardian_with_interstitial.sh
+      - bootstrap/run_repair_with_interstitial.sh
+      - bootstrap/launch_interstitial.sh
       - bootstrap/install_recovery_guardian_to_root.sh
       - support/recovery/opemos-interstitial.service.in
+      - support/recovery/opemos-nvidia-repair.service.in
       - tests/interstitial.py
       - .github/workflows/interstitial.yml
   workflow_dispatch:
@@ -51,6 +57,13 @@ jobs:
 
       - name: Exercise software rendering without a display server
         run: interstitial/target/release/opemos-interstitial --smoke-test
+
+      - name: Verify production repair timeout reaches the real parser
+        env:
+          OPEMOS_INTERSTITIAL_TIMEOUT_SEC: "7200"
+        run: >-
+          interstitial/target/release/opemos-interstitial
+          --timeout "$OPEMOS_INTERSTITIAL_TIMEOUT_SEC" --smoke-test
 
       - name: Upload development executable
         uses: actions/upload-artifact@v4

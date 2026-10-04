@@ -80,6 +80,20 @@ fi
 RECOVERY_CONFIG="$(project_system_path /etc/modprobe.d/98-opemos-recovery.conf)"
 NVIDIA_CONFIG="$(project_system_path /etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf)"
 NVIDIA_INITRAMFS="$(project_system_path /etc/mkinitcpio.conf.d/90-open-gpu-kernel-modules-steamos.conf)"
+RECOVERY_PROGRESS_STATE="${OPEMOS_RECOVERY_PROGRESS_STATE:-}"
+RECOVERY_PROGRESS_WRITER="$SUPPORT_ROOT/lib/interstitial_progress.py"
+
+publish_recovery_progress()
+{
+    local operation="$1"
+    shift
+    [[ -n "$RECOVERY_PROGRESS_STATE" ]] || return 0
+    [[ "$RECOVERY_PROGRESS_STATE" == /run/opemos/interstitial/progress.json ||
+       ( "${PROJECT_TEST_MODE:-0}" == 1 && "$RECOVERY_PROGRESS_STATE" == /* ) ]] ||
+        die "Recovery progress state path is unsupported."
+    python3 "$RECOVERY_PROGRESS_WRITER" "$operation" \
+        --state "$RECOVERY_PROGRESS_STATE" "$@" >/dev/null
+}
 
 status_json()
 {
@@ -421,6 +435,7 @@ case "$COMMAND" in
         [[ "$ROOT" == / || "${PROJECT_TEST_MODE:-0}" == 1 ]] ||
             die "Online repair is supported only on the running SteamOS system."
         acquire_recovery_operation_lock
+        publish_recovery_progress set --phase inspecting
         policy_args=(--root "$POLICY_ROOT")
         [[ "${PROJECT_TEST_MODE:-0}" != 1 ]] || policy_args+=(--test-owner)
         policy="$(python3 "$POLICY_TOOL" "${policy_args[@]}")"
@@ -440,12 +455,15 @@ case "$COMMAND" in
         fi
         if [[ "$recovery_status" == healthy ]]; then
             reconcile_verified_transaction "$kernel" "$nvidia" "$revision"
+            publish_recovery_progress succeed
             emit_result restored exact_nvidia_already_healthy no_action
             exit 0
         fi
         if [[ "$recovery_status" == fallback-active && "$modules_status" == verified ]]; then
             reconcile_verified_transaction "$kernel" "$nvidia" "$revision"
+            publish_recovery_progress set --phase updating_boot
             YES=1 disable_fallback
+            publish_recovery_progress succeed
             emit_result restored exact_nvidia_restored fallback_disabled
             exit 0
         fi
@@ -488,6 +506,7 @@ case "$COMMAND" in
             cached_archive="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["paths"]["archive"])' "$cached_result")"
             cached_checksum="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["paths"]["checksum"])' "$cached_result")"
             transaction_tool set --phase installing --reason canonical_exact_cached_install >/dev/null
+            publish_recovery_progress set --phase installing_modules
             if ! OPEMOS_PINNED_NVIDIA_VERSION="$nvidia" \
                 run_cancellable "$SUPPORT_ROOT/bootstrap/install.sh" \
                     --archive "$cached_archive" --checksum "$cached_checksum" -y; then
@@ -503,6 +522,7 @@ case "$COMMAND" in
                 die "Installed repair receipt could not be committed; fallback remains active."
             }
         else
+        publish_recovery_progress set --phase waiting_for_network
         if ! curl -fsS --connect-timeout 10 --max-time 20 https://api.github.com/meta \
             | python3 "$SUPPORT_ROOT/lib/validate_github_meta.py"; then
             transaction_tool set --phase retry_scheduled --reason network_unavailable_or_untrusted >/dev/null
@@ -510,7 +530,9 @@ case "$COMMAND" in
             exit 75
         fi
         transaction_tool set --phase downloading --reason exact_artifact_resolution >/dev/null
+        publish_recovery_progress set --phase downloading
         transaction_tool set --phase installing --reason canonical_exact_kernel_install >/dev/null
+        publish_recovery_progress set --phase installing_modules
         if ! SUPPORT_REVISION="$revision" OPEMOS_PINNED_NVIDIA_VERSION="$nvidia" \
              OPEMOS_RECOVERY_PLAN_FILE="$RELEASE_PLAN" \
              run_cancellable "$ONLINE_INSTALL" -y; then
@@ -520,13 +542,16 @@ case "$COMMAND" in
         fi
         fi
         transaction_tool set --phase verifying --reason exact_module_verification >/dev/null
+        publish_recovery_progress set --phase verifying
         repaired="$(status_json)"
         python3 -c 'import json,sys; assert json.loads(sys.argv[1])["moduleVerification"]["status"] == "verified"' "$repaired" || {
             transaction_tool set --phase failed --reason post_install_verification_failed >/dev/null
             die "Installed repair did not pass exact module verification; fallback remains active."
         }
         reconcile_verified_transaction "$kernel" "$nvidia" "$revision"
+        publish_recovery_progress set --phase updating_boot
         YES=1 disable_fallback
+        publish_recovery_progress succeed
         ;;
     cancel-repair)
         acquire_recovery_operation_lock
