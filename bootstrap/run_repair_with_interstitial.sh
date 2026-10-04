@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -uo pipefail
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SUPPORT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -25,9 +25,9 @@ if [[ "${PROJECT_TEST_MODE:-0}" == 1 ]]; then
     python3 "$WRITER" reset --state "$PROGRESS" >/dev/null || exit 1
 fi
 
+status=0
 OPEMOS_RECOVERY_PROGRESS_STATE="$PROGRESS" \
-    "$SUPPORT_ROOT/bootstrap/recoveryctl.sh" repair-auto --json
-status=$?
+    "$SUPPORT_ROOT/bootstrap/recoveryctl.sh" repair-auto --json || status=$?
 if [[ "$status" -ne 0 ]]; then
     # Leave every unsuccessful automatic attempt visibly terminal. The writer
     # refuses to replace a terminal document, which is safe for future phases.
