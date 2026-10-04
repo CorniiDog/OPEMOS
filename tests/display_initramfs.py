@@ -11,6 +11,7 @@ TOOL = ROOT / "lib/configure_display_initramfs.py"
 INSTALLER = ROOT / "bootstrap/install_to_root.sh"
 KERNEL = "6.16.12-valve-fixture"
 NVIDIA_PAYLOADS = ("nvidia", "nvidia-modeset", "nvidia-uvm", "nvidia-drm")
+NVIDIA_GSP_FIRMWARE = ("gsp_tu10x.bin", "gsp_ga10x.bin")
 
 
 def pci_device(sysfs: Path, address: str, vendor: str, device_class: str) -> None:
@@ -77,6 +78,17 @@ def add_nvidia_payloads(root: Path, suffix: str = ".zst") -> tuple[str, ...]:
     for module in NVIDIA_PAYLOADS:
         payload = directory / f"{module}.ko{suffix}"
         payload.write_bytes(b"fixture")
+        paths.append("/" + payload.relative_to(root).as_posix())
+    return tuple(paths)
+
+
+def add_nvidia_firmware(root: Path, version: str = "575.64.05") -> tuple[str, ...]:
+    directory = root / "usr/lib/firmware/nvidia" / version
+    directory.mkdir(parents=True)
+    paths = []
+    for name in NVIDIA_GSP_FIRMWARE:
+        payload = directory / name
+        payload.write_bytes(b"authenticated firmware fixture")
         paths.append("/" + payload.relative_to(root).as_posix())
     return tuple(paths)
 
@@ -158,6 +170,7 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="display-initramfs-portable-") as temporary:
         root, sysfs = fixture(temporary)
         nvidia_payloads = add_nvidia_payloads(root)
+        nvidia_firmware = add_nvidia_firmware(root)
         module_root = root / "usr/lib/modules" / KERNEL / "kernel/drivers/gpu/drm"
         i915 = module_root / "i915/i915.ko.zst"
         amdgpu = module_root / "amd/amdgpu/amdgpu.ko.zst"
@@ -170,21 +183,23 @@ def main() -> None:
         content, diagnostic = execute(root, sysfs, portable=True)
         assert "MODULES=(i915 amdgpu)" in content
         assert "nvidia" not in content.split("MODULES=(", 1)[1].split(")", 1)[0]
-        assert f"FILES=({' '.join(nvidia_payloads)})" in content
+        assert f"FILES=({' '.join(nvidia_payloads + nvidia_firmware)})" in content
         assert "portable-integrated-early-nvidia-rootfs" in diagnostic
 
     with tempfile.TemporaryDirectory(prefix="display-initramfs-portable-builtin-") as temporary:
         root, sysfs = fixture(temporary)
         nvidia_payloads = add_nvidia_payloads(root, suffix="")
+        nvidia_firmware = add_nvidia_firmware(root)
         modules = root / "usr/lib/modules" / KERNEL / "modules.builtin"
         modules.write_text("kernel/drivers/gpu/drm/i915/i915.ko\n")
         content, _ = execute(root, sysfs, portable=True)
         assert "MODULES=()" in content
-        assert f"FILES=({' '.join(nvidia_payloads)})" in content
+        assert f"FILES=({' '.join(nvidia_payloads + nvidia_firmware)})" in content
 
     with tempfile.TemporaryDirectory(prefix="display-initramfs-portable-missing-") as temporary:
         root, sysfs = fixture(temporary)
         add_nvidia_payloads(root)
+        add_nvidia_firmware(root)
         missing = (
             root / "usr/lib/modules" / KERNEL
             / "updates/open-gpu-kernel-modules-steamos/nvidia-drm.ko.zst"
@@ -196,6 +211,7 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="display-initramfs-portable-ambiguous-") as temporary:
         root, sysfs = fixture(temporary)
         add_nvidia_payloads(root)
+        add_nvidia_firmware(root)
         duplicate = (
             root / "usr/lib/modules" / KERNEL
             / "updates/open-gpu-kernel-modules-steamos/nvidia.ko"
@@ -207,6 +223,7 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="display-initramfs-portable-linked-") as temporary:
         root, sysfs = fixture(temporary)
         add_nvidia_payloads(root)
+        add_nvidia_firmware(root)
         payload = (
             root / "usr/lib/modules" / KERNEL
             / "updates/open-gpu-kernel-modules-steamos/nvidia-uvm.ko.zst"
@@ -215,6 +232,34 @@ def main() -> None:
         payload.symlink_to("nvidia.ko.zst")
         diagnostic = execute_failure(root, sysfs)
         assert "requires exactly one regular nvidia-uvm.ko payload; found 0" in diagnostic
+
+    with tempfile.TemporaryDirectory(prefix="display-initramfs-portable-missing-gsp-") as temporary:
+        root, sysfs = fixture(temporary)
+        add_nvidia_payloads(root)
+        firmware = add_nvidia_firmware(root)
+        (root / firmware[0].removeprefix("/")).unlink()
+        diagnostic = execute_failure(root, sysfs)
+        assert "requires exactly one regular NVIDIA gsp_tu10x.bin firmware payload; found 0" in diagnostic
+
+    with tempfile.TemporaryDirectory(prefix="display-initramfs-portable-linked-gsp-") as temporary:
+        root, sysfs = fixture(temporary)
+        add_nvidia_payloads(root)
+        firmware = add_nvidia_firmware(root)
+        target = root / firmware[0].removeprefix("/")
+        target.unlink()
+        target.symlink_to("gsp_ga10x.bin")
+        diagnostic = execute_failure(root, sysfs)
+        assert "requires exactly one regular NVIDIA gsp_tu10x.bin firmware payload; found 0" in diagnostic
+
+    with tempfile.TemporaryDirectory(prefix="display-initramfs-portable-ambiguous-gsp-") as temporary:
+        root, sysfs = fixture(temporary)
+        add_nvidia_payloads(root)
+        add_nvidia_firmware(root)
+        duplicate = root / "usr/lib/firmware/nvidia/580.1/gsp_ga10x.bin"
+        duplicate.parent.mkdir(parents=True)
+        duplicate.write_bytes(b"duplicate")
+        diagnostic = execute_failure(root, sysfs)
+        assert "requires exactly one regular NVIDIA gsp_ga10x.bin firmware payload; found 2" in diagnostic
 
 
 if __name__ == "__main__":

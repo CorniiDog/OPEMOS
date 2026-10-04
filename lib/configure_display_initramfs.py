@@ -10,6 +10,7 @@ from pathlib import Path
 
 NVIDIA_MODULES = ("nvidia", "nvidia_modeset", "nvidia_uvm", "nvidia_drm")
 NVIDIA_PAYLOADS = ("nvidia", "nvidia-modeset", "nvidia-uvm", "nvidia-drm")
+NVIDIA_GSP_FIRMWARE = ("gsp_tu10x.bin", "gsp_ga10x.bin")
 MODULE_SUFFIXES = ("", ".xz", ".gz", ".zst")
 DISPLAY_CLASS = 0x030000
 DISPLAY_CLASS_MASK = 0xFF0000
@@ -98,6 +99,39 @@ def portable_nvidia_payloads(root: Path, kernel: str) -> tuple[str, ...]:
     return tuple(payloads)
 
 
+def portable_nvidia_firmware(root: Path) -> tuple[str, ...]:
+    firmware_root = root / "usr/lib/firmware/nvidia"
+    payloads = []
+    for name in NVIDIA_GSP_FIRMWARE:
+        matches = []
+        try:
+            candidates = tuple(firmware_root.glob(f"*/{name}"))
+        except OSError:
+            candidates = ()
+        for candidate in candidates:
+            try:
+                relative = candidate.relative_to(root)
+                components = relative.parts
+                current = root
+                linked = False
+                for component in components:
+                    current = current / component
+                    if current.is_symlink():
+                        linked = True
+                        break
+                if not linked and candidate.is_file():
+                    matches.append(candidate)
+            except (OSError, ValueError):
+                continue
+        if len(matches) != 1:
+            raise ValueError(
+                "portable image requires exactly one regular NVIDIA "
+                f"{name} firmware payload; found {len(matches)}"
+            )
+        payloads.append("/" + matches[0].relative_to(root).as_posix())
+    return tuple(payloads)
+
+
 def i915_availability(root: Path, kernel: str) -> str:
     return module_availability(
         root, kernel, "i915", "kernel/drivers/gpu/drm/i915"
@@ -115,6 +149,7 @@ def portable_render(root: Path, kernel: str) -> tuple[str, str]:
         if module_availability(root, kernel, module, relative) == "module"
     ]
     nvidia_payloads = portable_nvidia_payloads(root, kernel)
+    nvidia_firmware = portable_nvidia_firmware(root)
     # Image construction runs inside a managed appliance whose PCI topology is
     # unrelated to the eventual device. Include the target kernel's available
     # integrated-display drivers and defer NVIDIA DRM until the real root so a
@@ -128,7 +163,7 @@ def portable_render(root: Path, kernel: str) -> tuple[str, str]:
         # Preserve the verified NVIDIA recovery payload in each generated
         # initramfs without asking mkinitcpio to load NVIDIA before the real
         # target chooses its display owner.
-        f"FILES=({' '.join(nvidia_payloads)})\n"
+        f"FILES=({' '.join(nvidia_payloads + nvidia_firmware)})\n"
     )
     return content, "portable-integrated-early-nvidia-rootfs"
 

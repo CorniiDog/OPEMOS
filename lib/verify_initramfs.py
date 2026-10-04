@@ -22,6 +22,7 @@ REQUIRED_MODULES = (
     "nvidia.ko", "nvidia-modeset.ko", "nvidia-uvm.ko", "nvidia-drm.ko",
 )
 ROOTFS_ONLY_MODULES = ("nvidia-peermem.ko",)
+REQUIRED_NVIDIA_FIRMWARE = ("gsp_tu10x.bin", "gsp_ga10x.bin")
 COMPRESSIONS = ("", ".gz", ".xz", ".zst", ".lz4", ".lzo")
 CONFIG_PATH = "etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf"
 
@@ -218,6 +219,15 @@ def main():
                     }
                     for path in listing):
                 fail(f"initramfs unexpectedly contains rootfs-only module {module}")
+        for firmware in REQUIRED_NVIDIA_FIRMWARE:
+            candidates = sorted(
+                path for path in listing
+                if path.startswith("usr/lib/firmware/nvidia/")
+                and Path(path).name == firmware
+                and len(Path(path).parts) == 6
+            )
+            if len(candidates) != 1:
+                fail(f"initramfs does not contain exactly one NVIDIA {firmware}")
         if listing.count(CONFIG_PATH) != 1:
             fail("initramfs lacks exactly one managed NVIDIA modprobe configuration")
         images.append({

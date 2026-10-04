@@ -41,12 +41,20 @@ for module in "${initramfs_modules[@]}"; do
     printf 'OPEMOS initramfs contract fixture: %s\n' "$module" > "$module_root/$module"
     chmod 0644 "$module_root/$module"
 done
+firmware_root=/usr/lib/firmware/nvidia/575.64.05
+install -d -m 0755 "$firmware_root"
+for firmware in gsp_tu10x.bin gsp_ga10x.bin; do
+    printf 'OPEMOS initramfs contract fixture: %s\n' "$firmware" > "$firmware_root/$firmware"
+    chmod 0644 "$firmware_root/$firmware"
+done
 cat > /etc/mkinitcpio.conf.d/99-open-gpu-contract.conf <<'EOF'
 FILES=(/etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf
        /usr/lib/modules/REPLACE_KERNEL/updates/ope-test/nvidia.ko
        /usr/lib/modules/REPLACE_KERNEL/updates/ope-test/nvidia-modeset.ko
        /usr/lib/modules/REPLACE_KERNEL/updates/ope-test/nvidia-uvm.ko
-       /usr/lib/modules/REPLACE_KERNEL/updates/ope-test/nvidia-drm.ko)
+       /usr/lib/modules/REPLACE_KERNEL/updates/ope-test/nvidia-drm.ko
+       /usr/lib/firmware/nvidia/575.64.05/gsp_tu10x.bin
+       /usr/lib/firmware/nvidia/575.64.05/gsp_ga10x.bin)
 EOF
 sed -i "s/REPLACE_KERNEL/$kernel/g" /etc/mkinitcpio.conf.d/99-open-gpu-contract.conf
 mkinitcpio -P
