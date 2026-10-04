@@ -38,6 +38,17 @@ Below is the consolidated project checklist based on our work so far. I’m trea
 
 ## Not yet resolved
 
+* [ ] Complete PR68 missing-driver recovery after exact VM acceptance exposed
+  two post-download installer defects: certified release rows were parsed with
+  a literal tab command expansion, and successful noninteractive installs read
+  a reboot prompt from closed stdin. Those fixes are on the PR branch. The
+  subsequent live-root trace proved correct module bytes were copied with
+  archive UID/GID 1000, causing the receipt-bound verifier to reject them as
+  unsafe and leave recovery active. Normalize the five installed modules to
+  root:root mode 0644, verify their ownership/mode/link identity before depmod,
+  rerun the failed stage, then require a fresh exact-head image for final
+  missing-driver/interstitial acceptance and counterpart review.
+
 This is the active index. New unchecked work belongs here first so maintainers
 and agents do not need to scan the completed historical checklist. When an item
 is completed, mark its detailed checklist entry below and remove it from this
@@ -2778,6 +2789,37 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
 ---
 
 # Overall state
+
+* [ ] Recover the physical OMEN after the SteamOS A/B update without falsely
+  classifying a valid GitHub connectivity response as offline or silently
+  omitting the fullscreen recovery renderer. Physical read-only diagnosis on
+  2026-10-04 found GitHub `/meta` returned valid strict JSON at 154,628 bytes,
+  while the installed validator rejected every response above 65,536 bytes;
+  updated rootfs A consequently remained at `offline_waiting` with its exact
+  kernel 6.18 NVIDIA modules absent. The bounded validator now accepts at most
+  256 KiB while retaining duplicate-key, object, hook-count, CIDR, string-size,
+  UTF-8, and JSON checks. Portable-image construction now fails closed unless
+  both the renderer and its exact SHA-256 are supplied, preventing an enabled
+  interstitial service whose `ConditionPathExists` can only skip. Focused
+  154,628-byte, excessive-response, omission, and installed-renderer tests plus
+  an actual missing-driver online-repair regression pass through `heavy.sh`;
+  exact image consumption, installed fullscreen evidence, counterpart review,
+  and user-coordinated physical confirmation remain required.
+  Fresh PR68 image acceptance then removed the five exact installed modules
+  from a disposable 32-GiB target and reached the real online repair path. The
+  validated release selector returned four tab-delimited fields, but
+  `online_install.sh` assigned `IFS` to a literal dollar sign followed by a tab;
+  the kernel field was therefore empty and repair honestly ended at visible
+  `recovery_required`. The parser now uses Bash's explicit `IFS=$'\t'` form,
+  with a regression binding all four selected fields. Rerunning only the failed
+  repair stage with that exact changed file selected and installed the correct
+  release and restored all five module hashes, then exposed a second
+  noninteractive-path defect: `online_install.sh -y` still attempted to read
+  the reboot prompt from service stdin, returned failure after the successful
+  install, and left the visible state at `recovery_required`. Noninteractive
+  installs now defer restart to their caller and a no-stdin regression requires
+  successful return. A corrected exact image and repeat of the failed recovery
+  stage remain required.
 
 * [x] Select the validated boot-VGA Intel/AMD `igpu-desktop` profile for an automatic guardian fallback after a post-update NVIDIA verification failure, retaining console fallback for missing, non-boot-VGA, or unsupported display hardware and retaining manual-only Nouveau. Physical HP OMEN evidence shows installation and first boot succeed but the next SteamOS A/B update remains at firmware splash. The executable recovery regression covers Intel, AMD, unsupported-vendor, non-boot-VGA, missing-device, locked recheck, and durable selected-profile state and passes through `heavy.sh`. The bounded repository check passed every preceding contract through exact header validation, where the unchanged host lacks `bsdtar`; local ShellCheck is likewise unavailable and remains a required CI gate. The receipt fixture now sets its claimed module and fallback-state modes explicitly so it is deterministic under the wrapper's `0077` umask; clean main passes under its previously implicit `0022` assumption. VM/software validation cannot certify the RTX 2060 internal-panel path. Exact PR, counterpart review, checks, squash merge, and consumption evidence will remain in the implementation PR and authenticated handoff.
 

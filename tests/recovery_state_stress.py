@@ -62,14 +62,20 @@ def validate_meta(payload, *, success):
     assert (result.returncode == 0) is success, result.stderr.decode(errors="replace")
 
 
-# Future additive fields are safe; malformed, portal, ambiguous, and excessive
-# evidence must not establish trusted connectivity.
+# Future additive fields are safe, including the current 154,628-byte response
+# size reproduced on the physical OMEN. Malformed, portal, ambiguous, and
+# excessive evidence must not establish trusted connectivity.
 validate_meta(b'{"hooks":["192.30.252.0/22"],"future":{"value":1}}', success=True)
+physical_size = 154_628
+prefix = b'{"hooks":["192.30.252.0/22"],"future":"'
+suffix = b'"}'
+validate_meta(prefix + b"x" * (physical_size - len(prefix) - len(suffix)) + suffix,
+              success=True)
 for invalid_meta in (
     b"", b"<html>captive portal</html>", b"{}", b'{"hooks":[]}',
     b'{"hooks":["192.30.252.1/22"]}', b'{"hooks":[7]}',
     b'{"hooks":["192.30.252.0/22"],"hooks":["185.199.108.0/22"]}',
-    b" " * (64 * 1024 + 1),
+    b" " * (256 * 1024 + 1),
 ):
     validate_meta(invalid_meta, success=False)
 

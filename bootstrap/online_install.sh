@@ -228,6 +228,11 @@ offer_reboot()
 {
     [[ "$INSTALL_CHANGED" == "1" ]] || return 0
 
+    if [[ "$YES" == "1" ]]; then
+        log "Restart deferred to the noninteractive caller."
+        return 0
+    fi
+
     echo
     read -r -p "[$PROJECT_NAME] Restart the system now? [y/N]: " REBOOT_REPLY
 
@@ -353,7 +358,7 @@ fi
 [[ -n "$SELECTED" ]] ||
     die "No certified project release exists for kernel ${KERNEL_VERSION} on SteamOS ${STEAMOS_VERSION} or an older release in ${STEAMOS_VERSION%.*}.x."
 
-IFS=$	 read -r \
+IFS=$'\t' read -r \
     SELECTED_STEAMOS \
     SELECTED_NVIDIA \
     SELECTED_KERNEL \

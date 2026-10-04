@@ -5,7 +5,10 @@ import ipaddress
 import json
 import sys
 
-MAX_RESPONSE_BYTES = 64 * 1024
+# GitHub's authenticated /meta document exceeded the former 64 KiB bound in
+# production. Keep the probe bounded while allowing the current additive
+# document and reasonable growth.
+MAX_RESPONSE_BYTES = 256 * 1024
 MAX_HOOKS = 1024
 
 
