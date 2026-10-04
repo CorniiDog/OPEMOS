@@ -1218,6 +1218,7 @@ printf '%s\n' \
     > "$ROOT/etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf"
 run_mutation_command python3 "$SUPPORT_ROOT/lib/configure_display_initramfs.py" \
     --root "$ROOT" --kernel "$KERNEL" --sysfs /sys \
+    --portable-image \
     --output "$ROOT/etc/mkinitcpio.conf.d/90-open-gpu-kernel-modules-steamos.conf"
 run_mutation_command python3 "$SUPPORT_ROOT/lib/snapshot_target_execution.py" \
     --root "$ROOT" --output "$POST_TRANSACTION_EXECUTION_MANIFEST" \

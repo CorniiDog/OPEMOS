@@ -59,19 +59,49 @@ def intel_internal_panel_connected(sysfs: Path) -> bool:
     return False
 
 
-def i915_availability(root: Path, kernel: str) -> str:
+def module_availability(root: Path, kernel: str, module: str, relative: str) -> str:
     module_root = root / "usr/lib/modules" / kernel
     for suffix in ("", ".xz", ".gz", ".zst"):
-        if (module_root / f"kernel/drivers/gpu/drm/i915/i915.ko{suffix}").is_file():
+        if (module_root / f"{relative}/{module}.ko{suffix}").is_file():
             return "module"
     builtin = module_root / "modules.builtin"
     try:
         records = builtin.read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeError):
         records = ()
-    if any(record.endswith("/i915.ko") for record in records):
+    if any(record.endswith(f"/{module}.ko") for record in records):
         return "builtin"
     return "unavailable"
+
+
+def i915_availability(root: Path, kernel: str) -> str:
+    return module_availability(
+        root, kernel, "i915", "kernel/drivers/gpu/drm/i915"
+    )
+
+
+def portable_render(root: Path, kernel: str) -> tuple[str, str]:
+    candidates = (
+        ("i915", "kernel/drivers/gpu/drm/i915"),
+        ("amdgpu", "kernel/drivers/gpu/drm/amd/amdgpu"),
+    )
+    modules = [
+        module
+        for module, relative in candidates
+        if module_availability(root, kernel, module, relative) == "module"
+    ]
+    # Image construction runs inside a managed appliance whose PCI topology is
+    # unrelated to the eventual device. Include the target kernel's available
+    # integrated-display drivers and defer NVIDIA DRM until the real root so a
+    # muxless internal panel cannot lose the early KMS handoff to the builder
+    # VM's virtual GPU decision.
+    content = (
+        "# Managed by OPEMOS\n"
+        "# Display boot decision: portable-integrated-early-nvidia-rootfs\n"
+        "# Hardware selection deferred to target boot\n"
+        f"MODULES=({' '.join(modules)})\n"
+    )
+    return content, "portable-integrated-early-nvidia-rootfs"
 
 
 def render(root: Path, kernel: str, sysfs: Path) -> tuple[str, str]:
@@ -109,11 +139,15 @@ def main() -> int:
     parser.add_argument("--root", required=True, type=Path)
     parser.add_argument("--kernel", required=True)
     parser.add_argument("--sysfs", default="/sys", type=Path)
+    parser.add_argument("--portable-image", action="store_true")
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     if not re.fullmatch(r"[A-Za-z0-9._+-]{1,128}", args.kernel):
         parser.error("kernel version is invalid")
-    content, decision = render(args.root, args.kernel, args.sysfs)
+    if args.portable_image:
+        content, decision = portable_render(args.root, args.kernel)
+    else:
+        content, decision = render(args.root, args.kernel, args.sysfs)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     temporary = args.output.with_name(f".{args.output.name}.{os.getpid()}.tmp")
     try:
