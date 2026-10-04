@@ -2800,8 +2800,15 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   `online_install.sh` assigned `IFS` to a literal dollar sign followed by a tab;
   the kernel field was therefore empty and repair honestly ended at visible
   `recovery_required`. The parser now uses Bash's explicit `IFS=$'\t'` form,
-  with a regression binding all four selected fields. A corrected exact image
-  and repeat of the failed recovery stage remain required.
+  with a regression binding all four selected fields. Rerunning only the failed
+  repair stage with that exact changed file selected and installed the correct
+  release and restored all five module hashes, then exposed a second
+  noninteractive-path defect: `online_install.sh -y` still attempted to read
+  the reboot prompt from service stdin, returned failure after the successful
+  install, and left the visible state at `recovery_required`. Noninteractive
+  installs now defer restart to their caller and a no-stdin regression requires
+  successful return. A corrected exact image and repeat of the failed recovery
+  stage remain required.
 
 * [x] Select the validated boot-VGA Intel/AMD `igpu-desktop` profile for an automatic guardian fallback after a post-update NVIDIA verification failure, retaining console fallback for missing, non-boot-VGA, or unsupported display hardware and retaining manual-only Nouveau. Physical HP OMEN evidence shows installation and first boot succeed but the next SteamOS A/B update remains at firmware splash. The executable recovery regression covers Intel, AMD, unsupported-vendor, non-boot-VGA, missing-device, locked recheck, and durable selected-profile state and passes through `heavy.sh`. The bounded repository check passed every preceding contract through exact header validation, where the unchanged host lacks `bsdtar`; local ShellCheck is likewise unavailable and remains a required CI gate. The receipt fixture now sets its claimed module and fallback-state modes explicitly so it is deterministic under the wrapper's `0077` umask; clean main passes under its previously implicit `0022` assumption. VM/software validation cannot certify the RTX 2060 internal-panel path. Exact PR, counterpart review, checks, squash merge, and consumption evidence will remain in the implementation PR and authenticated handoff.
 

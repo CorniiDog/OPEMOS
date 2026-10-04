@@ -92,6 +92,25 @@ exit 0
         cache = home / ".cache/open-gpu-kernel-modules-steamos-support"
         assert not list(cache.glob("online-install.*"))
 
+        # Automatic recovery invokes the online installer with --yes and no
+        # stdin.  A successful changed install must return to its caller so the
+        # recovery transaction can verify modules and publish completion.
+        install_log.unlink()
+        guardian_log.unlink()
+        noninteractive = subprocess.run(
+            ["bash", str(ENTRYPOINT), "--local", str(bundle), "--yes"],
+            cwd="/", env=environment, stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        assert noninteractive.returncode == 0, (
+            noninteractive.stdout, noninteractive.stderr
+        )
+        assert "Restart deferred to the noninteractive caller." in noninteractive.stdout
+        assert len(install_log.read_text().splitlines()) == 1
+        assert guardian_log.read_text().splitlines() == ["called"]
+        assert not reboot_log.exists()
+        assert not list(cache.glob("online-install.*"))
+
         # Freeze the known-good 575 representation boundary: release archives
         # contain raw modules while SteamOS may store identical bytes as .ko.zst.
         old_build_info = (
