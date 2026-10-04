@@ -188,7 +188,13 @@ print(json.dumps({
         online.write_text(
             f"#!/bin/sh\ntouch {str(online_marker)!r}\nexit 1\n", encoding="utf-8")
         (mockbin / "sudo").write_text(
-            "#!/bin/sh\n[ \"${1:-}\" = -v ] && exit 0\nexec \"$@\"\n", encoding="utf-8")
+            "#!/bin/sh\n"
+            "[ \"${1:-}\" = -v ] && exit 0\n"
+            "if [ \"${1:-}\" = chown ] && [ \"${2:-}\" = root:root ]; then\n"
+            "  shift 2\n"
+            "  exec chown \"$(id -u):$(id -g)\" \"$@\"\n"
+            "fi\n"
+            "exec \"$@\"\n", encoding="utf-8")
         (mockbin / "uname").write_text(
             f"#!/bin/sh\n[ \"${{1:-}}\" = -r ] && printf '%s\\n' {KERNEL!r} && exit 0\n"
             "exec /usr/bin/uname \"$@\"\n", encoding="utf-8")
@@ -410,6 +416,12 @@ receipt="$PROJECT_TEST_ROOT/var/lib/open-gpu-kernel-modules-steamos-support/reco
             "nvidia-drm.ko.zst", "nvidia-modeset.ko.zst", "nvidia-peermem.ko.zst",
             "nvidia-uvm.ko.zst", "nvidia.ko.zst",
         ]
+        assert all(
+            (path.stat().st_uid, path.stat().st_gid,
+             path.stat().st_mode & 0o777, path.stat().st_nlink)
+            == (os.geteuid(), os.getegid(), 0o644, 1)
+            for path in target.glob("*.ko.zst")
+        )
         assert target.parent.stat().st_mode & 0o777 == 0o755
         assert target.stat().st_mode & 0o777 == 0o755
         receipt = (cached_failure_root / "var/lib" /
