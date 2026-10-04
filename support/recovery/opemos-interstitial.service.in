@@ -10,6 +10,10 @@ ConditionPathExists=@DEST@/interstitial.sha256
 Type=simple
 Environment=HOME=/root
 Environment=OPEMOS_INTERSTITIAL_TIMEOUT_SEC=7200
+# systemd must create this before applying ReadWritePaths.  Creating it only in
+# ExecStartPre is too late when the directory is absent on a fresh boot.
+RuntimeDirectory=opemos/interstitial
+RuntimeDirectoryMode=0755
 ExecStartPre=/usr/bin/install -d -o root -g root -m 0755 /run/opemos/interstitial
 ExecStartPre=/usr/bin/python3 @DEST@/lib/interstitial_progress.py reset --state /run/opemos/interstitial/progress.json
 ExecStart=@DEST@/bootstrap/launch_interstitial.sh

@@ -2813,6 +2813,12 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
     now accepts the same bounded 7,200-second maximum, the launcher test binds
     that exact value, and the CI workflow invokes the compiled production
     parser with `--timeout 7200 --smoke-test` so this mismatch cannot recur.
+    Fresh installed-image validation then reproduced a first-start namespace
+    failure because `ReadWritePaths` was applied before `ExecStartPre` could
+    create `/run/opemos/interstitial`. The unit now assigns that exact path as
+    a systemd runtime directory so it exists before service sandbox setup; the
+    installed-unit regression binds the runtime-directory mode and writable
+    path together. Exact changed-head checks and VM evidence follow in PR 67.
   * [ ] Stop portable-image construction from using the managed appliance's
     unrelated PCI topology. The portable initramfs must include each available
     modular integrated-display driver from the target kernel and defer NVIDIA

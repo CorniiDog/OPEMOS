@@ -158,6 +158,12 @@ with tempfile.TemporaryDirectory(prefix="opemos-interstitial-") as temporary:
     assert "Environment=HOME=/root" in installed_service
     assert "Environment=OPEMOS_INTERSTITIAL_TIMEOUT_SEC=7200" in installed_service
     assert "RuntimeMaxSec=7215" in installed_service
+    assert "RuntimeDirectory=opemos/interstitial" in installed_service
+    assert "RuntimeDirectoryMode=0755" in installed_service
+    assert "ReadWritePaths=/run/opemos/interstitial" in installed_service
+    assert installed_service.index("RuntimeDirectory=opemos/interstitial") < installed_service.index(
+        "ReadWritePaths=/run/opemos/interstitial"
+    )
     assert "Environment=HOME=/root" in (
         persistent_etc / "systemd/system/opemos-nvidia-guardian.service"
     ).read_text()
