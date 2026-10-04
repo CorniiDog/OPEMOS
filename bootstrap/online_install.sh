@@ -353,7 +353,7 @@ fi
 [[ -n "$SELECTED" ]] ||
     die "No certified project release exists for kernel ${KERNEL_VERSION} on SteamOS ${STEAMOS_VERSION} or an older release in ${STEAMOS_VERSION%.*}.x."
 
-IFS=$	 read -r \
+IFS=$'\t' read -r \
     SELECTED_STEAMOS \
     SELECTED_NVIDIA \
     SELECTED_KERNEL \

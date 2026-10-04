@@ -554,6 +554,16 @@ SELECTED="$(python3 "$PROJECT_ROOT/lib/select_release.py" \
     3.8.16 kernel-a "$POLICY_FIXTURE")"
 [[ "$SELECTED" == $'3.8.16\t575.64.05\tkernel-a\tsteamos-3.8.16-nvidia-575.64.05-kkernel-a' ]] ||
     fail "exact SteamOS release was not preferred with exact kernel"
+IFS=$'\t' read -r \
+    SELECTED_STEAMOS SELECTED_NVIDIA SELECTED_KERNEL SELECTED_TAG \
+    <<< "$SELECTED"
+[[ "$SELECTED_STEAMOS" == 3.8.16 &&
+   "$SELECTED_NVIDIA" == 575.64.05 &&
+   "$SELECTED_KERNEL" == kernel-a &&
+   "$SELECTED_TAG" == steamos-3.8.16-nvidia-575.64.05-kkernel-a ]] ||
+    fail "online installer release fields were not split on tabs"
+grep -Fq "IFS=\$'\\t' read -r" "$PROJECT_ROOT/bootstrap/online_install.sh" ||
+    fail "online installer does not use the validated tab-delimited release parser"
 
 SELECTED="$(python3 "$PROJECT_ROOT/lib/select_release.py" \
     3.8.18 kernel-a "$POLICY_FIXTURE")"
