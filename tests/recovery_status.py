@@ -1071,10 +1071,24 @@ with tempfile.TemporaryDirectory(prefix="opemos-recovery-stage-") as temporary:
     target.mkdir()
     persistent_home.mkdir()
     persistent_etc.mkdir()
+    interstitial = Path(temporary) / "opemos-interstitial"
+    elf = bytearray(120)
+    elf[:7] = b"\x7fELF\x02\x01\x01"
+    elf[16:18] = (3).to_bytes(2, "little")
+    elf[18:20] = (62).to_bytes(2, "little")
+    elf[20:24] = (1).to_bytes(4, "little")
+    elf[32:40] = (64).to_bytes(8, "little")
+    elf[52:54] = (64).to_bytes(2, "little")
+    elf[54:56] = (56).to_bytes(2, "little")
+    elf[56:58] = (1).to_bytes(2, "little")
+    interstitial.write_bytes(elf)
+    interstitial.chmod(0o755)
     subprocess.run([
         str(STAGE), "--root", str(target), "--support-revision", "b" * 40,
         "--nvidia", NVIDIA, "--persistent-home-root", str(persistent_home),
         "--persistent-etc-root", str(persistent_etc),
+        "--interstitial-binary", str(interstitial),
+        "--interstitial-sha256", hashlib.sha256(elf).hexdigest(),
     ], env={**os.environ, "PROJECT_TEST_MODE": "1"}, check=True)
     persistent = persistent_home / ".steamos/open-gpu-kernel-modules-steamos-support/recovery"
     assert (persistent / "support-revision").read_text().strip() == "b" * 40
