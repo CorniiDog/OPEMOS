@@ -9,6 +9,7 @@ from pathlib import Path
 
 
 NVIDIA_MODULES = ("nvidia", "nvidia_modeset", "nvidia_uvm", "nvidia_drm")
+NVIDIA_PAYLOADS = ("nvidia", "nvidia-modeset", "nvidia-uvm", "nvidia-drm")
 MODULE_SUFFIXES = ("", ".xz", ".gz", ".zst")
 DISPLAY_CLASS = 0x030000
 DISPLAY_CLASS_MASK = 0xFF0000
@@ -81,7 +82,7 @@ def portable_nvidia_payloads(root: Path, kernel: str) -> tuple[str, ...]:
     ) / kernel / "updates/open-gpu-kernel-modules-steamos"
     directory = root / relative_directory
     payloads = []
-    for module in NVIDIA_MODULES:
+    for module in NVIDIA_PAYLOADS:
         matches = [
             directory / f"{module}.ko{suffix}"
             for suffix in MODULE_SUFFIXES

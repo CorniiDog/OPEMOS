@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parent.parent
 TOOL = ROOT / "lib/configure_display_initramfs.py"
 INSTALLER = ROOT / "bootstrap/install_to_root.sh"
 KERNEL = "6.16.12-valve-fixture"
-NVIDIA_MODULES = ("nvidia", "nvidia_modeset", "nvidia_uvm", "nvidia_drm")
+NVIDIA_PAYLOADS = ("nvidia", "nvidia-modeset", "nvidia-uvm", "nvidia-drm")
 
 
 def pci_device(sysfs: Path, address: str, vendor: str, device_class: str) -> None:
@@ -74,7 +74,7 @@ def add_nvidia_payloads(root: Path, suffix: str = ".zst") -> tuple[str, ...]:
     )
     directory.mkdir(parents=True)
     paths = []
-    for module in NVIDIA_MODULES:
+    for module in NVIDIA_PAYLOADS:
         payload = directory / f"{module}.ko{suffix}"
         payload.write_bytes(b"fixture")
         paths.append("/" + payload.relative_to(root).as_posix())
@@ -187,11 +187,11 @@ def main() -> None:
         add_nvidia_payloads(root)
         missing = (
             root / "usr/lib/modules" / KERNEL
-            / "updates/open-gpu-kernel-modules-steamos/nvidia_drm.ko.zst"
+            / "updates/open-gpu-kernel-modules-steamos/nvidia-drm.ko.zst"
         )
         missing.unlink()
         diagnostic = execute_failure(root, sysfs)
-        assert "requires exactly one regular nvidia_drm.ko payload; found 0" in diagnostic
+        assert "requires exactly one regular nvidia-drm.ko payload; found 0" in diagnostic
 
     with tempfile.TemporaryDirectory(prefix="display-initramfs-portable-ambiguous-") as temporary:
         root, sysfs = fixture(temporary)
@@ -209,12 +209,12 @@ def main() -> None:
         add_nvidia_payloads(root)
         payload = (
             root / "usr/lib/modules" / KERNEL
-            / "updates/open-gpu-kernel-modules-steamos/nvidia_uvm.ko.zst"
+            / "updates/open-gpu-kernel-modules-steamos/nvidia-uvm.ko.zst"
         )
         payload.unlink()
         payload.symlink_to("nvidia.ko.zst")
         diagnostic = execute_failure(root, sysfs)
-        assert "requires exactly one regular nvidia_uvm.ko payload; found 0" in diagnostic
+        assert "requires exactly one regular nvidia-uvm.ko payload; found 0" in diagnostic
 
 
 if __name__ == "__main__":
