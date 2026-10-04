@@ -2802,6 +2802,20 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
     constructed in the appliance before the later Core pin could affect its
     bytes. Focused validation, a freshly constructed exact-Core image, and the
     install/update/reboot lifecycle remain required before completion.
+    The authenticated Core `01407aa` image then completed a clean 32-GiB
+    sole-NVMe install and first boot from SteamOS build `20260707.10`, kernel
+    `6.16.12-valve24.4`, rootfs-B; the display manager was active and recovery
+    returned `exact_nvidia_already_healthy`. A normal `steamos-update` completed
+    and rebooted to build `20260922.1`, kernel `6.18.50-valve2`, rootfs-A. The
+    guardian rebuilt both initramfs images, selected its validated console
+    fallback for the VM's unsupported virtual display adapter, and scheduled
+    delayed repair after the exact new-kernel NVIDIA product was unavailable;
+    a subsequent reboot reproduced that stable userspace state. The clean
+    pre-update qcow snapshot remains present, the image is clean/non-corrupt,
+    and no QEMU survives. This proves the update/reboot path reaches guardian
+    userspace rather than firmware in the VM, but cannot certify the OMEN's
+    Intel/NVIDIA internal-panel path. Fresh PR66 image consumption and physical
+    confirmation remain required.
 
 The project has crossed the bring-up threshold. SteamOS 3.8.16 has successfully
 booted into Gaming Mode on the RTX 2060 with the known-good project NVIDIA
