@@ -13,6 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 TOOL = ROOT / "lib/recovery_cached_product.py"
 CONTROL = ROOT / "bootstrap/recoveryctl.sh"
+VISIBLE_REPAIR = ROOT / "bootstrap/run_repair_with_interstitial.sh"
 STEAMOS = "3.8.16"
 KERNEL = "6.16.12-valve24.5-1-neptune-616-gb2f7cfe85e45"
 NVIDIA = "575.64.05"
@@ -267,10 +268,12 @@ esac
                 "PROJECT_TEST_READONLY_LOG": str(readonly_log),
                 "HOME": str(immutable_home),
                 "TMPDIR": str(installer_tmp),
+                "PROJECT_TEST_PROGRESS_STATE": str(
+                    test_root / "run/opemos/interstitial/progress.json"),
             }
             environment.pop("USER", None)
             return subprocess.run(
-                [str(CONTROL), "repair-auto", "--json"], env=environment,
+                [str(VISIBLE_REPAIR)], env=environment,
                 text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 preexec_fn=lambda: os.umask(0o077),
             )
@@ -298,6 +301,10 @@ esac
             "action": "retry_scheduled", "reason": "network_unavailable",
             "schemaVersion": 1, "status": "offline_waiting",
         }
+        offline_progress = json.loads((flow / "absent-root/run/opemos/interstitial/progress.json")
+                                      .read_text(encoding="utf-8"))
+        assert offline_progress["status"] == "failed"
+        assert offline_progress["phase"] == "recovery_required"
 
         # A validated exact cached product skips acquisition and may enter the
         # installer directly from the initial offline-waiting transaction. The
@@ -330,6 +337,10 @@ esac
         assert transaction["attempt"] == 2
         assert transaction["automaticRetry"] is True
         assert not curl_marker.exists() and not online_marker.exists()
+        failed_progress = json.loads((cached_failure_root /
+            "run/opemos/interstitial/progress.json").read_text(encoding="utf-8"))
+        assert failed_progress["status"] == "failed"
+        assert failed_progress["phase"] == "recovery_required"
 
         # A new exact validated materialization can service the next automatic
         # timer after the bounded failure. Run the real installer with USER
@@ -347,6 +358,11 @@ esac
         cached_retry = recovery(valid_product, cached_failure_root)
         assert cached_retry.returncode == 0, (
             cached_retry.stdout, cached_retry.stderr)
+        restored_progress = json.loads((cached_failure_root /
+            "run/opemos/interstitial/progress.json").read_text(encoding="utf-8"))
+        assert restored_progress["status"] == "succeeded"
+        assert restored_progress["phase"] == "complete"
+        assert restored_progress["sequence"] >= 5
         target = (cached_failure_root / "usr/lib/modules" / KERNEL / "updates" /
                   "open-gpu-kernel-modules-steamos")
         assert sorted(path.name for path in target.glob("*.ko.zst")) == [

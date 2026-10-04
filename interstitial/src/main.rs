@@ -25,6 +25,7 @@ mod linux {
 
     const PRODUCTION_PROGRESS: &str = "/run/opemos/interstitial/progress.json";
     const MAX_PIXELS: u64 = 33_554_432;
+    const MAX_TIMEOUT_SECONDS: u64 = 7200;
     static TERMINATED: AtomicBool = AtomicBool::new(false);
 
     extern "C" fn stop(_: libc::c_int) {
@@ -304,8 +305,8 @@ mod linux {
                         .ok_or("--timeout requires seconds")?
                         .parse()
                         .map_err(|_| "--timeout is invalid")?;
-                    if !(1..=900).contains(&seconds) {
-                        return Err("--timeout must be between 1 and 900 seconds");
+                    if !(1..=MAX_TIMEOUT_SECONDS).contains(&seconds) {
+                        return Err("--timeout must be between 1 and 7200 seconds");
                     }
                     timeout = Duration::from_secs(seconds);
                 }
