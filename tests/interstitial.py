@@ -364,6 +364,42 @@ repair_launcher = (ROOT / "bootstrap/run_repair_with_interstitial.sh").read_text
 )
 assert 'python3 "$WRITER" reset --state "$PROGRESS"' in repair_launcher
 assert 'if [[ "${PROJECT_TEST_MODE:-0}" == 1 ]]' not in repair_launcher
+with tempfile.TemporaryDirectory(prefix="opemos-repair-display-transition-") as temporary:
+    fixture = Path(temporary)
+    (fixture / "bootstrap").mkdir()
+    (fixture / "lib").mkdir()
+    (fixture / "commands").mkdir()
+    state = fixture / "progress.json"
+    trace = fixture / "trace"
+    state.write_text("failed guardian\n")
+    installed_launcher = fixture / "bootstrap/run_repair_with_interstitial.sh"
+    installed_launcher.write_text(repair_launcher.replace(
+        "/run/opemos/interstitial/progress.json", str(state)))
+    installed_launcher.chmod(0o755)
+    writer = fixture / "lib/interstitial_progress.py"
+    writer.write_text("import os, pathlib, sys\n"
+                      "pathlib.Path(os.environ['TRACE']).open('a').write(sys.argv[1]+'\\n')\n"
+                      "pathlib.Path(sys.argv[3]).write_text(sys.argv[1])\n")
+    for name, script in {
+        "commands/systemctl": '#!/bin/sh\nprintf "%s\\n" "$*" >> "$TRACE"\n',
+        "bootstrap/recoveryctl.sh": '#!/bin/sh\n'
+        'test "$(cat "$OPEMOS_RECOVERY_PROGRESS_STATE")" = reset || exit 9\n'
+        'printf "repair\\n" >> "$TRACE"\nexit 1\n',
+    }.items():
+        executable = fixture / name
+        executable.write_text(script)
+        executable.chmod(0o755)
+    result = subprocess.run([str(installed_launcher)], env={
+        **os.environ, "TRACE": str(trace),
+        "PROJECT_TEST_MODE": "0",
+        "PATH": str(fixture / "commands") + os.pathsep + os.environ["PATH"],
+    }, capture_output=True, text=True)
+    assert result.returncode == 1, result.stderr
+    assert trace.read_text().splitlines() == [
+        "stop opemos-interstitial.service", "reset",
+        "start opemos-interstitial.service", "repair", "fail",
+    ]
+    assert state.read_text() == "fail"
 assert "keyboard" not in service.lower() and "mouse" not in service.lower()
 guardian_service = GUARDIAN_SERVICE.read_text(encoding="utf-8")
 assert "run_guardian_with_interstitial.sh" in guardian_service

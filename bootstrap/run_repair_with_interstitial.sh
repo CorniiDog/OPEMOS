@@ -22,7 +22,18 @@ fi
 # Guardian and delayed repair are distinct attempts that share one visible
 # document.  Guardian may leave a terminal result before systemd starts this
 # ordered unit, so begin the repair attempt explicitly in every environment.
+# Stop the preceding attempt before replacing its terminal document. A running
+# renderer deliberately rejects terminal replacement within one attempt.
+if [[ "$PROGRESS" == /run/opemos/interstitial/progress.json ]]; then
+    systemctl stop opemos-interstitial.service
+fi
 python3 "$WRITER" reset --state "$PROGRESS" >/dev/null || exit 1
+if [[ "$PROGRESS" == /run/opemos/interstitial/progress.json ]]; then
+    systemctl start opemos-interstitial.service || {
+        "$SUPPORT_ROOT/bootstrap/show_recovery_console.sh" \
+            'Graphics status is unavailable. Automatic NVIDIA repair is starting.' || true
+    }
+fi
 
 status=0
 OPEMOS_RECOVERY_PROGRESS_STATE="$PROGRESS" \

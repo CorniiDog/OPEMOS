@@ -396,6 +396,10 @@ mod linux {
         }
     }
 
+    fn terminal_releases_display(status: Status, elapsed: Duration) -> bool {
+        status == Status::Succeeded && elapsed >= Duration::from_millis(1500)
+    }
+
     pub fn main() -> Result<(), String> {
         let options = options().map_err(str::to_owned)?;
         if options.smoke_test {
@@ -477,12 +481,13 @@ mod linux {
             display
                 .draw(tracker.current(), pulse)
                 .map_err(|error| format!("DRM/KMS rendering failed: {error}"))?;
-            if terminal_at.is_some_and(|time| time.elapsed() >= Duration::from_millis(1500)) {
-                return if tracker.current().status == Status::Succeeded {
-                    Ok(())
-                } else {
-                    Err("recovery remains required".into())
-                };
+            // A failed attempt remains visible until the bounded watchdog or
+            // the next attempt explicitly stops this renderer. Releasing its
+            // scanout immediately would restore the stale boot framebuffer.
+            if terminal_at.is_some_and(|time| {
+                terminal_releases_display(tracker.current().status, time.elapsed())
+            }) {
+                return Ok(());
             }
             thread::sleep(Duration::from_millis(100));
         }
@@ -491,6 +496,23 @@ mod linux {
 
     #[cfg(test)]
     mod tests {
+        #[test]
+        fn failed_recovery_keeps_scanout_until_watchdog_or_next_attempt() {
+            use super::{terminal_releases_display, Duration, Status};
+            assert!(!terminal_releases_display(
+                Status::Failed,
+                Duration::from_secs(7200)
+            ));
+            assert!(!terminal_releases_display(
+                Status::Succeeded,
+                Duration::from_secs(1)
+            ));
+            assert!(terminal_releases_display(
+                Status::Succeeded,
+                Duration::from_secs(2)
+            ));
+        }
+
         use super::display_driver_priority;
         use std::ffi::OsStr;
 

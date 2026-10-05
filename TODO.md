@@ -3082,3 +3082,16 @@ gate is a completely clean-stock one-command certified installation.
     exact verification, terminal restored state, fallback removal, and no curl
     or online installer. Immutable PR/check/review/merge evidence follows in the
     implementation record.
+
+* [ ] Preserve visible recovery failure across the guardian-to-delayed-repair
+  transition reproduced on physical Core `86acf7b`: Nouveau rendered status,
+  then the renderer rejected replacement of the guardian's terminal document
+  before exact 3.8.28 repair failed. Delayed repair now stops the preceding
+  renderer before reset and starts a fresh renderer before invoking repair.
+  Failed frames remain visible until the existing bounded watchdog or the next
+  attempt; successful frames still release normally. Console fallback defaults
+  to VT4, matching the observed `fbcon=vc:4-6` boot arguments. The executable
+  transition fixture proves stop/reset/start/repair/fail ordering and retained
+  failure; 16 Rust tests, warnings-denied Clippy and installed-contract checks
+  pass through `heavy.sh`. Exact PR/check/review/merge and new candidate physical
+  confirmation remain required; missing exact 6.18 repair product is separate.
