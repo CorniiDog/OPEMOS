@@ -2840,6 +2840,23 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   Immutable PR, exact counterpart review, and merge evidence follow in the
   implementation record.
 
+* [ ] Replace the simpledrm-only recovery assumption after physical OMEN
+  evidence showed an efifb-to-Nouveau handoff with no simpledrm node and a
+  failed exact repair hidden behind the retained firmware logo. The renderer
+  now tries checked native NVIDIA, Intel, AMD and Nouveau backends before
+  firmware/virtual DRM, and accepts a backend only after open, dumb-buffer,
+  connected-mode, CRTC modeset and first-frame mapping all succeed. It retains
+  distinct errors for real card nodes instead of replacing the useful failure
+  with the final missing-card ENOENT. If every backend fails, the installed
+  launcher quits Plymouth, selects a bounded text VT where possible, and writes
+  an explicit recovery failure plus status/repair commands. Rust tests pass
+  15/15, warnings-denied Clippy and formatting pass, and focused installed-
+  contract, console-output, consumer, documentation, syntax, and diff checks
+  pass through `heavy.sh` where substantive. The immutable bundle publisher
+  correctly requires the new helper to exist in the committed tree. Its post-
+  commit rerun, exact VM missing-driver handoff, immutable PR/check/review/merge,
+  bundle consumption, and user-coordinated physical visibility remain required.
+
 * [ ] Prevent early NVIDIA DRM from competing with modular i915 for the muxless internal-panel handoff. On detected Intel+NVIDIA targets with modular i915, the generated initramfs now contains only i915; the NVIDIA stack binds through ordinary rootfs device discovery after Intel owns the panel. NVIDIA-only, built-in-i915, and fail-safe unavailable-i915 behavior remain unchanged. Focused and integration evidence follows in the implementation PR; VM visible boot cannot prove the physical RTX 2060/internal-panel path.
   * [ ] Keep the existing fullscreen recovery renderer active for delayed
     post-update repair and publish the real inspection, network, download,

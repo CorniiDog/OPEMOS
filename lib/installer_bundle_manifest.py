@@ -29,6 +29,7 @@ FILES = (
     ("bootstrap/install_recovery_guardian_to_root.sh", "installer-entrypoint", "0755"),
     ("bootstrap/launch_desktop_companion.sh", "device-entrypoint", "0755"),
     ("bootstrap/launch_interstitial.sh", "device-entrypoint", "0755"),
+    ("bootstrap/show_recovery_console.sh", "device-entrypoint", "0755"),
     ("bootstrap/run_guardian_with_interstitial.sh", "device-entrypoint", "0755"),
     ("bootstrap/run_repair_with_interstitial.sh", "device-entrypoint", "0755"),
     ("bootstrap/recoveryctl.sh", "device-entrypoint", "0755"),

@@ -28,12 +28,13 @@ desktop exists; the interstitial is designed specifically not to require one.
 
 ## Display architecture
 
-The Linux executable opens only a DRM primary node whose kernel driver reports
-`simpledrm`, finds a connected bounded mode, creates an XRGB8888 dumb buffer,
-draws the OPEMOS interface entirely in software, and applies a legacy KMS
-modeset. This preserves the UEFI GOP-selected display during recovery without
-binding or selecting a vendor GPU. It does not initialize OpenGL, Vulkan, CUDA,
-X11, Wayland, Gamescope, or any input device.
+The Linux executable tries already-present DRM primary nodes in a fixed order:
+NVIDIA DRM, Intel i915/xe, AMDGPU, Nouveau, simpledrm, then virtio-gpu. It never
+loads or unloads a graphics module. For each candidate it requires dumb-buffer
+support, a connected bounded mode, an available CRTC, a successful legacy KMS
+modeset, and a complete first XRGB8888 software frame before accepting that
+backend. It does not initialize OpenGL, Vulkan, CUDA, X11, Wayland, Gamescope,
+or any input device.
 
 The renderer scans only `/dev/dri/card0` through `card15`, caps a mode at
 8192×8192 and 33,554,432 pixels, accounts for the device pitch, and restores
@@ -161,20 +162,23 @@ policy. CI output is a development artifact.
 
 ## Failure behavior
 
-- Missing `simpledrm`, no connected firmware mode, invalid pitch, or a modeset
-  error releases resources and lets boot continue through the existing
-  framebuffer/text console or headlessly.
+- Missing DRM nodes, unsupported drivers, disconnected outputs, invalid modes,
+  permission/master contention, invalid pitch, or modeset/first-frame failure
+  are retained per card while the next supported backend is tried.
 - Missing, malformed, excessive, writable, regressed, or contradictory progress
   stops the renderer and leaves the guardian authoritative.
 - A failed guardian state is shown as `RECOVERY NEEDS ATTENTION`; the guardian
   selects its console-safe fallback independently.
-- The renderer refuses vendor DRM drivers and never enables a driver, changes a
+- If every graphics backend fails, the launcher quits Plymouth, selects a
+  bounded text VT when available, and prints terminal recovery status plus the
+  explicit status and repair commands. It never enables a driver, changes a
   systemd default target, runs a repair command, or accepts user input.
 
 ## Remaining hardware gate
 
 The portable and Fedora contracts do not replace physical validation. Before
-enabling the service in a normal-user release, test simpledrm on real SteamOS
-hardware, display hotplug, internal/external displays,
+enabling the service in a normal-user release, test the applicable DRM backend
+and text-console fallback on real SteamOS hardware, display hotplug,
+internal/external displays,
 suspend/resume boundaries, abrupt power loss, renderer SIGKILL, and verified
 handoff into both Gaming and Desktop Mode.

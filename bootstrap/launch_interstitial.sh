@@ -30,4 +30,12 @@ TIMEOUT="${OPEMOS_INTERSTITIAL_TIMEOUT_SEC:-300}"
     printf 'Interstitial timeout is outside the supported range.\n' >&2
     exit 1
 }
-exec "$BINARY" --timeout "$TIMEOUT"
+set +e
+"$BINARY" --timeout "$TIMEOUT"
+status=$?
+set -e
+if [[ "$status" -ne 0 ]]; then
+    "$SUPPORT_ROOT/bootstrap/show_recovery_console.sh" \
+        'Graphics status could not be displayed. Exact NVIDIA recovery may still be required.' || true
+fi
+exit "$status"
