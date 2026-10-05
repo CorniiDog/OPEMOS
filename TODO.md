@@ -2852,10 +2852,10 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
   an explicit recovery failure plus status/repair commands. Rust tests pass
   15/15, warnings-denied Clippy and formatting pass, and focused installed-
   contract, console-output, consumer, documentation, syntax, and diff checks
-  pass through `heavy.sh` where substantive. The immutable bundle publisher
-  correctly requires the new helper to exist in the committed tree. Its post-
-  commit rerun, exact VM missing-driver handoff, immutable PR/check/review/merge,
-  bundle consumption, and user-coordinated physical visibility remain required.
+  pass through `heavy.sh` where substantive. After commit `1f5c9d2`, the
+  immutable bundle publisher includes the new helper and passes. Exact VM
+  missing-driver handoff, immutable PR/check/review/merge, bundle consumption,
+  and user-coordinated physical visibility remain required.
 
 * [ ] Prevent early NVIDIA DRM from competing with modular i915 for the muxless internal-panel handoff. On detected Intel+NVIDIA targets with modular i915, the generated initramfs now contains only i915; the NVIDIA stack binds through ordinary rootfs device discovery after Intel owns the panel. NVIDIA-only, built-in-i915, and fail-safe unavailable-i915 behavior remain unchanged. Focused and integration evidence follows in the implementation PR; VM visible boot cannot prove the physical RTX 2060/internal-panel path.
   * [ ] Keep the existing fullscreen recovery renderer active for delayed
