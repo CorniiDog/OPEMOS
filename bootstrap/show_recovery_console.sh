@@ -9,7 +9,7 @@ if [[ "${1:-}" == --help ]]; then
 fi
 
 MESSAGE=${1:-OPEMOS recovery needs attention.}
-TTY=${OPEMOS_RECOVERY_TTY:-/dev/tty1}
+TTY=${OPEMOS_RECOVERY_TTY:-/dev/tty4}
 
 if [[ "${PROJECT_TEST_MODE:-0}" == 1 && "$(id -u)" -ne 0 ]]; then
     [[ -e "$TTY" && ! -L "$TTY" ]] || {

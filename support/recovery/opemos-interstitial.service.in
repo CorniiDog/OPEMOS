@@ -63,6 +63,7 @@ DeviceAllow=/dev/dri/card13 rw
 DeviceAllow=/dev/dri/card14 rw
 DeviceAllow=/dev/dri/card15 rw
 DeviceAllow=/dev/tty1 rw
+DeviceAllow=/dev/tty4 rw
 DeviceAllow=/dev/tty0 rw
 
 [Install]
