@@ -2905,6 +2905,17 @@ require reinstalling Core/CLI, updating a binary, or reimaging SteamOS.
     those exact payload paths through `FILES`, and rejects missing, linked, or
     duplicate payloads before `mkinitcpio` runs. Exact PR, checks, changed Core
     product, counterpart review, and failed-stage partial evidence remain.
+    A subsequent physical install consumed Core `21c47c1`, updated from
+    SteamOS 3.8.14 / kernel 6.16.12 to SteamOS 3.8.28 / kernel 6.18.50, and
+    correctly entered fallback with no target NVIDIA modules. Its persistent
+    transaction reached attempt 3 and returned `exact_repair_failed` within
+    four seconds because no certified release exists for the exact 6.18.50
+    kernel; the maintainer policy likewise had no plan for that observed
+    target. The bounded correction adds the exact 3.8.28 / 6.18.50 / NVIDIA
+    575.64.05 target to the existing build workflow using the already reviewed
+    source and baseline, without publishing a release or changing trust
+    endpoints. Exact build compatibility, product validation, publication,
+    installed repair, reboot, and physical display confirmation remain.
 
 The project has crossed the bring-up threshold. SteamOS 3.8.16 has successfully
 booted into Gaming Mode on the RTX 2060 with the known-good project NVIDIA

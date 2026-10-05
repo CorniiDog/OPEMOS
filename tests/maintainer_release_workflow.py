@@ -7,6 +7,7 @@ sys.path.insert(0,str(ROOT/"lib"))
 from resolve_target import exact_target_build_action
 TARGET=["--steamos","3.8.14","--kernel","6.16.12-valve24.4-1-neptune-616-gfe145653a794","--nvidia","575.64.05","--architecture","x86_64"]
 UPDATED_TARGET=["--steamos","3.8.16","--kernel","6.16.12-valve24.5-1-neptune-616-gb2f7cfe85e45","--nvidia","575.64.05","--architecture","x86_64"]
+PHYSICAL_UPDATE_TARGET=["--steamos","3.8.28","--kernel","6.18.50-valve2-1-neptune-618-gc7289a96b14d","--nvidia","575.64.05","--architecture","x86_64"]
 def call(*args): return subprocess.run([str(TOOL),*args],text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
 def main():
  first=call(*TARGET); second=call(*TARGET); assert first.returncode==0,first.stderr; assert first.stdout==second.stdout
@@ -37,6 +38,16 @@ def main():
  assert build["buildPlan"]["source"]==updated_value["source"]
  assert build["buildPlan"]["baseline"]["releaseTag"]=="steamos-3.8.16-nvidia-575.64.05-k6.16.12-valve24.5-1-neptune-616-gb2f7cfe85e45"
  assert build["buildPlan"]["policy"]["sha256"]==updated_value["capability"]["policy"]["sha256"]
+ physical=call(*PHYSICAL_UPDATE_TARGET); assert physical.returncode==0,physical.stderr
+ physical_value=json.loads(physical.stdout); jsonschema.validate(physical_value,schema)
+ assert physical_value["status"]=="available" and physical_value["capability"]["available"] is True
+ assert physical_value["target"]=={"steamosVersion":"3.8.28","kernelVersion":"6.18.50-valve2-1-neptune-618-gc7289a96b14d","nvidiaVersion":"575.64.05","architecture":"x86_64"}
+ assert physical_value["source"]==updated_value["source"]
+ physical_build=exact_target_build_action("3.8.28","6.18.50-valve2-1-neptune-618-gc7289a96b14d","x86_64")
+ assert physical_build["buildPlan"]["target"]==physical_value["target"]
+ assert physical_build["buildPlan"]["source"]==physical_value["source"]
+ assert physical_build["buildPlan"]["baseline"]==build["buildPlan"]["baseline"]
+ assert physical_build["buildPlan"]["policy"]["sha256"]==physical_value["capability"]["policy"]["sha256"]
  missing=call("--steamos","3.8.15",*TARGET[2:]); assert missing.returncode==0,missing.stderr
  absent=json.loads(missing.stdout); jsonschema.validate(absent,schema); assert absent["status"]=="unavailable" and absent["steps"]==[] and "source" not in absent
  for bad in ([],["--steamos","3.8","--kernel","k","--nvidia","575.64.05","--architecture","x86_64"],TARGET[:-1]+["aarch64"]):
