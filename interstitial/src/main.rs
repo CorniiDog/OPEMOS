@@ -13,7 +13,7 @@ mod linux {
     use opemos_interstitial::{
         render, Frame, Phase, Progress, ProgressTracker, Status, MAX_PROGRESS_BYTES,
     };
-    use std::ffi::OsStr;
+    use std::ffi::{OsStr, OsString};
     use std::fs::{File, OpenOptions};
     use std::io::{self, Read};
     use std::os::fd::{AsFd, BorrowedFd};
@@ -55,6 +55,7 @@ mod linux {
 
     struct Display {
         card: Card,
+        driver: OsString,
         prior_connectors: Vec<connector::Handle>,
         crtc: crtc::Info,
         framebuffer: Option<framebuffer::Handle>,
@@ -66,19 +67,32 @@ mod linux {
 
     impl Display {
         fn open() -> io::Result<Self> {
-            let mut last_error =
-                io::Error::new(io::ErrorKind::NotFound, "no usable DRM/KMS display");
-            for index in 0..16 {
-                let path = format!("/dev/dri/card{index}");
-                match Self::open_card(&path) {
-                    Ok(display) => return Ok(display),
-                    Err(error) => last_error = error,
+            let mut failures = Vec::new();
+            for priority in 0..DISPLAY_DRIVER_PRIORITIES.len() {
+                for index in 0..16 {
+                    let path = format!("/dev/dri/card{index}");
+                    match Self::open_card(&path, priority) {
+                        Ok(Some(display)) => return Ok(display),
+                        Ok(None) => {}
+                        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                        Err(error) => {
+                            let failure = format!("{path}: {error}");
+                            if !failures.contains(&failure) {
+                                failures.push(failure);
+                            }
+                        }
+                    }
                 }
             }
-            Err(last_error)
+            let message = if failures.is_empty() {
+                "no DRM card nodes were available".to_owned()
+            } else {
+                format!("no usable DRM/KMS display; {}", failures.join("; "))
+            };
+            Err(io::Error::new(io::ErrorKind::NotFound, message))
         }
 
-        fn open_card(path: &str) -> io::Result<Self> {
+        fn open_card(path: &str, priority: usize) -> io::Result<Option<Self>> {
             let file = OpenOptions::new()
                 .read(true)
                 .write(true)
@@ -86,11 +100,17 @@ mod linux {
                 .open(path)?;
             let card = Card(file);
             let driver = card.get_driver()?;
-            if !is_firmware_display_driver(driver.name()) {
-                return Err(io::Error::new(
-                    io::ErrorKind::Unsupported,
-                    "DRM device is not the firmware simpledrm display",
-                ));
+            let driver_name = driver.name().to_os_string();
+            match display_driver_priority(&driver_name) {
+                Some(actual) if actual != priority => return Ok(None),
+                Some(_) => {}
+                None if priority == 0 => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::Unsupported,
+                        format!("unsupported DRM driver {}", driver_name.to_string_lossy()),
+                    ))
+                }
+                None => return Ok(None),
             }
             if card.get_driver_capability(drm::DriverCapability::DumbBuffer)? == 0 {
                 return Err(io::Error::new(
@@ -138,7 +158,20 @@ mod linux {
                 if crtc.mode().is_some() && prior_connectors.is_empty() {
                     prior_connectors.push(info.handle());
                 }
-                return Self::configure(card, info.handle(), prior_connectors, crtc, mode);
+                return Self::configure(
+                    card,
+                    driver_name,
+                    info.handle(),
+                    prior_connectors,
+                    crtc,
+                    mode,
+                )
+                .and_then(|mut display| {
+                    // A backend is usable only after the first complete frame
+                    // reaches its mapped scanout buffer without error.
+                    display.draw(&starting(), 0.0)?;
+                    Ok(Some(display))
+                });
             }
             Err(io::Error::new(
                 io::ErrorKind::NotFound,
@@ -148,6 +181,7 @@ mod linux {
 
         fn configure(
             card: Card,
+            driver: OsString,
             connector: connector::Handle,
             prior_connectors: Vec<connector::Handle>,
             crtc: crtc::Info,
@@ -169,6 +203,7 @@ mod linux {
             card.map_dumb_buffer(&mut buffer)?.as_mut().fill(0);
             Ok(Self {
                 card,
+                driver,
                 prior_connectors,
                 crtc,
                 framebuffer: Some(framebuffer),
@@ -214,10 +249,26 @@ mod linux {
             }
             Ok(())
         }
+
+        fn driver_name(&self) -> &OsStr {
+            &self.driver
+        }
     }
 
-    fn is_firmware_display_driver(name: &OsStr) -> bool {
-        name == OsStr::new("simpledrm")
+    const DISPLAY_DRIVER_PRIORITIES: [&str; 7] = [
+        "nvidia-drm",
+        "i915",
+        "xe",
+        "amdgpu",
+        "nouveau",
+        "simpledrm",
+        "virtio_gpu",
+    ];
+
+    fn display_driver_priority(name: &OsStr) -> Option<usize> {
+        DISPLAY_DRIVER_PRIORITIES
+            .iter()
+            .position(|candidate| name == OsStr::new(candidate))
     }
 
     impl Drop for Display {
@@ -385,6 +436,10 @@ mod linux {
                 }
             }
         };
+        eprintln!(
+            "opemos-interstitial: rendering with DRM driver {}",
+            display.driver_name().to_string_lossy()
+        );
         let started = Instant::now();
         let mut tracker = ProgressTracker::new(starting());
         let mut last_sequence = 0;
@@ -436,15 +491,27 @@ mod linux {
 
     #[cfg(test)]
     mod tests {
-        use super::is_firmware_display_driver;
+        use super::display_driver_priority;
         use std::ffi::OsStr;
 
         #[test]
-        fn recovery_display_accepts_only_simpledrm() {
-            assert!(is_firmware_display_driver(OsStr::new("simpledrm")));
-            for driver in ["i915", "nvidia-drm", "nouveau", "amdgpu", "virtio_gpu", ""] {
-                assert!(!is_firmware_display_driver(OsStr::new(driver)), "{driver}");
+        fn recovery_display_orders_checked_native_and_firmware_backends() {
+            for (priority, driver) in [
+                "nvidia-drm",
+                "i915",
+                "xe",
+                "amdgpu",
+                "nouveau",
+                "simpledrm",
+                "virtio_gpu",
+            ]
+            .iter()
+            .enumerate()
+            {
+                assert_eq!(display_driver_priority(OsStr::new(driver)), Some(priority));
             }
+            assert_eq!(display_driver_priority(OsStr::new("vboxvideo")), None);
+            assert_eq!(display_driver_priority(OsStr::new("")), None);
         }
     }
 }

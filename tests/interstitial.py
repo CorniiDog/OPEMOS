@@ -168,6 +168,7 @@ with tempfile.TemporaryDirectory(prefix="opemos-interstitial-") as temporary:
         "python3", "-c", "import recovery_status, payload_receipt",
     ], env={**os.environ, "PYTHONPATH": str(destination / "lib")}, check=True)
     assert (destination / "bootstrap/launch_interstitial.sh").is_file()
+    assert (destination / "bootstrap/show_recovery_console.sh").is_file()
     assert (destination / "interstitial.sha256").read_text().strip() == digest
     assert (destination / "bootstrap/run_guardian_with_interstitial.sh").is_file()
     assert (destination / "bootstrap/run_repair_with_interstitial.sh").is_file()
@@ -323,12 +324,41 @@ assert "SuccessExitStatus=1 124 130 143" in service
 assert "DevicePolicy=closed" in service
 assert "ProtectSystem=strict" in service and "NoNewPrivileges=yes" in service
 assert "ProtectHome=read-only" in service and "ProtectHome=yes" not in service
-assert "CapabilityBoundingSet=\n" in service and "PrivateNetwork=yes" in service
+assert "CapabilityBoundingSet=CAP_SYS_TTY_CONFIG" in service and "PrivateNetwork=yes" in service
+assert "DeviceAllow=/dev/tty1 rw" in service and "DeviceAllow=/dev/tty0 rw" in service
 assert "WantedBy=multi-user.target" in service
 assert "Environment=HOME=/root" in service
 assert "Environment=OPEMOS_INTERSTITIAL_TIMEOUT_SEC=7200" in service
 assert '"$TIMEOUT" -le 7200' in launcher
-assert 'exec "$BINARY" --timeout "$TIMEOUT"' in launcher
+assert '"$BINARY" --timeout "$TIMEOUT"' in launcher
+assert "show_recovery_console.sh" in launcher
+
+with tempfile.TemporaryDirectory(prefix="opemos-console-fallback-") as temporary:
+    temporary_path = Path(temporary)
+    temporary_path.chmod(0o755)
+    console = Path(temporary) / "tty"
+    console.write_text("firmware logo\n", encoding="utf-8")
+    console.chmod(0o666)
+    drop_privileges = None
+    if os.geteuid() == 0:
+        drop_privileges = lambda: os.setuid(65534)
+    shown = subprocess.run(
+        [str(ROOT / "bootstrap/show_recovery_console.sh"), "Exact repair failed."],
+        env={
+            **os.environ,
+            "PROJECT_TEST_MODE": "1",
+            "OPEMOS_RECOVERY_TTY": str(console),
+        },
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        preexec_fn=drop_privileges,
+    )
+    assert shown.returncode == 0, shown.stderr
+    visible = console.read_text(encoding="utf-8")
+    assert "OPEMOS RECOVERY NEEDS ATTENTION" in visible
+    assert "Exact repair failed." in visible
+    assert "recoveryctl.sh status" in visible and "recoveryctl.sh repair" in visible
 repair_launcher = (ROOT / "bootstrap/run_repair_with_interstitial.sh").read_text(
     encoding="utf-8"
 )

@@ -64,6 +64,7 @@ python3 "$SUPPORT_ROOT/lib/validate_recovery_install_path.py" --root / \
     --path "${DEST#/}/bootstrap/install.sh" \
     --path "${DEST#/}/bootstrap/launch_desktop_companion.sh" \
     --path "${DEST#/}/bootstrap/launch_interstitial.sh" \
+    --path "${DEST#/}/bootstrap/show_recovery_console.sh" \
     --path "${DEST#/}/bootstrap/run_guardian_with_interstitial.sh" \
     --path "${DEST#/}/bin/opemos-interstitial" \
     --path "${DEST#/}/lib/recovery_status.py" \
@@ -100,6 +101,7 @@ sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/bootstrap/recoveryctl.sh" "$
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/bootstrap/install.sh" "$DEST/bootstrap/install.sh"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/bootstrap/launch_desktop_companion.sh" "$DEST/bootstrap/launch_desktop_companion.sh"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/bootstrap/launch_interstitial.sh" "$DEST/bootstrap/launch_interstitial.sh"
+sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/bootstrap/show_recovery_console.sh" "$DEST/bootstrap/show_recovery_console.sh"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/bootstrap/run_guardian_with_interstitial.sh" "$DEST/bootstrap/run_guardian_with_interstitial.sh"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/bootstrap/online_install.sh" "$DEST/bootstrap/online_install.sh"
 sudo install -o root -g root -m 0644 "$SUPPORT_ROOT/lib/common.sh" "$DEST/lib/common.sh"

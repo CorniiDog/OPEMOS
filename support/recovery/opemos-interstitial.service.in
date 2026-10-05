@@ -28,8 +28,8 @@ StandardInput=null
 StandardOutput=journal
 StandardError=journal
 NoNewPrivileges=yes
-CapabilityBoundingSet=
-AmbientCapabilities=
+CapabilityBoundingSet=CAP_SYS_TTY_CONFIG
+AmbientCapabilities=CAP_SYS_TTY_CONFIG
 ProtectSystem=strict
 ProtectHome=read-only
 PrivateTmp=yes
@@ -62,6 +62,8 @@ DeviceAllow=/dev/dri/card12 rw
 DeviceAllow=/dev/dri/card13 rw
 DeviceAllow=/dev/dri/card14 rw
 DeviceAllow=/dev/dri/card15 rw
+DeviceAllow=/dev/tty1 rw
+DeviceAllow=/dev/tty0 rw
 
 [Install]
 WantedBy=multi-user.target
