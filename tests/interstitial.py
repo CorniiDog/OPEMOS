@@ -334,8 +334,14 @@ assert '"$BINARY" --timeout "$TIMEOUT"' in launcher
 assert "show_recovery_console.sh" in launcher
 
 with tempfile.TemporaryDirectory(prefix="opemos-console-fallback-") as temporary:
+    temporary_path = Path(temporary)
+    temporary_path.chmod(0o755)
     console = Path(temporary) / "tty"
     console.write_text("firmware logo\n", encoding="utf-8")
+    console.chmod(0o666)
+    drop_privileges = None
+    if os.geteuid() == 0:
+        drop_privileges = lambda: os.setuid(65534)
     shown = subprocess.run(
         [str(ROOT / "bootstrap/show_recovery_console.sh"), "Exact repair failed."],
         env={
@@ -346,6 +352,7 @@ with tempfile.TemporaryDirectory(prefix="opemos-console-fallback-") as temporary
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        preexec_fn=drop_privileges,
     )
     assert shown.returncode == 0, shown.stderr
     visible = console.read_text(encoding="utf-8")
