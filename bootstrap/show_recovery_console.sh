@@ -2,6 +2,12 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [[ "${1:-}" == --help ]]; then
+    printf '%s\n' 'Usage: show_recovery_console.sh [ERROR_MESSAGE]'
+    exit 0
+fi
+
 MESSAGE=${1:-OPEMOS recovery needs attention.}
 TTY=${OPEMOS_RECOVERY_TTY:-/dev/tty1}
 
