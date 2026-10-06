@@ -1,7 +1,7 @@
 [Unit]
 Description=OPEMOS delayed-network exact NVIDIA repair
 After=network-online.target opemos-nvidia-guardian.service opemos-interstitial.service
-Wants=network-online.target opemos-interstitial.service
+Wants=network-online.target
 
 [Service]
 Type=oneshot

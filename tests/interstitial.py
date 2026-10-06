@@ -193,7 +193,8 @@ with tempfile.TemporaryDirectory(prefix="opemos-interstitial-") as temporary:
     repair_service = (
         persistent_etc / "systemd/system/opemos-nvidia-repair.service"
     ).read_text()
-    assert "Wants=network-online.target opemos-interstitial.service" in repair_service
+    assert "Wants=network-online.target\n" in repair_service
+    assert "Wants=network-online.target opemos-interstitial.service" not in repair_service
     assert "run_repair_with_interstitial.sh" in repair_service
     installed_keep_list = target / "etc/atomic-update.conf.d/90-opemos-nvidia-guardian.conf"
     assert installed_keep_list.read_bytes() == GUARDIAN_KEEP_LIST.read_bytes()
@@ -383,15 +384,18 @@ with tempfile.TemporaryDirectory(prefix="opemos-repair-display-transition-") as 
     for name, script in {
         "commands/systemctl": '#!/bin/sh\nprintf "%s\\n" "$*" >> "$TRACE"\n',
         "bootstrap/recoveryctl.sh": '#!/bin/sh\n'
+        'if test "$1" = status; then printf "%s\\n" "$TEST_STATUS"; exit 0; fi\n'
+        'if test "$TEST_HEALTHY" = 1; then printf "healthy-repair\\n" >> "$TRACE"; exit 0; fi\n'
         'test "$(cat "$OPEMOS_RECOVERY_PROGRESS_STATE")" = reset || exit 9\n'
-        'printf "repair\\n" >> "$TRACE"\nexit 1\n',
+        'printf "repair\\n" >> "$TRACE"\nexit "${TEST_REPAIRED:-1}"\n',
     }.items():
         executable = fixture / name
         executable.write_text(script)
         executable.chmod(0o755)
     result = subprocess.run([str(installed_launcher)], env={
         **os.environ, "TRACE": str(trace),
-        "PROJECT_TEST_MODE": "0",
+        "PROJECT_TEST_MODE": "0", "TEST_STATUS": '{"status":"fallback-active"}',
+        "TEST_HEALTHY": "0",
         "PATH": str(fixture / "commands") + os.pathsep + os.environ["PATH"],
     }, capture_output=True, text=True)
     assert result.returncode == 1, result.stderr
@@ -400,6 +404,33 @@ with tempfile.TemporaryDirectory(prefix="opemos-repair-display-transition-") as 
         "start opemos-interstitial.service", "repair", "fail",
     ]
     assert state.read_text() == "fail"
+    trace.write_text("")
+    result = subprocess.run([str(installed_launcher)], env={
+        **os.environ, "TRACE": str(trace), "PROJECT_TEST_MODE": "0",
+        "TEST_STATUS": '{"status":"fallback-active"}', "TEST_HEALTHY": "0",
+        "TEST_REPAIRED": "0",
+        "PATH": str(fixture / "commands") + os.pathsep + os.environ["PATH"],
+    }, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert trace.read_text().splitlines() == [
+        "stop opemos-interstitial.service", "reset",
+        "start opemos-interstitial.service", "repair",
+        "stop opemos-interstitial.service",
+    ]
+    state.write_text("fail")
+    # Repeated healthy retries leave terminal progress and display untouched.
+    trace.write_text("")
+    for _ in range(2):
+        result = subprocess.run([str(installed_launcher)], env={
+            **os.environ, "TRACE": str(trace), "PROJECT_TEST_MODE": "0",
+            "TEST_STATUS": '{"status":"healthy","moduleVerification":{"status":"verified"}}',
+            "TEST_HEALTHY": "1",
+            "PATH": str(fixture / "commands") + os.pathsep + os.environ["PATH"],
+        }, capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr
+    assert trace.read_text().splitlines() == ["healthy-repair", "healthy-repair"]
+    assert state.read_text() == "fail"
+
 assert "keyboard" not in service.lower() and "mouse" not in service.lower()
 guardian_service = GUARDIAN_SERVICE.read_text(encoding="utf-8")
 assert "run_guardian_with_interstitial.sh" in guardian_service

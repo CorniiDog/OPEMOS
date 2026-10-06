@@ -3095,3 +3095,14 @@ gate is a completely clean-stock one-command certified installation.
   failure; 16 Rust tests, warnings-denied Clippy and installed-contract checks
   pass through `heavy.sh`. Exact PR/check/review/merge and new candidate physical
   confirmation remain required; missing exact 6.18 repair product is separate.
+
+* [ ] Prevent healthy first-boot/network retries from contending with Gamescope
+  on physical Core `fc89faf`. Delayed repair preflights exact verified healthy
+  status and reconciles no-op transactions without resetting progress or
+  starting graphics. Its unit no longer unconditionally starts the renderer.
+  Guardian and successful repair synchronously stop the renderer before returning;
+  UI acquisition failure cannot switch away from verified healthy graphics.
+  Console text distinguishes status inspection from asserted driver failure.
+  Executable repeated-healthy-noop and real failed-repair transition checks pass
+  through `heavy.sh`; immutable PR/check/review and installed display acceptance
+  remain required, without physical mutation or hardware-success claims.

@@ -35,7 +35,7 @@ fi
     printf '\033c'
     printf '%s\n\n' 'OPEMOS RECOVERY NEEDS ATTENTION'
     printf '%s\n\n' "$MESSAGE"
-    printf '%s\n' 'The automatic graphics repair did not complete.'
+    printf '%s\n' 'Inspect the exact recovery status before attempting repair.'
     printf '%s\n' 'Connect to a trusted network, then run:'
     printf '  sudo %q status\n' "$SCRIPT_DIR/recoveryctl.sh"
     printf '  sudo %q repair\n' "$SCRIPT_DIR/recoveryctl.sh"
