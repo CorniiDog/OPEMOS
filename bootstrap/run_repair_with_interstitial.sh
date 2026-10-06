@@ -19,6 +19,14 @@ if [[ $# -ne 0 ]]; then
     exit 2
 fi
 
+# A healthy network/timer retry must not reset progress, acquire DRM, or
+# switch VTs. Still run repair-auto so its transaction reconciliation occurs.
+document="$("$SUPPORT_ROOT/bootstrap/recoveryctl.sh" status --json)" || exit 1
+if python3 -c 'import json,sys; d=json.loads(sys.argv[1]); raise SystemExit(0 if d.get("status") == "healthy" and d.get("moduleVerification",{}).get("status") == "verified" else 1)' "$document"; then
+    "$SUPPORT_ROOT/bootstrap/recoveryctl.sh" repair-auto --json
+    exit $?
+fi
+
 # Guardian and delayed repair are distinct attempts that share one visible
 # document.  Guardian may leave a terminal result before systemd starts this
 # ordered unit, so begin the repair attempt explicitly in every environment.
@@ -42,5 +50,10 @@ if [[ "$status" -ne 0 ]]; then
     # Leave every unsuccessful automatic attempt visibly terminal. The writer
     # refuses to replace a terminal document, which is safe for future phases.
     python3 "$WRITER" fail --state "$PROGRESS" >/dev/null 2>&1 || true
+fi
+if [[ "$status" -eq 0 && "$PROGRESS" == /run/opemos/interstitial/progress.json ]]; then
+    # Type=simple ordering does not wait for the renderer's success dwell.
+    # Stop synchronously before returning control to a healthy desktop.
+    systemctl stop opemos-interstitial.service
 fi
 exit "$status"
