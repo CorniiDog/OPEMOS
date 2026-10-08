@@ -340,6 +340,30 @@ receipt="$PROJECT_TEST_ROOT/var/lib/open-gpu-kernel-modules-steamos-support/reco
 : > "$receipt"
 """, encoding="utf-8")
         online.chmod(0o755)
+        successful_online = online.read_text()
+        # A typed compiler/header failure must survive repeated automatic
+        # triggers. Cheap product discovery remains allowed, compilation does
+        # not; a changed immutable Core policy clears the restriction.
+        online.write_text(f'''#!/bin/sh
+[ "$1" = --build-as-fallback ] && [ "$2" = -y ] || exit 90
+printf '%s\\n' "${{OPEMOS_SKIP_UNCHANGED_BUILD:-unset}}" >> {str(online_marker)!r}
+exit 76
+''')
+        failure_root = flow / "incompatible-build-root"
+        for expected_flags in (["0"], ["0", "1"]):
+            failed_build = recovery(absent, failure_root)
+            assert failed_build.returncode == 76, (failed_build.stdout, failed_build.stderr)
+            assert online_marker.read_text().splitlines() == expected_flags
+            failure_state = json.loads((failure_root / "var/lib/open-gpu-kernel-modules-steamos-support/recovery/transaction.json").read_text())
+            assert failure_state["phase"] == "failed"
+            assert failure_state["reason"] == "exact_reviewed_build_incompatible"
+        (policy / "support-revision").write_text("b" * 40 + "\n")
+        changed = recovery(absent, failure_root)
+        assert changed.returncode == 76, (changed.stdout, changed.stderr)
+        assert online_marker.read_text().splitlines() == ["0", "1", "0"]
+        (policy / "support-revision").write_text(REVISION + "\n")
+        online_marker.unlink()
+        online.write_text(successful_online)
         online_root = flow / "online-root"
         online_repair = recovery(absent, online_root)
         assert online_repair.returncode == 0, (

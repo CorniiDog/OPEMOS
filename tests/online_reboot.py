@@ -56,6 +56,7 @@ def main():
   mkdir -p "$destination"
   cp -a "$MOCK_SUPPORT/." "$destination/"
 fi
+if [[ "${3:-}" == rev-parse ]]; then echo "${SUPPORT_REVISION,,}"; fi
 exit 0
 ''')
         executable(fake_bin / "nvidia-smi", "echo 580.119.02\n")

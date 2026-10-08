@@ -38,6 +38,144 @@ Below is the consolidated project checklist based on our work so far. I’m trea
 
 ## Not yet resolved
 
+* [ ] Implement user-requested automatic exact-kernel source-build fallback.
+  Public `--build-as-fallback` explicitly opts into the policy; no-flag installs
+  remain published-only and automatic recovery opts in explicitly.
+  Prefer the authenticated exact online product, reuse verified exact offline
+  cache, and build only after a typed missing-product result under the pinned
+  automatic source-intent policy. Reuse the authenticated exact-target Fedora
+  builder inside an owned Podman workspace; preserve installed userspace and
+  preexisting dependencies/cache, cancellation, receipts, verification and
+  read-only restoration. Legacy compile_online/--in-code resolves mutable
+  branches and requires working nvidia-smi, so it is not the unattended path.
+  The existing 6.18 plan pins source40bd1b5, whose known compiler incompatibility
+  remains separate; no unreviewed source or unsigned header fallback is allowed.
+  In-progress branch `work/core-auto-source-fallback` now routes both public
+  planning/setup entry points through the existing Automatic authorization,
+  adds bounded private Fedora/Podman exact-source build dispatch to the normal
+  installer, and rejects unverified outputs before installation. Focused raw
+  public planning, malformed metadata, source/userspace refusal, build failure,
+  process cancellation/cleanup, existing bootstrap/reboot/CLI, and exact-builder
+  failure checks passed through `heavy.sh` on 2026-10-07. This is an uncommitted
+  implementation checkpoint, not completion: verified build/install success,
+  reusable offline cache/idempotence, temporary missing-Podman handling, full
+  installed acceptance, immutable PR/check/review/merge evidence remain.
+  The next local checkpoint carries bounded typed builder failures to recovery
+  and suppresses unchanged incompatible compilation while still checking exact
+  publications/cache. On 2026-10-07, raw public opt-in/no-flag planning,
+  build failure/cancel cleanup, and recovery retry/identity-change fixtures
+  passed through heavy.sh. Recovery testing reproduced a duplicate downloading
+  transition; the bounded correction and failing-stage rerun passed. Published
+  planning is identical with/without opt-in, and recovery forwards the flag.
+  Built output now checks exact installed module identity before mutation.
+  Existing raw/compressed no-op/reboot fixtures pass through heavy.sh; full
+  source-build success and persistent raw-product cache acceptance remain.
+  Typed-failure handoff now rejects boolean schema versions; focused malformed
+  version/trust/target/reason fixtures prove refusal and workspace cleanup
+  while preserving preexisting cache (heavy.sh PASS on 2026-10-07).
+  Helper output success/existing-destination/concurrent-collision fixtures
+  also pass via heavy.sh: output is preserved and owned workspace removed.
+  These mocked file-handoff checks do not establish compile/install success.
+  Existing canonical repacker preserves locally-built trust/source/target;
+  new preservation assertions passed in the already prepared Core dependency
+  image d23eec5f602c with exact zstd 1.5.7 through heavy.sh, network disabled
+  and checkout read-only. The earlier host 1.5.5 failure remains recorded;
+  no host install, download or pin weakening was used.
+  Automatic builder now compiles into disposable raw staging and invokes the
+  existing canonical repacker inside that same container; only the compressed
+  four-file product is exported, without the stale raw success receipt.
+  Helper lifecycle fixtures and syntax/diff pass; actual composed build and
+  persistent cache staging/replay remain unvalidated.
+  Composed repack/product/bundle/materializer fixture now passes through
+  heavy.sh in the prepared exact encoder image, including actual recovery
+  cache stage/show and byte-identical output. Builder emits a canonical
+  materialization document through those existing primitives. Persistent
+  retention/replay and actual build/install acceptance remain unfinished.
+  Built-product retention now stages the canonical materialization into the
+  existing guardian-owned cache after verified installation and commits the
+  existing module receipt. Existing cache must exactly match; conflicts are
+  preserved. Static/helper checks pass; direct success/retention/replay
+  acceptance is still required.
+  Actual composed-cache receipt idempotence and installed-byte mismatch
+  preservation fixtures passed through heavy.sh in the immutable prepared
+  encoder image: repeat commits are byte-identical, and mismatched installed
+  bytes refuse commitment while preserving the prior receipt. Public
+  success/retention/replay dispatch acceptance remains outstanding.
+  Raw public success/retention fixture is now prepared using the actual
+  composed product and validators plus isolated build/install adapters. It
+  requires persistent cache and receipt creation; runtime remains pending
+  while EXE R27 owns the shared heavy slot (AST/diff pass).
+  Raw public success/retention and repeated-invocation acceptance now pass
+  through heavy.sh in the immutable prepared image. After a published miss,
+  dispatch reuses the exact current-Core/source/target cache, bounds and hashes
+  copied inputs, and skips both build and install when modules already match.
+  A damaged cache is refused with cache and installed bytes preserved. These
+  use isolated build/install adapters, not a real source compilation. Offline
+  bootstrap discovery, temporary Podman provisioning, real build acceptance
+  and immutable PR/check/review/merge gates remain unfinished.
+  Public retained-cache repair now also passes after installed-module damage:
+  exact cached bytes restore the module without another build. Inspection
+  found and corrected missing fallback-flag forwarding to userspace setup;
+  raw public flag/no-flag setup-argument and failure-cleanup regressions pass
+  through heavy.sh on 2026-10-07. Isolated adapters remain distinct from real
+  compilation or physical-device acceptance.
+  Retained-cache public mode regressions pass through heavy.sh: no-flag
+  published miss still refuses despite a valid cache; flagged resolve-only
+  leaves receipt/build/install counts unchanged. Public offline bootstrap
+  remains unimplemented: installed recovery has a root-owned pinned snapshot,
+  but raw bootstrap still requires remote revision/checkout before cache use.
+  Replaced optimization-sensitive Python assertions in new dispatch with
+  unconditional cache/hash/build identity refusals. Raw public wrong-source
+  cache regression under PYTHONOPTIMIZE=1 passes via heavy.sh, preserving
+  cache and build/install counts; syntax/diff/container cleanup pass.
+  Helper typed-failure/build-plan/single-signer checks are now unconditional
+  too. Malformed version/trust/target/reason output rejection and private
+  workspace cleanup pass with PYTHONOPTIMIZE=1 through heavy.sh; syntax/diff
+  pass. No source compatibility or missing-Podman completion is implied.
+  After verified Core checkout, release-query failure now permits only exact
+  retained-cache validation/reuse under the explicit flag; it never permits
+  compilation. Public query-failure cache-hit and no-cache refusal fixtures
+  pass through heavy.sh. Remote revision/clone offline bootstrap remains open.
+  Release-query outage combined with damaged cache now has a passing raw
+  public refusal regression: cached and installed bytes remain unchanged,
+  and build/install counts do not increase (heavy.sh, cleanup/diff PASS).
+  Public bootstrap now normalizes the exact Core revision and verifies fetched
+  HEAD before sourcing any support code. Checkout-mismatch refusal/temp cleanup
+  and affected planning/helper/reboot/composed cache fixtures pass via heavy.sh;
+  syntax/diff/container cleanup pass. Retained Git offline bootstrap is not yet
+  implemented; this checkpoint establishes its required identity precondition.
+  Temporary missing-Podman wrapper is now prepared in setup_build_env.sh,
+  invoked only for the exact Automatic builder. It validates the plan before
+  installation, uses existing package databases without refresh, refuses any
+  preexisting package in the install plan, and removes only an exact owned
+  package delta while restoring read-only state; unexpected changes preserve
+  dependencies/evidence. Success/failure/partial-install/cancel/upgrade refusal/
+  concurrent-change/preexisting-Podman fixtures are prepared. Syntax/AST/diff
+  pass, but runtime is PENDING: heavy.sh exited 75 for the occupied shared slot.
+  This is not provisioning completion or authority to mutate this host.
+  Isolated temporary-Podman runtime fixtures now PASS via heavy.sh: success,
+  build failure, partial install, cancellation, upgrade/userspace refusal,
+  preexisting Podman, package-state conflict and replaced-workspace preservation.
+  Package downloads use a private cache; cleanup checks workspace inode/owner/
+  mode before trusting records or deletion and restores read-only state.
+  Initial private-cache fixture failed on its missing mkdir adapter; fixed and
+  failed-stage rerun passed. Affected builder/prerequisite fixtures pass;
+  syntax/diff pass. No real host package installation or real compile claim.
+  Pre-checkout offline route now retains create-only exact Git bundles after
+  successful opted-in installs. An explicit Core revision is required for
+  offline reuse; bounded regular-file snapshot and restored HEAD verification
+  precede execution. Real-Git planning fixtures refuse unpinned/no-flag,
+  wrong-commit, corrupt, unsafe-mode and symlink entries without execution.
+  Existing composed public fixture now uses a real isolated Git commit/bundle
+  and proves offline damaged-module repair with both network lanes failed,
+  exact product/cache/receipt validation, no rebuild, and preserved bundle.
+  This remains fixture installation, not real source compilation/hardware.
+  Bootstrap failure/selection, recovery cache/retry, temporary provisioning,
+  setup modes/signals, CLI, nounset and hygiene checks pass through heavy.sh;
+  composed repack/offline repair passes in immutable prepared encoder image.
+  Prepare an imaging-sensitive draft PR; real build/installed acceptance and
+  immutable required checks/counterpart approval/merge remain open.
+
 * [ ] Correct portable initramfs construction after the exact EXE PR163 partial
   reached the production verifier and proved that the generated archive omitted
   `nvidia.ko`. Preserve the PR66 muxless-panel behavior by keeping NVIDIA out of

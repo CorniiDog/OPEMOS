@@ -37,12 +37,16 @@ need()
 need git
 need awk
 
+if [[ -n "${SUPPORT_REVISION:-}" ]]; then
+    SUPPORT_REV="$SUPPORT_REVISION"
+else
 SUPPORT_REV="$(
     git ls-remote \
         "https://github.com/${SUPPORT_REPO}.git" \
         "refs/heads/${SUPPORT_BRANCH}" |
         awk 'NR == 1 { print $1 }'
 )"
+fi
 [[ "$SUPPORT_REV" =~ ^[0-9a-fA-F]{40}$ ]] || {
     echo "Could not resolve support revision." >&2
     exit 1

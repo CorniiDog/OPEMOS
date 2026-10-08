@@ -64,11 +64,36 @@ the system:
 cd ~ && bash <(curl -fsSL "https://raw.githubusercontent.com/CorniiDog/OPEMOS/main/bootstrap/online_setup_nvidia.sh?x=$(date +%s)") --resolve-only
 ```
 
-Install the matching published modules and userspace:
+Install matching modules and userspace. Without additional flags this uses only
+verified published products. Add `--build-as-fallback` to both setup and installer
+one-liners to permit a missing product to build only a reviewed exact target with pinned
+source, authenticated Valve headers, and a matching compiler in disposable
+Fedora/Podman storage. When Podman is missing, the builder attempts temporary
+installation from the existing SteamOS package databases, refusing plans that
+affect preexisting packages. It uses a private package-download cache and retires
+only verified newly installed dependencies after the build. Unexpected package
+state changes preserve dependencies and diagnostics instead of removing them.
+A failed build does not
+install modules or substitute another kernel or unreviewed source:
 
 ```bash
 cd ~ && bash <(curl -fsSL "https://raw.githubusercontent.com/CorniiDog/OPEMOS/main/bootstrap/online_install.sh?x=$(date +%s)")
 ```
+
+Recovery explicitly opts into the same fallback policy after an update.
+Add `--build-as-fallback --resolve-only` to preview a permitted build, or
+`--resolve-only` for published-only selection. This prints the shared Automatic
+authorization without building, installing, or querying NVIDIA userspace.
+
+Successful opted-in installs retain a create-only Git bundle for that exact
+Core revision. If Core acquisition later fails, `SUPPORT_REVISION=<exact-commit>`
+with `--build-as-fallback` can restore that checkout from retained Git objects;
+the restored HEAD must match before any cached code runs. No mutable cached
+branch is selected. A failed release query then permits verified exact product
+cache reuse only, never compilation. Existing or invalid cache entries are
+preserved. The bootstrap script itself must already be available offline.
+Authorization is not proof that the pinned source compiles: the reviewed 6.18
+plan still requires separate compiler and installation acceptance.
 
 The canonical installer also installs a persistent boot guardian. On every
 activated SteamOS slot it verifies all five NVIDIA modules against the running

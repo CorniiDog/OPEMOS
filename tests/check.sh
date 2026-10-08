@@ -439,6 +439,10 @@ fi
 
 printf 'Checking online bootstrap failure cleanup...\n'
 python3 tests/online_bootstrap_failures.py
+python3 tests/automatic_install_selection.py
+python3 tests/automatic_build_cleanup.py
+python3 tests/temporary_podman.py
+python3 tests/offline_core_checkout.py
 
 printf 'Checking changed-install reboot ownership...\n'
 python3 tests/online_reboot.py

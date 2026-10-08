@@ -10,6 +10,7 @@ SUPPORT_REPO="${SUPPORT_REPO:-CorniiDog/OPEMOS}"
 DEVELOPMENT_SPEC=""
 UPSTREAM_SPEC=""
 RESOLVE_ONLY=0
+BUILD_AS_FALLBACK=0
 OFFER_REBOOT=0
 YES=0
 
@@ -27,6 +28,7 @@ Options:
                              upstream-development mode. Project fixes are not applied.
       --offer-reboot         Offer to restart after --use-upstream installs
                              kernel modules. Disabled by default.
+      --build-as-fallback    Build a reviewed exact target only if no product exists
       --resolve-only         Resolve and describe the selection without making
                              system changes.
   -y, --yes                 Automatically confirm setup.
@@ -34,17 +36,19 @@ Options:
 
 PREFIX examples: 575, 580, 580.105, 580.105.08
 
-Without a mode option, the NVIDIA version is selected from this project's
-published certified SteamOS releases:
+Without a mode option, Automatic selects this project's published certified
+SteamOS releases:
 
   1. Prefer the current SteamOS version.
   2. Otherwise use the newest older SteamOS release in the same
      major/minor series.
   3. Within that SteamOS release, use the newest published NVIDIA version.
 
+With --build-as-fallback, a missing product may use a reviewed build plan to select the
+NVIDIA version. Unsupported targets and invalid publications fail closed.
 Once selected, NVIDIA userspace is installed at that exact version.
-The matching certified project modules are installed by the normal online
-installer, not by setup_nvidia.sh itself.
+Modules are installed or built by the normal online installer, not by
+setup_nvidia.sh itself.
 EOF
 }
 
@@ -64,6 +68,7 @@ while [[ $# -gt 0 ]]; do
             OFFER_REBOOT=1
             shift
             ;;
+        --build-as-fallback) BUILD_AS_FALLBACK=1; shift ;;
         --resolve-only)
             RESOLVE_ONLY=1
             shift
@@ -81,6 +86,10 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+FALLBACK_ARGS=()
+[[ "$BUILD_AS_FALLBACK" == 0 ]] || FALLBACK_ARGS=(--build-as-fallback)
+[[ "$BUILD_AS_FALLBACK" == 0 || -z "$DEVELOPMENT_SPEC$UPSTREAM_SPEC" ]] || die "--build-as-fallback cannot be combined with development modes."
+
 
 if [[ -n "$DEVELOPMENT_SPEC" ]]; then
     [[ "$DEVELOPMENT_SPEC" =~ ^[0-9]+([.][0-9]+)*$ ]] ||
@@ -197,10 +206,23 @@ resolve_certified_driver()
         -o "$releases" ||
         die "Failed to query published NVIDIA releases."
 
-    python3 "${SUPPORT_ROOT}/lib/select_release.py" \
-        "$STEAMOS_VERSION" \
-        "$KERNEL_TAG" \
-        "$releases"
+    python3 "${SUPPORT_ROOT}/lib/automatic_install_selection.py" \
+        --steamos "$STEAMOS_VERSION" --kernel "$KERNEL_VERSION" \
+        --releases "$releases" --repository "$SUPPORT_REPO" "${FALLBACK_ARGS[@]}" > "$TMP/automatic.json" ||
+        die "No published product or reviewed Automatic build is authorized for this exact target."
+    python3 - "$TMP/automatic.json" <<'PY'
+import json, sys
+action = json.load(open(sys.argv[1]))['action']
+if action['kind'] == 'use_published_artifact':
+    publication = action['resolverResult']['publication']
+    print('\t'.join(publication[field] for field in ('steamosVersion', 'nvidiaVersion', 'kernelVersion', 'tag')))
+elif action['kind'] == 'build_exact_target':
+    plan = action['buildPlan']
+    print('\t'.join((plan['target']['steamosVersion'], plan['target']['nvidiaVersion'],
+                     plan['target']['kernelVersion'], 'build:' + plan['source']['commit'])))
+else:
+    raise SystemExit('Unsupported Automatic action')
+PY
 }
 
 SELECTION_MODE=""
@@ -264,7 +286,12 @@ else
         REFERENCE_RELEASE \
         <<< "$SELECTED"
 
-    if [[ "$REFERENCE_STEAMOS" == "$STEAMOS_VERSION" ]]; then
+    if [[ "$REFERENCE_RELEASE" == build:* ]]; then
+        SELECTION_MODE="automatic-exact-build"
+        SELECTION_PURPOSE="align userspace with the reviewed exact-target build"
+        MODULE_BEHAVIOR="normal online installer builds and verifies the pinned exact target"
+        log "No published product; using the reviewed exact-target NVIDIA version."
+    elif [[ "$REFERENCE_STEAMOS" == "$STEAMOS_VERSION" ]]; then
         log "Found exact SteamOS NVIDIA certification."
     else
         warn "No exact NVIDIA certification exists for SteamOS ${STEAMOS_VERSION}."
