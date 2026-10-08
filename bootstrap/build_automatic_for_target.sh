@@ -6,6 +6,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SUPPORT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SUPPORT_ROOT/lib/common.sh"
 
+if [[ $# == 1 && ( "$1" == --help || "$1" == -h ) ]]; then
+    printf 'Usage: build_automatic_for_target.sh STEAMOS KERNEL NVIDIA RELEASES OUTPUT [FAILURE_RESULT]\n'
+    printf 'Build one reviewed Automatic exact target in private Fedora/Podman storage.\n'
+    printf 'Create-only output; missing Podman uses guarded temporary provisioning.\n'
+    exit 0
+fi
 [[ $# == 5 || $# == 6 ]] || die "Usage: build_automatic_for_target.sh STEAMOS KERNEL NVIDIA RELEASES OUTPUT [FAILURE_RESULT]"
 STEAMOS="$1" KERNEL="$2" NVIDIA="$3" RELEASES="$4" OUTPUT="$5"
 FAILURE_RESULT="${6:-}"
