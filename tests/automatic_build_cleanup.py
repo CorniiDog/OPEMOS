@@ -33,10 +33,12 @@ if [[ "${{3:-}}" == rev-parse ]]; then echo {COMMIT}; fi
         executable(tools / "podman", '''while [[ "$1" == --* ]]; do
   if [[ "$1" == --runroot ]]; then
     [[ ${#2} -le 50 && -d "$2" ]] || exit 125
+    runtime="$2"
     echo "$2" > "$MOCK_RUNTIME"
   fi
   shift 2
 done
+echo "$1 ${2:-}" >> "$MOCK_PODMAN_LOG"
 case "$1 $2" in
   "pull "*) exit 0;;
   "image inspect") printf 'registry.fedoraproject.org/fedora@sha256:%064d\\n' 0; exit 0;;
@@ -49,6 +51,21 @@ case "$1 $2" in
     done
     echo $$ > "$MOCK_PID"
     touch "$MOCK_MARKER"
+    if [[ "$MOCK_MODE" == replace-work || "$MOCK_MODE" == replace-runtime ]]; then
+      python3 - "$output" "$runtime" "$MOCK_MODE" "$MOCK_REPLACEMENT_RECEIPT" <<'PY'
+import json, sys
+from pathlib import Path
+work = Path(sys.argv[1]).parent
+runtime = Path(sys.argv[2])
+replacement = work if sys.argv[3] == 'replace-work' else runtime
+preserved = replacement.with_name(replacement.name + '.preserved')
+replacement.rename(preserved)
+replacement.mkdir(mode=0o700)
+(replacement / 'sentinel').write_text('replacement preserved')
+Path(sys.argv[4]).write_text(json.dumps({'work':str(work),'runtime':str(runtime),'replacement':str(replacement),'preserved':str(preserved)}))
+PY
+      exit 17
+    fi
     if [[ "$MOCK_MODE" == cancel ]]; then sleep 30 & wait; fi
     if [[ "$MOCK_MODE" == success || "$MOCK_MODE" == collision ]]; then
       printf 'owned result\\n' > "$output/product"
@@ -77,6 +94,8 @@ exit 99
         env = {**os.environ, "PATH": f"{tools}:{os.environ['PATH']}",
                "TMPDIR": str(root), "MOCK_PID": str(pid), "MOCK_MARKER": str(marker),
                "MOCK_RUNTIME": str(root / "runtime-path"),
+               "MOCK_PODMAN_LOG": str(root / "podman-calls"),
+               "MOCK_REPLACEMENT_RECEIPT": str(root / "replacement-receipt"),
                "XDG_RUNTIME_DIR": str(runtime_parent),
                "MOCK_KERNEL": KERNEL,
                "SUPPORT_REPO": "CorniiDog/OPEMOS",
@@ -103,6 +122,27 @@ exit 99
         assert not list(root.glob("opemos-automatic-build.*"))
         shutil.rmtree(root / "output")
         marker.unlink()
+        for mode in ("replace-work", "replace-runtime"):
+            env["MOCK_MODE"] = mode
+            (root / "podman-calls").write_text("")
+            replaced = subprocess.run(command, env=env, text=True, capture_output=True, timeout=10)
+            record = __import__('json').loads((root / "replacement-receipt").read_text())
+            paths = {name: Path(path) for name, path in record.items()}
+            try:
+                assert replaced.returncode == 1, (replaced.stdout, replaced.stderr)
+                assert "workspace changed" in replaced.stderr
+                assert (paths['replacement'] / 'sentinel').read_text() == 'replacement preserved'
+                assert paths['preserved'].is_dir() and paths['work'].is_dir() and paths['runtime'].is_dir()
+                calls = (root / "podman-calls").read_text().splitlines()
+                assert calls == ['pull registry.fedoraproject.org/fedora:42', 'image inspect', 'run --rm'], calls
+                assert not (root / "output").exists()
+                assert preexisting.read_text() == "preserved\n"
+            finally:
+                # Only exact directories created by this isolated replacement fixture.
+                for path in set(paths.values()):
+                    if path.exists():
+                        shutil.rmtree(path)
+            marker.unlink()
         env["MOCK_MODE"] = "fail"
         result = subprocess.run(command, env=env, text=True, capture_output=True, timeout=10)
         assert result.returncode == 17, (result.stdout, result.stderr)

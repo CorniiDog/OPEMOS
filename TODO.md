@@ -209,6 +209,13 @@ Below is the consolidated project checklist based on our work so far. I’m trea
   This is verified recovered build evidence, not normal helper-return,
   installed/reboot/hardware or 6.18 success. Single cache slot still needs
   investigation for valid older-target cache preservation across updates.
+  EXE source response for PR75/c79 requested actual automatic-builder WORK/
+  RUNTIME replacement coverage. Both changed fixtures now pass via heavy.sh:
+  replacement sentinels and original directories remain, cleanup exits1, and
+  the Podman call log ends at run (no container/unshare cleanup calls). These
+  exercise the builder itself, independently of provisioning replacement tests.
+  Prior c79 PR/push Shell and Documentation CI all pass; the new fixture commit
+  still requires its exact-head checks/review. No final approval or merge.
 
 * [ ] Correct portable initramfs construction after the exact EXE PR163 partial
   reached the production verifier and proved that the generated archive omitted
