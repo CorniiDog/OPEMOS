@@ -19,7 +19,9 @@ if ! command -v podman >/dev/null 2>&1; then
 fi
 [[ "$(uname -m)" == x86_64 ]] || die "Automatic builds require x86_64."
 [[ ! -e "$OUTPUT" && ! -L "$OUTPUT" ]] || die "Build output already exists."
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/opemos-automatic-build.XXXXXX")"
+WORK_ROOT="${TMPDIR:-${HOME}/.cache/${PROJECT_ID}}"
+mkdir -p "$WORK_ROOT"
+WORK="$(mktemp -d "$WORK_ROOT/opemos-automatic-build.XXXXXX")"
 PODMAN=(podman --root "$WORK/storage" --runroot "$WORK/run" --storage-driver vfs)
 ACTIVE=""
 cleanup()

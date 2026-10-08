@@ -175,6 +175,16 @@ Below is the consolidated project checklist based on our work so far. I’m trea
   composed repack/offline repair passes in immutable prepared encoder image.
   Prepare an imaging-sensitive draft PR; real build/installed acceptance and
   immutable required checks/counterpart approval/merge remain open.
+  Draft Core PR https://github.com/CorniiDog/OPEMOS/pull/75 contains initial
+  source `92e07c495d9d34d434ee855e45fed68b6fee085a` from fetched main
+  `f72aff92a5534b676083ccba974f4185f2d4551f`; normal branch push was needed
+  for remote CI/exact review, with configured moved origin verified and only
+  owned source committed (.codex excluded). Remote Shell checks run
+  37716214557 caught root-backed recovery temporary staging in host_temp_storage.
+  Corrected recovery staging to guarded home-backed workspaces, and automatic
+  builder/provisioner defaults to home cache. Failed-stage/affected fixtures
+  pass, including immutable-HOME and unsafe-workspace refusal. No integrity
+  test was changed; draft still requires new-head CI, review and real acceptance.
 
 * [ ] Correct portable initramfs construction after the exact EXE PR163 partial
   reached the production verifier and proved that the generated archive omitted

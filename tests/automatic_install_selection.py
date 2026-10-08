@@ -108,6 +108,21 @@ exit 99
         assert "MUTATION" not in mismatch.stderr
         assert not list((home / ".cache/open-gpu-kernel-modules-steamos-support").glob("online-install.*"))
         releases.write_text("[]")
+        recovery = root / "system/home/.steamos/open-gpu-kernel-modules-steamos-support/recovery"
+        recovery.mkdir(parents=True, mode=0o755)
+        recovery_env = {**env, "OPEMOS_RECOVERY_PLAN_FILE": str(root / "plan"), "HOME": str(root / "missing-immutable-home")}
+        service = subprocess.run(["bash", "-s", "--", "--build-as-fallback", "--resolve-only"],
+                                 input=(ROOT / "bootstrap/online_install.sh").read_text(),
+                                 cwd="/", env=recovery_env, text=True, capture_output=True)
+        assert service.returncode == 0, (service.stdout, service.stderr)
+        assert not Path(recovery_env["HOME"]).exists()
+        assert not list((recovery / "workspaces").iterdir())
+        (recovery / "workspaces").chmod(0o777)
+        unsafe_service = subprocess.run(["bash", "-s", "--", "--build-as-fallback", "--resolve-only"],
+                                        input=(ROOT / "bootstrap/online_install.sh").read_text(),
+                                        cwd="/", env=recovery_env, text=True, capture_output=True)
+        assert unsafe_service.returncode != 0 and "workspace is unsafe" in unsafe_service.stderr
+        assert not list((recovery / "workspaces").iterdir())
         for entry in ("online_install.sh", "online_setup_nvidia.sh"):
             no_flag = subprocess.run(["bash", "-s", "--", "--resolve-only"],
                                      input=(ROOT / "bootstrap" / entry).read_text(),

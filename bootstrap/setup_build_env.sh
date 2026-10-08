@@ -37,7 +37,9 @@ if [[ "$TEMPORARY_PODMAN" == 1 ]]; then
     for command in sudo pacman python3; do need_cmd "$command"; done
     # Use existing SteamOS repositories/keyrings. Do not refresh databases,
     # upgrade installed packages, alter configuration, or remove old packages.
-    PROVISION="$(mktemp -d "${TMPDIR:-/tmp}/opemos-podman-provision.XXXXXX")"
+    PROVISION_ROOT="${TMPDIR:-${HOME}/.cache/${PROJECT_ID}}"
+    mkdir -p "$PROVISION_ROOT"
+    PROVISION="$(mktemp -d "$PROVISION_ROOT/opemos-podman-provision.XXXXXX")"
     PROVISION_ID="$(python3 - "$PROVISION" <<'PY'
 import os, sys
 info = os.lstat(sys.argv[1])

@@ -83,7 +83,25 @@ SUPPORT_REV="${SUPPORT_REV,,}"
 # bootstrap entry point must create its cache-rooted temporary directory itself.
 if [[ -n "${OPEMOS_RECOVERY_PLAN_FILE:-}" ]]; then
     # The installed service's HOME may be on SteamOS's immutable root.
-    TMP="$(mktemp -d "${TMPDIR:-/tmp}/opemos-online-install.XXXXXX")"
+    RECOVERY_WORK_ROOT="$(python3 - <<'PY'
+import os, stat
+from pathlib import Path
+prefix = os.environ.get('PROJECT_TEST_ROOT', '') if os.environ.get('PROJECT_TEST_MODE') == '1' else ''
+parent = Path(prefix + '/home/.steamos/open-gpu-kernel-modules-steamos-support/recovery')
+expected_owner = os.geteuid() if prefix else 0
+info = parent.lstat()
+if not stat.S_ISDIR(info.st_mode) or info.st_uid != expected_owner or info.st_mode & 0o022:
+    raise SystemExit('Persistent recovery workspace parent is unsafe')
+root = parent / 'workspaces'
+root.mkdir(mode=0o700, exist_ok=True)
+info = root.lstat()
+if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o700:
+    raise SystemExit('Persistent recovery workspace is unsafe')
+print(root)
+PY
+    )"
+    export TMPDIR="$RECOVERY_WORK_ROOT"
+    TMP="$(mktemp -d "$RECOVERY_WORK_ROOT/opemos-online-install.XXXXXX")"
 else
     mkdir -p "${HOME}/.cache/open-gpu-kernel-modules-steamos-support"
     TMP="$(mktemp -d "${HOME}/.cache/open-gpu-kernel-modules-steamos-support/online-install.XXXXXX")"
