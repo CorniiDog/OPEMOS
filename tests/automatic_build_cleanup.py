@@ -30,7 +30,13 @@ def main():
         executable(tools / "git", f'''if [[ "$1" == clone ]]; then mkdir "${{@: -1}}"; fi
 if [[ "${{3:-}}" == rev-parse ]]; then echo {COMMIT}; fi
 ''')
-        executable(tools / "podman", '''while [[ "$1" == --* ]]; do shift 2; done
+        executable(tools / "podman", '''while [[ "$1" == --* ]]; do
+  if [[ "$1" == --runroot ]]; then
+    [[ ${#2} -le 50 && -d "$2" ]] || exit 125
+    echo "$2" > "$MOCK_RUNTIME"
+  fi
+  shift 2
+done
 case "$1 $2" in
   "pull "*) exit 0;;
   "image inspect") printf 'registry.fedoraproject.org/fedora@sha256:%064d\\n' 0; exit 0;;
@@ -66,8 +72,12 @@ exit 99
 ''')
         preexisting = root / "preexisting-cache"
         preexisting.write_text("preserved\n")
+        runtime_parent = root / "overly-long-runtime-parent"
+        runtime_parent.mkdir(mode=0o700)
         env = {**os.environ, "PATH": f"{tools}:{os.environ['PATH']}",
                "TMPDIR": str(root), "MOCK_PID": str(pid), "MOCK_MARKER": str(marker),
+               "MOCK_RUNTIME": str(root / "runtime-path"),
+               "XDG_RUNTIME_DIR": str(runtime_parent),
                "MOCK_KERNEL": KERNEL,
                "SUPPORT_REPO": "CorniiDog/OPEMOS",
                "NVIDIA_BUILD_IMAGE": "registry.fedoraproject.org/fedora:42"}
@@ -264,6 +274,8 @@ exit 99
             if public.poll() is None:
                 public.kill()
                 public.wait()
+        assert not Path((root / "runtime-path").read_text().strip()).exists()
+        assert not list(runtime_parent.iterdir())
 
 
 if __name__ == "__main__":

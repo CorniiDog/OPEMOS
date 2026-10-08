@@ -22,7 +22,43 @@ fi
 WORK_ROOT="${TMPDIR:-${HOME}/.cache/${PROJECT_ID}}"
 mkdir -p "$WORK_ROOT"
 WORK="$(mktemp -d "$WORK_ROOT/opemos-automatic-build.XXXXXX")"
-PODMAN=(podman --root "$WORK/storage" --runroot "$WORK/run" --storage-driver vfs)
+# Podman limits runroot paths to 50 characters. Only runtime control state
+# belongs here; images, source, compiler data and output remain home-backed.
+RUNTIME="$(python3 - <<'PY'
+import os, stat, tempfile
+from pathlib import Path
+root = Path(os.environ.get('XDG_RUNTIME_DIR', f'/run/user/{os.geteuid()}'))
+try:
+    info = root.lstat()
+    safe = (stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid()
+            and not info.st_mode & 0o022 and len(os.fsencode(root)) <= 30)
+except OSError:
+    safe = False
+if not safe:
+    root = Path('/tmp')
+    info = root.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or not info.st_mode & stat.S_ISVTX:
+        raise SystemExit('Short runtime control-state parent is unsafe')
+print(tempfile.mkdtemp(prefix='ope-', dir=root))
+PY
+)"
+WORKSPACE_IDENTITIES="$(python3 - "$WORK" "$RUNTIME" <<'PY'
+import os, sys
+print(' '.join(f'{os.lstat(p).st_dev}:{os.lstat(p).st_ino}' for p in sys.argv[1:]))
+PY
+)"
+verify_workspaces()
+{
+    python3 - "$WORK" "$RUNTIME" "$WORKSPACE_IDENTITIES" <<'PY'
+import os, stat, sys
+for path, expected in zip(sys.argv[1:3], sys.argv[3].split()):
+    info = os.lstat(path)
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid()
+            or stat.S_IMODE(info.st_mode) != 0o700 or f'{info.st_dev}:{info.st_ino}' != expected):
+        raise SystemExit('Owned build workspace changed; preserving it')
+PY
+}
+PODMAN=(podman --root "$WORK/storage" --runroot "$RUNTIME" --storage-driver vfs)
 ACTIVE=""
 cleanup()
 {
@@ -37,6 +73,7 @@ cleanup()
         kill -KILL -- "-$ACTIVE" 2>/dev/null || true
         wait "$ACTIVE" 2>/dev/null || true
     fi
+    verify_workspaces || return 1
     if [[ -f "$WORK/container.cid" && ! -L "$WORK/container.cid" ]]; then
         local cid
         cid="$(cat "$WORK/container.cid")"
@@ -99,7 +136,8 @@ PY
             return 1
         fi
     fi
-    rm -rf -- "$WORK"
+    verify_workspaces || return 1
+    rm -rf -- "$WORK" "$RUNTIME"
     return "$rc"
 }
 trap cleanup EXIT

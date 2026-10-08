@@ -185,6 +185,16 @@ Below is the consolidated project checklist based on our work so far. I’m trea
   builder/provisioner defaults to home cache. Failed-stage/affected fixtures
   pass, including immutable-HOME and unsafe-workspace refusal. No integrity
   test was changed; draft still requires new-head CI, review and real acceptance.
+  PR75 second-head Shell runs 37716550853/37716545898 reached documentation
+  validation and found README over 150 lines; condensed related install/recovery
+  prose to the existing limit without changing its test. First real 6.16 helper
+  attempt stopped before compilation with Podman runroot >50 characters (exit
+  125), preserving diagnostics in owned core-pr75-realbuild.7wsmob. Short
+  private runtime-control state now stays separate from home-backed bulk data,
+  with workspace inode/owner/mode guards. Actual Podman failed-stage probe,
+  overlong-runtime-parent cleanup fixture, documentation and syntax/diff pass.
+  No real compilation or installation success is claimed; fresh helper/CI gates
+  remain required after the corrective source commit.
 
 * [ ] Correct portable initramfs construction after the exact EXE PR163 partial
   reached the production verifier and proved that the generated archive omitted
