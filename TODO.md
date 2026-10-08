@@ -195,6 +195,20 @@ Below is the consolidated project checklist based on our work so far. I’m trea
   overlong-runtime-parent cleanup fixture, documentation and syntax/diff pass.
   No real compilation or installation success is claimed; fresh helper/CI gates
   remain required after the corrective source commit.
+  Third-head Shell CI 37717588579/37717584178 found the recovery-status
+  fixture's old published-only command assertion; updated it to the requested
+  explicit fallback flag and failed-stage recovery_status runtime rerun passes.
+  Actual 6.16 compilation/repack/materialization completed at Core6ab4af8 with
+  source40bd1b5, GCC15.2.1 (kernel compiler15.1.1), sealed Fedora digest63773f45.
+  Outer caller exited143 before export; exact container later retired itself.
+  Verified create-only recovery using existing cache staging and artifact
+  validators retained archive SHA-256
+  `a5dc02ed2663209c7c6808ac82b95b048ffb8a6faae01dc9d6bbbaee8fc83962`.
+  Exact workspace/runtime inode/owner/mode and empty private-store guards
+  preceded cleanup; diagnostics/product remain in core-pr75-realbuild.lLJx8H.
+  This is verified recovered build evidence, not normal helper-return,
+  installed/reboot/hardware or 6.18 success. Single cache slot still needs
+  investigation for valid older-target cache preservation across updates.
 
 * [ ] Correct portable initramfs construction after the exact EXE PR163 partial
   reached the production verifier and proved that the generated archive omitted
