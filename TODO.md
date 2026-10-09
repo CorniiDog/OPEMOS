@@ -216,6 +216,33 @@ Below is the consolidated project checklist based on our work so far. I’m trea
   exercise the builder itself, independently of provisioning replacement tests.
   Prior c79 PR/push Shell and Documentation CI all pass; the new fixture commit
   still requires its exact-head checks/review. No final approval or merge.
+  Exact failed-update userspace selection checkpoint on 2026-10-07:
+  raw setup for SteamOS3.8.28/kernel6.18.50 selects reviewed575.64.05 with
+  --build-as-fallback despite published-module absence. Focused heavy fixture
+  passes no-flag/wrong-version refusal, no mutation and temporary cleanup.
+  Existing Arch archive listings contain nvidia-utils575.64.05 pkgrel1/2 and
+  lib32 pkgrel1 with detached signatures; listing presence is not package
+  authentication or install acceptance. Current PR75 b098 Shell PR/push and
+  Documentation checks all pass; EXE source response remains nonfinal.
+  New exact-target fixture is uncommitted pending a coherent acceptance batch;
+  actual6.18 source incompatibility and installed repair remain unresolved.
+  Actual6.18 repair-source checkpoint on 2026-10-08: recovered original
+  source history/diffs from preserved own tool records; exact trees and original
+  commit IDs verified through63c4d7c. Targeted authenticated build then exposed
+  another concrete failure: unguarded pfn_to_pfn_t in DRM user-memory faults.
+  Bounded existing-probe guard is local sourcee328d8597050842bf099cf6da3a815b93166f8c3;
+  isolated failed-object rerun and full exact3.8.28/6.18.50 target build PASS.
+  All five module metadata/architecture/vermagic checks, signed headers and
+  compiler-major validation pass. Existing repack/product/bundle/materializer
+  pipeline PASS using immutable prepared d23eec5 image through heavy.sh.
+  Materialized archive SHA256
+  96cb7e0f885849d8ea7a25e2c481f46a5b576abf8149d557edf1cd2af8581df5;
+  producerCoreb098/sourcee328, source clean. Exact five contained jobs retired;
+  original failure logs, source Git history, patches and candidate receipt
+  retained in core-618-authenticated-r1. Current Automatic source pin remains
+  40bd; explicit source-integration/target-pin approval was requested under
+  the new-trust-input guard. No source push, pin change, native Desktop delivery,
+  installed userspace/reboot/VM/physical acceptance or release publication yet.
 
 * [ ] Correct portable initramfs construction after the exact EXE PR163 partial
   reached the production verifier and proved that the generated archive omitted
@@ -3285,3 +3312,15 @@ gate is a completely clean-stock one-command certified installation.
   Executable repeated-healthy-noop and real failed-repair transition checks pass
   through `heavy.sh`; immutable PR/check/review and installed display acceptance
   remain required, without physical mutation or hardware-success claims.
+
+
+### 2026-10-09 authorized source PR separation checkpoint
+User-authorized source PR1 https://github.com/CorniiDog/open-gpu-kernel-modules-steamos/pull/1 preserves compiled e328 kernel lineage; source PR2 https://github.com/CorniiDog/open-gpu-kernel-modules-steamos/pull/2 at fde6290c074ebb32f2ccb745b2ed95610dcfbda8 independently corrects stale hotplug encoder/EDID state from base40bd. Production-body regression baselineFAIL/fixedPASS through heavy.sh; diff checks PASS. Gamescope HDR/client teardown portions explicitly remain unported; no global580MHz cap. Both PRs await exact counterpart review; display modulebuild and hardware validation pending. No merge, policy pin update or Desktop delivery yet. Earlier approval-hold entries retained as historical evidence, superseded only by the explicit two-PR authorization.
+
+PR2 coverage follow-up: test-only head2adb821add3164aebc9b67cae3039d4622519c24 now executes production get_modes; connected/reconnected mode enumeration and missingencoder zero/NVKMS-no-call PASS viaheavy. Private combined source ca467071 exact6.18 build running; no successclaim yet.
+
+
+PR2 exact2adb821 coverage and fullbuild checkpoint: production detect+get_modes heavyPASS; missingencoder return0/noNVKMS calls and reconnect enumeration verified. Full exact3.8.28/6.18.50 combined source ca467071a521d340c282f910b914312339df90dc (e328 plus separate displaycommits) cleanCoreb098 buildexit0, allfive modules/signedheaders/compilermajorPASS. RawarchiveSHA0b5bf8622b2faa6e47fd184b16c67fc2c2d5ce5c409bbac6ea3cb44dec483df5; drmSHA d0430fd41daa42d6d46a284d27c7b4bde3f855f4877a2c2743c15779ffd01275. Both exactcontainers exists1/absent. Evidence core-618-authenticated-r1/build-result-display-r1.json, build-display-r2.log, output-display-r1 provenance. Initial worktree source guard refusal preserved; standalone clone normalguards fixed. No merge, pin, installed/hardware/Desktopclaim; exactsource reviewrequest alreadydurable currenthead.
+
+
+Source integration completed through separate reviewed PRs: displayPR2 squash33e5327587eeb299d672d0252644579a4de89e92; kernelPR1 squashd8f6da4b84acee2886e44cc11a426d269b934270. Canonical finaltree4b34461a equals actualcompiledca467071. Exact approved3.8.28/6.18.50 Automatic plan selectsd8; olderplans retain40bd. Extended rawpublic selection/userspace/refusal/cleanup fixture and diffPASS viaheavy. Canonical finalCore/source provenance build/package, CorePR75 finalchecks/review/merge and Desktopdelivery still pending; no relabel of existingbuild or runtimeclaim.

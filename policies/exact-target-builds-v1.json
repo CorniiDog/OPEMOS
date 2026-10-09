@@ -46,7 +46,7 @@
         "trust": "locally-built-verified"
       },
       "source": {
-        "commit": "40bd1b5d6d39ae4e4180b7a665df144b08854d14",
+        "commit": "d8f6da4b84acee2886e44cc11a426d269b934270",
         "ref": "refs/heads/nvidia/575.64.05",
         "repository": "CorniiDog/open-gpu-kernel-modules-steamos"
       },

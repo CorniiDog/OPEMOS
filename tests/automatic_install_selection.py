@@ -44,7 +44,7 @@ while [[ $# -gt 0 ]]; do
   fi
   if [[ "$1" == -o ]]; then
     if [[ -n "${package:-}" ]]; then
-      printf '%s-575.64.05-1-x86_64.pkg.tar.zst\\n' "$package" > "$2"
+      printf '%s-%s-1-x86_64.pkg.tar.zst\\n' "$package" "${MOCK_ARCH_VERSION:-575.64.05}" > "$2"
     else
       cp "$MOCK_RELEASES" "$2"
     fi
@@ -101,6 +101,41 @@ exit 99
                 assert "MUTATION" not in setup.stderr
                 assert not list((home / ".cache/open-gpu-kernel-modules-steamos-support").glob("online-setup-nvidia.*"))
             assert not list((home / ".cache/open-gpu-kernel-modules-steamos-support").glob("online-install.*"))
+        # Actual failed-update target: userspace selection must use the reviewed
+        # version even with no published modules, without querying installed
+        # userspace or substituting a different package version.
+        (system / "os-release").write_text('ID=steamos\nVERSION_ID="3.8.28"\n')
+        env["MOCK_KERNEL"] = "6.18.50-valve2-1-neptune-618-gc7289a96b14d"
+        releases.write_text("[]")
+        exact_plan = subprocess.run(["bash", "-s", "--", "--build-as-fallback", "--resolve-only"],
+                                    input=(ROOT / "bootstrap/online_install.sh").read_text(),
+                                    cwd="/", env=env, text=True, capture_output=True)
+        assert exact_plan.returncode == 0, (exact_plan.stdout, exact_plan.stderr)
+        action = json.loads(exact_plan.stdout)["action"]
+        assert action["kind"] == "build_exact_target"
+        assert action["buildPlan"]["source"]["commit"] == "d8f6da4b84acee2886e44cc11a426d269b934270"
+        # Older supported kernels retain their existing reviewed source.
+        policy = json.loads((ROOT / "policies/exact-target-builds-v1.json").read_text())
+        assert all(plan["source"]["commit"] == "40bd1b5d6d39ae4e4180b7a665df144b08854d14"
+                   for plan in policy["plans"] if plan["target"]["steamosVersion"] != "3.8.28")
+        setup_input = (ROOT / "bootstrap/online_setup_nvidia.sh").read_text()
+        exact_setup = subprocess.run(["bash", "-s", "--", "--build-as-fallback", "--resolve-only"],
+                                     input=setup_input, cwd="/", env=env, text=True, capture_output=True)
+        assert exact_setup.returncode == 0, (exact_setup.stdout, exact_setup.stderr)
+        assert "Selection mode:    automatic-exact-build" in exact_setup.stdout
+        assert "NVIDIA:            575.64.05" in exact_setup.stdout
+        assert env["MOCK_KERNEL"] in exact_setup.stdout
+        assert "MUTATION" not in exact_setup.stderr
+        for arguments, extra, message in (
+                (["--resolve-only"], {}, "--build-as-fallback"),
+                (["--build-as-fallback", "--resolve-only"], {"MOCK_ARCH_VERSION": "580.105.08"},
+                 "No exact nvidia-utils package exists for NVIDIA 575.64.05")):
+            refused = subprocess.run(["bash", "-s", "--", *arguments], input=setup_input,
+                                     cwd="/", env={**env, **extra}, text=True, capture_output=True)
+            assert refused.returncode != 0, (refused.stdout, refused.stderr)
+            assert message in refused.stderr, refused.stderr
+            assert "MUTATION" not in refused.stderr
+        assert not list((home / ".cache/open-gpu-kernel-modules-steamos-support").glob("online-setup-nvidia.*"))
         mismatch = subprocess.run(["bash", "-s", "--", "--build-as-fallback", "--resolve-only"],
                                   input=(ROOT / "bootstrap/online_install.sh").read_text(),
                                   cwd="/", env={**env, "MOCK_CORE_HEAD": "b" * 40}, text=True, capture_output=True)
