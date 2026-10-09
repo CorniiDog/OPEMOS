@@ -64,28 +64,28 @@ the system:
 cd ~ && bash <(curl -fsSL "https://raw.githubusercontent.com/CorniiDog/OPEMOS/main/bootstrap/online_setup_nvidia.sh?x=$(date +%s)") --resolve-only
 ```
 
-Install the matching published modules and userspace:
+Install matching modules and userspace. Without additional flags this uses only verified published products. Add `--build-as-fallback` to both setup and installer one-liners to permit a missing product to build only a reviewed exact target with pinned source, authenticated Valve headers, and a
+matching compiler in disposable Fedora/Podman storage. Missing Podman is temporarily provisioned from existing package databases only when preexisting packages remain unchanged. Downloads use a private cache; cleanup retires only verified new dependencies and preserves conflicts. Failed builds never
+install another kernel or unreviewed source:
 
 ```bash
 cd ~ && bash <(curl -fsSL "https://raw.githubusercontent.com/CorniiDog/OPEMOS/main/bootstrap/online_install.sh?x=$(date +%s)")
 ```
 
-The canonical installer also installs a persistent boot guardian. On every
-activated SteamOS slot it verifies all five NVIDIA modules against the running
-kernel and installed userspace before the display manager starts. If an A/B
-update activates a kernel without matching modules, it enters a console-safe
-recovery profile instead of allowing a black graphical boot. Inspect or repair
-it through the UI-neutral JSON contract:
+Recovery explicitly opts into the same fallback policy after an update. Add `--build-as-fallback --resolve-only` to preview a permitted build, or `--resolve-only` for published-only selection. This prints the shared Automatic authorization without building, installing, or querying NVIDIA userspace.
+
+Opted-in installs retain create-only Git bundles. Offline reuse requires `SUPPORT_REVISION=<exact-commit>` and verifies restored HEAD before execution. Failed release queries permit exact product cache reuse only, never compilation. Existing/invalid entries are preserved; the bootstrap must be
+available offline. Authorization is not proof that the pinned source compiles: the reviewed 6.18 plan still requires separate compiler and installation acceptance.
+
+The canonical installer also installs a persistent boot guardian. On every activated SteamOS slot it verifies all five NVIDIA modules against the running kernel and installed userspace before the display manager starts. If an A/B update activates a kernel without matching modules, it enters a
+console-safe recovery profile instead of allowing a black graphical boot. Inspect or repair it through the UI-neutral JSON contract:
 
 ```bash
 sudo /home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/bootstrap/recoveryctl.sh status --json
 sudo /home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/bootstrap/recoveryctl.sh repair-online --json
 ```
 
-Automatic fallback disables both NVIDIA and Nouveau. An Intel/AMD boot-VGA
-desktop is accepted only after hardware validation; Nouveau is experimental
-and requires the explicit `--allow-nouveau` option. Fallback is removed only
-after exact NVIDIA module verification succeeds.
+Automatic fallback disables both NVIDIA and Nouveau. An Intel/AMD boot-VGA desktop is accepted only after hardware validation; Nouveau is experimental and requires the explicit `--allow-nouveau` option. Fallback is removed only after exact NVIDIA module verification succeeds.
 
 The online bootstrap currently downloads from mutable `main`; review the
 [public installer trust limitations](docs/security.md#public-online-installer)

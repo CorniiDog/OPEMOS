@@ -518,7 +518,9 @@ fi
 log "Building NVIDIA ${NVIDIA_VERSION} for ${KERNEL_VERSION}..."
 BUILD_PHASE=compilation_failed
 make -C "$SOURCE_DIR" clean >/dev/null 2>&1 || true
-run_cancellable make -C "$SOURCE_DIR" modules -j"$(nproc)" CC="$BUILD_CC" \
+BUILD_JOBS="${OPEMOS_BUILD_JOBS:-$(nproc)}"
+[[ "$BUILD_JOBS" =~ ^[1-9][0-9]*$ && "$BUILD_JOBS" -le 256 ]] || die "Invalid build parallelism."
+run_cancellable make -C "$SOURCE_DIR" modules -j"$BUILD_JOBS" CC="$BUILD_CC" \
     SYSSRC="$KERNEL_TREE" SYSOUT="$KERNEL_TREE"
 
 MODULES=()
@@ -596,6 +598,11 @@ CHECKSUM="$STAGED_OUTPUT/$ASSET_NAME.sha256"
     printf 'build_mode=offline-target-fedora\n'
     printf 'build_architecture=%s\n' "$ARCHITECTURE"
     printf 'build_os=%s\n' "${BUILD_OS:-unknown}"
+    if [[ -n "${OPEMOS_BUILD_CONTAINER_IMAGE:-}" ]]; then
+        [[ "$OPEMOS_BUILD_CONTAINER_IMAGE" =~ ^registry.fedoraproject.org/fedora@sha256:[0-9a-f]{64}$ ]] ||
+            die "Invalid Automatic container image identity."
+        printf 'container_image=%s\n' "$OPEMOS_BUILD_CONTAINER_IMAGE"
+    fi
     printf 'trust_classification=%s\n' "$TRUST_CLASSIFICATION"
     printf 'compiler_command=%s\n' "$BUILD_CC"
     printf 'compiler_version=%s\n' "$BUILD_COMPILER_VERSION"

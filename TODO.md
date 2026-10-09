@@ -38,6 +38,212 @@ Below is the consolidated project checklist based on our work so far. I’m trea
 
 ## Not yet resolved
 
+* [ ] Implement user-requested automatic exact-kernel source-build fallback.
+  Public `--build-as-fallback` explicitly opts into the policy; no-flag installs
+  remain published-only and automatic recovery opts in explicitly.
+  Prefer the authenticated exact online product, reuse verified exact offline
+  cache, and build only after a typed missing-product result under the pinned
+  automatic source-intent policy. Reuse the authenticated exact-target Fedora
+  builder inside an owned Podman workspace; preserve installed userspace and
+  preexisting dependencies/cache, cancellation, receipts, verification and
+  read-only restoration. Legacy compile_online/--in-code resolves mutable
+  branches and requires working nvidia-smi, so it is not the unattended path.
+  The existing 6.18 plan pins source40bd1b5, whose known compiler incompatibility
+  remains separate; no unreviewed source or unsigned header fallback is allowed.
+  In-progress branch `work/core-auto-source-fallback` now routes both public
+  planning/setup entry points through the existing Automatic authorization,
+  adds bounded private Fedora/Podman exact-source build dispatch to the normal
+  installer, and rejects unverified outputs before installation. Focused raw
+  public planning, malformed metadata, source/userspace refusal, build failure,
+  process cancellation/cleanup, existing bootstrap/reboot/CLI, and exact-builder
+  failure checks passed through `heavy.sh` on 2026-10-07. This is an uncommitted
+  implementation checkpoint, not completion: verified build/install success,
+  reusable offline cache/idempotence, temporary missing-Podman handling, full
+  installed acceptance, immutable PR/check/review/merge evidence remain.
+  The next local checkpoint carries bounded typed builder failures to recovery
+  and suppresses unchanged incompatible compilation while still checking exact
+  publications/cache. On 2026-10-07, raw public opt-in/no-flag planning,
+  build failure/cancel cleanup, and recovery retry/identity-change fixtures
+  passed through heavy.sh. Recovery testing reproduced a duplicate downloading
+  transition; the bounded correction and failing-stage rerun passed. Published
+  planning is identical with/without opt-in, and recovery forwards the flag.
+  Built output now checks exact installed module identity before mutation.
+  Existing raw/compressed no-op/reboot fixtures pass through heavy.sh; full
+  source-build success and persistent raw-product cache acceptance remain.
+  Typed-failure handoff now rejects boolean schema versions; focused malformed
+  version/trust/target/reason fixtures prove refusal and workspace cleanup
+  while preserving preexisting cache (heavy.sh PASS on 2026-10-07).
+  Helper output success/existing-destination/concurrent-collision fixtures
+  also pass via heavy.sh: output is preserved and owned workspace removed.
+  These mocked file-handoff checks do not establish compile/install success.
+  Existing canonical repacker preserves locally-built trust/source/target;
+  new preservation assertions passed in the already prepared Core dependency
+  image d23eec5f602c with exact zstd 1.5.7 through heavy.sh, network disabled
+  and checkout read-only. The earlier host 1.5.5 failure remains recorded;
+  no host install, download or pin weakening was used.
+  Automatic builder now compiles into disposable raw staging and invokes the
+  existing canonical repacker inside that same container; only the compressed
+  four-file product is exported, without the stale raw success receipt.
+  Helper lifecycle fixtures and syntax/diff pass; actual composed build and
+  persistent cache staging/replay remain unvalidated.
+  Composed repack/product/bundle/materializer fixture now passes through
+  heavy.sh in the prepared exact encoder image, including actual recovery
+  cache stage/show and byte-identical output. Builder emits a canonical
+  materialization document through those existing primitives. Persistent
+  retention/replay and actual build/install acceptance remain unfinished.
+  Built-product retention now stages the canonical materialization into the
+  existing guardian-owned cache after verified installation and commits the
+  existing module receipt. Existing cache must exactly match; conflicts are
+  preserved. Static/helper checks pass; direct success/retention/replay
+  acceptance is still required.
+  Actual composed-cache receipt idempotence and installed-byte mismatch
+  preservation fixtures passed through heavy.sh in the immutable prepared
+  encoder image: repeat commits are byte-identical, and mismatched installed
+  bytes refuse commitment while preserving the prior receipt. Public
+  success/retention/replay dispatch acceptance remains outstanding.
+  Raw public success/retention fixture is now prepared using the actual
+  composed product and validators plus isolated build/install adapters. It
+  requires persistent cache and receipt creation; runtime remains pending
+  while EXE R27 owns the shared heavy slot (AST/diff pass).
+  Raw public success/retention and repeated-invocation acceptance now pass
+  through heavy.sh in the immutable prepared image. After a published miss,
+  dispatch reuses the exact current-Core/source/target cache, bounds and hashes
+  copied inputs, and skips both build and install when modules already match.
+  A damaged cache is refused with cache and installed bytes preserved. These
+  use isolated build/install adapters, not a real source compilation. Offline
+  bootstrap discovery, temporary Podman provisioning, real build acceptance
+  and immutable PR/check/review/merge gates remain unfinished.
+  Public retained-cache repair now also passes after installed-module damage:
+  exact cached bytes restore the module without another build. Inspection
+  found and corrected missing fallback-flag forwarding to userspace setup;
+  raw public flag/no-flag setup-argument and failure-cleanup regressions pass
+  through heavy.sh on 2026-10-07. Isolated adapters remain distinct from real
+  compilation or physical-device acceptance.
+  Retained-cache public mode regressions pass through heavy.sh: no-flag
+  published miss still refuses despite a valid cache; flagged resolve-only
+  leaves receipt/build/install counts unchanged. Public offline bootstrap
+  remains unimplemented: installed recovery has a root-owned pinned snapshot,
+  but raw bootstrap still requires remote revision/checkout before cache use.
+  Replaced optimization-sensitive Python assertions in new dispatch with
+  unconditional cache/hash/build identity refusals. Raw public wrong-source
+  cache regression under PYTHONOPTIMIZE=1 passes via heavy.sh, preserving
+  cache and build/install counts; syntax/diff/container cleanup pass.
+  Helper typed-failure/build-plan/single-signer checks are now unconditional
+  too. Malformed version/trust/target/reason output rejection and private
+  workspace cleanup pass with PYTHONOPTIMIZE=1 through heavy.sh; syntax/diff
+  pass. No source compatibility or missing-Podman completion is implied.
+  After verified Core checkout, release-query failure now permits only exact
+  retained-cache validation/reuse under the explicit flag; it never permits
+  compilation. Public query-failure cache-hit and no-cache refusal fixtures
+  pass through heavy.sh. Remote revision/clone offline bootstrap remains open.
+  Release-query outage combined with damaged cache now has a passing raw
+  public refusal regression: cached and installed bytes remain unchanged,
+  and build/install counts do not increase (heavy.sh, cleanup/diff PASS).
+  Public bootstrap now normalizes the exact Core revision and verifies fetched
+  HEAD before sourcing any support code. Checkout-mismatch refusal/temp cleanup
+  and affected planning/helper/reboot/composed cache fixtures pass via heavy.sh;
+  syntax/diff/container cleanup pass. Retained Git offline bootstrap is not yet
+  implemented; this checkpoint establishes its required identity precondition.
+  Temporary missing-Podman wrapper is now prepared in setup_build_env.sh,
+  invoked only for the exact Automatic builder. It validates the plan before
+  installation, uses existing package databases without refresh, refuses any
+  preexisting package in the install plan, and removes only an exact owned
+  package delta while restoring read-only state; unexpected changes preserve
+  dependencies/evidence. Success/failure/partial-install/cancel/upgrade refusal/
+  concurrent-change/preexisting-Podman fixtures are prepared. Syntax/AST/diff
+  pass, but runtime is PENDING: heavy.sh exited 75 for the occupied shared slot.
+  This is not provisioning completion or authority to mutate this host.
+  Isolated temporary-Podman runtime fixtures now PASS via heavy.sh: success,
+  build failure, partial install, cancellation, upgrade/userspace refusal,
+  preexisting Podman, package-state conflict and replaced-workspace preservation.
+  Package downloads use a private cache; cleanup checks workspace inode/owner/
+  mode before trusting records or deletion and restores read-only state.
+  Initial private-cache fixture failed on its missing mkdir adapter; fixed and
+  failed-stage rerun passed. Affected builder/prerequisite fixtures pass;
+  syntax/diff pass. No real host package installation or real compile claim.
+  Pre-checkout offline route now retains create-only exact Git bundles after
+  successful opted-in installs. An explicit Core revision is required for
+  offline reuse; bounded regular-file snapshot and restored HEAD verification
+  precede execution. Real-Git planning fixtures refuse unpinned/no-flag,
+  wrong-commit, corrupt, unsafe-mode and symlink entries without execution.
+  Existing composed public fixture now uses a real isolated Git commit/bundle
+  and proves offline damaged-module repair with both network lanes failed,
+  exact product/cache/receipt validation, no rebuild, and preserved bundle.
+  This remains fixture installation, not real source compilation/hardware.
+  Bootstrap failure/selection, recovery cache/retry, temporary provisioning,
+  setup modes/signals, CLI, nounset and hygiene checks pass through heavy.sh;
+  composed repack/offline repair passes in immutable prepared encoder image.
+  Prepare an imaging-sensitive draft PR; real build/installed acceptance and
+  immutable required checks/counterpart approval/merge remain open.
+  Draft Core PR https://github.com/CorniiDog/OPEMOS/pull/75 contains initial
+  source `92e07c495d9d34d434ee855e45fed68b6fee085a` from fetched main
+  `f72aff92a5534b676083ccba974f4185f2d4551f`; normal branch push was needed
+  for remote CI/exact review, with configured moved origin verified and only
+  owned source committed (.codex excluded). Remote Shell checks run
+  37716214557 caught root-backed recovery temporary staging in host_temp_storage.
+  Corrected recovery staging to guarded home-backed workspaces, and automatic
+  builder/provisioner defaults to home cache. Failed-stage/affected fixtures
+  pass, including immutable-HOME and unsafe-workspace refusal. No integrity
+  test was changed; draft still requires new-head CI, review and real acceptance.
+  PR75 second-head Shell runs 37716550853/37716545898 reached documentation
+  validation and found README over 150 lines; condensed related install/recovery
+  prose to the existing limit without changing its test. First real 6.16 helper
+  attempt stopped before compilation with Podman runroot >50 characters (exit
+  125), preserving diagnostics in owned core-pr75-realbuild.7wsmob. Short
+  private runtime-control state now stays separate from home-backed bulk data,
+  with workspace inode/owner/mode guards. Actual Podman failed-stage probe,
+  overlong-runtime-parent cleanup fixture, documentation and syntax/diff pass.
+  No real compilation or installation success is claimed; fresh helper/CI gates
+  remain required after the corrective source commit.
+  Third-head Shell CI 37717588579/37717584178 found the recovery-status
+  fixture's old published-only command assertion; updated it to the requested
+  explicit fallback flag and failed-stage recovery_status runtime rerun passes.
+  Actual 6.16 compilation/repack/materialization completed at Core6ab4af8 with
+  source40bd1b5, GCC15.2.1 (kernel compiler15.1.1), sealed Fedora digest63773f45.
+  Outer caller exited143 before export; exact container later retired itself.
+  Verified create-only recovery using existing cache staging and artifact
+  validators retained archive SHA-256
+  `a5dc02ed2663209c7c6808ac82b95b048ffb8a6faae01dc9d6bbbaee8fc83962`.
+  Exact workspace/runtime inode/owner/mode and empty private-store guards
+  preceded cleanup; diagnostics/product remain in core-pr75-realbuild.lLJx8H.
+  This is verified recovered build evidence, not normal helper-return,
+  installed/reboot/hardware or 6.18 success. Single cache slot still needs
+  investigation for valid older-target cache preservation across updates.
+  EXE source response for PR75/c79 requested actual automatic-builder WORK/
+  RUNTIME replacement coverage. Both changed fixtures now pass via heavy.sh:
+  replacement sentinels and original directories remain, cleanup exits1, and
+  the Podman call log ends at run (no container/unshare cleanup calls). These
+  exercise the builder itself, independently of provisioning replacement tests.
+  Prior c79 PR/push Shell and Documentation CI all pass; the new fixture commit
+  still requires its exact-head checks/review. No final approval or merge.
+  Exact failed-update userspace selection checkpoint on 2026-10-07:
+  raw setup for SteamOS3.8.28/kernel6.18.50 selects reviewed575.64.05 with
+  --build-as-fallback despite published-module absence. Focused heavy fixture
+  passes no-flag/wrong-version refusal, no mutation and temporary cleanup.
+  Existing Arch archive listings contain nvidia-utils575.64.05 pkgrel1/2 and
+  lib32 pkgrel1 with detached signatures; listing presence is not package
+  authentication or install acceptance. Current PR75 b098 Shell PR/push and
+  Documentation checks all pass; EXE source response remains nonfinal.
+  New exact-target fixture is uncommitted pending a coherent acceptance batch;
+  actual6.18 source incompatibility and installed repair remain unresolved.
+  Actual6.18 repair-source checkpoint on 2026-10-08: recovered original
+  source history/diffs from preserved own tool records; exact trees and original
+  commit IDs verified through63c4d7c. Targeted authenticated build then exposed
+  another concrete failure: unguarded pfn_to_pfn_t in DRM user-memory faults.
+  Bounded existing-probe guard is local sourcee328d8597050842bf099cf6da3a815b93166f8c3;
+  isolated failed-object rerun and full exact3.8.28/6.18.50 target build PASS.
+  All five module metadata/architecture/vermagic checks, signed headers and
+  compiler-major validation pass. Existing repack/product/bundle/materializer
+  pipeline PASS using immutable prepared d23eec5 image through heavy.sh.
+  Materialized archive SHA256
+  96cb7e0f885849d8ea7a25e2c481f46a5b576abf8149d557edf1cd2af8581df5;
+  producerCoreb098/sourcee328, source clean. Exact five contained jobs retired;
+  original failure logs, source Git history, patches and candidate receipt
+  retained in core-618-authenticated-r1. Current Automatic source pin remains
+  40bd; explicit source-integration/target-pin approval was requested under
+  the new-trust-input guard. No source push, pin change, native Desktop delivery,
+  installed userspace/reboot/VM/physical acceptance or release publication yet.
+
 * [ ] Correct portable initramfs construction after the exact EXE PR163 partial
   reached the production verifier and proved that the generated archive omitted
   `nvidia.ko`. Preserve the PR66 muxless-panel behavior by keeping NVIDIA out of
@@ -3106,3 +3312,15 @@ gate is a completely clean-stock one-command certified installation.
   Executable repeated-healthy-noop and real failed-repair transition checks pass
   through `heavy.sh`; immutable PR/check/review and installed display acceptance
   remain required, without physical mutation or hardware-success claims.
+
+
+### 2026-10-09 authorized source PR separation checkpoint
+User-authorized source PR1 https://github.com/CorniiDog/open-gpu-kernel-modules-steamos/pull/1 preserves compiled e328 kernel lineage; source PR2 https://github.com/CorniiDog/open-gpu-kernel-modules-steamos/pull/2 at fde6290c074ebb32f2ccb745b2ed95610dcfbda8 independently corrects stale hotplug encoder/EDID state from base40bd. Production-body regression baselineFAIL/fixedPASS through heavy.sh; diff checks PASS. Gamescope HDR/client teardown portions explicitly remain unported; no global580MHz cap. Both PRs await exact counterpart review; display modulebuild and hardware validation pending. No merge, policy pin update or Desktop delivery yet. Earlier approval-hold entries retained as historical evidence, superseded only by the explicit two-PR authorization.
+
+PR2 coverage follow-up: test-only head2adb821add3164aebc9b67cae3039d4622519c24 now executes production get_modes; connected/reconnected mode enumeration and missingencoder zero/NVKMS-no-call PASS viaheavy. Private combined source ca467071 exact6.18 build running; no successclaim yet.
+
+
+PR2 exact2adb821 coverage and fullbuild checkpoint: production detect+get_modes heavyPASS; missingencoder return0/noNVKMS calls and reconnect enumeration verified. Full exact3.8.28/6.18.50 combined source ca467071a521d340c282f910b914312339df90dc (e328 plus separate displaycommits) cleanCoreb098 buildexit0, allfive modules/signedheaders/compilermajorPASS. RawarchiveSHA0b5bf8622b2faa6e47fd184b16c67fc2c2d5ce5c409bbac6ea3cb44dec483df5; drmSHA d0430fd41daa42d6d46a284d27c7b4bde3f855f4877a2c2743c15779ffd01275. Both exactcontainers exists1/absent. Evidence core-618-authenticated-r1/build-result-display-r1.json, build-display-r2.log, output-display-r1 provenance. Initial worktree source guard refusal preserved; standalone clone normalguards fixed. No merge, pin, installed/hardware/Desktopclaim; exactsource reviewrequest alreadydurable currenthead.
+
+
+Source integration completed through separate reviewed PRs: displayPR2 squash33e5327587eeb299d672d0252644579a4de89e92; kernelPR1 squashd8f6da4b84acee2886e44cc11a426d269b934270. Canonical finaltree4b34461a equals actualcompiledca467071. Exact approved3.8.28/6.18.50 Automatic plan selectsd8; olderplans retain40bd. Extended rawpublic selection/userspace/refusal/cleanup fixture and diffPASS viaheavy. Canonical finalCore/source provenance build/package, CorePR75 finalchecks/review/merge and Desktopdelivery still pending; no relabel of existingbuild or runtimeclaim.

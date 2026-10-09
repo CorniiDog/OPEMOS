@@ -486,6 +486,7 @@ case "$COMMAND" in
                     --support-revision "$revision" >/dev/null
             fi
         fi
+        skip_unchanged_build=0
         if [[ ! -f "$TRANSACTION" ]]; then
             plan_tool remove
             transaction_tool begin --kernel "$kernel" --nvidia "$nvidia" \
@@ -494,6 +495,13 @@ case "$COMMAND" in
             existing="$(transaction_tool show)"
             python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["target"] == {"kernelVersion":sys.argv[2],"nvidiaVersion":sys.argv[3]}; assert d["supportRevision"] == sys.argv[4]; assert d.get("automaticRetry") is not False' \
                 "$existing" "$kernel" "$nvidia" "$revision"
+            if [[ "$COMMAND" == repair-auto ]] && python3 -c \
+                'import json,sys; d=json.loads(sys.argv[1]); raise SystemExit(0 if d["phase"] == "failed" and d["reason"] == "exact_reviewed_build_incompatible" else 1)' "$existing"; then
+                skip_unchanged_build=1
+                # Continue cheap publication/cache discovery; a newly verified
+                # product can repair this target without repeating compilation.
+                transaction_tool set --phase downloading --reason checking_new_exact_product >/dev/null
+            fi
         fi
         cached_result=""
         if [[ -e "$CACHED_PRODUCT" || -L "$CACHED_PRODUCT" ]]; then
@@ -525,17 +533,35 @@ case "$COMMAND" in
         publish_recovery_progress set --phase waiting_for_network
         if ! curl -fsS --connect-timeout 10 --max-time 20 https://api.github.com/meta \
             | python3 "$SUPPORT_ROOT/lib/validate_github_meta.py"; then
+            if [[ "$skip_unchanged_build" == 1 ]]; then
+                transaction_tool set --phase failed --reason exact_reviewed_build_incompatible >/dev/null
+                emit_result failed exact_reviewed_build_incompatible unchanged_exact_build_not_repeated
+                exit 76
+            fi
             transaction_tool set --phase retry_scheduled --reason network_unavailable_or_untrusted >/dev/null
             emit_result offline_waiting network_unavailable retry_scheduled
             exit 75
         fi
-        transaction_tool set --phase downloading --reason exact_artifact_resolution >/dev/null
+        if [[ "$skip_unchanged_build" == 0 ]]; then
+            transaction_tool set --phase downloading --reason exact_artifact_resolution >/dev/null
+        fi
         publish_recovery_progress set --phase downloading
         transaction_tool set --phase installing --reason canonical_exact_kernel_install >/dev/null
         publish_recovery_progress set --phase installing_modules
-        if ! SUPPORT_REVISION="$revision" OPEMOS_PINNED_NVIDIA_VERSION="$nvidia" \
+        online_rc=0
+        SUPPORT_REVISION="$revision" OPEMOS_PINNED_NVIDIA_VERSION="$nvidia" \
+             OPEMOS_SKIP_UNCHANGED_BUILD="$skip_unchanged_build" \
              OPEMOS_RECOVERY_PLAN_FILE="$RELEASE_PLAN" \
-             run_cancellable "$ONLINE_INSTALL" -y; then
+             run_cancellable "$ONLINE_INSTALL" --build-as-fallback -y || online_rc=$?
+        if [[ "$online_rc" == 76 ]]; then
+            transaction_tool set --phase failed --reason exact_reviewed_build_incompatible >/dev/null
+            emit_result failed exact_reviewed_build_incompatible unchanged_exact_build_not_repeated
+            exit 76
+        elif [[ "$online_rc" != 0 && "$skip_unchanged_build" == 1 ]]; then
+            transaction_tool set --phase failed --reason exact_reviewed_build_incompatible >/dev/null
+            emit_result failed exact_reviewed_build_incompatible unchanged_exact_build_not_repeated
+            exit 76
+        elif [[ "$online_rc" != 0 ]]; then
             transaction_tool set --phase retry_scheduled --reason exact_repair_failed >/dev/null
             emit_result retry_scheduled exact_repair_failed timer_and_connectivity
             exit 75

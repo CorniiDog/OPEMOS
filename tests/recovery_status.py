@@ -473,7 +473,7 @@ assert "trap cancel_recovery HUP INT TERM" in control
 assert "terminate_active_process_group" in control
 assert 'run_cancellable sudo mkinitcpio -P' in control
 assert 'ONLINE_INSTALL="$SUPPORT_ROOT/bootstrap/online_install.sh"' in control
-assert 'run_cancellable "$ONLINE_INSTALL" -y' in control
+assert 'run_cancellable "$ONLINE_INSTALL" --build-as-fallback -y' in control
 assert "trap restore_readonly EXIT INT TERM" not in control
 cancel_gate = control.index(
     '[[ "$existing_phase" != cancelled ]] || die "Automatic recovery retries were cancelled."'
