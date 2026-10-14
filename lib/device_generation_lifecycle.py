@@ -1997,12 +1997,37 @@ def verify_regular_hash(path, size, expected_hash, label):
 
 
 def seal_generation(path):
-    for current, directories, files in os.walk(path, topdown=False, followlinks=False):
+    # File fsync during copy is insufficient: chmod and nested directory
+    # entries must also be durable before publishing this immutable tree.
+    for current, _directories, files in os.walk(path, topdown=False, followlinks=False):
         for filename in files:
-            os.chmod(Path(current) / filename, 0o400, follow_symlinks=False)
-        for directory in directories:
-            os.chmod(Path(current) / directory, 0o500, follow_symlinks=False)
-    os.chmod(path, 0o500, follow_symlinks=False)
+            leaf = Path(current) / filename
+            descriptor = os.open(leaf, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+            try:
+                opened = os.fstat(descriptor)
+                observed = leaf.lstat()
+                if (not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1
+                        or opened.st_uid != os.geteuid()
+                        or (opened.st_dev, opened.st_ino)
+                        != (observed.st_dev, observed.st_ino)):
+                    fail("device_generation_store_invalid", "staged file changed while sealing")
+                os.fchmod(descriptor, 0o400)
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+        descriptor = os.open(current, os.O_RDONLY | os.O_DIRECTORY
+                             | os.O_NOFOLLOW | os.O_CLOEXEC)
+        try:
+            opened = os.fstat(descriptor)
+            observed = Path(current).lstat()
+            if (opened.st_uid != os.geteuid()
+                    or (opened.st_dev, opened.st_ino)
+                    != (observed.st_dev, observed.st_ino)):
+                fail("device_generation_store_invalid", "staged directory changed while sealing")
+            os.fchmod(descriptor, 0o500)
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
 
 
 def publish_generation(generations, pair, payload_root, payload_records,
@@ -2039,8 +2064,14 @@ def publish_generation(generations, pair, payload_root, payload_records,
         trust = generation_trust_record(policy, authority, pair)
         write_exclusive(stage / "trust.json", canonical(trust))
         seal_generation(stage)
+        if development_override() and os.environ.get(
+                "OPEMOS_GENERATION_TEST_PAUSE_AFTER_SEAL"):
+            time.sleep(float(os.environ["OPEMOS_GENERATION_TEST_PAUSE_AFTER_SEAL"]))
         require_trust_guards(policy)
         os.replace(stage, destination)
+        if development_override() and os.environ.get(
+                "OPEMOS_GENERATION_TEST_PAUSE_AFTER_RENAME"):
+            time.sleep(float(os.environ["OPEMOS_GENERATION_TEST_PAUSE_AFTER_RENAME"]))
         fsync_directory(generations)
         return destination, True
     finally:

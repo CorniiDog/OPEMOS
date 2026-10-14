@@ -3324,3 +3324,24 @@ PR2 exact2adb821 coverage and fullbuild checkpoint: production detect+get_modes 
 
 
 Source integration completed through separate reviewed PRs: displayPR2 squash33e5327587eeb299d672d0252644579a4de89e92; kernelPR1 squashd8f6da4b84acee2886e44cc11a426d269b934270. Canonical finaltree4b34461a equals actualcompiledca467071. Exact approved3.8.28/6.18.50 Automatic plan selectsd8; olderplans retain40bd. Extended rawpublic selection/userspace/refusal/cleanup fixture and diffPASS viaheavy. Canonical finalCore/source provenance build/package, CorePR75 finalchecks/review/merge and Desktopdelivery still pending; no relabel of existingbuild or runtimeclaim.
+
+
+## Abrupt update/shutdown recovery — bounded source checkpoint (2026-10-14)
+
+- [ ] User requirement: preserve compatible known-good boot/driver/app state across
+  SIGKILL and abrupt guest power loss. Source checkpoint closes device-generation
+  sealing durability: fsync sealed file metadata and each nested directory before
+  publication, then the generation parent after rename. Existing pending intent,
+  target/receipt/trust verification, health acknowledgement and LKG contracts stay
+  unchanged. Authored new complete producer/restart SIGKILL cases and real-fsync
+  observation; tests have NOT run (VM-only authorization). Cold-reboot matrix:
+  `tests/vm/abrupt-update-recovery.md`.
+- [ ] Remaining critical gap: bootstrap/install.sh and install_to_root.sh destructively
+  mutate modules/depmod/initramfs/GRUB/state with in-process cleanup only. Guardian
+  recovery_transaction tracks retry phase, not durable prestate/artifact rollback.
+  Implement exact per-slot/root/kernel authenticated persistent intent, retained
+  boot/modules/state assets, ordered activation and restart reconciliation before
+  claiming installed-update recovery. Preserve SteamOS base OS slot ownership.
+- [ ] Independently review this coherent source checkpoint; execute new regression
+  and cold-reboot tests in separately admitted disposable OMEN VM. No publication,
+  host project execution or physical interruption authorized; no full safety claim.
