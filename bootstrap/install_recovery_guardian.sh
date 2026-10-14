@@ -111,6 +111,7 @@ sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/recovery_fallback_state.
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/desktop_update_generations.py" "$DEST/lib/desktop_update_generations.py"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/update_recovery_grub_args.py" "$DEST/lib/update_recovery_grub_args.py"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/recovery_transaction.py" "$DEST/lib/recovery_transaction.py"
+sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/installed_update_transaction.py" "$DEST/lib/installed_update_transaction.py"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/recovery_release_plan.py" "$DEST/lib/recovery_release_plan.py"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/recovery_cached_product.py" "$DEST/lib/recovery_cached_product.py"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/recovery_cached_receipt.py" "$DEST/lib/recovery_cached_receipt.py"

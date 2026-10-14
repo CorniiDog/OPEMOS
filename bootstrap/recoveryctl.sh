@@ -298,6 +298,9 @@ enable_fallback()
     confirm "Enable the ${PROFILE} recovery profile?"
     [[ "$ROOT" != / ]] || sudo -v
     acquire_recovery_mutation_locks
+    # Fallback/config/initramfs/GRUB writers must join the same durable plan;
+    # a retry-phase journal is not a rollback image or boot-safe transaction.
+    python3 "$SUPPORT_ROOT/lib/installed_update_transaction.py" require-plan --root "$ROOT"
     with_writable_root
     local install_cmd=(install) move_cmd=(mv)
     if [[ "$ROOT" == / ]]; then install_cmd=(sudo install); move_cmd=(sudo mv); fi
@@ -356,6 +359,9 @@ disable_fallback()
     # both mutation locks are held.
     document="$(status_json)"
     require_verified_fallback "$document"
+    # Fallback/config/initramfs/GRUB writers must join the same durable plan;
+    # a retry-phase journal is not a rollback image or boot-safe transaction.
+    python3 "$SUPPORT_ROOT/lib/installed_update_transaction.py" require-plan --root "$ROOT"
     with_writable_root
     local remove_cmd=(rm -f) move_cmd=(mv)
     if [[ "$ROOT" == / ]]; then remove_cmd=(sudo rm -f); move_cmd=(sudo mv); fi

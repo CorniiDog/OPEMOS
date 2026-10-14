@@ -142,6 +142,11 @@ log "Requesting administrator privileges..."
 sudo -v
 acquire_lifecycle_lock
 
+# Trap rollback cannot handle SIGKILL or power loss. Until a complete staged
+# boot/module/receipt producer is available, preserve the current usable state.
+sudo python3 "$SUPPORT_ROOT/lib/installed_update_transaction.py" \
+    require-plan --root /
+
 TARGET_DIR="$(project_system_path "/usr/lib/modules/${CURRENT_KERNEL}/updates/open-gpu-kernel-modules-steamos")"
 STATE_ROOT="$(project_system_path "/var/lib/open-gpu-kernel-modules-steamos-support")"
 STAMP="$(date +%Y%m%d-%H%M%S)"

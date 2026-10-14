@@ -659,6 +659,10 @@ for command_name in bsdtar chroot depmod findmnt install mount mountpoint pacman
             "The managed appliance lacks a required installer command: $command_name"
 done
 
+# Do not mutate an installed target using an unjournalled opaque package/hook
+# sequence. Complete staged producer and exact target transaction are required.
+python3 "$SUPPORT_ROOT/lib/installed_update_transaction.py" require-plan --root "$ROOT"
+
 MUTATION_WORK="$(mktemp -d "$INSTALLER_TEMP_ROOT/offline-root-mutation.XXXXXX")"
 MODULE_VERIFICATION_JSON="$MUTATION_WORK/module-verification.json"
 USERSPACE_VERIFICATION_JSON="$MUTATION_WORK/userspace-verification.json"

@@ -3345,3 +3345,21 @@ Source integration completed through separate reviewed PRs: displayPR2 squash33e
 - [ ] Independently review this coherent source checkpoint; execute new regression
   and cold-reboot tests in separately admitted disposable OMEN VM. No publication,
   host project execution or physical interruption authorized; no full safety claim.
+
+
+### Complete installed-writer continuation — source-only, not release ready
+
+- [ ] Added a development-only confined staged-artifact transaction prototype:
+  durable exact prestate/candidate copies, write-ahead intent, atomic replacements,
+  pending health and idempotent exact-hash rollback (including interrupted recovery).
+  Unknown current bytes/slot identity or rollback damage refuse without replay.
+  Authored actual CLI SIGKILL/interrupted rollback/idempotence tests; NOT executed.
+- [ ] Legacy install.sh, install_to_root.sh and recoveryctl fallback writers now
+  fail closed before target mutations rather than accepting trap rollback as power
+  loss protection. Guardian distribution includes the gate component. This is a
+  deliberate UNRELEASED functionality restriction; not a working update solution.
+- [ ] Remaining owning-Core implementation: produce the complete authenticated
+  candidate set (package/hooks/depmod/initramfs/GRUB/receipts), current rootfs/slot
+  target receipt and rollback health proof; join guardian startup reconciliation
+  and health acknowledgement. No atomic across-files boot activation or production
+  update/reboot acceptance is claimed. Review before removing any gate.

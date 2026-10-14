@@ -28,3 +28,20 @@ and installation-state mutations still need a persistent per-target prestate and
 reconciliation transaction, including retained boot assets and read-only mode.
 Do not run abrupt mutation tests against those paths or claim whole-device safety
 until that implementation and exact guest admission are separately reviewed.
+
+## Installed artifact prototype checkpoint
+
+`tests/installed_update_transaction.py` authors a real CLI producer/consumer
+transaction on a private disposable root: SIGKILL after prepared intent, first
+activation and pending health, interrupt rollback, then reconcile twice. It also
+refuses a foreign changed artifact. No method under test is substituted. Run it
+only inside an admitted OMEN VM. The prototype is development-only and cannot
+operate on `/`; legacy opaque writers now refuse before target mutation.
+
+This is not a working installed update producer: real package/hooks/depmod output,
+complete staged boot images, target receipt/current authority, and health commit
+still need to be joined. Existing files alone may be restored; absent artifacts
+are refused instead of deleting unknown data. Original/candidate files and intent
+are retained. A snapshot hash is not prior boot/driver health or signature proof.
+Cold-reboot acceptance must use exact target/slot identity after reboot, validate
+all five modules plus boot/GRUB/app artifacts, and retain the full owned closure.
