@@ -136,7 +136,7 @@ until actual authenticated bytes and admission are present. Preserve every run.
 Inside that admitted guest, invoke the real functions/processes, for example:
 
 ```
-python3 tests/installed_update_transaction_normal.py
+python3 tests/installed_update_transaction_normal.py --output EXACT_NEW_OUTPUT
 python3 tests/offline_generation_transaction.py --output EXACT_NEW_OUTPUT
 python3 tests/recovery_readonly_consumer.py --output EXACT_NEW_OUTPUT
 python3 tests/vm/installed_update_acceptance.py qualify --manifest EXACT_MANIFEST
@@ -232,3 +232,70 @@ then remove ONLY that test guest's admitted network before ordinary discovery an
 retain raw command/exit. Test exact retained cache, no cache and inherited unrelated
 BUILD_OUT. Normal release discovery is still required once with genuine inputs;
 source syntax and retained selector tests are not end-to-end network evidence.
+
+## Fresh and loaded baselines: changed Root plan6fcef0de (NOT run)
+
+Use disjoint immutable manifests/output roots and independently admitted baselines.
+The prior loaded-baseline normal transaction remains required and must not be
+repeated if its exact final-byte result later remains applicable. A fresh baseline
+has no loaded NVIDIA, no OPEMOS module files/driver receipt/install markers, but is
+an actually booted compatible original system. Do not remove a previous user's
+installation to manufacture it. First-driver userspace remains an authenticated
+provisioning precondition; app-only health must also be exercised with it absent.
+
+For fresh provisioning the manifest optionally carries the pair `interstitial`
+and `interstitialSHA256` (both required for first app setup), referencing the
+existing authenticated input. Source and driver cache pins remain mandatory.
+Run the actual guest actions:
+
+```
+python3 tests/vm/installed_update_acceptance.py qualify-fresh --manifest EXACT_FRESH_MANIFEST
+python3 tests/vm/installed_update_acceptance.py install-guardian --manifest EXACT_FRESH_MANIFEST
+python3 tests/vm/installed_update_acceptance.py refuse-app-health-same-boot --manifest EXACT_FRESH_MANIFEST
+python3 tests/vm/installed_update_acceptance.py refuse-before-app-health --manifest EXACT_FRESH_MANIFEST
+# Owning controller: actual ordinary reboot SAME owned overlay, preserve closure.
+python3 tests/vm/installed_update_acceptance.py guardian-after-boot --manifest EXACT_FRESH_MANIFEST
+# Driver package userspace must now meet existing exact version/authentication.
+python3 tests/vm/installed_update_acceptance.py update --manifest EXACT_FRESH_MANIFEST
+# Owning controller: actual second ordinary reboot SAME overlay.
+python3 tests/vm/installed_update_acceptance.py after-boot --manifest EXACT_FRESH_MANIFEST
+```
+
+The first app acknowledgement must leave all NVIDIA files absent, retain an actual
+new boot/source identity proof, and neither mark retry restored nor progress
+succeeded. After first driver activation the ordinary five-module/initramfs/cache
+verification and actual loaded identities must succeed before retry/UI completion.
+Qualify-fresh records observed stock boot bytes; it does not create a trusted receipt
+or authorize a runtime. First driver admission itself consumes the app's actual
+before/new-boot stock acknowledgement, not a test Boolean or copied old result.
+
+Run the actual normal CLI directory regression for positive absent-parent
+activation/rollback and repeat rollback. Add real unknown file inside a newly
+created directory: rollback must preserve it and refuse rmdir, then after removal
+of ONLY that exact test-created file recover again. No fake filesystem adapter.
+For fresh abrupt cases use the existing pauses plus `directories:0` and
+`restore-dir:0`; retain staged inode custody, before/after trees, raw first failure
+and actual same-overlay cold boot. Interrupt directory rollback itself, restart and
+reconcile twice. In a first-app rollback where the original service was absent,
+service absence is the correct original state: validate old unit/source absence,
+retained engine intent and original stock boot, rather than demanding a nonexistent
+old service start. Ordinary subsequent setup must finish interrupted app recovery
+before creating a new generation. Do not turn that expected service absence into
+synthetic NVIDIA health. Full F1–F6 foreign-authority/dirty-Git/cache/fallback tests
+and the loaded-baseline ordinary update still apply to the changed exact bytes.
+
+Unsupported stock BOOT_IMAGE syntax, absent packaged kernel, changed boot assets,
+partial old driver evidence, absent authenticated canonical cache/interstitial,
+wrong userspace and unknown directory custody are precise refusals, not permission
+to substitute artifacts or alter trust/slot/hardware contracts. Root must verify
+actual availability and fresh OMEN admission separately. All project tests here
+remain authored only; no controller/host execution is authorized by this procedure.
+
+Fresh app-only acknowledgement may be tested before userspace is provisioned;
+first-driver validation still requires the actual exact package. Provisioning that
+changes stock boot images invalidates the old stock observation: invoke ordinary
+guardian setup again and perform its actual new boot/ack before first driver.
+The same-source installer creates a new app observation only when those real asset
+hashes changed; it does not synthesize or copy a prior boot acknowledgement.
+The normal CLI directory regression now requires --output and retains all command
+exits/stdout/stderr/fixtures, including the initial foreign-content recovery failure.

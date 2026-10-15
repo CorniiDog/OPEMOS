@@ -59,7 +59,12 @@ REVISION="$(git -C "$SUPPORT_ROOT" rev-parse HEAD)"
 DEST=/home/.steamos/open-gpu-kernel-modules-steamos-support/recovery
 # Compose source, policy, unit and entry-point changes together. The retained
 # bootstrap is reachable before any mutable guardian import is replaced.
-NVIDIA_VERSION="$(get_nvidia_version)"
+NVIDIA_VERSION="$(get_nvidia_version 2>/dev/null || true)"
+if [[ -z "$NVIDIA_VERSION" ]]; then
+    NVIDIA_VERSION="${OPEMOS_PINNED_NVIDIA_VERSION:-}"
+    [[ "$NVIDIA_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] ||
+        die "First app provisioning requires the explicit current reviewed NVIDIA policy version."
+fi
 args=(--source "$SUPPORT_ROOT" --revision "$REVISION" --nvidia "$NVIDIA_VERSION")
 if [[ -n "$INTERSTITIAL_BINARY" ]]; then
     args+=(--interstitial "$STAGING/opemos-interstitial" --interstitial-sha256 "$INTERSTITIAL_SHA256")

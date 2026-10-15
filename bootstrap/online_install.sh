@@ -10,6 +10,8 @@ LOCAL_SOURCE=""
 YES=0
 RESOLVE_ONLY=0
 BUILD_AS_FALLBACK=0
+INTERSTITIAL_BINARY=""
+INTERSTITIAL_SHA256=""
 # Never inherit a caller's unrelated build-output or retained product identity.
 BUILD_OUT=""
 RETAINED_PRODUCT=""
@@ -26,6 +28,8 @@ Options:
       --in-code      Compile the current NVIDIA source working tree, then install it
       --build-as-fallback    Build a reviewed exact target only if no product exists
       --resolve-only Describe the authorized Automatic action without installation
+      --interstitial-binary FILE --interstitial-sha256 SHA256
+                     Existing authenticated interstitial input for first app provisioning
   -y, --yes          Automatically confirm installer prompts
   -h, --help         Show this help
 
@@ -42,6 +46,8 @@ while [[ $# -gt 0 ]]; do
         --build-as-fallback) BUILD_AS_FALLBACK=1; shift ;;
         --resolve-only) RESOLVE_ONLY=1; shift ;;
         --local) [[ $# -ge 2 ]] || { echo "--local requires a path." >&2; exit 1; }; LOCAL_SOURCE="$2"; shift 2 ;;
+        --interstitial-binary) [[ $# -ge 2 ]] || exit 2; INTERSTITIAL_BINARY="$2"; shift 2 ;;
+        --interstitial-sha256) [[ $# -ge 2 ]] || exit 2; INTERSTITIAL_SHA256="$2"; shift 2 ;;
         -y|--yes) YES=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) printf 'Unknown argument: %s\n' "$1" >&2; exit 1 ;;
@@ -430,7 +436,11 @@ PY
 install_recovery_guardian()
 {
     log "Installing the persistent exact-kernel recovery guardian..."
-    "$TMP/support/bootstrap/install_recovery_guardian.sh"
+    local guardian_args=()
+    if [[ -n "$INTERSTITIAL_BINARY" || -n "$INTERSTITIAL_SHA256" ]]; then
+        guardian_args=(--interstitial-binary "$INTERSTITIAL_BINARY" --interstitial-sha256 "$INTERSTITIAL_SHA256")
+    fi
+    "$TMP/support/bootstrap/install_recovery_guardian.sh" "${guardian_args[@]}"
 }
 
 retain_built_product()

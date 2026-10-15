@@ -148,11 +148,95 @@ def effect_target(root,relative,kernel,action,allow_missing=False):
              and relative!='etc/systemd/system/default.target' or
              relative.startswith(('etc/NetworkManager/','etc/atomic-update.conf.d/')))
     need(action=='guardian-update' or not control,'driver effect cannot change recovery authority')
-    # This profile deliberately requires existing directory structure. Directory
-    # creation/migration belongs to the unpublished offline image installer;
-    # file rollback must not silently leave newly created live directories.
-    need(path.parent.is_dir(),'installed profile requires pre-existing target directories')
+    # Missing parents are admitted only by the private prepared directory journal.
     return path
+
+
+def prepare_directories(root,rows):
+    import uuid
+    missing=set()
+    for row in rows:
+        if row['source'] is None:continue
+        node=(root/row['path']).parent
+        while node!=root and not node.exists():
+            need(not node.is_symlink(),'directory alias')
+            missing.add(node);node=node.parent
+    need(len(missing)<=MAX_FILES,'directory budget')
+    tops=sorted((p for p in missing if p.parent not in missing),key=str)
+    result=[]
+    for top in tops:
+        temporary=top.parent/('.opemos-dirs-'+uuid.uuid4().hex)
+        entries=[{'suffix':str(path.relative_to(top)),'device':None,'inode':None}
+                 for path in sorted((p for p in missing if p==top or p.is_relative_to(top)),key=lambda p:len(p.parts))]
+        result.append({'path':str(top.relative_to(root)),'temporary':str(temporary.relative_to(root)),'entries':entries})
+    return result
+
+
+def directory_journal(root,intent,activate=False,restore=False,store=None):
+    import ctypes
+    rows=intent.get('directories',[])
+    need(type(rows) is list and len(rows)<=MAX_FILES,'directory journal bound')
+    allowed=set()
+    for row in intent['files']:
+        allowed.update(str(p) for p in Path(row['path']).parents if str(p)!='.')
+    for row in (reversed(rows) if restore else rows):
+        need(set(row)=={'path','temporary','entries'} and row['path'] in allowed,'unplanned directory tree')
+        destination=root/row['path'];temporary=root/row['temporary']
+        need(temporary.parent==destination.parent and re.fullmatch(r'\.opemos-dirs-[0-9a-f]{32}',temporary.name),
+             'unowned directory staging path')
+        need(destination.parent.resolve()==destination.parent,'directory parent alias')
+        present=os.path.lexists(destination)
+        selected=destination if present else temporary
+        need(type(row['entries']) is list and 0<len(row['entries'])<=MAX_FILES,'directory entries bound')
+        if (restore or intent['phase'] in ('restored','rolling-back')) and not present:
+            continue  # Unactivated staged originals are retained, never guessed.
+        for entry in row['entries']:
+            need(type(entry) is dict and set(entry)=={'suffix','device','inode'} and
+                 type(entry['suffix']) is str and not Path(entry['suffix']).is_absolute()
+                 and '..' not in Path(entry['suffix']).parts and
+                 (entry['suffix']=='.' or str(Path(row['path'])/entry['suffix']) in allowed),
+                 'invalid planned directory entry')
+            need((entry['inode'] is None and entry['device'] is None) or
+                 type(entry['inode']) is int and type(entry['device']) is int,'invalid directory inode')
+        planned=all(entry['inode'] is None and entry['device'] is None for entry in row['entries'])
+        if planned:
+            need(not present,'unowned live directory at planned absence')
+            if not activate:continue
+            need(store is not None and not os.path.lexists(temporary),'retain unknown interrupted directory staging')
+            temporary.mkdir(mode=0o755)
+            for entry in row['entries']:
+                node=temporary/entry['suffix']
+                if node!=temporary:node.mkdir(mode=0o755)
+                os.chmod(node,0o755);os.chown(node,os.geteuid(),os.getegid())
+                need(not os.listxattr(node,follow_symlinks=False),'unplanned new directory attributes')
+                info=node.lstat();entry.update(device=info.st_dev,inode=info.st_ino)
+                fsync_dir(node);fsync_dir(node.parent)
+            # Persist exact staged inode custody before any live target rename.
+            durable(store/'intent.json',intent)
+        for entry in row['entries']:
+            need(set(entry)=={'suffix','device','inode'} and
+                 (entry['suffix']=='.' or str(Path(row['path'])/entry['suffix']) in allowed)
+                 and not Path(entry['suffix']).is_absolute() and '..' not in Path(entry['suffix']).parts,
+                 'invalid directory identity')
+            path=selected/entry['suffix']
+            if intent['phase']=='rolling-back' and not os.path.lexists(path):continue
+            info=path.lstat()
+            need(stat.S_ISDIR(info.st_mode) and (info.st_dev,info.st_ino)==(entry['device'],entry['inode'])
+                 and info.st_uid==os.geteuid() and info.st_gid==os.getegid()
+                 and stat.S_IMODE(info.st_mode)==0o755 and not os.listxattr(path,follow_symlinks=False),
+                 'directory identity changed; preserve')
+        if activate and not present:
+            libc=ctypes.CDLL(None,use_errno=True)
+            need(libc.renameat2(-100,os.fsencode(temporary),-100,os.fsencode(destination),1)==0,
+                 'exclusive directory publication failed')
+            fsync_dir(destination.parent)
+            checkpoint('directories:'+str(rows.index(row)))
+        if restore:
+            for entry in reversed(row['entries']):
+                path=destination/entry['suffix']
+                # rmdir refuses any unknown file/subdirectory; no recursive delete.
+                if os.path.lexists(path):os.rmdir(path);fsync_dir(path.parent)
+                checkpoint('restore-dir:'+str(row['entries'].index(entry)))
 
 
 def root_identity(root):
@@ -219,7 +303,7 @@ def current_hash(path):
 def load_intent(root, store):
     intent = parse(read(store / 'intent.json', MAX_STATE))
     need(type(intent) is dict and intent.get('schemaVersion') == 2
-         and set(intent) == {'schemaVersion', 'kernel', 'rootIdentity', 'phase', 'files',
+         and set(intent) - {'directories'} == {'schemaVersion', 'kernel', 'rootIdentity', 'phase', 'files',
                              'bootImages', 'target', 'preparedBootId', 'attemptBootId',
                              'authority', 'readonlyBefore', 'action', 'profile'}, 'closed v2 intent required')
     need(type(intent['kernel']) is str and re.fullmatch(r'[A-Za-z0-9_.+-]{1,192}', intent['kernel']),
@@ -255,6 +339,7 @@ def load_intent(root, store):
                  'invalid retained hash')
         need(all(type(row[k]) is int and 0 <= row[k] <= 0o777 for k in ('oldMode', 'newMode')),
              'invalid retained mode')
+    directory_journal(root,intent)
     need(intent['phase'] in ('prepared', 'activating', 'pending-health', 'rolling-back', 'restored', 'healthy'),
          'unknown phase')
     return intent
@@ -316,7 +401,10 @@ def recover(root, store):
     invalidate_public_status(root)
     intent['phase'] = 'rolling-back'
     durable(store / 'intent.json', intent)
-    for index, row in enumerate(reversed(intent['files'])):
+    deferred=[]
+    for index,row in enumerate(reversed(intent['files'])):
+        if intent['action']=='guardian-update' and row['path']=='etc/systemd/system/opemos-nvidia-guardian.service':
+            deferred.append(row);continue
         old = None if row['backup'] is None else read(store / row['backup'], MAX_FILE)
         path = effect_target(root, row['path'], intent['kernel'], intent['action'], allow_missing=True)
         if (current_hash(path) != row['oldSHA256'] or
@@ -325,7 +413,14 @@ def recover(root, store):
             need(observed in (row['oldSHA256'], row['newSHA256']), 'artifact changed during recovery')
             place(path, old, row['oldMode'], observed)
         checkpoint(f'restore:{index}')
-    verify_set(root, intent, 'oldSHA256')
+    directory_journal(root,intent,restore=True)
+    for row in deferred:
+        path=effect_target(root,row['path'],intent['kernel'],intent['action'],allow_missing=True)
+        observed=current_hash(path)
+        need(observed in (row['oldSHA256'],row['newSHA256']),'recovery entry changed during rollback')
+        old=None if row['backup'] is None else read(store/row['backup'],MAX_FILE)
+        place(path,old,row['oldMode'],observed)
+    verify_set(root,intent,'oldSHA256')
     intent['phase'] = 'restored'
     durable(store / 'intent.json', intent)
     return {'state': 'restored', 'rebootHealthVerified': False, 'rebootRequired': True}
@@ -471,7 +566,7 @@ def prepare(root, store, plan_path, *, context=None):
              'insufficient atomic replacement envelope on destination filesystem: '+str(parent))
     context = context or {'bootImages': [], 'target': {}, 'authority': {}, 'readonlyBefore': False, 'action': 'update', 'profile': 'console'}
     intent = {'schemaVersion': 2, 'kernel': plan['kernel'], 'rootIdentity': plan['rootIdentity'],
-              'phase': 'prepared', 'files': saved, 'preparedBootId': boot_id(), 'attemptBootId': None,
+              'phase': 'prepared', 'files': saved, 'directories':prepare_directories(root,rows), 'preparedBootId': boot_id(), 'attemptBootId': None,
               **context}
     durable(store / 'intent.json', intent)
     checkpoint('prepared')
@@ -496,6 +591,7 @@ def commit_prepared(root, store):
     invalidate_public_status(root)
     intent['phase'] = 'activating'
     durable(store / 'intent.json', intent)
+    directory_journal(root,intent,activate=True,store=store)
     for index, row in enumerate(intent['files']):
         path = effect_target(root, row['path'], intent['kernel'], intent['action'], allow_missing=True)
         need(current_hash(path) == row['oldSHA256'], 'prestate changed')
@@ -575,6 +671,11 @@ def runtime_identity(root,intent,previous=False):
         # Called only after ordinary guardian/driver health succeeds. Source
         # integrity and actual boot registration are still verified above.
         pass
+    elif action == 'stock-baseline':
+        need(not Path('/sys/module/nvidia').exists(),'stock restored boot unexpectedly loaded NVIDIA')
+        proof=intent['authority']['bootQualification']
+        need(proof['kind']=='observed-current-stock-boot-no-opemos-nvidia','stock boot proof unavailable')
+        need(digest(read(Path(proof['kernelImage']),MAX_FILE))==proof['kernelSHA256'],'stock boot kernel changed')
     elif action == 'enable-fallback':
         need(not Path('/sys/module/nvidia').exists(), 'fallback boot still loaded NVIDIA')
         if profile == 'console':

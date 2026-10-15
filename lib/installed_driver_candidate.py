@@ -102,7 +102,31 @@ def stage_allowed(root):
     return permit
 
 
-def old_boot_evidence(root, store):
+def observe_stock_boot(root,target):
+    tx.need(not Path('/sys/module/nvidia').exists(),'stock observation cannot assert NVIDIA health')
+    tx.need(root==Path('/') and target['kernelVersion']==os.uname().release,'fresh current kernel differs')
+    import shlex
+    release=dict(line.split('=',1) for line in tx.read(root/'usr/lib/os-release',65536).decode().splitlines()
+                 if '=' in line and not line.startswith('#'))
+    tx.need(release.get('VERSION_ID','').strip('"')==target['steamosVersion'],'fresh SteamOS target differs')
+    operands=[x[11:] for x in shlex.split(Path('/proc/cmdline').read_text()) if x.startswith('BOOT_IMAGE=')]
+    tx.need(len(operands)==1 and re.fullmatch(r'(?:/boot)?/vmlinuz(?:-[A-Za-z0-9_.+-]+)?',operands[0]),
+            'exact current stock boot image operand required')
+    image=root/'boot'/Path(operands[0]).name
+    packaged=root/'usr/lib/modules'/os.uname().release/'vmlinuz'
+    tx.need(tx.digest(tx.read(image,tx.MAX_FILE))==tx.digest(tx.read(packaged,tx.MAX_FILE)),
+            'current stock boot kernel differs from installed exact kernel')
+    images=sorted((root/'boot').glob('initramfs-*.img'))
+    tx.need(0<len(images)<=32,'bounded original stock boot images required')
+    proof={'kind':'observed-current-stock-boot-no-opemos-nvidia','bootId':tx.boot_id(),
+           'rootIdentity':tx.root_identity(root),'steamosVersion':target['steamosVersion'],'kernelImage':str(image),
+           'kernelSHA256':tx.digest(tx.read(image,tx.MAX_FILE)),
+           'images':{str(x.relative_to(root)):tx.digest(tx.read(x,tx.MAX_FILE)) for x in images},
+           'NVIDIAHealthVerified':False,'MeasuredBootOrGPUVerified':False}
+    return proof
+
+
+def old_boot_evidence(root, store, fresh_target=None):
     # A previous acknowledged transaction is an exact retained generation.
     intent = store / 'intent.json'
     if intent.exists():
@@ -110,6 +134,31 @@ def old_boot_evidence(root, store):
         tx.need(old['phase'] in ('healthy', 'restored'), 'unreconciled prior update')
         tx.verify_set(root,old,'newSHA256' if old['phase']=='healthy' else 'oldSHA256')
         return old['bootImages'], old['target'], old['authority'].get('bootQualification', {'kind':'retained-acknowledged-generation'})
+    if fresh_target is not None:
+        directory=root/'usr/lib/modules'/fresh_target['kernelVersion']/'updates/open-gpu-kernel-modules-steamos'
+        if not directory.exists() or directory.is_dir() and not any(directory.iterdir()):
+            from payload_receipt import RECEIPT_RELATIVE
+            tx.need(not os.path.lexists(root/RECEIPT_RELATIVE/'receipt.json') and
+                    not any(os.path.lexists(root/'var/lib'/PROJECT/name) for name in
+                            ('installed-build-info.txt','installed-kernel.txt','installed-nvidia.txt','recovery/state.json')),
+                    'existing driver evidence without modules is not a fresh baseline')
+            tx.need(not Path('/sys/module/nvidia').exists(),'fresh route cannot adopt an unknown loaded NVIDIA generation')
+            # Observe the actually running stock boot, not synthetic NVIDIA
+            # health. Exact target comes from the existing authenticated cache.
+            proof=observe_stock_boot(root,fresh_target)
+            from install_guardian_generation import registered
+            import installed_boot_guard as guard
+            app,app_store=guard.engine(registered()['app'])
+            app_intent=app.load_intent(root,app_store)
+            app.verify_set(root,app_intent,'newSHA256')
+            ack=app_intent['authority'].get('stockBootAcknowledgement')
+            tx.need(app_intent['phase']=='healthy' and type(ack) is dict and
+                    ack['bootId']!=app_intent['preparedBootId'] and
+                    ack['images']==proof['images'] and ack['kernelSHA256']==proof['kernelSHA256']
+                    and ack['rootIdentity']==proof['rootIdentity'],
+                    'first driver requires unchanged stock boot assets across actual app boot acknowledgement')
+            proof['acknowledgedStockBootId']=ack['bootId']
+            return list(proof['images']),fresh_target,proof
     receipt, documents = verify_receipt_evidence(root, allow_live_root=root == Path('/'))
     # Reuse the existing decompressed payload verifier, whose receipt schema
     # uses moduleName and actualPayloadSha256 (not compressed archive hashes).
@@ -373,7 +422,7 @@ def produce(args, store, boot_images, target):
     # when a source-only guardian upgrade changes the current Core revision.
     prefix=args.root/'usr/lib/modules'/args.kernel/'updates/open-gpu-kernel-modules-steamos'
     tx.durable(inputs/'prior-modules.json',{'kernel':args.kernel,'nvidia':args.nvidia,
-        'modules':{name:tx.digest(tx.read(prefix/(name+'.ko.zst'),tx.MAX_FILE)) for name in tx.MODULES}})
+        'modules':{name:(tx.digest(tx.read(prefix/(name+'.ko.zst'),tx.MAX_FILE)) if os.path.lexists(prefix/(name+'.ko.zst')) else None) for name in tx.MODULES}})
     if args.cache is not None:
         from recovery_cached_product import command_stage
         command_stage(SimpleNamespace(materialization=args.cache / 'materialization.json',
@@ -435,6 +484,11 @@ def collect(args):
     # refuse before the original target has been changed.
     layers = [(work / 'upper', '')] + [(work / (name + '-upper'), name + '/') for name in STAGE_TREES]
     seen = set()
+    required_parents=set()
+    for upper,prefix in layers:
+        for item in upper.rglob('*'):
+            if not stat.S_ISDIR(item.lstat().st_mode):
+                required_parents.update(str(x) for x in Path(prefix+str(item.relative_to(upper))).parents)
     for upper, prefix in layers:
         original=args.root/prefix.rstrip('/')
         if original.is_dir():
@@ -453,8 +507,14 @@ def collect(args):
                 if relative==f'var/lib/{PROJECT}/backups' or relative.startswith(('tmp/','var/tmp/','run/',f'var/lib/{PROJECT}/backups/')):
                     continue  # Explicit private candidate scratch, never exported.
                 original=args.root/relative
-                tx.need(original.is_dir() and not original.is_symlink(),
-                        'unplanned directory creation: '+relative)
+                if not os.path.lexists(original):
+                    tx.need(relative in required_parents and stat.S_IMODE(info.st_mode)==0o755
+                            and info.st_uid==0 and info.st_gid==0 and
+                            not [key for key in os.listxattr(path,follow_symlinks=False)
+                                 if not key.startswith(('trusted.overlay.','user.overlay.'))],
+                            'unplanned new directory effect: '+relative)
+                    continue  # Actual creation will use the durable directory journal.
+                tx.need(original.is_dir() and not original.is_symlink(),'directory alias')
                 before=original.lstat()
                 tx.need((stat.S_IMODE(info.st_mode),info.st_uid,info.st_gid)==
                         (stat.S_IMODE(before.st_mode),before.st_uid,before.st_gid),
@@ -471,7 +531,7 @@ def collect(args):
                         tx.need(relative == module_dir, 'opaque deletion is not an admitted file transaction')
                         names = {m + '.ko.zst' for m in tx.MODULES}
                         original = args.root / relative
-                        tx.need(original.is_dir() and {x.name for x in original.iterdir()} == names
+                        tx.need(original.is_dir() and {x.name for x in original.iterdir()} in (set(),names)
                                 and {x.name for x in path.iterdir()} == names,
                                 'module directory replacement would hide unplanned originals')
                 continue
@@ -607,7 +667,14 @@ def update(args):
                 if repair_readonly:command(['/usr/bin/steamos-readonly','enable'],30)
         # Old artifacts/target/boot provenance must be verified before staging
         # or changing any live target. No inference from a healthy boolean.
-        boot_images, target, boot_qualification = old_boot_evidence(args.root, prior or manager)
+        fresh_target=None
+        if prior is None and args.cache is not None:
+            from recovery_cached_product import read_document
+            selected=read_document(args.cache/'materialization.json')['target']
+            cached_load(args.cache,{'steamos':selected['steamosVersion'],'kernel':args.kernel,
+                'nvidia':args.nvidia,'revision':policy['supportRevision']})
+            fresh_target=selected
+        boot_images, target, boot_qualification = old_boot_evidence(args.root, prior or manager,fresh_target)
         tx.need(target['kernelVersion'] == args.kernel and target['nvidiaVersion'] == args.nvidia,
                 'no verified compatible last-known-good target; preserve stock OS slot')
         if args.cache is not None:
@@ -635,7 +702,7 @@ def update(args):
         args.support=source
         plan = produce(args, generation, boot_images, target)
         module_prefix=f'usr/lib/modules/{args.kernel}/updates/open-gpu-kernel-modules-steamos/'
-        original_modules={name:tx.digest(tx.read(args.root/module_prefix/(name+'.ko.zst'),tx.MAX_FILE)) for name in tx.MODULES}
+        original_modules={name:(tx.digest(tx.read(args.root/module_prefix/(name+'.ko.zst'),tx.MAX_FILE)) if os.path.lexists(args.root/module_prefix/(name+'.ko.zst')) else None) for name in tx.MODULES}
         produced=tx.parse(tx.read(plan,tx.MAX_STATE))
         rows={row['path']:row for row in produced['files']}
         selected_modules={name:rows.get(module_prefix+name+'.ko.zst',{}).get('sha256',original_modules[name]) for name in tx.MODULES}
@@ -643,7 +710,7 @@ def update(args):
         context = {'bootImages': boot_images, 'target': target,
                    'authority': {'policy': policy, 'archiveSHA256': args.archive_sha256, 'bootQualification': boot_qualification,
                        'moduleSHA256':selected_modules,'previousModuleSHA256':original_modules,
-                       'previousAction': (old['authority'].get('previousAction','update') if old['phase']=='restored' else old['action']) if prior else 'update',
+                       'previousAction': (old['authority'].get('previousAction','update') if old['phase']=='restored' else old['action']) if prior else ('stock-baseline' if boot_qualification['kind']=='observed-current-stock-boot-no-opemos-nvidia' else 'update'),
                        'previousProfile': (old['authority'].get('previousProfile','console') if old['phase']=='restored' else old['profile']) if prior else 'console'},
                    'readonlyBefore': was_readonly, 'action': args.action, 'profile': args.profile}
         # All exact originals, candidates and the intent are flushed BEFORE

@@ -46,7 +46,8 @@ def context(path):
     m=json.loads(path.read_bytes())
     required={'schemaVersion','runId','guestUUID','coreCommit','kernel','nvidia','archive',
               'archiveSHA256','checksum','checksumSHA256','provenance','provenanceSHA256','driverSourceCommit','cache','moduleSHA256','installedCoreSHA256','output'}
-    assert set(m)==required and m['schemaVersion']==1
+    assert set(m) in (required,required|{'interstitial','interstitialSHA256'}) and m['schemaVersion']==1
+    if 'interstitial' in m:assert digest(Path(m['interstitial']))==m['interstitialSHA256']
     assert re.fullmatch('[0-9a-f]{32}',m['runId'])
     assert m['kernel'] in TARGETS and os.uname().release==m['kernel']
     assert m['nvidia']=='575.64.05' and os.geteuid()==0
@@ -88,7 +89,7 @@ def write(p,value):
 
 def observed_modules(m):
     prefix=Path('/usr/lib/modules')/m['kernel']/'updates/open-gpu-kernel-modules-steamos'
-    return {name:digest(prefix/(name+'.ko.zst')) for name in m['moduleSHA256']}
+    return {name:(digest(prefix/(name+'.ko.zst')) if os.path.lexists(prefix/(name+'.ko.zst')) else None) for name in m['moduleSHA256']}
 
 
 def command(out,label,argv,env=None,expected=(0,)):
@@ -124,13 +125,26 @@ def command(out,label,argv,env=None,expected=(0,)):
 
 def main():
     p=argparse.ArgumentParser()
-    p.add_argument('action',choices=('qualify','update','after-boot','verify-restored','corrupt-owned-module','verify-healed','arm-recovery-pause','remove-recovery-pause','refuse-bad-checksum','refuse-corrupt-cache','enable-console-fallback','verify-console-boot','disable-console-fallback','verify-readonly-status','verify-disabled-fallback-boot','install-guardian','guardian-after-boot','refuse-before-app-health','refuse-directory-mode-change','repair-verified-fallback'))
+    p.add_argument('action',choices=('qualify','update','after-boot','verify-restored','corrupt-owned-module','verify-healed','arm-recovery-pause','remove-recovery-pause','refuse-bad-checksum','refuse-corrupt-cache','enable-console-fallback','verify-console-boot','disable-console-fallback','verify-readonly-status','verify-disabled-fallback-boot','install-guardian','guardian-after-boot','refuse-before-app-health','refuse-directory-mode-change','repair-verified-fallback','qualify-fresh','refuse-app-health-same-boot'))
     p.add_argument('--manifest',type=Path,required=True)
     p.add_argument('--repeat-observation',action='store_true')
     p.add_argument('--fault-component',choices=('app','driver'),default='driver')
-    p.add_argument('--pause',choices=('prepared','activated:0','pending-health','restore:0','heal:0'))
+    p.add_argument('--pause',choices=('prepared','activated:0','pending-health','restore:0','heal:0','directories:0','restore-dir:0'))
     a=p.parse_args();m=context(a.manifest);out=output(m)
-    if a.action=='qualify':
+    if a.action=='qualify-fresh':
+        assert m['cache'] is not None and 'interstitial' in m
+        assert not Path('/sys/module/nvidia').exists() and set(observed_modules(m).values())=={None}
+        from recovery_cached_product import load,read_document
+        from installed_driver_candidate import observe_stock_boot
+        target=read_document(Path(m['cache'])/'materialization.json')['target']
+        load(Path(m['cache']),{'steamos':target['steamosVersion'],'kernel':m['kernel'],
+             'nvidia':m['nvidia'],'revision':m['coreCommit']})
+        proof=observe_stock_boot(Path('/'),target)
+        images=list(proof['images'])
+        write(out/'baseline.json',{'bootId':tx.boot_id(),'profile':'stock','loadedIdentity':None,
+            'modules':observed_modules(m),'bootImages':{Path(x).name:digest(Path('/')/x) for x in images},
+            'stockBootObservation':proof,'manifestSHA256':digest(a.manifest),'GPUDisplayAcceptance':False})
+    elif a.action=='qualify':
         receipt,docs=verify_receipt_evidence(Path('/'),allow_live_root=True)
         assert receipt['target']['kernelVersion']==m['kernel']
         loaded=tx.require_loaded_identity(Path('/'),m['kernel'],m['nvidia'])
@@ -142,10 +156,20 @@ def main():
             'bootImages':boot,'receipt':receipt,'manifestSHA256':digest(a.manifest),
             'GPUDisplayAcceptance':False})
     elif a.action=='install-guardian':
-        env={**os.environ}
+        env={**os.environ,'OPEMOS_PINNED_NVIDIA_VERSION':m['nvidia']}
         if a.pause:env.update(PROJECT_TEST_MODE='1',OPEMOS_INSTALLED_TRANSACTION_TEST_PAUSE=a.pause)
-        command(out,'setup-guardian',['/bin/bash',str(REPO/'bootstrap/install_recovery_guardian.sh')],env,expected=(0,75))
+        argv=['/bin/bash',str(REPO/'bootstrap/install_recovery_guardian.sh')]
+        if 'interstitial' in m:argv+=['--interstitial-binary',m['interstitial'],'--interstitial-sha256',m['interstitialSHA256']]
+        command(out,'setup-guardian',argv,env,expected=(0,75))
         write(out/'guardian-setup.json',{'bootId':tx.boot_id(),'requiresActualNewBoot':True})
+    elif a.action=='refuse-app-health-same-boot':
+        setup=json.loads((out/'guardian-setup.json').read_bytes())
+        assert setup['bootId']==tx.boot_id()
+        command(out,'same-boot-app-health-refusal',[str(HOME/'bootstrap/recoveryctl.sh'),'installed-health','--json'],expected=(1,))
+        from install_guardian_generation import registered
+        from installed_boot_guard import engine
+        tool,store=engine(registered()['app'])
+        assert tool.load_intent(Path('/'),store)['phase']=='pending-health'
     elif a.action=='guardian-after-boot':
         previous=json.loads((out/'guardian-setup.json').read_bytes())
         assert tx.boot_id()!=previous['bootId']
@@ -183,7 +207,7 @@ def main():
         assert baseline['manifestSHA256']==digest(a.manifest)
         env={**os.environ,'OPEMOS_PINNED_NVIDIA_VERSION':m['nvidia']}
         if a.pause:
-            assert a.pause in ('prepared','activated:0','pending-health')
+            assert a.pause in ('prepared','activated:0','pending-health','directories:0')
             env.update(PROJECT_TEST_MODE='1',OPEMOS_INSTALLED_TRANSACTION_TEST_PAUSE=a.pause)
         command(out,'guardian-install',['/bin/bash',str(REPO/'bootstrap/install_recovery_guardian.sh')],
                 env if a.fault_component=='app' else None)
@@ -217,6 +241,7 @@ def main():
         command(out,'restart-recovery',['/usr/bin/systemctl','start','opemos-nvidia-guardian.service'])
         assert reconcile_controller(Path('/'),HOME,inspect_only=True)['state'] in ('restored','healthy','no-pending-intent')
         assert observed_modules(m)==baseline['modules']
+        if baseline.get('profile')=='stock':assert not Path('/sys/module/nvidia').exists()
         assert {name:digest(Path('/boot')/name) for name in baseline['bootImages']}==baseline['bootImages']
         command(out,'repeated-recovery',['/usr/bin/systemctl','start','opemos-nvidia-guardian.service'])
         assert observed_modules(m)==baseline['modules']
@@ -321,7 +346,7 @@ def main():
     else:
         drop=Path('/etc/systemd/system/opemos-nvidia-guardian.service.d/90-opemos-acceptance-'+m['runId']+'.conf')
         if a.action=='arm-recovery-pause':
-            assert a.pause in ('restore:0','heal:0')
+            assert a.pause in ('restore:0','heal:0','restore-dir:0')
             from installed_driver_candidate import readonly_enabled,command as bounded_command
             readonly=readonly_enabled()
             try:

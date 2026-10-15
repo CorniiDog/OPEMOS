@@ -246,3 +246,67 @@ checkout/cache are prepared, then execute ordinary release discovery with no
 BUILD_OUT and with an inherited unrelated BUILD_OUT: require exact cache reuse or
 explicit safe absence, never nounset/unrelated materialization/unchanged compile.
 No fake curl, UID, filesystem, systemd or method adapter proves this OS workflow.
+
+## Fresh app-to-first-driver correction under Root plan6fcef0de
+
+The b6efee1 loaded-baseline review and all six prior findings remain preserved.
+Its app prerequisite caused a fresh-system deadlock: app health required loaded
+NVIDIA before the first driver could be installed. Fixing only that call would
+still leave missing old NVIDIA receipts, missing module/state directories and
+rollback-to-absence outside the ordinary producer path. This continuation joins
+those dependencies under the changed Root causal plan; no runtime is inferred.
+
+App acknowledgement now verifies the real registered retained engine, complete
+managed source/unit set, enabled independent entry, matching bootstrap and actual
+new registered boot. No app generation is an error, not synthetic success. With
+no driver intent, installed-health reports app-only acknowledgement and explicitly
+unestablished driver health; it does not complete retry or publish graphics success.
+The no-driver guardian does not try to construct an NVIDIA fallback before any
+NVIDIA generation exists. A missing userspace package cannot block app health;
+first app provisioning requires the caller's explicit existing reviewed policy
+version when there is no installed NVIDIA version to read.
+
+First driver admission uses the existing authenticated canonical cache for the
+exact current target/revision and still requires real matching NVIDIA userspace
+before driver effects. It accepts a clean no-OPEMOS-module baseline only, not a
+partial previous installation whose receipt/module data vanished. Initial stock
+boot observation binds actual root/kernel/SteamOS, exact BOOT_IMAGE and the packaged
+kernel bytes, bounded existing initramfs hashes and actual boot ID. App preparation
+records those bytes before its changes; app acknowledgement requires them unchanged
+across its actual new boot. First driver staging requires that acknowledged retained
+stock record and unchanged boot assets. This is observed usable stock boot evidence,
+not NVIDIA health, measured boot, new trust or a base-OS slot selection contract.
+Missing/ambiguous boot operands, packaged kernel or changed stock assets refuse.
+An archive-only input without the existing canonical authenticated target/cache
+cannot silently use this fresh baseline route.
+
+New module/app/state directories use a bounded extension of the private artifact
+intent. Preparation records exact prior absence and finite needed parent trees,
+without writable-root changes. After durable activating intent and the existing
+read-only transition, sibling temporary trees are created, flushed and their exact
+UID/GID/mode/inodes persisted BEFORE exclusive renameat2(NOREPLACE) publication.
+Only admitted file ancestors may be created. Unknown directory effects/attributes
+still refuse; existing directory metadata must remain identical. Recovery removes
+only exact created empty directories with matching custody, in reverse order.
+Unknown contents fail rmdir and are preserved; there is no recursive deletion.
+Interrupted directory recovery tolerates already removed exact entries. Unpublished
+staging with unknown custody is retained instead of guessed or overwritten.
+The independent app entry is restored/removed only after other files and directory
+recovery; an ordinary subsequent setup reconciles an interrupted prior app intent
+before beginning another generation. Core private bootstrap/store metadata and
+unactivated staging evidence are retained, not presented as restored user data.
+
+The stock baseline records absence for all five OPEMOS module files; first activation
+still requires the verified five-module candidate and normal loaded-driver boot
+acknowledgement. Rollback restores those absences and original boot images, and its
+runtime check requires the stock no-NVIDIA state rather than loaded replacement
+modules. Existing loaded/acknowledged NVIDIA baselines retain the previous exact
+payload/loaded identity checks. Same-product failed health retry is still refused.
+No driver, guardian authority, trust-key, foreign GRUB or unknown directory bypass
+was added. Existing immutable Git/template and driver-control-plane guards remain.
+
+Existing interstitial bytes remain a real required input: the online wrapper now
+forwards the already supported guardian binary/SHA options; it does not acquire or
+trust a new binary. Actual first driver execution also needs its separately supplied
+authenticated canonical product and userspace provisioning. The current source step
+supplies no such runtime artifact or credentials and claims no available VM lane.

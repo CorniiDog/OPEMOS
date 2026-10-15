@@ -12,8 +12,11 @@ import shutil
 from pathlib import Path
 import subprocess
 import sys
-import tempfile
+import argparse
+from contextlib import nullcontext
+import uuid
 
+EVIDENCE=None
 TOOL = Path(__file__).resolve().parents[1] / 'lib/installed_update_transaction.py'
 sys.path.insert(0, str(TOOL.parent))
 from installed_update_transaction import root_identity
@@ -26,6 +29,12 @@ def run(root, store, action, plan=None, *, uid=None, success=True):
     options = {} if uid is None else {'user': uid, 'group': uid, 'extra_groups': []}
     result = subprocess.run(args, env={**os.environ, 'PROJECT_TEST_MODE': '1'},
                             capture_output=True, timeout=15, **options)
+    identity=uuid.uuid4().hex
+    (EVIDENCE/(identity+'.stdout')).write_bytes(result.stdout)
+    (EVIDENCE/(identity+'.stderr')).write_bytes(result.stderr)
+    (EVIDENCE/(identity+'.json')).write_text(json.dumps({'argv':args,'uid':uid,'exit':result.returncode,
+        'environment':'admitted OMEN guest required','stdoutSHA256':hashlib.sha256(result.stdout).hexdigest(),
+        'stderrSHA256':hashlib.sha256(result.stderr).hexdigest(),'VMClosureVerified':False}))
     assert (result.returncode == 0) == success, (args, result.returncode, result.stderr)
     return json.loads(result.stdout) if success else result
 
@@ -34,8 +43,12 @@ def main():
     assert os.geteuid() == 0, 'actual root/other-UID cases require the admitted guest root'
     product=Path('/sys/class/dmi/id/product_name').read_text().lower()
     assert any(x in product for x in ('kvm','qemu','standard pc','virtual machine')), 'VM-only test'
-    global TOOL
-    with tempfile.TemporaryDirectory(prefix='opemos-installed-normal-') as directory:
+    global TOOL,EVIDENCE
+    parser=argparse.ArgumentParser();parser.add_argument('--output',type=Path,required=True)
+    output=parser.parse_args().output
+    assert output.is_absolute() and output.resolve()==output and not output.exists()
+    output.mkdir(mode=0o700);EVIDENCE=output/'evidence';EVIDENCE.mkdir(mode=0o700)
+    with nullcontext(str(output)) as directory:
         base = Path(directory)
         base.chmod(0o755)
         executable = base / 'tool'
@@ -95,8 +108,7 @@ def main():
         (root/'etc/systemd/system').mkdir(parents=True)
         (root/'etc/NetworkManager/dispatcher.d').mkdir(parents=True)
         for relative in ('etc/systemd/system/opemos-nvidia-guardian.service',
-                         'etc/NetworkManager/dispatcher.d/90-opemos-nvidia-repair',
-                         'var/lib/open-gpu-kernel-modules-steamos-support/recovery/state.json'):
+                         'etc/NetworkManager/dispatcher.d/90-opemos-nvidia-repair'):
             row={'path':relative,'source':str(candidate),
                  'sha256':hashlib.sha256(candidate.read_bytes()).hexdigest()}
             bad={'schemaVersion':1,'kernel':'6.18.50-test','rootIdentity':root_identity(root),
@@ -104,7 +116,29 @@ def main():
             plan.write_text(json.dumps(bad))
             run(root,rejected,'activate',plan,success=False)
             assert not (rejected/'intent.json').exists() and not (root/relative).exists()
-        assert not (root/'var').exists(),'no unjournaled directory creation'
+        relative='var/lib/open-gpu-kernel-modules-steamos-support/recovery/state.json'
+        bad['files']=[{'path':relative,'source':str(candidate),'sha256':hashlib.sha256(candidate.read_bytes()).hexdigest()}]
+        plan.write_text(json.dumps(bad))
+        assert run(root,rejected,'activate',plan)['state']=='pending-health'
+        assert (root/relative).read_bytes()==candidate.read_bytes()
+        assert run(root,rejected,'recover')['state']=='restored'
+        assert run(root,rejected,'recover')['state']=='restored'
+        assert not (root/'var').exists(),'exact journaled directories restored to absence'
+        interrupted=base/'foreign-directory';interrupted.mkdir(mode=0o700)
+        run(root,interrupted,'activate',plan)
+        foreign=(root/relative).parent/'exact-test-owned-foreign'
+        foreign.write_bytes(b'owned regression evidence');foreign.chmod(0o600)
+        run(root,interrupted,'recover',success=False)
+        assert foreign.read_bytes()==b'owned regression evidence'
+        assert json.loads((interrupted/'intent.json').read_bytes())['phase']=='rolling-back'
+        # The test owns this exact file; the updater correctly preserved it.
+        assert foreign.stat().st_uid==0 and foreign.stat().st_nlink==1
+        foreign.unlink()
+        assert run(root,interrupted,'recover')['state']=='restored'
+        assert run(root,interrupted,'recover')['state']=='restored'
+        assert not (root/'var').exists()
+
+
     print('ordinary CLI transaction/UID/schema/foreign-data cases passed')
 
 

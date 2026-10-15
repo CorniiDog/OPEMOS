@@ -3424,3 +3424,20 @@ Source integration completed through separate reviewed PRs: displayPR2 squash33e
   normal producer-to-new-boot-health transaction and changed F1–F6/abrupt recovery
   cases. No claim that source correction or static syntax proves OS behavior,
   executable build, three-kernel/five-module compile, GPU or publication readiness.
+
+### Same updater: fresh app-to-first-driver causal correction (plan6fcef0de)
+
+- [x] Separate app-only actual boot/source/control acknowledgement from loaded
+  NVIDIA health. Join first authenticated driver admission to unchanged stock
+  boot evidence across that app boot; preserve loaded-baseline verification.
+  Add exact absence/directory custody to the existing private transaction so
+  fresh module/source/state parents can activate and restore without untracked
+  directory effects. Preserve b6efee1/r5 and its independent review/history.
+- [x] Author fresh versus loaded ordinary CLI, same-boot refusal, first driver,
+  directory publication/interrupted rollback and stock restoration VM procedures.
+  Source AST/bash-n/diff only; exact final source pins and limits in handback.
+- [ ] Independent complete changed-graph review, then actual separately admitted
+  OMEN fresh AND loaded normal producer-to-new-boot-health transactions before
+  changed abrupt/repeated recovery. Real canonical driver/interstitial input and
+  exact userspace/stock boot evidence remain required; no synthetic NV/GPU health,
+  project-test/VM/compiler success or publication claimed by source preparation.

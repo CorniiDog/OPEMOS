@@ -514,21 +514,18 @@ case "$COMMAND" in
         health_result="$(python3 "$SUPPORT_ROOT/lib/installed_update_transaction.py" health \
             --root / --policy-root "$POLICY_ROOT")"
         printf '%s\n' "$health_result"
-        if python3 -c 'import json,sys; raise SystemExit(0 if json.loads(sys.argv[1]).get("state")=="no-pending-intent" else 1)' "$health_result"; then
-            python3 - "$SUPPORT_ROOT/lib" "$(get_kernel_version)" "$(get_nvidia_version)" <<'PYBASEHEALTH'
-import sys
-from pathlib import Path
-sys.path.insert(0,sys.argv[1])
-from installed_update_transaction import require_loaded_identity
-require_loaded_identity(Path('/'),sys.argv[2],sys.argv[3])
-PYBASEHEALTH
-        fi
         python3 - "$SUPPORT_ROOT/lib" <<'PYHEALTH'
 import sys,json
 sys.path.insert(0,sys.argv[1])
 from install_guardian_generation import acknowledge_app
 print(json.dumps(acknowledge_app(),sort_keys=True))
 PYHEALTH
+        # App acknowledgement is source/control health only. It is independent
+        # of whether a first NVIDIA generation has ever been installed.
+        if python3 -c 'import json,sys; raise SystemExit(0 if json.loads(sys.argv[1]).get("state")=="no-pending-intent" else 1)' "$health_result"; then
+            printf '%s\n' '{"state":"app-acknowledged","driverHealth":"not-established","rebootHealthVerified":false}'
+            exit 0
+        fi
         status_json | python3 "$SUPPORT_ROOT/lib/recovery_public_status.py" publish
         reconcile_verified_transaction "$(get_kernel_version)" "$(get_nvidia_version)" \
             "$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["supportRevision"])' "$(python3 "$POLICY_TOOL" --root "$POLICY_ROOT")")" 1
@@ -546,6 +543,18 @@ PYHEALTH
             acquire_recovery_mutation_locks
             installed_state="$(python3 "$SUPPORT_ROOT/lib/installed_update_transaction.py" startup \
                 --root / --policy-root "$POLICY_ROOT")" || exit 1
+            if python3 - "$installed_state" "$(get_kernel_version)" <<'PYFIRST'
+import json,sys
+from pathlib import Path
+d=json.loads(sys.argv[1]);directory=Path('/usr/lib/modules')/sys.argv[2]/'updates/open-gpu-kernel-modules-steamos'
+fresh=(d.get('state') in ('no-pending-intent','restored') and not Path('/sys/module/nvidia').exists()
+       and (not directory.exists() or directory.is_dir() and not any(directory.iterdir())))
+raise SystemExit(0 if fresh else 1)
+PYFIRST
+            then
+                emit_result recovery-required first_driver_not_installed authenticated_product_required
+                exit 0
+            fi
             if python3 -c 'import json,sys; raise SystemExit(0 if json.loads(sys.argv[1]).get("rebootRequired") else 1)' "$installed_state"; then
                 printf '%s\n' "$installed_state"
                 exit 0

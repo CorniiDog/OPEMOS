@@ -122,17 +122,35 @@ def register(kind, store, frozen):
 
 def acknowledge_app():
     doc = registered()
-    if doc['app'] is None:
-        return {'state':'no-app-intent'}
+    tx.need(doc['app'] is not None,'no installed app generation to acknowledge')
     import installed_boot_guard as guard
     engine, store = guard.engine(doc['app'])
     lock = engine.guarded_store(store)
     try:
         intent = engine.load_intent(Path('/'), store)
-        if intent['phase'] == 'healthy':
+        engine.need(intent['action']=='guardian-update','not an app generation')
+        engine.need(engine.read(BOOT/'boot-guard.py',256*1024)==
+                    engine.read(DEST/'lib/installed_boot_guard.py',256*1024),'bootstrap/source mismatch')
+        unit=engine.read(Path('/etc/systemd/system/opemos-nvidia-guardian.service'),65536)
+        engine.need(b'ExecStart=/usr/bin/python3 '+str(BOOT).encode()+b'/boot-guard.py' in unit,
+                    'independent recovery entry unavailable')
+        engine.need(os.readlink('/etc/systemd/system/multi-user.target.wants/opemos-nvidia-guardian.service')==
+                    '../opemos-nvidia-guardian.service','recovery service not enabled')
+        if intent['phase']=='healthy':
             engine.verify_set(Path('/'),intent,'newSHA256')
-            return {'state':'healthy'}
-        return engine.acknowledge(Path('/'), store)
+            return {'state':'healthy','appHealthOnly':True}
+        before=intent['authority'].get('stockBootBefore')
+        if before is not None:
+            from installed_driver_candidate import observe_stock_boot
+            observed=observe_stock_boot(Path('/'),intent['target'])
+            engine.need(intent['attemptBootId']==engine.boot_id() and intent['preparedBootId']!=engine.boot_id(),
+                        'app stock qualification requires actual new registered boot')
+            engine.need(before['images']==observed['images'] and before['kernelSHA256']==observed['kernelSHA256']
+                        and before['rootIdentity']==observed['rootIdentity'],'stock boot assets changed across app boot')
+            intent['authority']['stockBootAcknowledgement']=observed
+            engine.durable(store/'intent.json',intent)
+        result=engine.acknowledge(Path('/'),store)
+        return {**result,'appHealthOnly':True}
     finally:
         os.close(lock)
 
@@ -140,13 +158,7 @@ def acknowledge_app():
 def build(args):
     tx.need(os.geteuid() == 0 and re.fullmatch('[0-9a-f]{40}',args.revision)
             and re.fullmatch(r'[0-9]+\.[0-9]+(?:\.[0-9]+)?',args.nvidia), 'exact installed authority required')
-    # Installed profile does not create target directories outside its journal.
-    # First image provisioning supplies this finite structure in the unpublished
-    # offline profile. Refuse before even creating private bootstrap artifacts.
-    for relative in ('bootstrap','lib','trust','bin'):
-        parent=DEST/relative
-        tx.need(parent.is_dir() and parent.resolve()==parent,
-                'pre-existing offline-provisioned guardian directories required')
+    tx.need(Path('/etc/systemd/system').is_dir(),'existing systemd entry directory required')
     private_directory(BOOT)
     # Source comes from the existing authenticated immutable Git checkout.
     # Bind every copied managed byte to that exact commit, including engines.
@@ -159,10 +171,30 @@ def build(args):
         import installed_boot_guard as guard
         engine,prior=guard.engine(old)
         previous=engine.load_intent(Path('/'),prior)
+        if previous['phase'] in ('prepared','activating','rolling-back'):
+            from installed_driver_candidate import readonly_enabled,command
+            readonly=previous['readonlyBefore'] or readonly_enabled()
+            try:
+                if readonly:command(['/usr/bin/steamos-readonly','disable'],30)
+                engine.recover(Path('/'),prior)
+            finally:
+                if readonly:command(['/usr/bin/steamos-readonly','enable'],30)
+            previous=engine.load_intent(Path('/'),prior)
         if (previous['authority']['policy']=={'supportRevision':args.revision,'nvidiaVersion':args.nvidia}
                 and previous['phase'] in ('healthy','pending-health')):
             engine.verify_set(Path('/'),previous,'newSHA256')
-            return {'state':previous['phase'],'sourceUnchanged':True}
+            unchanged=True
+            if (previous['phase']=='healthy' and existing['driver'] is None
+                    and not Path('/sys/module/nvidia').exists() and previous['authority'].get('stockBootBefore') is not None):
+                from installed_driver_candidate import observe_stock_boot
+                current=observe_stock_boot(Path('/'),previous['target'])
+                acknowledged=previous['authority'].get('stockBootAcknowledgement',{})
+                unchanged=(current['images']==acknowledged.get('images') and
+                           current['kernelSHA256']==acknowledged.get('kernelSHA256'))
+            if unchanged:return {'state':previous['phase'],'sourceUnchanged':True}
+            # Real changed stock assets need a new actual app boot observation,
+            # even when source bytes are unchanged; never relabel old proof.
+
         tx.need(previous['phase'] in ('healthy','restored'),'guardian generation awaits reboot/health')
         engine.verify_set(Path('/'),previous,'newSHA256' if previous['phase']=='healthy' else 'oldSHA256')
     if existing['driver'] is not None:
@@ -226,9 +258,17 @@ def build(args):
                                'completeWriterSet':True,'files':rows})
     from installed_driver_candidate import readonly_enabled,command
     readonly=readonly_enabled()
+    authority={'policy':{'supportRevision':args.revision,'nvidiaVersion':args.nvidia}}
+    directory=Path('/usr/lib/modules')/os.uname().release/'updates/open-gpu-kernel-modules-steamos'
+    if not Path('/sys/module/nvidia').exists() and (not directory.exists() or not any(directory.iterdir())):
+        from installed_driver_candidate import observe_stock_boot
+        authority['stockBootBefore']=observe_stock_boot(Path('/'),{'kernelVersion':os.uname().release,'nvidiaVersion':args.nvidia,
+            'steamosVersion':dict(line.split('=',1) for line in tx.read(Path('/usr/lib/os-release'),65536).decode().splitlines()
+                                 if '=' in line and not line.startswith('#'))['VERSION_ID'].strip('"')})
     tx.prepare(Path('/'),store,store/'plan.json',context={
-        'bootImages':[],'target':{'kernelVersion':os.uname().release,'nvidiaVersion':args.nvidia},
-        'authority':{'policy':{'supportRevision':args.revision,'nvidiaVersion':args.nvidia}},
+        'bootImages':[],'target':{'kernelVersion':os.uname().release,'nvidiaVersion':args.nvidia,
+                   'steamosVersion':(authority.get('stockBootBefore') or {}).get('steamosVersion')},
+        'authority':authority,
         'readonlyBefore':readonly,'action':'guardian-update','profile':'console'})
     # Publishing engine registration is after durable intent and before files.
     register('app',store,frozen)
