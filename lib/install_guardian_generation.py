@@ -1,0 +1,205 @@
+#!/usr/bin/env python3
+"""Compose guardian source/unit files with the installed artifact transaction.
+
+A retained, root-only recovery engine and independent boot entry are installed
+before replacing any mutable guardian code. No OS slot or trust key is selected.
+"""
+import argparse
+import json
+import os
+from pathlib import Path
+import re
+import stat
+import uuid
+import installed_update_transaction as tx
+
+BOOT = Path('/home/.steamos/open-gpu-kernel-modules-steamos-support/recovery-bootstrap')
+DEST = Path('/home/.steamos/open-gpu-kernel-modules-steamos-support/recovery')
+EXTRA = ('bootstrap/run_repair_with_interstitial.sh','lib/install_guardian_generation.py',
+         'lib/installed_boot_guard.py')
+
+
+def private_directory(path):
+    if not path.parent.exists():
+        # Create only the fixed Core installation ancestry after validating the
+        # nearest existing root-owned ancestor. Never follow a parent alias.
+        missing=[]; parent=path.parent
+        while not parent.exists():missing.append(parent);parent=parent.parent
+        info=parent.lstat()
+        tx.need(stat.S_ISDIR(info.st_mode) and info.st_uid==0 and not info.st_mode&0o022,'unsafe bootstrap ancestor')
+        for entry in reversed(missing):entry.mkdir(mode=0o755);tx.fsync_dir(entry.parent)
+    tx.need(path.parent.resolve()==path.parent,'bootstrap parent alias')
+    if not path.exists():
+        path.mkdir(mode=0o700)
+        tx.fsync_dir(path.parent)
+    info = path.lstat()
+    tx.need(stat.S_ISDIR(info.st_mode) and info.st_uid == 0
+            and stat.S_IMODE(info.st_mode) == 0o700, 'private bootstrap directory required')
+
+
+def registered():
+    pointer = BOOT / 'current.json'
+    if not pointer.exists():
+        return {'schemaVersion': 1, 'app': None, 'driver': None}
+    doc = tx.parse(tx.read(pointer, 16384))
+    tx.need(set(doc) == {'schemaVersion','app','driver'} and doc['schemaVersion'] == 1,
+            'invalid bootstrap registry')
+    return doc
+
+
+def register(kind, store, source):
+    private_directory(BOOT)
+    private_directory(store / 'engine')
+    hashes = {}
+    for name in ('installed_update_transaction.py','atomic_output.py'):
+        data = (source / 'lib' / name).read_bytes()
+        tx.need(0 < len(data) <= 256 * 1024, 'recovery engine size')
+        tx.replace_durable(store / 'engine' / name, data, 0o500)
+        hashes[name] = tx.digest(data)
+    data = (source / 'lib/installed_boot_guard.py').read_bytes()
+    boot_script = BOOT / 'boot-guard.py'
+    if boot_script.exists() and tx.read(boot_script, 256 * 1024) != data:
+        # Never rewrite the bootstrap while an earlier transaction needs it.
+        import installed_boot_guard as guard
+        for entry in registered().values():
+            if type(entry) is dict:
+                engine, previous = guard.engine(entry)
+                prior = engine.load_intent(Path('/'), previous)
+                tx.need(prior['phase'] in ('healthy','restored'), 'pending bootstrap version; preserve it')
+    tx.replace_durable(boot_script, data, 0o500)
+    doc = registered()
+    doc[kind] = {'store':str(store),'engine':hashes}
+    tx.durable(BOOT / 'current.json', doc)
+
+
+def acknowledge_app():
+    doc = registered()
+    if doc['app'] is None:
+        return {'state':'no-app-intent'}
+    import installed_boot_guard as guard
+    engine, store = guard.engine(doc['app'])
+    lock = engine.guarded_store(store)
+    try:
+        intent = engine.load_intent(Path('/'), store)
+        if intent['phase'] == 'healthy':
+            engine.verify_set(Path('/'),intent,'newSHA256')
+            return {'state':'healthy'}
+        return engine.acknowledge(Path('/'), store)
+    finally:
+        os.close(lock)
+
+
+def build(args):
+    tx.need(os.geteuid() == 0 and re.fullmatch('[0-9a-f]{40}',args.revision)
+            and re.fullmatch(r'[0-9]+\.[0-9]+(?:\.[0-9]+)?',args.nvidia), 'exact installed authority required')
+    private_directory(BOOT)
+    # Source comes from the existing authenticated immutable Git checkout.
+    # Bind every copied managed byte to that exact commit, including engines.
+    import subprocess
+    actual = subprocess.check_output(['git','-C',str(args.source),'rev-parse','HEAD'],timeout=30).decode().strip()
+    tx.need(actual == args.revision, 'guardian checkout commit differs')
+    existing=registered()
+    old=existing['app']
+    if old:
+        import installed_boot_guard as guard
+        engine,prior=guard.engine(old)
+        previous=engine.load_intent(Path('/'),prior)
+        if (previous['authority']['policy']=={'supportRevision':args.revision,'nvidiaVersion':args.nvidia}
+                and previous['phase'] in ('healthy','pending-health')):
+            engine.verify_set(Path('/'),previous,'newSHA256')
+            return {'state':previous['phase'],'sourceUnchanged':True}
+        tx.need(previous['phase'] in ('healthy','restored'),'guardian generation awaits reboot/health')
+        engine.verify_set(Path('/'),previous,'newSHA256' if previous['phase']=='healthy' else 'oldSHA256')
+    if existing['driver'] is not None:
+        import installed_boot_guard as guard
+        engine,driver=guard.engine(existing['driver'])
+        record=engine.parse(engine.read(driver/'intent.json',engine.MAX_STATE))
+        tx.need(record['phase'] in ('healthy','restored'),'driver update pending; guardian authority must stay fixed')
+    store = BOOT / ('app-' + uuid.uuid4().hex)
+    tx.need(len(list(BOOT.iterdir())) < 24, 'retained source generation bound; preserve originals')
+    private_directory(store)
+    rows = []
+    def add(relative, data, mode):
+        source = store / ('artifact-' + str(len(rows)))
+        tx.replace_durable(source,data,mode)
+        rows.append({'path':relative,'source':str(source),'sha256':tx.digest(data)})
+    for relative in (*tx.GUARDIAN_FILES,*EXTRA):
+        if relative in {r['path'].removeprefix(tx.GUARDIAN_HOME) for r in rows}:
+            continue
+        path = args.source / relative
+        from recovery_cached_product import read_regular
+        data = read_regular(path,8*1024**2,'guardian source')
+        authenticated = subprocess.check_output(['git','-C',str(args.source),'show',args.revision+':'+relative],timeout=30)
+        tx.need(data == authenticated, 'guardian source differs from immutable Git input')
+        tx.need(path.is_file() and not path.is_symlink() and 0 < len(data) <= 8*1024**2,
+                'guardian source missing/unsafe: ' + relative)
+        original = DEST / relative
+        if relative.startswith('trust/') and original.exists():
+            tx.need(tx.read(original, 1024**2) == data, 'trust input change requires separate approval')
+        add(tx.GUARDIAN_HOME + relative,data,0o644 if relative.startswith('trust/') or relative.endswith('common.sh') else 0o755)
+    add(tx.GUARDIAN_HOME+'support-revision',(args.revision+'\n').encode(),0o644)
+    add(tx.GUARDIAN_HOME+'nvidia-version',(args.nvidia+'\n').encode(),0o644)
+    if args.interstitial is not None:
+        from recovery_cached_product import read_regular
+        data=read_regular(args.interstitial,32*1024**2,'interstitial')
+        tx.need(tx.digest(data)==args.interstitial_sha256,'interstitial bytes changed')
+        add(tx.GUARDIAN_HOME+'bin/opemos-interstitial',data,0o755)
+        add(tx.GUARDIAN_HOME+'interstitial.sha256',(args.interstitial_sha256+'\n').encode(),0o644)
+    else:
+        binary=tx.read(DEST/'bin/opemos-interstitial',32*1024**2)
+        expected=tx.read(DEST/'interstitial.sha256',128).decode('ascii').strip()
+        tx.need(re.fullmatch('[0-9a-f]{64}',expected) and tx.digest(binary)==expected,
+                'first guardian requires authenticated interstitial; existing binary must retain exact receipt')
+    for name in ('opemos-nvidia-guardian.service','opemos-interstitial.service',
+                 'opemos-nvidia-repair.service','opemos-nvidia-health.service'):
+        data=(args.source/'support/recovery'/ (name+'.in')).read_bytes().replace(b'@DEST@',str(DEST).encode())
+        if name=='opemos-nvidia-guardian.service':
+            data=data.replace(b'ExecStart='+str(DEST).encode()+b'/bootstrap/run_guardian_with_interstitial.sh',
+                              b'ExecStart=/usr/bin/python3 '+str(BOOT).encode()+b'/boot-guard.py')
+        add('etc/systemd/system/'+name,data,0o644)
+    for name in ('opemos-nvidia-repair.timer','opemos-nvidia-health.timer'):
+        add('etc/systemd/system/'+name,(args.source/'support/recovery'/name).read_bytes(),0o644)
+    for relative,source in [('etc/NetworkManager/dispatcher.d/90-opemos-nvidia-repair','90-opemos-nvidia-repair'),
+                            ('etc/atomic-update.conf.d/90-opemos-nvidia-guardian.conf','90-opemos-nvidia-guardian.conf')]:
+        add(relative,(args.source/'support/recovery'/source).read_bytes(),0o755 if 'dispatcher.d' in relative else 0o644)
+    for relative,targets in tx.LINK_TARGETS.items():
+        if relative != 'etc/systemd/system/default.target':
+            add(relative,b'OP_DEFAULT_TARGET_LINK\0'+targets[0].encode(),0o777)
+    check=['/usr/bin/python3',str(args.source/'lib/validate_recovery_install_path.py'),'--root','/']
+    for row in rows:
+        if row['path'] in tx.LINK_TARGETS:
+            check += ['--expected-symlink', row['path']+'='+tx.LINK_TARGETS[row['path']][0]]
+        else:check += ['--path',row['path']]
+    subprocess.run(check,check=True,timeout=30)
+    tx.durable(store/'plan.json',{'schemaVersion':1,'kernel':os.uname().release,'rootIdentity':tx.root_identity(Path('/')),
+                               'completeWriterSet':True,'files':rows})
+    from installed_driver_candidate import readonly_enabled,command
+    readonly=readonly_enabled()
+    tx.prepare(Path('/'),store,store/'plan.json',context={
+        'bootImages':[],'target':{'kernelVersion':os.uname().release,'nvidiaVersion':args.nvidia},
+        'authority':{'policy':{'supportRevision':args.revision,'nvidiaVersion':args.nvidia}},
+        'readonlyBefore':readonly,'action':'guardian-update','profile':'console'})
+    # Publishing engine registration is after durable intent and before files.
+    register('app',store,args.source)
+    try:
+        if readonly: command(['/usr/bin/steamos-readonly','disable'],30)
+        return tx.commit_prepared(Path('/'),store)
+    except BaseException:
+        tx.recover(Path('/'),store)
+        raise
+    finally:
+        if readonly: command(['/usr/bin/steamos-readonly','enable'],30)
+
+
+def main():
+    p=argparse.ArgumentParser()
+    p.add_argument('--source',type=Path,required=True)
+    p.add_argument('--revision',required=True)
+    p.add_argument('--nvidia',required=True)
+    p.add_argument('--interstitial',type=Path)
+    p.add_argument('--interstitial-sha256')
+    args=p.parse_args()
+    print(json.dumps(build(args),sort_keys=True))
+
+
+if __name__=='__main__':main()

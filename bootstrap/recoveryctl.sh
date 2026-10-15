@@ -63,6 +63,11 @@ if [[ "${PROJECT_TEST_MODE:-0}" == 1 && -n "${PROJECT_TEST_STATUS_TOOL:-}" ]]; t
 fi
 POLICY_TOOL="$SUPPORT_ROOT/lib/recovery_policy.py"
 POLICY_ROOT="$SUPPORT_ROOT"
+CANDIDATE_STAGE=0
+if python3 "$SUPPORT_ROOT/lib/installed_update_transaction.py" stage-check --root "$ROOT" 2>/dev/null; then
+    CANDIDATE_STAGE=1
+    POLICY_ROOT=/run/policy
+fi
 if [[ "${PROJECT_TEST_MODE:-0}" == 1 && -n "${PROJECT_TEST_POLICY_ROOT:-}" ]]; then
     POLICY_ROOT="$PROJECT_TEST_POLICY_ROOT"
 fi
@@ -117,8 +122,19 @@ status_json()
         return "$status_code"
     fi
     transaction="$(transaction_tool show)"
-    python3 -c 'import json,sys; d=json.loads(sys.argv[1]); d["transaction"]=json.loads(sys.argv[2]); print(json.dumps(d,sort_keys=True,separators=(",",":")))' \
-        "$base" "$transaction"
+    installed='{"state":"not-inspected"}'
+    if [[ "$ROOT" == / ]]; then
+        installed="$(python3 "$SUPPORT_ROOT/lib/installed_update_transaction.py" inspect \
+            --root / --policy-root "$POLICY_ROOT")" || return 1
+    fi
+    python3 - "$base" "$transaction" "$installed" <<'PYSTATUS'
+import json,sys
+result=json.loads(sys.argv[1]);result['transaction']=json.loads(sys.argv[2])
+result['installedGeneration']=json.loads(sys.argv[3])
+if result['installedGeneration'].get('state') in ('prepared','activating','pending-health','rolling-back'):
+    result['status']='pending-health';result['reason']='installed_generation_awaits_boot_health'
+print(json.dumps(result,sort_keys=True,separators=(',',':')))
+PYSTATUS
 }
 
 transaction_tool()
@@ -133,7 +149,14 @@ plan_tool()
 
 reconcile_verified_transaction()
 {
-    local existing kernel="$1" nvidia="$2" revision="$3"
+    local existing installed kernel="$1" nvidia="$2" revision="$3"
+    if [[ "$ROOT" == / ]]; then
+    installed="$(python3 "$SUPPORT_ROOT/lib/installed_update_transaction.py" inspect \
+        --root "$ROOT" --policy-root "$POLICY_ROOT")"
+    if python3 -c 'import json,sys; raise SystemExit(0 if json.loads(sys.argv[1]).get("state") in ("prepared","activating","pending-health","rolling-back") else 1)' "$installed"; then
+        return 0
+    fi
+    fi
     [[ -f "$TRANSACTION" ]] || return 0
     existing="$(transaction_tool show)"
     case "$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["phase"])' "$existing")" in
@@ -202,7 +225,7 @@ emit_result()
 with_writable_root()
 {
     RO_WAS_ENABLED=0
-    if [[ "$ROOT" == / ]] && command -v steamos-readonly >/dev/null 2>&1 &&
+    if [[ "$CANDIDATE_STAGE" != 1 && "$ROOT" == / ]] && command -v steamos-readonly >/dev/null 2>&1 &&
        steamos-readonly status 2>/dev/null | grep -qi enabled; then
         sudo steamos-readonly disable
         RO_WAS_ENABLED=1
@@ -301,6 +324,14 @@ enable_fallback()
     acquire_recovery_mutation_locks
     # Fallback/config/initramfs/GRUB writers must join the same durable plan;
     # a retry-phase journal is not a rollback image or boot-safe transaction.
+    if [[ "$CANDIDATE_STAGE" != 1 ]]; then
+        [[ "$ROOT" == / ]] || die "Fallback requires the owning installed controller."
+        python3 "$SUPPORT_ROOT/lib/installed_update_transaction.py" update --root / \
+            --support "$SUPPORT_ROOT" --policy-root "$POLICY_ROOT" \
+            --kernel "$(get_kernel_version)" --nvidia "$(get_nvidia_version)" \
+            --action enable-fallback --profile "$PROFILE"
+        return
+    fi
     python3 "$SUPPORT_ROOT/lib/installed_update_transaction.py" require-plan --root "$ROOT"
     with_writable_root
     local install_cmd=(install) move_cmd=(mv)
@@ -339,9 +370,9 @@ enable_fallback()
     python3 "$FALLBACK_STATE_TOOL" write \
         --state "$STATE_ROOT/state.json" --profile "$PROFILE"
     if [[ "$ROOT" == / ]]; then
-        sudo systemctl set-default "$([[ "$PROFILE" == console ]] && echo multi-user.target || echo graphical.target)"
+        sudo systemctl --root / set-default "$([[ "$PROFILE" == console ]] && echo multi-user.target || echo graphical.target)"
         command -v mkinitcpio >/dev/null 2>&1 && run_cancellable sudo mkinitcpio -P
-        sudo systemctl stop display-manager.service >/dev/null 2>&1 || true
+        # Candidate construction never stops the current display manager.
     fi
     restore_readonly
     emit_result fallback-active fallback_enabled "$PROFILE"
@@ -362,6 +393,14 @@ disable_fallback()
     require_verified_fallback "$document"
     # Fallback/config/initramfs/GRUB writers must join the same durable plan;
     # a retry-phase journal is not a rollback image or boot-safe transaction.
+    if [[ "$CANDIDATE_STAGE" != 1 ]]; then
+        [[ "$ROOT" == / ]] || die "Fallback requires the owning installed controller."
+        python3 "$SUPPORT_ROOT/lib/installed_update_transaction.py" update --root / \
+            --support "$SUPPORT_ROOT" --policy-root "$POLICY_ROOT" \
+            --kernel "$(get_kernel_version)" --nvidia "$(get_nvidia_version)" \
+            --action disable-fallback --profile "$PROFILE"
+        return
+    fi
     python3 "$SUPPORT_ROOT/lib/installed_update_transaction.py" require-plan --root "$ROOT"
     with_writable_root
     local remove_cmd=(rm -f) move_cmd=(mv)
@@ -378,7 +417,7 @@ disable_fallback()
             command -v update-grub >/dev/null 2>&1 && run_cancellable sudo update-grub
         fi
         command -v mkinitcpio >/dev/null 2>&1 && run_cancellable sudo mkinitcpio -P
-        sudo systemctl set-default graphical.target
+        sudo systemctl --root / set-default graphical.target
     fi
     restore_readonly
     emit_result healthy fallback_disabled graphical.target
@@ -431,6 +470,14 @@ case "$COMMAND" in
         acquire_recovery_mutation_locks
         python3 "$SUPPORT_ROOT/lib/installed_update_transaction.py" health \
             --root / --policy-root "$POLICY_ROOT"
+        python3 - "$SUPPORT_ROOT/lib" <<'PYHEALTH'
+import sys,json
+sys.path.insert(0,sys.argv[1])
+from install_guardian_generation import acknowledge_app
+print(json.dumps(acknowledge_app(),sort_keys=True))
+PYHEALTH
+        reconcile_verified_transaction "$(get_kernel_version)" "$(get_nvidia_version)" \
+            "$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["supportRevision"])' "$(python3 "$POLICY_TOOL" --root "$POLICY_ROOT")")"
         ;;
     guard)
         # Restart reconciliation precedes ordinary status/fallback decisions.
@@ -459,6 +506,13 @@ case "$COMMAND" in
         [[ "$ROOT" == / || "${PROJECT_TEST_MODE:-0}" == 1 ]] ||
             die "Online repair is supported only on the running SteamOS system."
         acquire_recovery_operation_lock
+        if [[ "$ROOT" == / ]]; then
+            generation="$(python3 "$SUPPORT_ROOT/lib/installed_update_transaction.py" inspect --root / --policy-root "$POLICY_ROOT")"
+            if python3 -c 'import json,sys; raise SystemExit(0 if json.loads(sys.argv[1]).get("state") in ("prepared","activating","pending-health","rolling-back") else 1)' "$generation"; then
+                emit_result pending-health reboot_required installed_health
+                exit 75
+            fi
+        fi
         publish_recovery_progress set --phase inspecting
         policy_args=(--root "$POLICY_ROOT")
         [[ "${PROJECT_TEST_MODE:-0}" != 1 ]] || policy_args+=(--test-owner)
@@ -527,6 +581,12 @@ case "$COMMAND" in
                 transaction_tool set --phase downloading --reason checking_new_exact_product >/dev/null
             fi
         fi
+        if [[ "${PROJECT_TEST_MODE:-0}" != 1 || -z "${PROJECT_TEST_CACHED_PRODUCT:-}" ]]; then
+            CACHED_PRODUCT="$(python3 "$SUPPORT_ROOT/lib/recovery_cached_product.py" select \
+                --home "$SUPPORT_ROOT" --steamos "$(get_steamos_version)" --kernel "$kernel" \
+                --nvidia "$nvidia" --support-revision "$revision")" ||
+                die "Retained recovery product pointer failed verification."
+        fi
         cached_result=""
         if [[ -e "$CACHED_PRODUCT" || -L "$CACHED_PRODUCT" ]]; then
             cached_result="$(python3 "$SUPPORT_ROOT/lib/recovery_cached_product.py" show \
@@ -541,18 +601,12 @@ case "$COMMAND" in
             publish_recovery_progress set --phase installing_modules
             if ! OPEMOS_PINNED_NVIDIA_VERSION="$nvidia" \
                 run_cancellable "$SUPPORT_ROOT/bootstrap/install.sh" \
-                    --archive "$cached_archive" --checksum "$cached_checksum" -y; then
+                    --archive "$cached_archive" --checksum "$cached_checksum" --cache "$CACHED_PRODUCT" -y; then
                 transaction_tool set --phase retry_scheduled --reason exact_cached_repair_failed >/dev/null
                 emit_result retry_scheduled exact_cached_repair_failed timer_and_connectivity
                 exit 75
             fi
-            python3 "$SUPPORT_ROOT/lib/recovery_cached_receipt.py" commit \
-                --root "$ROOT" --cache "$CACHED_PRODUCT" \
-                --steamos "$(get_steamos_version)" --kernel "$kernel" --nvidia "$nvidia" \
-                --support-revision "$revision" >/dev/null || {
-                transaction_tool set --phase failed --reason cached_receipt_commit_failed >/dev/null
-                die "Installed repair receipt could not be committed; fallback remains active."
-            }
+
         else
         publish_recovery_progress set --phase waiting_for_network
         if ! curl -fsS --connect-timeout 10 --max-time 20 https://api.github.com/meta \
@@ -599,8 +653,9 @@ case "$COMMAND" in
             die "Installed repair did not pass exact module verification; fallback remains active."
         }
         reconcile_verified_transaction "$kernel" "$nvidia" "$revision"
-        publish_recovery_progress set --phase updating_boot
-        YES=1 disable_fallback
+        # Fallback restoration, boot/config and receipt were part of the same
+        # candidate. Startup health, not a second writer, completes the retry.
+        emit_result pending-health reboot_required installed_health
         publish_recovery_progress succeed
         ;;
     cancel-repair)

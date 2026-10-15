@@ -24,6 +24,9 @@ CACHES = {'modules.dep', 'modules.dep.bin', 'modules.alias', 'modules.alias.bin'
           'modules.softdep', 'modules.symbols', 'modules.symbols.bin',
           'modules.builtin.bin', 'modules.builtin.alias.bin', 'modules.devname', 'modules.weakdep'}
 PROJECT = 'open-gpu-kernel-modules-steamos-support'
+GUARDIAN_FILES = ('lib/offline_generation.py', 'bootstrap/run_repair_with_interstitial.sh', 'lib/install_guardian_generation.py', 'lib/installed_boot_guard.py', 'bootstrap/install.sh', 'bootstrap/launch_desktop_companion.sh', 'bootstrap/launch_interstitial.sh', 'bootstrap/online_install.sh', 'bootstrap/recoveryctl.sh', 'bootstrap/run_guardian_with_interstitial.sh', 'bootstrap/show_recovery_console.sh', 'lib/atomic_output.py', 'lib/capture_bounded_command.py', 'lib/common.sh', 'lib/desktop_update_generations.py', 'lib/installed_driver_candidate.py', 'lib/installed_update_transaction.py', 'lib/interstitial_progress.py', 'lib/open_opemos_contract.py', 'lib/payload_receipt.py', 'lib/recovery_cached_product.py', 'lib/recovery_cached_receipt.py', 'lib/recovery_fallback_state.py', 'lib/recovery_policy.py', 'lib/recovery_release_plan.py', 'lib/recovery_status.py', 'lib/recovery_transaction.py', 'lib/run_in_process_group.py', 'lib/snapshot_install_input.py', 'lib/snapshot_target_execution.py', 'lib/update_recovery_grub_args.py', 'lib/validate_github_meta.py', 'lib/validate_interstitial_binary.py', 'lib/validate_recovery_install_path.py', 'lib/verify_initramfs.py', 'lib/verify_installed_modules.py', 'trust/desktop-update-signers.json')
+GUARDIAN_HOME = 'home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/'
+LINK_TARGETS = {'etc/systemd/system/default.target': ('/usr/lib/systemd/system/multi-user.target', '/usr/lib/systemd/system/graphical.target', '/lib/systemd/system/multi-user.target', '/lib/systemd/system/graphical.target'), 'etc/systemd/system/multi-user.target.wants/opemos-nvidia-guardian.service': ('../opemos-nvidia-guardian.service',), 'etc/systemd/system/multi-user.target.wants/opemos-interstitial.service': ('../opemos-interstitial.service',), 'etc/systemd/system/timers.target.wants/opemos-nvidia-repair.timer': ('../opemos-nvidia-repair.timer',), 'etc/systemd/system/timers.target.wants/opemos-nvidia-health.timer': ('../opemos-nvidia-health.timer',)}
 
 
 def need(value, message):
@@ -108,14 +111,20 @@ def target(root, relative, kernel, allow_missing=False):
         'installed-build-info.txt', 'installed-archive.txt', 'installed-kernel.txt',
         'installed-nvidia.txt', 'recovery/state.json', 'recovery/grub.before-fallback',
         'recovery/cached-repair-receipt.json')}
-    allowed = relative in configs | states
+    guardian = {GUARDIAN_HOME + p for p in GUARDIAN_FILES}
+    guardian |= {GUARDIAN_HOME + p for p in ('support-revision','nvidia-version','interstitial.sha256','bin/opemos-interstitial')}
+    guardian |= {'etc/systemd/system/' + name for name in ('opemos-nvidia-guardian.service','opemos-nvidia-health.service','opemos-nvidia-health.timer','opemos-interstitial.service','opemos-nvidia-repair.service','opemos-nvidia-repair.timer')}
+    guardian |= {'etc/NetworkManager/dispatcher.d/90-opemos-nvidia-repair', 'etc/atomic-update.conf.d/90-opemos-nvidia-guardian.conf'}
+    allowed = relative in guardian or relative in configs | states or relative in LINK_TARGETS
     allowed |= bool(re.fullmatch(r'boot/initramfs-[A-Za-z0-9_.+-]+\.img', relative))
     allowed |= relative in {prefix + x for x in CACHES}
     allowed |= relative in {prefix + 'updates/open-gpu-kernel-modules-steamos/' + x + '.ko.zst'
                            for x in MODULES}
     need(allowed, 'unplanned installed driver/boot/receipt effect: ' + relative)
     path = root / relative
-    for parent in [path, *path.parents]:
+    if relative in LINK_TARGETS and path.is_symlink():
+        link_data(path)
+    for parent in ([path.parent, *path.parent.parents] if relative in LINK_TARGETS else [path, *path.parents]):
         need(not parent.is_symlink(), 'target alias refused')
         if parent == root:
             break
@@ -162,8 +171,25 @@ def checkpoint(phase):
         time.sleep(30)
 
 
+def link_key(path):
+    return next((name for name in LINK_TARGETS if path.parts[-len(Path(name).parts):] == Path(name).parts), None)
+
+
+def link_data(path):
+    value = os.readlink(path)
+    need(link_key(path) is not None and value in LINK_TARGETS[link_key(path)], 'unsupported managed alias')
+    return b'OP_DEFAULT_TARGET_LINK\0' + value.encode('ascii')
+
+
+def artifact_data(path):
+    if path.is_symlink():
+        need(link_key(path) is not None, 'unplanned artifact symlink')
+        return link_data(path)
+    return read(path, MAX_FILE)
+
+
 def current_hash(path):
-    return digest(read(path, MAX_FILE)) if os.path.lexists(path) else None
+    return digest(artifact_data(path)) if os.path.lexists(path) else None
 
 
 def load_intent(root, store):
@@ -171,10 +197,14 @@ def load_intent(root, store):
     need(type(intent) is dict and intent.get('schemaVersion') == 2
          and set(intent) == {'schemaVersion', 'kernel', 'rootIdentity', 'phase', 'files',
                              'bootImages', 'target', 'preparedBootId', 'attemptBootId',
-                             'authority', 'readonlyBefore'}, 'closed v2 intent required')
+                             'authority', 'readonlyBefore', 'action', 'profile'}, 'closed v2 intent required')
     need(type(intent['kernel']) is str and re.fullmatch(r'[A-Za-z0-9_.+-]{1,192}', intent['kernel']),
          'invalid kernel')
-    need(intent['rootIdentity'] == root_identity(root), 'root/slot changed')
+    need(intent['rootIdentity'] == root_identity(root) or
+         intent['action'] == 'guardian-update' and intent['phase'] == 'healthy',
+         'root/slot changed; pending recovery cannot select an OS slot')
+    need(intent['action'] in ('update', 'enable-fallback', 'disable-fallback', 'guardian-update')
+         and intent['profile'] in ('console', 'igpu-desktop', 'nouveau-experimental'), 'invalid action/profile')
     need(type(intent['readonlyBefore']) is bool and type(intent['authority']) is dict
          and type(intent['target']) is dict and type(intent['bootImages']) is list
          and len(intent['bootImages']) <= 32, 'invalid reconciliation context')
@@ -232,7 +262,21 @@ def place(path, data, mode, expected_hash):
     for directory in reversed(missing):
         directory.mkdir(mode=0o755)
         fsync_dir(directory.parent)
-    replace_durable(path, data, mode)
+    if link_key(path) is not None:
+        prefix = b'OP_DEFAULT_TARGET_LINK\0'
+        need(data.startswith(prefix), 'managed target must be a closed symlink')
+        value = data[len(prefix):].decode('ascii')
+        need(value in LINK_TARGETS[link_key(path)], 'unsafe managed target')
+        import uuid
+        temporary = path.parent / ('.opemos-default-' + uuid.uuid4().hex)
+        os.symlink(value, temporary)
+        try:
+            os.replace(temporary, path)
+            fsync_dir(path.parent)
+        finally:
+            temporary.unlink(missing_ok=True)
+    else:
+        replace_durable(path, data, mode)
 
 
 def recover(root, store):
@@ -267,6 +311,83 @@ def recover(root, store):
     return {'state': 'restored', 'rebootHealthVerified': False, 'rebootRequired': True}
 
 
+def heal_known_generation(root, store):
+    """Redo exact owned healthy bytes; retain unknown corrupt contents first.
+
+    This is not rollback to corrupt data. A separate durable redo intent lets
+    interrupted repair converge to the already authenticated retained set.
+    Aliases, unknown ownership/modes and unavailable good bytes still hold.
+    """
+    intent=load_intent(root,store)
+    need(intent['phase'] in ('healthy','restored'),'self-heal requires a verified terminal generation')
+    which='new' if intent['phase']=='healthy' else 'old'
+    pointer=store/'heal.json'
+    if pointer.exists():
+        receipt=parse(read(pointer,MAX_STATE))
+        need(set(receipt)=={'schemaVersion','state','generationPhase','files'} and
+             receipt['schemaVersion']==1 and receipt['generationPhase']==intent['phase'],'invalid heal intent')
+        if receipt['state']=='complete':
+            try:
+                verify_set(root,intent,which+'SHA256')
+                return {'state':intent['phase'],'selfHeal':'already-complete'}
+            except ValueError:
+                import uuid
+                need(len(list(store.glob('heal-history-*'))) < 8,'retained heal bound')
+                os.rename(pointer,store/('heal-history-'+uuid.uuid4().hex))
+                fsync_dir(store)
+                receipt=None
+        else:
+            need(receipt['state']=='prepared','unknown heal phase')
+    else:
+        receipt=None
+    if receipt is None:
+        rows=[]
+        total=0
+        for index,row in enumerate(intent['files']):
+            path=target(root,row['path'],intent['kernel'],allow_missing=True)
+            expected=row[which+'SHA256']
+            observed=current_hash(path)
+            need(expected is not None or observed is None, 'new unknown file at an absent owned path; preserve it')
+            if observed==expected:
+                continue
+            if os.path.lexists(path):
+                need(stat.S_IMODE(path.lstat().st_mode)==row[which+'Mode'],
+                     'unknown permissions; automatic repair refused')
+                data=artifact_data(path)
+                total+=len(data)
+                need(total<=MAX_BYTES,'corruption evidence budget')
+                name='foreign-'+str(index)+'-'+digest(data)
+                if not (store/name).exists():replace_durable(store/name,data)
+            else:
+                name=None
+            rows.append({'index':index,'observedSHA256':observed,'evidence':name})
+        receipt={'schemaVersion':1,'state':'prepared','generationPhase':intent['phase'],'files':rows}
+        durable(pointer,receipt)
+    need(type(receipt['files']) is list and len(receipt['files'])<=MAX_FILES,'invalid heal rows')
+    for entry in receipt['files']:
+        need(set(entry)=={'index','observedSHA256','evidence'} and type(entry['index']) is int
+             and 0<=entry['index']<len(intent['files']),'invalid heal index')
+        row=intent['files'][entry['index']]
+        if entry['evidence'] is not None:
+            need(entry['evidence']=='foreign-'+str(entry['index'])+'-'+str(entry['observedSHA256']),
+                 'invalid corruption reference')
+            need(digest(read(store/entry['evidence'],MAX_FILE))==entry['observedSHA256'],
+                 'corruption evidence changed')
+        source=row['candidate' if which=='new' else 'backup']
+        data=None if source is None else read(store/source,MAX_FILE)
+        need((None if data is None else digest(data))==row[which+'SHA256'],'good repair bytes changed')
+        path=target(root,row['path'],intent['kernel'],allow_missing=True)
+        current=current_hash(path)
+        need(current in (entry['observedSHA256'],row[which+'SHA256']),'new foreign bytes during repair')
+        if current!=row[which+'SHA256']:
+            place(path,data,row[which+'Mode'],current)
+        checkpoint('heal:'+str(entry['index']))
+    verify_set(root,intent,which+'SHA256')
+    receipt['state']='complete'
+    durable(pointer,receipt)
+    return {'state':intent['phase'],'selfHeal':'restored-known-generation','rebootHealthVerified':False}
+
+
 def boot_id():
     return Path('/proc/sys/kernel/random/boot_id').read_text().strip()
 
@@ -283,19 +404,19 @@ def prepare(root, store, plan_path, *, context=None):
     rows = plan['files']
     need(0 < len(rows) <= MAX_FILES and len({r['path'] for r in rows}) == len(rows), 'invalid plan')
     # Boot artifacts are always last; no caller-provided ordering override.
-    rows = sorted(rows, key=lambda r: (r['path'].startswith(('boot/', 'efi/')), r['path']))
+    rows = sorted(rows, key=lambda r: (r['path'] != 'etc/systemd/system/opemos-nvidia-guardian.service', r['path'].startswith(('boot/', 'efi/')), r['path']))
     total = 0
     saved = []
     for index, row in enumerate(rows):
         need(set(row) == {'path', 'source', 'sha256'}, 'closed plan row required')
         path = target(root, row['path'], plan['kernel'], allow_missing=True)
         need(not path.is_relative_to(store), 'cannot overwrite transaction evidence')
-        old = read(path, MAX_FILE) if os.path.lexists(path) else None
+        old = artifact_data(path) if os.path.lexists(path) else None
         new = None if row['source'] is None else read(Path(row['source']), MAX_FILE)
         need((None if new is None else digest(new)) == row['sha256'], 'candidate changed')
         total += len(old or b'') + len(new or b'')
         need(total <= MAX_BYTES, 'complete retained artifact budget')
-        old_mode = stat.S_IMODE(path.stat().st_mode) if old is not None else 0o644
+        old_mode = stat.S_IMODE(path.lstat().st_mode) if old is not None else 0o644
         new_mode = stat.S_IMODE(Path(row['source']).stat().st_mode) if new is not None else 0o644
         backup = None if old is None else f'previous-{index}'
         candidate = None if new is None else f'candidate-{index}'
@@ -303,10 +424,12 @@ def prepare(root, store, plan_path, *, context=None):
             replace_durable(store / backup, old)
         if new is not None:
             replace_durable(store / candidate, new)
+        if row['path'] in LINK_TARGETS and new is not None:
+            new_mode = 0o777
         saved.append({'path': row['path'], 'backup': backup, 'candidate': candidate,
                       'oldSHA256': None if old is None else digest(old),
                       'newSHA256': row['sha256'], 'oldMode': old_mode, 'newMode': new_mode})
-    context = context or {'bootImages': [], 'target': {}, 'authority': {}, 'readonlyBefore': False}
+    context = context or {'bootImages': [], 'target': {}, 'authority': {}, 'readonlyBefore': False, 'action': 'update', 'profile': 'console'}
     intent = {'schemaVersion': 2, 'kernel': plan['kernel'], 'rootIdentity': plan['rootIdentity'],
               'phase': 'prepared', 'files': saved, 'preparedBootId': boot_id(), 'attemptBootId': None,
               **context}
@@ -344,6 +467,8 @@ def startup(root, store):
     if not (store / 'intent.json').exists():
         return {'state': 'no-pending-intent'}
     intent = load_intent(root, store)
+    if intent['phase'] in ('healthy','restored'):
+        return heal_known_generation(root,store)
     if intent['phase'] != 'pending-health':
         return recover(root, store)
     verify_set(root, intent, 'newSHA256')
@@ -359,26 +484,42 @@ def startup(root, store):
     return {'state': 'pending-health', 'firstBootAttempt': True}
 
 
-def acknowledge(root, store):
-    intent = load_intent(root, store)
-    need(intent['phase'] == 'pending-health' and intent['attemptBootId'] == boot_id()
-         and intent['preparedBootId'] != boot_id(), 'health requires this actual new boot attempt')
-    need(os.uname().release == intent['kernel'], 'running kernel differs from candidate')
-    verify_set(root, intent, 'newSHA256')
+def require_loaded_identity(root, kernel, nvidia):
     # Loaded NVIDIA evidence is distinct from file verification and cold boot.
     version = Path('/sys/module/nvidia/version').read_text().strip()
-    need(version == intent['target']['nvidiaVersion'], 'loaded NVIDIA health unavailable/mismatched')
+    need(version == nvidia, 'loaded NVIDIA health unavailable/mismatched')
     # Compare loaded identities to the actual selected on-disk generation. A
     # matching marketing version alone cannot distinguish two 575 builds.
     import subprocess
     for name in ('nvidia', 'nvidia-modeset', 'nvidia-drm'):
-        disk = root / f'usr/lib/modules/{intent["kernel"]}/updates/open-gpu-kernel-modules-steamos/{name}.ko.zst'
+        disk = root / f'usr/lib/modules/{kernel}/updates/open-gpu-kernel-modules-steamos/{name}.ko.zst'
         measured = subprocess.run(['/usr/bin/modinfo', '-F', 'srcversion', str(disk)],
                                   check=True, stdout=subprocess.PIPE, timeout=10).stdout
         need(0 < len(measured) <= 256, 'module source identity unavailable')
         loaded = Path('/sys/module') / name.replace('-', '_') / 'srcversion'
         need(loaded.read_text().strip() == measured.decode('ascii').strip(),
              'loaded module differs from activated generation: ' + name)
+    return {'kernelVersion': kernel, 'nvidiaVersion': nvidia, 'bootId': boot_id(),
+            'loadedModules': ['nvidia','nvidia-modeset','nvidia-drm'], 'GPUAcceptance': False}
+
+
+def acknowledge(root, store):
+    intent = load_intent(root, store)
+    need(intent['phase'] == 'pending-health' and intent['attemptBootId'] == boot_id()
+         and intent['preparedBootId'] != boot_id(), 'health requires this actual new boot attempt')
+    need(os.uname().release == intent['kernel'], 'running kernel differs from candidate')
+    verify_set(root, intent, 'newSHA256')
+    if intent['action'] == 'guardian-update':
+        # Called only after ordinary guardian/driver health succeeds. Source
+        # integrity and actual boot registration are still verified above.
+        pass
+    elif intent['action'] == 'enable-fallback':
+        need(not Path('/sys/module/nvidia').exists(), 'fallback boot still loaded NVIDIA')
+        if intent['profile'] == 'console':
+            need(link_data(root / 'etc/systemd/system/default.target').endswith(b'/multi-user.target'),
+                 'console fallback boot target differs')
+    else:
+        require_loaded_identity(root, intent['kernel'], intent['target']['nvidiaVersion'])
     intent['phase'] = 'healthy'
     durable(store / 'intent.json', intent)
     return {'state': 'healthy', 'rebootHealthVerified': True,
@@ -388,7 +529,7 @@ def acknowledge(root, store):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('command', choices=('activate', 'recover', 'require-plan', 'stage-check',
-                                           'update', 'startup', 'health'))
+                                           'update', 'startup', 'health', 'inspect'))
     parser.add_argument('--root', type=Path, required=True)
     parser.add_argument('--store', type=Path)
     parser.add_argument('--plan', type=Path)
@@ -406,10 +547,10 @@ def main():
         from installed_driver_candidate import stage_allowed
         stage_allowed(args.root)
         return
-    if args.command in ('startup', 'health') and args.root == Path('/'):
+    if args.command in ('startup', 'health', 'inspect') and args.root == Path('/'):
         from installed_driver_candidate import reconcile_controller
         need(args.policy_root is not None, 'installed policy root required')
-        print(json.dumps(reconcile_controller(args.root, args.policy_root, args.command == 'health'), sort_keys=True))
+        print(json.dumps(reconcile_controller(args.root, args.policy_root, args.command == 'health', args.command == 'inspect'), sort_keys=True))
         return
     if args.command == 'update':
         from installed_driver_candidate import update

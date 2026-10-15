@@ -1,0 +1,9 @@
+[Unit]
+Description=OPEMOS deferred boot health verification
+
+[Timer]
+OnBootSec=90s
+Unit=opemos-nvidia-health.service
+
+[Install]
+WantedBy=timers.target

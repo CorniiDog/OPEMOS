@@ -269,6 +269,41 @@ def module_payload_sha256(root: Path, path: Path) -> str:
 
 def verify_receipt_modules(root, kernel, expected_version, installed_paths,
                            support_revision=None):
+    # A current installed transaction is also an owning receipt: its input
+    # archive/target/current policy were checked before closed-effect staging.
+    # This covers selected published/local archives without inventing canonical
+    # materialization or relabelling an older offline payload receipt.
+    pointer=root/'home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/installed-updates/current.json'
+    if pointer.exists():
+        import installed_update_transaction as tx
+        import re
+        record=tx.parse(tx.read(pointer,4096))
+        if set(record)!={'generation'} or not re.fullmatch('txn-[0-9a-f]{32}',record['generation']):
+            raise ValueError('installed generation pointer invalid')
+        store=pointer.parent/record['generation']
+        intent=tx.load_intent(root,store)
+        if (intent['kernel']!=kernel or intent['target'].get('nvidiaVersion')!=expected_version
+                or intent['phase'] not in ('pending-health','healthy','restored')):
+            raise ValueError('installed generation unavailable or targets another system')
+        policy=intent['authority']['policy']
+        if support_revision and policy['supportRevision']!=support_revision:
+            raise ValueError('installed generation belongs to another Core policy')
+        tx.verify_set(root,intent,'oldSHA256' if intent['phase']=='restored' else 'newSHA256')
+        prefix=f'usr/lib/modules/{kernel}/updates/open-gpu-kernel-modules-steamos/'
+        paths={r['path'] for r in intent['files']}
+        expected={prefix+name+'.ko.zst' for name in tx.MODULES}
+        if not expected<=paths:
+            # Fallback transactions do not replace modules; preserve the
+            # original receipt checks rather than inventing file evidence.
+            pass
+        else:
+            return 'installed-transaction'
+    if support_revision:
+        try:
+            verify_cached_repair_receipt(root,kernel,expected_version,support_revision)
+            return 'cached-repair'
+        except (OSError,UnicodeError,ValueError):
+            pass  # A different/currently unusable cache never supersedes valid payload evidence.
     try:
         receipt, evidence = verify_receipt_evidence(
             root, allow_live_root=root == Path("/"),

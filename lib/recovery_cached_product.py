@@ -236,10 +236,38 @@ def command_show(args):
     print(canonical(result).decode(), end="")
 
 
+def command_select(args):
+    home=args.home
+    pointer=home/'cached-current.json'
+    if not pointer.exists():
+        legacy=home/'cached-repair'
+        if not legacy.exists():return
+        document=read_document(legacy/'materialization.json')
+        if document.get('target')!={'steamosVersion':args.steamos,'kernelVersion':args.kernel,
+                                  'nvidiaVersion':args.nvidia,'architecture':'x86_64'}:
+            return
+        load(legacy,{'steamos':args.steamos,'kernel':args.kernel,'nvidia':args.nvidia,'revision':args.support_revision})
+        print(legacy)
+        return
+    record=read_document(pointer)
+    if set(record)!={'product'} or HEX.fullmatch(record['product'] or '') is None:
+        fail('invalid retained product pointer')
+    cache=home/'cached-products'/record['product']
+    metadata=read_regular(cache/'materialization.json',1024*1024,'retained materialization')
+    if digest(metadata)!=record['product']:fail('retained product identity changed')
+    document=read_document(cache/'materialization.json')
+    if (document.get('target')!={'steamosVersion':args.steamos,'kernelVersion':args.kernel,
+                               'nvidiaVersion':args.nvidia,'architecture':'x86_64'} or
+        document.get('core')!={'repository':'CorniiDog/OPEMOS','commit':args.support_revision}):
+        return  # A valid different-target product is retained, never reused.
+    load(cache,{'steamos':args.steamos,'kernel':args.kernel,'nvidia':args.nvidia,'revision':args.support_revision})
+    print(cache)
+
+
 def main():
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
-    for name in ("stage", "show"):
+    for name in ("stage", "show", "select"):
         command = subparsers.add_parser(name)
         command.add_argument("--steamos", required=True)
         command.add_argument("--kernel", required=True)
@@ -249,10 +277,12 @@ def main():
             command.add_argument("--materialization", required=True, type=Path)
             command.add_argument("--input-dir", required=True, type=Path)
             command.add_argument("--destination", required=True, type=Path)
+        elif name == "select":
+            command.add_argument("--home", required=True, type=Path)
         else:
             command.add_argument("--directory", required=True, type=Path)
     args = parser.parse_args()
-    (command_stage if args.command == "stage" else command_show)(args)
+    ({"stage":command_stage,"show":command_show,"select":command_select}[args.command])(args)
 
 
 if __name__ == "__main__":

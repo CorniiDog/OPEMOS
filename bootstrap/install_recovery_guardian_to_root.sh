@@ -80,6 +80,11 @@ python3 "$SUPPORT_ROOT/lib/validate_recovery_install_path.py" "${HOME_PATH_CHECK
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/bootstrap/show_recovery_console.sh \
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/recovery_status.py \
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/recovery_policy.py \
+    --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/installed_boot_guard.py \
+    --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/install_guardian_generation.py \
+    --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/offline_generation.py \
+    --path .steamos/open-gpu-kernel-modules-steamos-support/recovery-bootstrap/boot-guard.py \
+    --path .steamos/open-gpu-kernel-modules-steamos-support/recovery-bootstrap/current.json \
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/installed_update_transaction.py \
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/installed_driver_candidate.py \
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/snapshot_target_execution.py \
@@ -101,11 +106,14 @@ python3 "$SUPPORT_ROOT/lib/validate_recovery_install_path.py" "${HOME_PATH_CHECK
 python3 "$SUPPORT_ROOT/lib/validate_recovery_install_path.py" "${ETC_PATH_CHECK_ARGS[@]}" \
     --path atomic-update.conf.d/90-opemos-nvidia-guardian.conf \
     --path systemd/system/opemos-nvidia-guardian.service \
+    --path systemd/system/opemos-nvidia-health.service \
+    --path systemd/system/opemos-nvidia-health.timer \
     --path systemd/system/opemos-interstitial.service \
     --path systemd/system/opemos-nvidia-repair.service \
     --path NetworkManager/dispatcher.d/90-opemos-nvidia-repair \
     --expected-symlink systemd/system/multi-user.target.wants/opemos-nvidia-guardian.service=../opemos-nvidia-guardian.service \
     --expected-symlink systemd/system/multi-user.target.wants/opemos-interstitial.service=../opemos-interstitial.service \
+    --expected-symlink systemd/system/timers.target.wants/opemos-nvidia-health.timer=../opemos-nvidia-health.timer \
     --expected-symlink systemd/system/timers.target.wants/opemos-nvidia-repair.timer=../opemos-nvidia-repair.timer
 LEGACY_KEEP_LIST_DIR="$PERSISTENT_ETC_ROOT/atomic-update.conf.d"
 LEGACY_KEEP_LIST="$LEGACY_KEEP_LIST_DIR/90-opemos-nvidia-guardian.conf"
@@ -134,6 +142,25 @@ if [[ -e "$LEGACY_KEEP_LIST_DIR" || -L "$LEGACY_KEEP_LIST_DIR" ]]; then
         exit 1
     }
 fi
+# Never reset a retained installed job or unknown bootstrap registry merely
+# because this target is mounted as an image.
+BOOTSTRAP="$PERSISTENT_HOME_ROOT/.steamos/open-gpu-kernel-modules-steamos-support/recovery-bootstrap"
+if [[ -e "$BOOTSTRAP/current.json" || -L "$BOOTSTRAP/current.json" ]]; then
+    python3 - "$BOOTSTRAP/current.json" <<'PYREGISTRY'
+from pathlib import Path
+import json,os,stat,sys
+p=Path(sys.argv[1]);s=p.lstat()
+if (not stat.S_ISREG(s.st_mode) or s.st_nlink!=1 or s.st_uid!=os.geteuid()
+        or s.st_mode&0o077 or s.st_size>16384
+        or json.loads(p.read_bytes())!={'schemaVersion':1,'app':None,'driver':None}):
+    raise SystemExit('Registered/unknown bootstrap state must remain untouched.')
+PYREGISTRY
+fi
+# Unpublished image profile: interruption permanently invalidates this overlay.
+exec 8<"$ROOT"
+flock -n 8 || { echo "Another target writer is active." >&2; exit 75; }
+python3 "$SUPPORT_ROOT/lib/offline_generation.py" begin --root "$ROOT" \
+    --kernel not-applicable-guardian-source --owner "$$"
 OWNERSHIP=(-o 0 -g 0)
 [[ "${PROJECT_TEST_MODE:-0}" != 1 ]] || OWNERSHIP=(-o "$(id -u)" -g "$(id -g)")
 install -d "${OWNERSHIP[@]}" -m 0755 "$DEST/bin" "$DEST/bootstrap" "$DEST/lib" "$DEST/trust" \
@@ -150,7 +177,7 @@ install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/launch_interstitial.s
 install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/show_recovery_console.sh" "$DEST/bootstrap/show_recovery_console.sh"
 install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/online_install.sh" "$DEST/bootstrap/online_install.sh"
 install "${OWNERSHIP[@]}" -m 0644 "$SUPPORT_ROOT/lib/common.sh" "$DEST/lib/common.sh"
-for helper in installed_driver_candidate.py snapshot_target_execution.py verify_initramfs.py capture_bounded_command.py verify_installed_modules.py installed_update_transaction.py recovery_status.py recovery_policy.py recovery_fallback_state.py recovery_transaction.py recovery_release_plan.py recovery_cached_product.py recovery_cached_receipt.py validate_github_meta.py update_recovery_grub_args.py open_opemos_contract.py validate_recovery_install_path.py desktop_update_generations.py interstitial_progress.py validate_interstitial_binary.py run_in_process_group.py payload_receipt.py atomic_output.py; do
+for helper in install_guardian_generation.py installed_boot_guard.py offline_generation.py installed_driver_candidate.py snapshot_target_execution.py verify_initramfs.py capture_bounded_command.py verify_installed_modules.py installed_update_transaction.py recovery_status.py recovery_policy.py recovery_fallback_state.py recovery_transaction.py recovery_release_plan.py recovery_cached_product.py recovery_cached_receipt.py validate_github_meta.py update_recovery_grub_args.py open_opemos_contract.py validate_recovery_install_path.py desktop_update_generations.py interstitial_progress.py validate_interstitial_binary.py run_in_process_group.py payload_receipt.py atomic_output.py; do
     install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/lib/$helper" "$DEST/lib/$helper"
 done
 install "${OWNERSHIP[@]}" -m 0755 "$STAGING/opemos-interstitial" "$DEST/bin/opemos-interstitial"
@@ -186,3 +213,27 @@ ln -sfn ../opemos-interstitial.service \
     "$PERSISTENT_ETC_ROOT/systemd/system/multi-user.target.wants/opemos-interstitial.service"
 ln -sfn ../opemos-nvidia-repair.timer \
     "$PERSISTENT_ETC_ROOT/systemd/system/timers.target.wants/opemos-nvidia-repair.timer"
+
+# The independent bootstrap remains outside mutable guardian source files.
+BOOTSTRAP="$PERSISTENT_HOME_ROOT/.steamos/open-gpu-kernel-modules-steamos-support/recovery-bootstrap"
+install "${OWNERSHIP[@]}" -d -m 0700 "$BOOTSTRAP"
+install "${OWNERSHIP[@]}" -m 0500 "$SUPPORT_ROOT/lib/installed_boot_guard.py" "$BOOTSTRAP/boot-guard.py"
+printf '%s\n' '{"schemaVersion":1,"app":null,"driver":null}' > "$BOOTSTRAP/current.json"
+chmod 0600 "$BOOTSTRAP/current.json"
+python3 - "$PERSISTENT_ETC_ROOT/systemd/system/opemos-nvidia-guardian.service" <<'PYUNIT'
+from pathlib import Path
+import sys
+p=Path(sys.argv[1]);t=p.read_text()
+t=t.replace('ExecStart=/home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/bootstrap/run_guardian_with_interstitial.sh',
+    'ExecStart=/usr/bin/python3 /home/.steamos/open-gpu-kernel-modules-steamos-support/recovery-bootstrap/boot-guard.py')
+p.write_text(t)
+PYUNIT
+sed "s|@DEST@|/home/.steamos/open-gpu-kernel-modules-steamos-support/recovery|g" \
+    "$SUPPORT_ROOT/support/recovery/opemos-nvidia-health.service.in" \
+    > "$PERSISTENT_ETC_ROOT/systemd/system/opemos-nvidia-health.service"
+install "${OWNERSHIP[@]}" -m 0644 "$SUPPORT_ROOT/support/recovery/opemos-nvidia-health.timer" \
+    "$PERSISTENT_ETC_ROOT/systemd/system/opemos-nvidia-health.timer"
+ln -sfn ../opemos-nvidia-health.timer \
+    "$PERSISTENT_ETC_ROOT/systemd/system/timers.target.wants/opemos-nvidia-health.timer"
+python3 "$SUPPORT_ROOT/lib/offline_generation.py" seal --root "$ROOT" \
+    --efi "$PERSISTENT_HOME_ROOT" --extra "$PERSISTENT_ETC_ROOT"

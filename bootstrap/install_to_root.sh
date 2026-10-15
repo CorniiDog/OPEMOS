@@ -659,9 +659,9 @@ for command_name in bsdtar chroot depmod findmnt install mount mountpoint pacman
             "The managed appliance lacks a required installer command: $command_name"
 done
 
-# Do not mutate an installed target using an unjournalled opaque package/hook
-# sequence. Complete staged producer and exact target transaction are required.
-python3 "$SUPPORT_ROOT/lib/installed_update_transaction.py" require-plan --root "$ROOT"
+# This is the existing unpublished disposable-image profile, not an installed
+# root update. The durable completion barrier below invalidates interrupted
+# images; only their creator may discard the exact owned overlay.
 
 MUTATION_WORK="$(mktemp -d "$INSTALLER_TEMP_ROOT/offline-root-mutation.XXXXXX")"
 MODULE_VERIFICATION_JSON="$MUTATION_WORK/module-verification.json"
@@ -992,6 +992,10 @@ run_mutation_command python3 "$SUPPORT_ROOT/lib/snapshot_target_execution.py" \
     --diagnostic "$TARGET_EXECUTION_FAILURE_JSON" ||
     die "Target-owned pacman hooks or initramfs inputs are unsafe."
 
+PHASE=image_generation_begin
+run_mutation_command python3 "$SUPPORT_ROOT/lib/offline_generation.py" begin \
+    --root "$ROOT" --kernel "$KERNEL" --owner "$$" ||
+    die "Prior interrupted image generation must be preserved/discarded by its creator."
 PHASE=initramfs_workspace_unavailable
 run_mutation_command python3 "$SUPPORT_ROOT/lib/check_initramfs_workspace.py" \
     --root "$ROOT" --target-only --create-missing-target \
@@ -1062,6 +1066,7 @@ for bind_path in dev proc sys; do
     runtime_mount_count=$((runtime_mount_count + 1))
     emit_progress_items runtime_mounts "$runtime_mount_count" 4
 done
+
 
 PHASE=initramfs_workspace_unavailable
 INITRAMFS_SCRATCH_PARENT="${PROJECT_INITRAMFS_SCRATCH_PARENT:-/var/tmp}"
@@ -1371,6 +1376,12 @@ fi
 PHASE=initramfs_workspace_cleanup
 rm -rf "$INITRAMFS_SCRATCH_ROOT"
 INITRAMFS_SCRATCH_ROOT=""
+PHASE=image_generation_seal
+guard_target_mount_identities
+run_mutation_command python3 "$SUPPORT_ROOT/lib/offline_generation.py" seal \
+    --root "$ROOT" --efi "$ROOT/efi" ||
+    die "Image generation flush/completion failed; preserve/discard the disposable overlay."
+
 PHASE=complete
 write_install_result success install_complete \
     "NVIDIA modules, authenticated userspace, GSP firmware, and initramfs were installed." \

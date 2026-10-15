@@ -371,7 +371,14 @@ install_archive()
     local archive="$1"
     local checksum="$2"
     local fuzzy_flag="${3:-0}"
+    # Guardian source/boot recovery must be durably reachable before driver
+    # activation; a same-source pending generation is an idempotent no-op.
+    install_recovery_guardian
     local args=(--archive "$archive" --checksum "$checksum")
+    if [[ -n "${BUILD_OUT:-}" && -f "$BUILD_OUT/materialization.json" ]]; then
+        retain_built_product
+        args+=(--cache "$RETAINED_PRODUCT")
+    fi
     [[ "$fuzzy_flag" == "1" ]] && args+=(--fuzzy)
     [[ "$YES" == "1" ]] && args+=(-y)
 
@@ -427,7 +434,19 @@ retain_built_product()
 {
     local cache root
     root="$(project_system_path /)"
-    cache="$(project_system_path /home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/cached-repair)"
+    local home identity
+    home="$(project_system_path /home/.steamos/open-gpu-kernel-modules-steamos-support/recovery)"
+    identity="$(python3 - "$TMP/support/lib" "$BUILD_OUT/materialization.json" <<'PYIDENTITY'
+import sys
+sys.path.insert(0,sys.argv[1])
+from recovery_cached_product import canonical,read_document,digest
+print(digest(canonical(read_document(sys.argv[2]))))
+PYIDENTITY
+)"
+    [[ "$identity" =~ ^[0-9a-f]{64}$ ]] || die "Materialization identity unavailable."
+    sudo install -d -o root -g root -m 0700 "$home/cached-products"
+    cache="$home/cached-products/$identity"
+    RETAINED_PRODUCT="$cache"
     local exact=(--steamos "$STEAMOS_VERSION" --kernel "$KERNEL_VERSION"
                  --nvidia "$NVIDIA_VERSION" --support-revision "$SUPPORT_REV")
     if [[ -e "$cache" || -L "$cache" ]]; then
@@ -442,12 +461,25 @@ if not (existing == expected):
     raise SystemExit("Exact built-product identity verification failed; existing data preserved.")
 PY
     else
+        [[ "$(sudo find "$home/cached-products" -mindepth 1 -maxdepth 1 -printf . | wc -c)" -lt 10 ]] ||
+            die "Retained product bound reached; preserve existing products."
         sudo python3 "$TMP/support/lib/recovery_cached_product.py" stage \
             "${exact[@]}" --materialization "$BUILD_OUT/materialization.json" \
             --input-dir "$BUILD_OUT" --destination "$cache" >/dev/null
     fi
-    sudo python3 "$TMP/support/lib/recovery_cached_receipt.py" commit \
-        "${exact[@]}" --root "$root" --cache "$cache" >/dev/null
+    sudo python3 - "$TMP/support/lib" "$home" "$identity" <<'PYCACHE'
+import sys
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+import installed_update_transaction as tx
+home=Path(sys.argv[2]);cache=home/'cached-products'/sys.argv[3]
+for entry in cache.iterdir():
+    fd=__import__('os').open(entry,__import__('os').O_RDONLY|__import__('os').O_NOFOLLOW)
+    try:__import__('os').fsync(fd)
+    finally:__import__('os').close(fd)
+tx.fsync_dir(cache);tx.fsync_dir(cache.parent)
+tx.durable(home/'cached-current.json',{'product':sys.argv[3]})
+PYCACHE
 }
 
 resolve_local()
@@ -509,7 +541,19 @@ if ! curl -fsSL --retry 2 \
     -o "$RELEASES_JSON"; then
     # A failed query never authorizes compilation. Only an existing cache may
     # proceed through the exact current checkout's policy and byte validation.
-    cache="$(project_system_path /home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/cached-repair)"
+    local home identity
+    home="$(project_system_path /home/.steamos/open-gpu-kernel-modules-steamos-support/recovery)"
+    identity="$(python3 - "$TMP/support/lib" "$BUILD_OUT/materialization.json" <<'PYIDENTITY'
+import sys
+sys.path.insert(0,sys.argv[1])
+from recovery_cached_product import canonical,read_document,digest
+print(digest(canonical(read_document(sys.argv[2]))))
+PYIDENTITY
+)"
+    [[ "$identity" =~ ^[0-9a-f]{64}$ ]] || die "Materialization identity unavailable."
+    sudo install -d -o root -g root -m 0700 "$home/cached-products"
+    cache="$home/cached-products/$identity"
+    RETAINED_PRODUCT="$cache"
     if [[ "$BUILD_AS_FALLBACK" == 1 && -z "${OPEMOS_RECOVERY_PLAN_FILE:-}" &&
           ( -e "$cache" || -L "$cache" ) ]]; then
         printf '[]\n' > "$RELEASES_JSON"
@@ -549,7 +593,19 @@ if [[ -z "$SELECTED" ]]; then
     # Empty selection alone is not authorization. The strict shared contract
     # rejects malformed/incomplete metadata and unreviewed exact targets.
     BUILD_OUT="$TMP/automatic-build"
-    cache="$(project_system_path /home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/cached-repair)"
+    local home identity
+    home="$(project_system_path /home/.steamos/open-gpu-kernel-modules-steamos-support/recovery)"
+    identity="$(python3 - "$TMP/support/lib" "$BUILD_OUT/materialization.json" <<'PYIDENTITY'
+import sys
+sys.path.insert(0,sys.argv[1])
+from recovery_cached_product import canonical,read_document,digest
+print(digest(canonical(read_document(sys.argv[2]))))
+PYIDENTITY
+)"
+    [[ "$identity" =~ ^[0-9a-f]{64}$ ]] || die "Materialization identity unavailable."
+    sudo install -d -o root -g root -m 0700 "$home/cached-products"
+    cache="$home/cached-products/$identity"
+    RETAINED_PRODUCT="$cache"
     if [[ -e "$cache" || -L "$cache" ]]; then
         sudo python3 "$TMP/support/lib/recovery_cached_product.py" show \
             --steamos "$STEAMOS_VERSION" --kernel "$KERNEL_VERSION" \

@@ -34,8 +34,9 @@ def command(argv, timeout=600):
     # Retain existing process-group wrapper; a candidate PID namespace has
     # --kill-child and terminates all of its processes when PID1 exits.
     import signal
-    wrapper = Path(__file__).with_name('run_in_process_group.py')
-    process = subprocess.Popen([sys.executable, str(wrapper), *map(str, argv)])
+    # Popen completes setsid before returning; cleanup cannot race a later
+    # wrapper setsid and accidentally miss the owned process group.
+    process = subprocess.Popen(list(map(str, argv)), start_new_session=True)
     try:
         numeric = process.wait(timeout=timeout)
     except BaseException:
@@ -50,6 +51,14 @@ def command(argv, timeout=600):
                 os.killpg(process.pid, signal.SIGKILL)
                 process.wait(timeout=5)
         raise
+    try:
+        os.killpg(process.pid, 0)
+    except ProcessLookupError:
+        pass
+    else:
+        # The leader was reaped: do not signal a potentially recycled numeric
+        # identity. Preserve evidence and refuse before installed activation.
+        raise ValueError('command group still present after reap; activation refused')
     tx.need(numeric == 0, 'candidate command failed: ' + str(argv[0]))
 
 
@@ -95,8 +104,8 @@ def old_boot_evidence(root, store):
     if intent.exists():
         old = tx.load_intent(root, store)
         tx.need(old['phase'] in ('healthy', 'restored'), 'unreconciled prior update')
-        tx.verify_set(root, old, 'newSHA256' if old['phase'] == 'healthy' else 'oldSHA256')
-        return old['bootImages'], old['target']
+        tx.verify_set(root,old,'newSHA256' if old['phase']=='healthy' else 'oldSHA256')
+        return old['bootImages'], old['target'], old['authority'].get('bootQualification', {'kind':'retained-acknowledged-generation'})
     receipt, documents = verify_receipt_evidence(root, allow_live_root=root == Path('/'))
     # Reuse the existing decompressed payload verifier, whose receipt schema
     # uses moduleName and actualPayloadSha256 (not compressed archive hashes).
@@ -119,7 +128,10 @@ def old_boot_evidence(root, store):
         path = root / 'boot' / item['filename']
         tx.need(tx.digest(tx.read(path, tx.MAX_FILE)) == item['sha256'],
                 'last known boot image differs from receipt')
-    return [str(Path('boot') / x['filename']) for x in images], receipt['target']
+    proof=tx.require_loaded_identity(root,receipt['target']['kernelVersion'],receipt['target']['nvidiaVersion'])
+    proof['kind']='existing-authenticated-payload-and-actual-running-identity'
+    proof['receiptId']=receipt.get('receiptId')
+    return [str(Path('boot') / x['filename']) for x in images], receipt['target'], proof
 
 
 # These are the current writer's concrete trees, not an extensible mount API.
@@ -127,7 +139,22 @@ def old_boot_evidence(root, store):
 STAGE_TREES = ('usr', 'etc', 'boot', 'var', 'efi')
 
 
+def verify_mount_coverage(root):
+    tx.need(root == Path('/'), 'installed profile requires actual running root')
+    # Trees mounted independently below are read from their actual mounted
+    # roots. Other allowed trees are masked by private mounts before execution.
+    tops = {'/', '/usr', '/etc', '/boot', '/var', '/efi', '/home', '/tmp', '/run', '/dev', '/proc', '/sys'}
+    masked = ('/dev/', '/proc/', '/sys/', '/run/', '/home/', '/tmp/')
+    for line in Path('/proc/self/mountinfo').read_text().splitlines():
+        fields = line.split(' - ', 1)[0].split()
+        mount = fields[4]
+        tx.need('\\' not in mount, 'escaped mount path unsupported')
+        tx.need(mount in tops or mount.startswith(masked),
+                'uncovered nested mount; preserve original target: ' + mount)
+
+
 def mount_candidate(args):
+    verify_mount_coverage(args.root)
     work = args.workspace.resolve()
     merged = work / 'merged'
     command(['/usr/bin/mount', '--make-rprivate', '/'], 20)
@@ -148,10 +175,12 @@ def stage_namespace(args):
     tx.need(os.geteuid() == 0, 'candidate namespace requires root')
     work, merged = mount_candidate(args)
     # No host devices, system bus, network or outside PID namespace is exposed.
-    for directory in ('run', 'dev', 'proc'):
+    for directory in ('run', 'dev', 'proc', 'home', 'tmp'):
         (merged / directory).mkdir(exist_ok=True)
     command(['/usr/bin/mount', '-t', 'tmpfs', '-o', 'mode=0755,size=64m', 'tmpfs', merged / 'run'], 30)
     command(['/usr/bin/mount', '-t', 'tmpfs', '-o', 'mode=0755,size=1m', 'tmpfs', merged / 'dev'], 30)
+    command(['/usr/bin/mount', '-t', 'tmpfs', '-o', 'ro,mode=0755,size=1m', 'tmpfs', merged / 'home'], 30)
+    command(['/usr/bin/mount', '-t', 'tmpfs', '-o', 'mode=1777,size=64m', 'tmpfs', merged / 'tmp'], 30)
     for name, minor in [('null', 3), ('zero', 5), ('random', 8), ('urandom', 9)]:
         os.mknod(merged / 'dev' / name, stat.S_IFCHR | 0o666, os.makedev(1, minor))
     for name, source in [('source', args.support), ('inputs', work / 'inputs'), ('policy', args.policy_root)]:
@@ -182,6 +211,8 @@ def stage_namespace(args):
         argv = ['/bin/bash', '/run/source/bootstrap/recoveryctl.sh', args.action, '-y']
         if args.action == 'enable-fallback':
             argv += ['--profile', args.profile]
+            if args.profile == 'nouveau-experimental':
+                argv += ['--allow-nouveau']
     environment = {**os.environ, 'OPEMOS_PINNED_NVIDIA_VERSION': args.nvidia}
     # PID1 supervises each ordinary writer/verifier process. On any timeout or
     # exception PID1 exits, so the kernel closes the entire private PID tree;
@@ -191,12 +222,28 @@ def stage_namespace(args):
     subprocess.run(['/usr/bin/python3', '/run/source/lib/snapshot_target_execution.py',
                     '--root', '/', '--output', str(initial)], check=True, timeout=120)
     subprocess.run(argv, env=environment, check=True, timeout=900)
+    if args.action == 'update' and Path('/var/lib/' + PROJECT + '/recovery/state.json').exists():
+        tx.need(Path('/run/inputs/cache').is_dir(), 'repair from fallback requires canonical cached product')
+        subprocess.run(['/usr/bin/python3', '/run/source/lib/recovery_cached_receipt.py', 'commit',
+            '--root', '/', '--cache', '/run/inputs/cache', '--kernel', os.uname().release,
+            '--nvidia', args.nvidia, '--steamos', args.steamos, '--support-revision', args.revision],
+            env=environment, check=True, timeout=120)
+        subprocess.run(['/bin/bash', '/run/source/bootstrap/recoveryctl.sh', 'disable-fallback', '-y'],
+                       env=environment, check=True, timeout=300)
+
     # Existing target-owned execution inputs must remain exactly the ones
     # captured before invoking the writer, not merely a new post-hoc snapshot.
+    after = initial.with_suffix('.after.json')
     subprocess.run(['/usr/bin/python3', '/run/source/lib/snapshot_target_execution.py',
-                    '--root', '/', '--verify', str(initial)], check=True, timeout=120)
-    if args.action != 'update':
-        raise ValueError('fallback candidate verification is not implemented')
+                    '--root', '/', '--output', str(after)], check=True, timeout=120)
+    planned_configs = {'etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf',
+        'etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf.opemos-disabled',
+        'etc/mkinitcpio.conf.d/90-open-gpu-kernel-modules-steamos.conf',
+        'etc/mkinitcpio.conf.d/90-open-gpu-kernel-modules-steamos.conf.opemos-disabled'}
+    before_doc, after_doc = [tx.parse(tx.read(p, 8 * 1024**2)) for p in (initial, after)]
+    tx.need([x for x in before_doc['files'] if x['path'] not in planned_configs] ==
+            [x for x in after_doc['files'] if x['path'] not in planned_configs],
+            'target execution inputs changed outside planned configuration')
     evidence = Path('/var/tmp') / ('opemos-verify-' + work.name)
     tx.need(not os.path.lexists(evidence), 'candidate evidence name already exists')
     evidence.mkdir(mode=0o700)
@@ -216,7 +263,24 @@ def stage_namespace(args):
             '/usr/bin/lsinitcpio', '-l', str(image)], check=True, timeout=130)
         verification += ['--image', str(image), '--listing', str(listing),
                          '--image-sha256', tx.digest(tx.read(image, tx.MAX_FILE))]
-    subprocess.run(verification, check=True, timeout=120)
+    if args.action != 'enable-fallback':
+        subprocess.run(verification, check=True, timeout=120)
+    else:
+        # Fallback deliberately removes forced NVIDIA early loading. Validate
+        # the real archive listings and exact embedded fallback configuration;
+        # normal NVIDIA early-module verification would reject this by design.
+        records = []
+        for index, image in enumerate(images):
+            listing = tx.read(evidence / ('listing-' + str(index)), 8 * 1024**2).decode('utf-8')
+            paths = {line.strip().lstrip('./') for line in listing.splitlines()}
+            tx.need('etc/modprobe.d/98-opemos-recovery.conf' in paths,
+                    'fallback config absent from initramfs')
+            tx.need('etc/mkinitcpio.conf.d/90-open-gpu-kernel-modules-steamos.conf' not in paths,
+                    'forced NVIDIA initramfs fragment remains')
+            records.append({'filename': image.name, 'sha256': tx.digest(tx.read(image, tx.MAX_FILE))})
+        tx.durable(evidence / 'initramfs-verification.json', {
+            'schemaVersion': 1, 'status': 'verified', 'kernelVersion': os.uname().release,
+            'mode': 'fallback', 'profile': args.profile, 'images': records})
 
 
 def confine_capabilities(retain):
@@ -243,6 +307,34 @@ def confine_capabilities(retain):
             and libc.prctl(38, 1, 0, 0, 0) == 0, 'candidate privilege confinement failed')
 
 
+def archive_modules(path):
+    import tarfile
+    result={}
+    total=0
+    seen=set()
+    with tarfile.open(path,'r|gz') as archive:
+        for index,member in enumerate(archive):
+            tx.need(index<9,'archive member bound')
+            name=member.name.rstrip('/') if member.isdir() else member.name
+            tx.need(name not in seen,'duplicate archive member')
+            seen.add(name)
+            if name=='modules' and member.isdir():continue
+            allowed={'BUILD-INFO.txt','PROVENANCE.json'} | {
+                'modules/'+mod+suffix for mod in tx.MODULES for suffix in ('.ko','.ko.zst')}
+            tx.need(member.isfile() and name in allowed and 0<member.size<=tx.MAX_FILE,
+                    'unplanned archive member')
+            total+=member.size
+            tx.need(total<=MAX_INPUT,'archive expanded input bound')
+            payload=archive.extractfile(member).read(member.size+1)
+            tx.need(len(payload)==member.size,'truncated archive member')
+            if name.startswith('modules/'):
+                mod=name[8:].removesuffix('.zst').removesuffix('.ko')
+                tx.need(mod not in result,'duplicate module representation')
+                result[mod]=(payload,'.ko.zst' if name.endswith('.zst') else '.ko')
+    tx.need(set(result)==tx.MODULES and 'BUILD-INFO.txt' in seen,'complete archive input required')
+    return result
+
+
 def produce(args, store, boot_images, target):
     work = Path(tempfile.mkdtemp(prefix='candidate-', dir=store))
     for name in ('upper', 'work', 'merged', 'inputs', *[x + suffix for x in STAGE_TREES for suffix in ('-upper', '-work')]):
@@ -256,6 +348,7 @@ def produce(args, store, boot_images, target):
         data = read_regular(args.archive, MAX_INPUT, 'candidate archive')
         tx.need(0 < len(data) <= MAX_INPUT and tx.digest(data) == expected, 'archive changed')
         tx.replace_durable(inputs / 'archive.tar.gz', data, 0o400)
+        archive_modules(inputs / 'archive.tar.gz')
         tx.replace_durable(inputs / 'archive.sha256', (expected + '  archive.tar.gz\n').encode(), 0o400)
     if args.cache is not None:
         from recovery_cached_product import command_stage
@@ -268,7 +361,8 @@ def produce(args, store, boot_images, target):
     command(['/usr/bin/unshare', '--mount', '--net', '--pid', '--fork', '--kill-child',
              sys.executable, str(Path(__file__).resolve()), '_stage', '--root', args.root,
              '--workspace', work, '--support', args.support, '--action', args.action,
-             '--profile', args.profile, '--nvidia', args.nvidia, '--policy-root', args.policy_root], 1200)
+             '--profile', args.profile, '--nvidia', args.nvidia, '--policy-root', args.policy_root,
+             '--steamos', target['steamosVersion'], '--revision', args.revision], 1200)
     merged = work / 'merged'
     # Mount vanished with the private namespace. Verification must use a fresh
     # private namespace too; never treat the unmounted merged directory as data.
@@ -343,17 +437,33 @@ def collect(args):
             if stat.S_ISCHR(info.st_mode) and info.st_rdev == 0:
                 rows.append({'path': relative, 'source': None, 'sha256': None})
             else:
-                tx.need(stat.S_ISREG(info.st_mode), 'unplanned symlink/special candidate effect')
                 source = merged / relative
-                data = tx.read(source, tx.MAX_FILE)
+                if relative == 'etc/systemd/system/default.target' and stat.S_ISLNK(info.st_mode):
+                    data = tx.link_data(source)
+                else:
+                    tx.need(stat.S_ISREG(info.st_mode), 'unplanned symlink/special candidate effect')
+                    data = tx.read(source, tx.MAX_FILE)
                 snapshot = work / ('artifact-' + str(len(rows)))
                 tx.replace_durable(snapshot, data, stat.S_IMODE(info.st_mode))
                 rows.append({'path': relative, 'source': str(snapshot), 'sha256': tx.digest(data)})
     module_prefix = f'usr/lib/modules/{kernel}/updates/open-gpu-kernel-modules-steamos/'
     for module in tx.MODULES:
         tx.need((merged / module_prefix / (module + '.ko.zst')).is_file(), 'candidate module missing')
-    # Reuse existing verifier on actual merged files, including exact compressed
-    # module set and version/vermagic validation already performed by install.sh.
+    if args.action=='update':
+        from verify_installed_modules import payload_sha256
+        import time
+        deadline=time.monotonic()+300
+        for name,(payload,representation) in archive_modules(work/'inputs/archive.tar.gz').items():
+            installed=merged/module_prefix/(name+'.ko.zst')
+            if representation=='.ko.zst':
+                tx.need(tx.digest(tx.read(installed,tx.MAX_FILE))==tx.digest(payload),
+                        'candidate differs from supplied compressed archive')
+            else:
+                actual,status=payload_sha256(installed,'.ko.zst',deadline)
+                tx.need(status=='verified' and actual==tx.digest(payload),
+                        'candidate payload differs from supplied raw archive')
+    # Actual candidate module bytes are bound to the exact supplied archive;
+    # version/vermagic checks ran through the ordinary confined installer.
     tx.need(0 < len(rows) <= tx.MAX_FILES, 'candidate artifact set excessive/empty')
     rows.sort(key=lambda row: (row['path'].startswith(('boot/', 'efi/')), row['path']))
     tx.durable(work / 'plan.json', {'schemaVersion': 1, 'kernel': kernel,
@@ -382,7 +492,16 @@ def selected_generation(manager):
 
 
 def check_authority(intent, policy):
-    tx.need(intent['authority']['policy'] == policy, 'current recovery authority changed; hold')
+    previous=intent['authority']['policy']
+    if previous==policy:
+        return
+    # A source-only guardian upgrade does not erase the previously accepted
+    # installed LKG. Only terminal retained generations may cross this change;
+    # an in-flight policy change is refused by the app installer.
+    tx.need(intent['phase'] in ('healthy','restored') and
+            previous['nvidiaVersion']==policy['nvidiaVersion']==intent['target']['nvidiaVersion'] and
+            re.fullmatch('[0-9a-f]{40}',previous['supportRevision']),
+            'current recovery authority changed while update pending; hold')
 
 
 def update(args):
@@ -402,9 +521,15 @@ def update(args):
             old = tx.load_intent(args.root, prior)
             check_authority(old, policy)
             tx.need(old['phase'] in ('healthy', 'restored'), 'pending transaction must reconcile before another update')
+            repair_readonly=readonly_enabled()
+            try:
+                writable_root(repair_readonly)
+                tx.heal_known_generation(args.root,prior)
+            finally:
+                if repair_readonly:command(['/usr/bin/steamos-readonly','enable'],30)
         # Old artifacts/target/boot provenance must be verified before staging
         # or changing any live target. No inference from a healthy boolean.
-        boot_images, target = old_boot_evidence(args.root, prior or manager)
+        boot_images, target, boot_qualification = old_boot_evidence(args.root, prior or manager)
         tx.need(target['kernelVersion'] == args.kernel and target['nvidiaVersion'] == args.nvidia,
                 'no verified compatible last-known-good target; preserve stock OS slot')
         if args.cache is not None:
@@ -423,12 +548,14 @@ def update(args):
         plan = produce(args, generation, boot_images, target)
         was_readonly = readonly_enabled()
         context = {'bootImages': boot_images, 'target': target,
-                   'authority': {'policy': policy, 'archiveSHA256': args.archive_sha256},
-                   'readonlyBefore': was_readonly}
+                   'authority': {'policy': policy, 'archiveSHA256': args.archive_sha256, 'bootQualification': boot_qualification},
+                   'readonlyBefore': was_readonly, 'action': args.action, 'profile': args.profile}
         # All exact originals, candidates and the intent are flushed BEFORE
         # publishing the pointer or altering root read-only policy. A reboot
         # can therefore always discover enough evidence to restore both.
         tx.prepare(args.root, generation, plan, context=context)
+        from install_guardian_generation import register
+        register('driver', generation, args.support)
         tx.durable(manager / 'current.json', {'generation': generation.name})
         try:
             writable_root(was_readonly)
@@ -445,7 +572,7 @@ def update(args):
             os.close(lock)
 
 
-def reconcile_controller(root, support, health=False):
+def reconcile_controller(root, support, health=False, inspect_only=False):
     tx.need(os.geteuid() == 0 and root == Path('/'), 'installed guardian root required')
     manager, policy = manager_path(support)
     lock = tx.guarded_store(manager)
@@ -458,10 +585,15 @@ def reconcile_controller(root, support, health=False):
         check_authority(intent, policy)
         # An interrupted disable may leave the observed mode off. The durable
         # prestate, rather than today's mode alone, governs restoration.
+        if inspect_only:
+            return {'state': intent['phase'], 'rebootHealthVerified': intent['phase'] == 'healthy'}
         readonly = intent['readonlyBefore'] or readonly_enabled()
         writable_root(readonly)
         try:
             if health:
+                if intent['phase'] == 'healthy':
+                    tx.verify_set(root,intent,'newSHA256')
+                    return {'state':'healthy','rebootHealthVerified':True}
                 return tx.acknowledge(root, generation)
             return tx.startup(root, generation)
         except BaseException:

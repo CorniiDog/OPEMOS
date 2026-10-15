@@ -38,7 +38,7 @@ document="$("$RECOVERYCTL" status --json)" || {
     finalize_failure
     exit "${guardian_status:-1}"
 }
-if python3 -c 'import json,sys; d=json.loads(sys.argv[1]); raise SystemExit(0 if d.get("moduleVerification",{}).get("status") == "verified" else 1)' "$document"
+if python3 -c 'import json,sys; d=json.loads(sys.argv[1]); raise SystemExit(0 if d.get("moduleVerification",{}).get("status") == "verified" and d.get("status") == "healthy" else 1)' "$document"
 then
     python3 "$WRITER" succeed --state "$PROGRESS" >/dev/null
     systemctl stop opemos-interstitial.service
