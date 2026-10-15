@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Confined installed-update artifact intent; staged plans only, no opaque writers.
+"""Durable installed-driver artifact activation and boot-attempt reconciliation.
 
-The owning authenticated producer must stage *all* files before calling this
-module. Unknown/torn plans refuse. Nothing here chooses a SteamOS OS slot.
+Only the candidate producer may activate a live target. The raw plan interface
+is restricted to disposable test roots. SteamOS keeps OS-slot ownership.
 """
 import argparse
 import fcntl
@@ -20,6 +20,10 @@ MAX_FILES = 256
 MAX_BYTES = 8 * 1024**3
 MAX_STATE = 256 * 1024
 MODULES = {'nvidia', 'nvidia-drm', 'nvidia-modeset', 'nvidia-peermem', 'nvidia-uvm'}
+CACHES = {'modules.dep', 'modules.dep.bin', 'modules.alias', 'modules.alias.bin',
+          'modules.softdep', 'modules.symbols', 'modules.symbols.bin',
+          'modules.builtin.bin', 'modules.builtin.alias.bin', 'modules.devname', 'modules.weakdep'}
+PROJECT = 'open-gpu-kernel-modules-steamos-support'
 
 
 def need(value, message):
@@ -28,14 +32,16 @@ def need(value, message):
 
 
 def read(path, cap):
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
     try:
         before = os.fstat(fd)
         need(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
              and before.st_uid == os.geteuid() and before.st_size <= cap,
              'unsafe transaction artifact')
         data = bytearray()
+        deadline = time.monotonic() + 120
         while True:
+            need(time.monotonic() < deadline, 'artifact read deadline')
             part = os.read(fd, 1024 * 1024)
             if not part:
                 break
@@ -43,7 +49,8 @@ def read(path, cap):
             need(len(data) <= cap, 'artifact overflow')
         after = os.fstat(fd)
         current = Path(path).lstat()
-        keys = ('st_dev', 'st_ino', 'st_size', 'st_mtime_ns', 'st_ctime_ns')
+        keys = ('st_dev', 'st_ino', 'st_mode', 'st_uid', 'st_gid', 'st_nlink',
+                'st_size', 'st_mtime_ns', 'st_ctime_ns')
         need(len(data) == before.st_size and all(
             getattr(before, k) == getattr(after, k) == getattr(current, k)
             for k in keys), 'artifact changed')
@@ -66,40 +73,65 @@ def parse(data):
     return json.loads(data, object_pairs_hook=unique)
 
 
+def fsync_dir(path):
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def replace_durable(path, data, mode=0o600):
+    # atomic_output flushes the file, but deliberately does not fsync parents.
+    # The installed transaction must persist the directory entry as well.
+    atomic_write_bytes(path, data, mode=mode)
+    fsync_dir(path.parent)
+
+
 def durable(path, value):
     data = (json.dumps(value, sort_keys=True, separators=(',', ':')) + '\n').encode()
     need(len(data) <= MAX_STATE, 'excessive transaction state')
-    atomic_write_bytes(path, data, mode=0o600)
+    replace_durable(path, data)
 
 
-def target(root, relative, kernel):
-    need(type(relative) is str and not relative.startswith('/')
-         and '..' not in Path(relative).parts, 'unsafe transaction path')
-    module_prefix = f'usr/lib/modules/{kernel}/updates/open-gpu-kernel-modules-steamos/'
-    allowed = relative in {
-        'etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf',
-        'etc/modprobe.d/98-opemos-recovery.conf',
-        'etc/mkinitcpio.conf.d/90-open-gpu-kernel-modules-steamos.conf',
-        'etc/default/grub', 'boot/grub/grub.cfg', 'efi/EFI/steamos/grub.cfg',
-    }
-    allowed |= relative.startswith('var/lib/open-gpu-kernel-modules-steamos-support/')
+def target(root, relative, kernel, allow_missing=False):
+    need(type(relative) is str and relative == str(Path(relative))
+         and not relative.startswith('/') and '..' not in Path(relative).parts,
+         'unsafe transaction path')
+    prefix = f'usr/lib/modules/{kernel}/'
+    configs = {'etc/modprobe.d/99-open-gpu-kernel-modules-steamos.conf',
+               'etc/modprobe.d/98-opemos-recovery.conf',
+               'etc/mkinitcpio.conf.d/90-open-gpu-kernel-modules-steamos.conf',
+               'etc/default/grub', 'boot/grub/grub.cfg', 'efi/EFI/steamos/grub.cfg'}
+    configs |= {x + '.opemos-disabled' for x in list(configs) if x.startswith('etc/')}
+    states = {f'var/lib/{PROJECT}/' + x for x in (
+        'installed-build-info.txt', 'installed-archive.txt', 'installed-kernel.txt',
+        'installed-nvidia.txt', 'recovery/state.json', 'recovery/grub.before-fallback',
+        'recovery/cached-repair-receipt.json')}
+    allowed = relative in configs | states
     allowed |= bool(re.fullmatch(r'boot/initramfs-[A-Za-z0-9_.+-]+\.img', relative))
-    if relative.startswith(module_prefix):
-        allowed |= relative[len(module_prefix):] in {name + '.ko.zst' for name in MODULES}
-    need(allowed, 'artifact outside installed driver/boot/receipt scope')
+    allowed |= relative in {prefix + x for x in CACHES}
+    allowed |= relative in {prefix + 'updates/open-gpu-kernel-modules-steamos/' + x + '.ko.zst'
+                           for x in MODULES}
+    need(allowed, 'unplanned installed driver/boot/receipt effect: ' + relative)
     path = root / relative
     for parent in [path, *path.parents]:
         need(not parent.is_symlink(), 'target alias refused')
         if parent == root:
             break
-    need(path.parent.is_dir(), 'target parent must already exist')
+    need(allow_missing or path.parent.is_dir(), 'target parent missing')
     return path
 
 
 def root_identity(root):
     need(root.is_absolute() and root.resolve() == root, 'exact root required')
     info = root.stat()
-    return [info.st_dev, info.st_ino, digest(read(root / 'etc/os-release', 65536))]
+    release = root / 'etc/os-release'
+    if release.is_symlink():
+        need(os.readlink(release) in ('../usr/lib/os-release', '/usr/lib/os-release'),
+             'unsupported os-release alias')
+        release = root / 'usr/lib/os-release'
+    return [info.st_dev, info.st_ino, digest(read(release, 65536))]
 
 
 def guarded_store(store):
@@ -108,142 +140,294 @@ def guarded_store(store):
     need(stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid()
          and stat.S_IMODE(info.st_mode) == 0o700, 'private transaction store required')
     fd = os.open(store / 'lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
-    info = os.fstat(fd)
-    need(stat.S_ISREG(info.st_mode) and info.st_nlink == 1
-         and info.st_uid == os.geteuid(), 'transaction lock unsafe')
-    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    return fd
+    try:
+        info = os.fstat(fd)
+        need(stat.S_ISREG(info.st_mode) and info.st_nlink == 1
+             and info.st_uid == os.geteuid() and stat.S_IMODE(info.st_mode) == 0o600,
+             'transaction lock unsafe')
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        need((info.st_dev, info.st_ino) == (os.lstat(store / 'lock').st_dev,
+                                          os.lstat(store / 'lock').st_ino), 'lock changed')
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
 
 
 def checkpoint(phase):
-    # Development-only observation hooks, never a production fault injector.
+    # Source tests now request abrupt VM off/restart; this is an observation
+    # pause only. No production shutdown, process-kill or host fault injector.
     if (os.environ.get('PROJECT_TEST_MODE') == '1'
             and os.environ.get('OPEMOS_INSTALLED_TRANSACTION_TEST_PAUSE') == phase):
         time.sleep(30)
 
 
-def recover(root, store):
-    """Idempotent rollback only when every current artifact has exact custody."""
-    journal = store / 'intent.json'
-    if not journal.exists():
-        return {'state': 'no-pending-intent'}
-    intent = parse(read(journal, MAX_STATE))
-    need(type(intent) is dict and set(intent) == {
-        'schemaVersion', 'kernel', 'rootIdentity', 'phase', 'files'}
-        and intent['schemaVersion'] == 1, 'closed intent required')
-    need(type(intent['kernel']) is str
-         and re.fullmatch(r'[A-Za-z0-9_.+-]{1,192}', intent['kernel']),
-         'intent kernel invalid')
-    need(type(intent['files']) is list and 0 < len(intent['files']) <= MAX_FILES,
-         'intent artifact count invalid')
-    need(len({r['path'] for r in intent['files']}) == len(intent['files']),
-         'intent duplicate artifact')
-    for index, row in enumerate(intent['files']):
-        need(set(row) == {'path', 'backup', 'candidate', 'oldSHA256',
-                          'newSHA256', 'oldMode'}, 'closed intent artifact required')
-        need(row['backup'] == f'previous-{index}'
-             and row['candidate'] == f'candidate-{index}'
-             and type(row['oldMode']) is int and 0 <= row['oldMode'] <= 0o777,
-             'intent reference or mode invalid')
-        need(all(type(row[k]) is str and re.fullmatch(r'[0-9a-f]{64}', row[k])
-                 for k in ('oldSHA256', 'newSHA256')), 'intent hash invalid')
+def current_hash(path):
+    return digest(read(path, MAX_FILE)) if os.path.lexists(path) else None
+
+
+def load_intent(root, store):
+    intent = parse(read(store / 'intent.json', MAX_STATE))
+    need(type(intent) is dict and intent.get('schemaVersion') == 2
+         and set(intent) == {'schemaVersion', 'kernel', 'rootIdentity', 'phase', 'files',
+                             'bootImages', 'target', 'preparedBootId', 'attemptBootId',
+                             'authority', 'readonlyBefore'}, 'closed v2 intent required')
+    need(type(intent['kernel']) is str and re.fullmatch(r'[A-Za-z0-9_.+-]{1,192}', intent['kernel']),
+         'invalid kernel')
     need(intent['rootIdentity'] == root_identity(root), 'root/slot changed')
-    need(intent['phase'] in ('prepared', 'activating', 'pending-health', 'rolling-back', 'restored'),
-         'transaction phase unknown')
-    if intent['phase'] == 'restored':
-        for row in intent['files']:
-            path = target(root, row['path'], intent['kernel'])
-            need(path.exists() and digest(read(path, MAX_FILE)) == row['oldSHA256'],
-                 'restored generation changed')
-        return {'state': 'restored', 'rebootHealthVerified': False}
-    # Validate the entire set and all backups BEFORE restoring any file. A
-    # foreign modification/torn backup retains evidence, never blind replay.
+    need(type(intent['readonlyBefore']) is bool and type(intent['authority']) is dict
+         and type(intent['target']) is dict and type(intent['bootImages']) is list
+         and len(intent['bootImages']) <= 32, 'invalid reconciliation context')
+    for key in ('preparedBootId', 'attemptBootId'):
+        need((intent[key] is None and key == 'attemptBootId') or
+             type(intent[key]) is str and re.fullmatch('[0-9a-f-]{36}', intent[key]),
+             'invalid boot identity')
+    need(all(type(x) is str and re.fullmatch(r'boot/initramfs-[A-Za-z0-9_.+-]+\.img', x)
+             for x in intent['bootImages']), 'invalid retained boot image set')
+    rows = intent['files']
+    need(type(rows) is list and 0 < len(rows) <= MAX_FILES
+         and len({r['path'] for r in rows}) == len(rows), 'invalid artifact set')
+    for index, row in enumerate(rows):
+        need(set(row) == {'path', 'backup', 'candidate', 'oldSHA256', 'newSHA256', 'oldMode', 'newMode'},
+             'invalid artifact fields')
+        target(root, row['path'], intent['kernel'], allow_missing=True)
+        for key, prefix in [('backup', 'previous-'), ('candidate', 'candidate-')]:
+            need(row[key] is None or row[key] == prefix + str(index), 'invalid retained reference')
+        need((row['backup'] is None) == (row['oldSHA256'] is None)
+             and (row['candidate'] is None) == (row['newSHA256'] is None),
+             'retained reference/hash presence differs')
+        for key in ('oldSHA256', 'newSHA256'):
+            need(row[key] is None or type(row[key]) is str and re.fullmatch('[0-9a-f]{64}', row[key]),
+                 'invalid retained hash')
+        need(all(type(row[k]) is int and 0 <= row[k] <= 0o777 for k in ('oldMode', 'newMode')),
+             'invalid retained mode')
+    need(intent['phase'] in ('prepared', 'activating', 'pending-health', 'rolling-back', 'restored', 'healthy'),
+         'unknown phase')
+    return intent
+
+
+def verify_set(root, intent, field):
     for row in intent['files']:
-        path = target(root, row['path'], intent['kernel'])
-        need(path.exists() and digest(read(path, MAX_FILE)) in
-             (row['oldSHA256'], row['newSHA256']), 'unknown installed artifact; hold')
-        need(digest(read(store / row['backup'], MAX_FILE)) == row['oldSHA256'],
-             'rollback artifact corrupted')
+        path = target(root, row['path'], intent['kernel'], allow_missing=True)
+        need(current_hash(path) == row[field], 'installed generation differs: ' + row['path'])
+        if row[field] is not None:
+            expected_mode = row['oldMode' if field == 'oldSHA256' else 'newMode']
+            need(stat.S_IMODE(path.lstat().st_mode) == expected_mode,
+                 'installed generation mode differs: ' + row['path'])
+
+
+def place(path, data, mode, expected_hash):
+    if data is None:
+        # Only an exact current candidate/original can be removed by recovery.
+        need(current_hash(path) == expected_hash, 'unknown file; deletion refused')
+        if os.path.lexists(path):
+            os.unlink(path)
+            fsync_dir(path.parent)
+        return
+    missing = []
+    node = path.parent
+    while not node.exists():
+        missing.append(node)
+        node = node.parent
+    for directory in reversed(missing):
+        directory.mkdir(mode=0o755)
+        fsync_dir(directory.parent)
+    replace_durable(path, data, mode)
+
+
+def recover(root, store):
+    if not (store / 'intent.json').exists():
+        return {'state': 'no-pending-intent'}
+    intent = load_intent(root, store)
+    if intent['phase'] in ('restored', 'healthy'):
+        verify_set(root, intent, 'oldSHA256' if intent['phase'] == 'restored' else 'newSHA256')
+        return {'state': intent['phase'], 'rebootHealthVerified': intent['phase'] == 'healthy'}
+    for row in intent['files']:
+        path = target(root, row['path'], intent['kernel'], allow_missing=True)
+        need(current_hash(path) in (row['oldSHA256'], row['newSHA256']), 'foreign artifact; hold')
+        if os.path.lexists(path):
+            need(stat.S_IMODE(path.lstat().st_mode) in (row['oldMode'], row['newMode']),
+                 'foreign artifact mode; hold')
+        if row['backup'] is not None:
+            need(digest(read(store / row['backup'], MAX_FILE)) == row['oldSHA256'], 'rollback damaged')
     intent['phase'] = 'rolling-back'
-    durable(journal, intent)
+    durable(store / 'intent.json', intent)
     for index, row in enumerate(reversed(intent['files'])):
-        path = target(root, row['path'], intent['kernel'])
-        old = read(store / row['backup'], MAX_FILE)
-        atomic_write_bytes(path, old, mode=row['oldMode'])
+        old = None if row['backup'] is None else read(store / row['backup'], MAX_FILE)
+        path = target(root, row['path'], intent['kernel'], allow_missing=True)
+        if (current_hash(path) != row['oldSHA256'] or
+                os.path.lexists(path) and stat.S_IMODE(path.lstat().st_mode) != row['oldMode']):
+            observed = current_hash(path)
+            need(observed in (row['oldSHA256'], row['newSHA256']), 'artifact changed during recovery')
+            place(path, old, row['oldMode'], observed)
         checkpoint(f'restore:{index}')
+    verify_set(root, intent, 'oldSHA256')
     intent['phase'] = 'restored'
-    durable(journal, intent)
-    return {'state': 'restored', 'rebootHealthVerified': False}
+    durable(store / 'intent.json', intent)
+    return {'state': 'restored', 'rebootHealthVerified': False, 'rebootRequired': True}
 
 
-def activate(root, store, plan_path):
-    need(set(os.listdir(store)) <= {'lock'}, 'existing store/evidence must be preserved; use a new store')
+def boot_id():
+    return Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+
+
+def prepare(root, store, plan_path, *, context=None):
+    need(not (store / 'intent.json').exists(), 'existing intent requires reconciliation')
     plan = parse(read(plan_path, MAX_STATE))
     need(set(plan) == {'schemaVersion', 'kernel', 'rootIdentity', 'completeWriterSet', 'files'}
          and plan['schemaVersion'] == 1 and plan['completeWriterSet'] is True,
-         'closed complete staged writer plan required')
-    need(re.fullmatch(r'[A-Za-z0-9_.+-]{1,192}', plan['kernel'])
-         and plan['rootIdentity'] == root_identity(root), 'exact kernel/root required')
+         'complete producer plan required')
+    need(type(plan['kernel']) is str and re.fullmatch(r'[A-Za-z0-9_.+-]{1,192}', plan['kernel']),
+         'invalid plan kernel')
+    need(plan['rootIdentity'] == root_identity(root), 'target changed')
     rows = plan['files']
-    need(type(rows) is list and 0 < len(rows) <= MAX_FILES, 'bounded artifact set required')
-    need(len({r['path'] for r in rows}) == len(rows), 'duplicate artifact target')
-    saved = []
+    need(0 < len(rows) <= MAX_FILES and len({r['path'] for r in rows}) == len(rows), 'invalid plan')
+    # Boot artifacts are always last; no caller-provided ordering override.
+    rows = sorted(rows, key=lambda r: (r['path'].startswith(('boot/', 'efi/')), r['path']))
     total = 0
+    saved = []
     for index, row in enumerate(rows):
-        need(set(row) == {'path', 'source', 'sha256'}, 'closed artifact row required')
-        destination = target(root, row['path'], plan['kernel'])
-        need(not destination.is_relative_to(store), 'transaction cannot replace its own evidence')
-        # New/absent files are intentionally refused: restore must not delete
-        # unknown data or invent the pre-update boot path.
-        old = read(destination, MAX_FILE)
-        new = read(Path(row['source']), MAX_FILE)
-        need(digest(new) == row['sha256'], 'candidate differs from staged plan')
-        total += len(old) + len(new)
-        need(total <= MAX_BYTES, 'complete candidate/rollback budget exceeded')
-        backup = f'previous-{index}'
-        atomic_write_bytes(store / backup, old, mode=0o600)
-        saved.append({'path': row['path'], 'backup': backup,
-                      'oldSHA256': digest(old), 'newSHA256': digest(new),
-                      'oldMode': stat.S_IMODE(destination.stat().st_mode)})
-        atomic_write_bytes(store / f'candidate-{index}', new, mode=0o600)
-        saved[-1]['candidate'] = f'candidate-{index}'
-    intent = {'schemaVersion': 1, 'kernel': plan['kernel'],
-              'rootIdentity': plan['rootIdentity'], 'phase': 'prepared', 'files': saved}
+        need(set(row) == {'path', 'source', 'sha256'}, 'closed plan row required')
+        path = target(root, row['path'], plan['kernel'], allow_missing=True)
+        need(not path.is_relative_to(store), 'cannot overwrite transaction evidence')
+        old = read(path, MAX_FILE) if os.path.lexists(path) else None
+        new = None if row['source'] is None else read(Path(row['source']), MAX_FILE)
+        need((None if new is None else digest(new)) == row['sha256'], 'candidate changed')
+        total += len(old or b'') + len(new or b'')
+        need(total <= MAX_BYTES, 'complete retained artifact budget')
+        old_mode = stat.S_IMODE(path.stat().st_mode) if old is not None else 0o644
+        new_mode = stat.S_IMODE(Path(row['source']).stat().st_mode) if new is not None else 0o644
+        backup = None if old is None else f'previous-{index}'
+        candidate = None if new is None else f'candidate-{index}'
+        if old is not None:
+            replace_durable(store / backup, old)
+        if new is not None:
+            replace_durable(store / candidate, new)
+        saved.append({'path': row['path'], 'backup': backup, 'candidate': candidate,
+                      'oldSHA256': None if old is None else digest(old),
+                      'newSHA256': row['sha256'], 'oldMode': old_mode, 'newMode': new_mode})
+    context = context or {'bootImages': [], 'target': {}, 'authority': {}, 'readonlyBefore': False}
+    intent = {'schemaVersion': 2, 'kernel': plan['kernel'], 'rootIdentity': plan['rootIdentity'],
+              'phase': 'prepared', 'files': saved, 'preparedBootId': boot_id(), 'attemptBootId': None,
+              **context}
     durable(store / 'intent.json', intent)
     checkpoint('prepared')
+    return intent
+
+
+def commit_prepared(root, store):
+    intent = load_intent(root, store)
+    need(intent['phase'] == 'prepared', 'only a fresh prepared transaction may activate')
+    verify_set(root, intent, 'oldSHA256')
     intent['phase'] = 'activating'
     durable(store / 'intent.json', intent)
-    for index, row in enumerate(saved):
-        new = read(store / row['candidate'], MAX_FILE)
-        need(digest(new) == row['newSHA256'], 'staged candidate changed')
-        path = target(root, row['path'], plan['kernel'])
-        need(digest(read(path, MAX_FILE)) == row['oldSHA256'], 'prestate changed')
-        atomic_write_bytes(path, new, mode=row['oldMode'])
+    for index, row in enumerate(intent['files']):
+        path = target(root, row['path'], intent['kernel'], allow_missing=True)
+        need(current_hash(path) == row['oldSHA256'], 'prestate changed')
+        new = None if row['candidate'] is None else read(store / row['candidate'], MAX_FILE)
+        need(new is None or digest(new) == row['newSHA256'], 'retained candidate changed')
+        place(path, new, row['newMode'], row['oldSHA256'])
         checkpoint(f'activated:{index}')
+    verify_set(root, intent, 'newSHA256')
     intent['phase'] = 'pending-health'
     durable(store / 'intent.json', intent)
     checkpoint('pending-health')
-    return {'state': 'pending-health', 'rebootHealthVerified': False}
+    return {'state': 'pending-health', 'rebootHealthVerified': False, 'rebootRequired': True}
+
+
+def activate(root, store, plan_path, *, context=None):
+    prepare(root, store, plan_path, context=context)
+    return commit_prepared(root, store)
+
+
+def startup(root, store):
+    if not (store / 'intent.json').exists():
+        return {'state': 'no-pending-intent'}
+    intent = load_intent(root, store)
+    if intent['phase'] != 'pending-health':
+        return recover(root, store)
+    verify_set(root, intent, 'newSHA256')
+    now = boot_id()
+    if now == intent['preparedBootId']:
+        return {'state': 'pending-health', 'rebootRequired': True}
+    if intent['attemptBootId'] is None:
+        intent['attemptBootId'] = now
+        durable(store / 'intent.json', intent)
+        return {'state': 'pending-health', 'firstBootAttempt': True}
+    if intent['attemptBootId'] != now:
+        return recover(root, store)
+    return {'state': 'pending-health', 'firstBootAttempt': True}
+
+
+def acknowledge(root, store):
+    intent = load_intent(root, store)
+    need(intent['phase'] == 'pending-health' and intent['attemptBootId'] == boot_id()
+         and intent['preparedBootId'] != boot_id(), 'health requires this actual new boot attempt')
+    need(os.uname().release == intent['kernel'], 'running kernel differs from candidate')
+    verify_set(root, intent, 'newSHA256')
+    # Loaded NVIDIA evidence is distinct from file verification and cold boot.
+    version = Path('/sys/module/nvidia/version').read_text().strip()
+    need(version == intent['target']['nvidiaVersion'], 'loaded NVIDIA health unavailable/mismatched')
+    # Compare loaded identities to the actual selected on-disk generation. A
+    # matching marketing version alone cannot distinguish two 575 builds.
+    import subprocess
+    for name in ('nvidia', 'nvidia-modeset', 'nvidia-drm'):
+        disk = root / f'usr/lib/modules/{intent["kernel"]}/updates/open-gpu-kernel-modules-steamos/{name}.ko.zst'
+        measured = subprocess.run(['/usr/bin/modinfo', '-F', 'srcversion', str(disk)],
+                                  check=True, stdout=subprocess.PIPE, timeout=10).stdout
+        need(0 < len(measured) <= 256, 'module source identity unavailable')
+        loaded = Path('/sys/module') / name.replace('-', '_') / 'srcversion'
+        need(loaded.read_text().strip() == measured.decode('ascii').strip(),
+             'loaded module differs from activated generation: ' + name)
+    intent['phase'] = 'healthy'
+    durable(store / 'intent.json', intent)
+    return {'state': 'healthy', 'rebootHealthVerified': True,
+            'GPUDisplayOrHardwareAcceptance': False}
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('command', choices=('activate', 'recover', 'require-plan'))
+    parser.add_argument('command', choices=('activate', 'recover', 'require-plan', 'stage-check',
+                                           'update', 'startup', 'health'))
     parser.add_argument('--root', type=Path, required=True)
     parser.add_argument('--store', type=Path)
     parser.add_argument('--plan', type=Path)
+    parser.add_argument('--archive', type=Path)
+    parser.add_argument('--archive-sha256')
+    parser.add_argument('--cache', type=Path)
+    parser.add_argument('--support', type=Path)
+    parser.add_argument('--policy-root', type=Path)
+    parser.add_argument('--action', default='update', choices=('update', 'enable-fallback', 'disable-fallback'))
+    parser.add_argument('--profile', default='console')
+    parser.add_argument('--kernel')
+    parser.add_argument('--nvidia')
     args = parser.parse_args()
-    if args.command == 'require-plan':
-        # Existing opaque in-place writers must never bypass staged activation.
-        raise ValueError('installed update requires complete staged artifact plan; in-place writer refused')
-    need(os.environ.get('PROJECT_TEST_MODE') == '1' and args.root != Path('/'),
-         'installed transaction prototype is disabled outside disposable test roots')
+    if args.command in ('require-plan', 'stage-check'):
+        from installed_driver_candidate import stage_allowed
+        stage_allowed(args.root)
+        return
+    if args.command in ('startup', 'health') and args.root == Path('/'):
+        from installed_driver_candidate import reconcile_controller
+        need(args.policy_root is not None, 'installed policy root required')
+        print(json.dumps(reconcile_controller(args.root, args.policy_root, args.command == 'health'), sort_keys=True))
+        return
+    if args.command == 'update':
+        from installed_driver_candidate import update
+        print(json.dumps(update(args), sort_keys=True))
+        return
     need(args.store is not None, 'transaction store required')
+    need(args.root != Path('/') or args.command in ('startup', 'health'),
+         'raw installed activation/recovery must use owning controller')
     fd = guarded_store(args.store)
     try:
-        result = (recover(args.root, args.store) if args.command == 'recover' else
-                  activate(args.root, args.store, args.plan))
-        print(json.dumps(result, sort_keys=True))
+        if args.command == 'startup':
+            answer = startup(args.root, args.store)
+        elif args.command == 'health':
+            answer = acknowledge(args.root, args.store)
+        else:
+            need(os.environ.get('PROJECT_TEST_MODE') == '1', 'raw plan is test-only')
+            answer = recover(args.root, args.store) if args.command == 'recover' else activate(args.root, args.store, args.plan)
+        print(json.dumps(answer, sort_keys=True))
     finally:
         os.close(fd)
 

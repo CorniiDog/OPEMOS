@@ -80,6 +80,12 @@ python3 "$SUPPORT_ROOT/lib/validate_recovery_install_path.py" "${HOME_PATH_CHECK
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/bootstrap/show_recovery_console.sh \
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/recovery_status.py \
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/recovery_policy.py \
+    --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/installed_update_transaction.py \
+    --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/installed_driver_candidate.py \
+    --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/snapshot_target_execution.py \
+    --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/verify_initramfs.py \
+    --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/capture_bounded_command.py \
+    --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/verify_installed_modules.py \
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/recovery_cached_product.py \
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/recovery_cached_receipt.py \
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/recovery_fallback_state.py \
@@ -144,7 +150,7 @@ install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/launch_interstitial.s
 install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/show_recovery_console.sh" "$DEST/bootstrap/show_recovery_console.sh"
 install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/online_install.sh" "$DEST/bootstrap/online_install.sh"
 install "${OWNERSHIP[@]}" -m 0644 "$SUPPORT_ROOT/lib/common.sh" "$DEST/lib/common.sh"
-for helper in installed_update_transaction.py recovery_status.py recovery_policy.py recovery_fallback_state.py recovery_transaction.py recovery_release_plan.py recovery_cached_product.py recovery_cached_receipt.py validate_github_meta.py update_recovery_grub_args.py open_opemos_contract.py validate_recovery_install_path.py desktop_update_generations.py interstitial_progress.py validate_interstitial_binary.py run_in_process_group.py payload_receipt.py atomic_output.py; do
+for helper in installed_driver_candidate.py snapshot_target_execution.py verify_initramfs.py capture_bounded_command.py verify_installed_modules.py installed_update_transaction.py recovery_status.py recovery_policy.py recovery_fallback_state.py recovery_transaction.py recovery_release_plan.py recovery_cached_product.py recovery_cached_receipt.py validate_github_meta.py update_recovery_grub_args.py open_opemos_contract.py validate_recovery_install_path.py desktop_update_generations.py interstitial_progress.py validate_interstitial_binary.py run_in_process_group.py payload_receipt.py atomic_output.py; do
     install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/lib/$helper" "$DEST/lib/$helper"
 done
 install "${OWNERSHIP[@]}" -m 0755 "$STAGING/opemos-interstitial" "$DEST/bin/opemos-interstitial"

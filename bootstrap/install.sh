@@ -7,17 +7,19 @@ source "${SUPPORT_ROOT}/lib/common.sh"
 
 ARCHIVE=""
 CHECKSUM=""
+CACHE=""
 FUZZY=0
 YES=0
 
 usage()
 {
-    printf 'Usage: %s --archive FILE [--checksum FILE] [--fuzzy] [-y]\n' "$0"
+    printf 'Usage: %s --archive FILE [--checksum FILE] [--cache DIRECTORY] [--fuzzy] [-y]\n' "$0"
 }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --archive) [[ $# -ge 2 ]] || die "--archive requires a file."; ARCHIVE="$2"; shift 2 ;;
+        --cache) [[ $# -ge 2 ]] || die "--cache requires a directory."; CACHE="$(realpath "$2")"; shift 2 ;;
         --checksum) [[ $# -ge 2 ]] || die "--checksum requires a file."; CHECKSUM="$2"; shift 2 ;;
         --fuzzy) FUZZY=1; shift ;;
         -y|--yes) YES=1; shift ;;
@@ -142,10 +144,19 @@ log "Requesting administrator privileges..."
 sudo -v
 acquire_lifecycle_lock
 
-# Trap rollback cannot handle SIGKILL or power loss. Until a complete staged
-# boot/module/receipt producer is available, preserve the current usable state.
-sudo python3 "$SUPPORT_ROOT/lib/installed_update_transaction.py" \
-    require-plan --root /
+# The old writer can operate only inside a kernel-verified private candidate.
+# Original installed roots always enter the persistent owning controller.
+if ! sudo python3 "$SUPPORT_ROOT/lib/installed_update_transaction.py" stage-check --root / 2>/dev/null; then
+    [[ -n "$CHECKSUM" ]] || die "Transactional installed updates require an exact archive checksum."
+    update_args=(update --root / --support "$SUPPORT_ROOT"
+        --policy-root /home/.steamos/open-gpu-kernel-modules-steamos-support/recovery
+        --kernel "$CURRENT_KERNEL" --nvidia "$CURRENT_NVIDIA"
+        --archive "$ARCHIVE" --archive-sha256 "${EXPECTED_SHA,,}")
+    [[ -z "$CACHE" ]] || update_args+=(--cache "$CACHE")
+    sudo python3 "$SUPPORT_ROOT/lib/installed_update_transaction.py" "${update_args[@]}"
+    exit 0
+fi
+CANDIDATE_STAGE=1
 
 TARGET_DIR="$(project_system_path "/usr/lib/modules/${CURRENT_KERNEL}/updates/open-gpu-kernel-modules-steamos")"
 STATE_ROOT="$(project_system_path "/var/lib/open-gpu-kernel-modules-steamos-support")"
@@ -251,7 +262,7 @@ trap cleanup EXIT
 trap interrupt INT
 trap terminate TERM
 
-if command -v steamos-readonly >/dev/null 2>&1 &&
+if [[ "${CANDIDATE_STAGE:-0}" != 1 ]] && command -v steamos-readonly >/dev/null 2>&1 &&
    steamos-readonly status 2>/dev/null | grep -qi enabled; then
     log "Temporarily disabling SteamOS read-only mode..."
     RO_WAS_ENABLED=1

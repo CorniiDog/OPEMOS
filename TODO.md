@@ -3363,3 +3363,27 @@ Source integration completed through separate reviewed PRs: displayPR2 squash33e
   target receipt and rollback health proof; join guardian startup reconciliation
   and health acknowledgement. No atomic across-files boot activation or production
   update/reboot acceptance is claimed. Review before removing any gate.
+
+### 2026-10-15 corrective installed updater — still incomplete, source only
+
+- [ ] Fulfil the complete installed automatic-update/maintenance transaction
+  assigned by `core-full-update-recovery-plan.json` (SHA78e2a50c). Current local
+  draft extends prepare/commit/restart/boot-ID reconciliation, exact old/new
+  artifact and mode retention, parent directory flush, read-only restoration,
+  loaded source identity checks, candidate namespace production/verification,
+  installed dispatch and guardian startup/import joins. Production activation
+  remains explicitly disabled. This is NOT a working updater or a completed
+  full-writer checkpoint. The entire remaining bundle is recorded in
+  `docs/installed-update-corrective-source-audit.md`: fallback, cached/online
+  receipt/retry, mounted-image writer, guardian source-generation persistence,
+  scheduled health and actual production transaction verification still need
+  completion together under the SAME owning corrective work item. No new
+  infrastructure TODO or unchanged counterpart request was opened.
+- [ ] Execute the newly authored ordinary real CLI/UID/schema/foreign-data test
+  `tests/installed_update_transaction_normal.py`, actual complete producer to
+  guardian/health transaction, and abrupt exclusively-owned VM off/restart plus
+  interrupted/repeated recovery ONLY after full source completion, independent
+  review and separately admitted OMEN VM. Historical authored SIGKILL tests and
+  earlier checkpoints remain preserved but are not the new acceptance method.
+  Source AST/bash-n/diff checks are not project-test, compiler, boot or GPU
+  results. No tests/runtime/compiler/push/PR/merge/publication occurred here.

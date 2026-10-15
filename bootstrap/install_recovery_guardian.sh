@@ -69,6 +69,12 @@ python3 "$SUPPORT_ROOT/lib/validate_recovery_install_path.py" --root / \
     --path "${DEST#/}/bin/opemos-interstitial" \
     --path "${DEST#/}/lib/recovery_status.py" \
     --path "${DEST#/}/lib/recovery_policy.py" \
+    --path "${DEST#/}/lib/installed_update_transaction.py" \
+    --path "${DEST#/}/lib/installed_driver_candidate.py" \
+    --path "${DEST#/}/lib/snapshot_target_execution.py" \
+    --path "${DEST#/}/lib/verify_initramfs.py" \
+    --path "${DEST#/}/lib/capture_bounded_command.py" \
+    --path "${DEST#/}/lib/verify_installed_modules.py" \
     --path "${DEST#/}/lib/recovery_cached_product.py" \
     --path "${DEST#/}/lib/recovery_cached_receipt.py" \
     --path "${DEST#/}/lib/recovery_fallback_state.py" \
@@ -112,6 +118,11 @@ sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/desktop_update_generatio
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/update_recovery_grub_args.py" "$DEST/lib/update_recovery_grub_args.py"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/recovery_transaction.py" "$DEST/lib/recovery_transaction.py"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/installed_update_transaction.py" "$DEST/lib/installed_update_transaction.py"
+sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/installed_driver_candidate.py" "$DEST/lib/installed_driver_candidate.py"
+sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/snapshot_target_execution.py" "$DEST/lib/snapshot_target_execution.py"
+sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/verify_initramfs.py" "$DEST/lib/verify_initramfs.py"
+sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/capture_bounded_command.py" "$DEST/lib/capture_bounded_command.py"
+sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/verify_installed_modules.py" "$DEST/lib/verify_installed_modules.py"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/recovery_release_plan.py" "$DEST/lib/recovery_release_plan.py"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/recovery_cached_product.py" "$DEST/lib/recovery_cached_product.py"
 sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/recovery_cached_receipt.py" "$DEST/lib/recovery_cached_receipt.py"

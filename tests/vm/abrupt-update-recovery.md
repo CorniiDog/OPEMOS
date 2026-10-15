@@ -45,3 +45,63 @@ are refused instead of deleting unknown data. Original/candidate files and inten
 are retained. A snapshot hash is not prior boot/driver health or signature proof.
 Cold-reboot acceptance must use exact target/slot identity after reboot, validate
 all five modules plus boot/GRUB/app artifacts, and retain the full owned closure.
+
+## 2026-10-15 corrective source draft — NOT admitted or executed
+
+The current draft separates durable `prepare` from `commit_prepared`: complete
+old/new snapshots and the intent precede publishing `current.json`, which
+precedes changing read-only mode. Startup restores the saved read-only policy,
+refuses foreign bytes/modes, and reconciles partial activation/recovery.
+The first distinct boot records an attempt; a subsequent unacknowledged boot
+rolls back. Health requires that actual first boot, exact kernel/version,
+selected on-disk hashes, and loaded nvidia/modeset/drm source identities. These
+are authored checks, not measured boot or GPU evidence.
+
+`tests/installed_update_transaction_normal.py` is a NEW ordinary real CLI
+transaction and necessary changed fault cases. Run only in an admitted OMEN VM
+as actual root. It executes actual prepare/activation/startup/recovery process
+boundaries, genuine other-UID refusal, schema/hash refusal, repeated recovery,
+foreign-data preservation, and same-boot health refusal. It uses a disposable
+fixture root and therefore does NOT verify the production candidate producer.
+No methods under test are substituted. Historical SIGKILL tests remain in Git
+and on disk; they are not part of the new user-requested acceptance.
+
+The production path is explicitly disabled pending the bundled source findings
+in `docs/installed-update-corrective-source-audit.md`. Do not remove that gate
+as a fixture accommodation. In particular the existing `install_to_root.sh`
+gate, fallback producer, and guardian refresh remain incomplete. No normal
+production producer-to-consumer result or complete writer set is claimed.
+
+After source completion and independent full-graph review, the actual guest
+acceptance must bind its externally admitted immutable inputs to:
+
+* owning queue/grant/unit, exact VM ID and overlay/base lineage, all process
+  start identities, current 10-CPU/32-GiB/no-swap pool reservation and literal
+  60-GB per-VM envelope;
+* immutable Core commit and all changed source bytes, exact authenticated
+  materialization/archive/provenance/checksum/build-info, exact three Valve
+  target identities and all five modules, current root/slot identity, existing
+  installed policy/receipt and compatible previously verified boot artifacts;
+* exact ordinary installed `bootstrap/install.sh --archive FILE --checksum FILE
+  --cache DIRECTORY -y` producer, ordinary startup guardian and
+  `bootstrap/recoveryctl.sh installed-health` consumer; complete raw stdout,
+  stderr, commands, numeric exits, retained hashes/modes, read-only policy and
+  actual process closure (not a local adapter or overridden caller).
+
+First perform one normal update/new-boot/health transaction through those actual
+functions. Then cover incompatible target/authority, unknown effect, full disk,
+foreign artifact, unavailable loaded identity and corrupt retained candidate
+without claiming these are compiler failures. Preserve initial failures.
+
+For abrupt-off acceptance, expose only development observation pauses at durable
+`prepared`, `activated:N`, `pending-health`, and `restore:N`. An independently
+admitted controller may abruptly stop ONLY the exact exclusively owned QEMU VM,
+then reap it and cold boot the SAME overlay. Never send a process crash signal
+to the updater as a substitute for VM off/restart. Preserve each interrupted
+intent/boot log. Run the ordinary startup consumer, interrupt a recovery once
+by the same VM-off mechanism, restart again and reconcile twice. Validate
+usable boot, all five selected module files, complete boot/config/GRUB/receipt
+set, exact restored/acknowledged generation, source/app guardian integrity and
+read-only policy. No display/GPU/hardware acceptance is inferred. Do not repeat
+unchanged successful expensive stages. No admission, guest control, runtime or
+compiler authority is conveyed by this document.

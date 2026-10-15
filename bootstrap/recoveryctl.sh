@@ -24,6 +24,7 @@ Usage: recoveryctl.sh COMMAND [options]
 
 Commands:
   status                         Print installed-system recovery status
+  installed-health               Acknowledge the actual new boot module identities
   guard                          Boot-time health check; enter safe console fallback on failure
   enable-fallback                Enable a mutually exclusive recovery profile
   disable-fallback               Disable fallback only after exact NVIDIA verification succeeds
@@ -425,7 +426,24 @@ case "$COMMAND" in
         fi
         exit "$status_code"
         ;;
+    installed-health)
+        [[ "$ROOT" == / ]] || die "Installed health requires the actual running guest root."
+        acquire_recovery_mutation_locks
+        python3 "$SUPPORT_ROOT/lib/installed_update_transaction.py" health \
+            --root / --policy-root "$POLICY_ROOT"
+        ;;
     guard)
+        # Restart reconciliation precedes ordinary status/fallback decisions.
+        # Its explicit rebootRequired result must never become a healthy status.
+        if [[ "$ROOT" == / ]]; then
+            acquire_recovery_mutation_locks
+            installed_state="$(python3 "$SUPPORT_ROOT/lib/installed_update_transaction.py" startup \
+                --root / --policy-root "$POLICY_ROOT")" || exit 1
+            if python3 -c 'import json,sys; raise SystemExit(0 if json.loads(sys.argv[1]).get("rebootRequired") else 1)' "$installed_state"; then
+                printf '%s\n' "$installed_state"
+                exit 0
+            fi
+        fi
         if ! document="$(status_json)"; then
             guard_enable_fallback
             exit 0
