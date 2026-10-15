@@ -65,6 +65,9 @@ def context(path):
     provenance=json.loads(Path(m['provenance']).read_bytes())
     assert provenance['source']['commit']==m['driverSourceCommit']
     assert provenance['target']['kernelVersion']==m['kernel'] and provenance['target']['nvidiaVersion']==m['nvidia']
+    expected_sources={name for name in tx.GUARDIAN_FILES if name.startswith(('bootstrap/','lib/'))}
+    assert set(m['installedCoreSHA256'])==expected_sources,'complete managed source inventory required'
+    assert all(digest(REPO/name)==value for name,value in m['installedCoreSHA256'].items()),'source manifest differs from reviewed commit'
     assert set(m['moduleSHA256'])==tx.MODULES
     assert all(re.fullmatch('[0-9a-f]{64}',x) for x in m['moduleSHA256'].values())
     return m
