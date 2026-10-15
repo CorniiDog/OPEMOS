@@ -299,3 +299,63 @@ The same-source installer creates a new app observation only when those real ass
 hashes changed; it does not synthesize or copy a prior boot acknowledgement.
 The normal CLI directory regression now requires --output and retains all command
 exits/stdout/stderr/fixtures, including the initial foreign-content recovery failure.
+
+### Ordinary online producer custody (plan996f1ef6; source only, not a test result)
+
+R6's `install-guardian`/direct `install.sh --cache` sequence is **not** evidence
+for ordinary online installation. The enclosing `set -e` producer and its EXIT
+trap must actually run. Use `ordinary_online_install_acceptance.py` in separately
+admitted exact OMEN disposable guests. Its manifest is finite: schemaVersion1,
+runId32hex, guestUUID, reviewed remote coreCommit, actual kernel/steamos,
+nvidia575.64.05, profile `fresh` or `loaded`, producer `built` or `published`,
+installerUID0 or the already-admitted actual user1000,
+driverSourceCommit4a616372ce3c1f1d0a10c04960107a1db51b6fc0, actual authenticated
+interstitial path/SHA, and a new absolute Root-private output containing runId.
+Do not preseed a product/materialization or replace curl/Git/pacman/health.
+The existing source workflow must first make that exact Core Git commit available;
+this procedure is not permission to push, publish a driver or invent trust inputs.
+
+Run each fresh-built, fresh-published and loaded-baseline variant on its own
+admitted overlay; choose ONE resume route per run:
+
+1. `start`: actual `online_install.sh -y` (plus `--build-as-fallback` only for the
+   built case), numeric75 and actual EXIT cleanup. Verify canonical product,
+   interstitial, actual installed userspace identities and (when setup acquired
+   them) package/signature inputs remain durable; app intent pins the product.
+   The harness checks actual producer provenance: fallback choosing a published
+   product is not a build-path pass. A missing published sidecar/compatible Core
+   pin is an unavailable input, not permission to fabricate a receipt.
+2. `repeat-pending`, `refuse-other-uid`, `refuse-custody-mode`,
+   `refuse-custody-schema`, `refuse-custody-size`, `refuse-custody-target`, and
+   `ignore-latest-pointer` exercise actual processes/UID/files/schema/size while
+   preserving each failed input/raw exit. Only the exact admitted generated-test
+   inode is restored; foreign/concurrent modifications cause a hold.
+3. Actual controller reboot, same overlay; `app-health` proves actual new boot,
+   app-only acknowledgement and unchanged exact custody. For loaded baseline,
+   exit75 still means the retained new driver awaits activation, not old healthy
+   driver's completion. The normal root-private retained inputs are read by the
+   actual owning UID0 installer before its initial realpath/read; modes stay0600.
+4. `resume-online` or `resume-auto`: actual ordinary consumer, same exact product
+   pinned in driver intent, pending-health. No new lookup/build may substitute an
+   identity. Preserve raw output and source/package/boot provenance.
+5. Actual second new boot, same overlay; `driver-health` verifies actual loaded
+   module identities and completed custody only after real health. `repeat-healthy`
+   checks ordinary idempotence; a newly discovered different product is another
+   transaction and must not be reported as an unchanged repeat pass.
+
+Retain existing normal CLI, directory rollback, foreign data, app/driver abrupt
+phase, F1–F6 and repeated controlled self-heal cases. At the new custody boundary,
+the external owning controller may observe the actual durable pending-install
+record then abrupt-off the exact admitted VM before app activation; it must prove
+that phase occurred (otherwise the case did not execute). After cold boot run the
+ordinary online entry with no manually supplied cache, prove the same identity,
+complete app/driver boots and health. The guest harness never kills a process or
+uses a fake boot ID. Original package inputs are custody, **not** a new trust
+approval or a journaled pacman rollback; the existing pacman signature/install
+policy remains authoritative. Full GPU, whole-device/pacman power-loss safety,
+imaging, builds and publication remain separate unverified milestones.
+
+Repeat the positive ordinary producer/resume case through the existing UID1000
+account and its existing sudo route as well as Root. The harness does not create
+credentials or grant sudo. A missing account/noninteractive sudo route is an
+actual environment failure with retained exit/log, not OS-permission acceptance.

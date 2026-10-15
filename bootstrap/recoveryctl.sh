@@ -158,7 +158,9 @@ else:
 PYAPPSTATUS
 )" || return 1
     fi
-    python3 - "$base" "$transaction" "$installed" "$app_state" <<'PYSTATUS'
+    pending_install=0
+    [[ "$ROOT" != / || ! -e "$SUPPORT_ROOT/pending-install.json" ]] || pending_install=1
+    python3 - "$base" "$transaction" "$installed" "$app_state" "$pending_install" <<'PYSTATUS'
 import json,sys
 result=json.loads(sys.argv[1]);result['transaction']=json.loads(sys.argv[2])
 result['installedGeneration']=json.loads(sys.argv[3])
@@ -166,6 +168,10 @@ if (result['installedGeneration'].get('state') in ('prepared','activating','pend
         or result['installedGeneration'].get('rebootRequired') or sys.argv[4] in ('prepared','activating','pending-health','rolling-back')):
     # Keep schema-1 module/file status values; boot health is an additive reason.
     result['reason']='installed_generation_awaits_boot_health';result['actions']=[]
+elif sys.argv[5]=='1':
+    # Existing schema status, no new generation contract. A usable old driver
+    # is not completion of the separately retained new candidate.
+    result['status']='recovery-required';result['reason']='retained_install_awaits_driver'
 print(json.dumps(result,sort_keys=True,separators=(',',':')))
 PYSTATUS
 }
@@ -526,6 +532,29 @@ PYHEALTH
             printf '%s\n' '{"state":"app-acknowledged","driverHealth":"not-established","rebootHealthVerified":false}'
             exit 0
         fi
+        # Final custody completion is ordered after actual driver health and app
+        # acknowledgement, before retry/UI success. A mismatch holds this tail.
+        python3 - "$SUPPORT_ROOT/lib" <<'PYCUSTODY'
+import sys
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+from recovery_cached_product import HOME,complete_install,retained_install
+from install_guardian_generation import registered
+import installed_boot_guard as guard
+entry=registered()['driver']
+if entry is not None:
+    engine,store=guard.engine(entry)
+    intent=engine.load_intent(Path('/'),store)
+    if intent['phase']=='healthy' and intent['action']=='update':
+        engine.verify_set(Path('/'),intent,'newSHA256')
+        engine.runtime_identity(Path('/'),intent)
+        pending=retained_install(HOME)
+        if pending is not None and intent['authority'].get('installProduct')!=pending['product']:
+            # App health over the prior usable NVIDIA baseline is real, but is
+            # not completion of this new candidate. Leave retry/UI pending.
+            raise SystemExit(75)
+        complete_install(HOME,intent)
+PYCUSTODY
         status_json | python3 "$SUPPORT_ROOT/lib/recovery_public_status.py" publish
         reconcile_verified_transaction "$(get_kernel_version)" "$(get_nvidia_version)" \
             "$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["supportRevision"])' "$(python3 "$POLICY_TOOL" --root "$POLICY_ROOT")")" 1
@@ -613,7 +642,7 @@ PYFIRST
             existing_phase="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["phase"])' "$existing")"
             [[ "$existing_phase" != cancelled ]] || die "Automatic recovery retries were cancelled."
         fi
-        if [[ "$recovery_status" == healthy ]]; then
+        if [[ "$recovery_status" == healthy && ! -e "$SUPPORT_ROOT/pending-install.json" ]]; then
             if [[ "$ROOT" == / ]]; then
                 # Reuse the actual acknowledgement consumer, not a file-only
                 # shortcut. Drop this operation lock before its normal locks.
@@ -626,7 +655,7 @@ PYFIRST
             emit_result pending-health actual_boot_health_required installed_health
             exit 0
         fi
-        if [[ "$recovery_status" == fallback-active && "$modules_status" == verified ]]; then
+        if [[ "$recovery_status" == fallback-active && "$modules_status" == verified && ! -e "$SUPPORT_ROOT/pending-install.json" ]]; then
             publish_recovery_progress set --phase updating_boot
             YES=1 disable_fallback
             publish_recovery_progress set --phase verifying

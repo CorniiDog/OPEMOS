@@ -3441,3 +3441,21 @@ Source integration completed through separate reviewed PRs: displayPR2 squash33e
   changed abrupt/repeated recovery. Real canonical driver/interstitial input and
   exact userspace/stock boot evidence remain required; no synthetic NV/GPU health,
   project-test/VM/compiler success or publication claimed by source preparation.
+
+### Same updater: ordinary built/published producer custody (plan996f1ef6)
+
+- [x] Source correction of Root's R6 enclosing-producer/EXIT defect: retain the
+  actual canonical product, interstitial and setup package inputs before app75;
+  bind app/new-boot ack/first-driver to one immutable retained product; prioritize
+  that pending identity through online and automatic resume and actual health.
+  Reuse existing validated materialization tools for published metadata; fail
+  closed on unavailable exact input. Preserve9b873ba/r6 and original failures.
+  Exact local commit/source pins and AST/bash-n/diff evidence are in handback.
+- [x] Author actual ordinary online producer/cleanup/two-boot consumer tests plus
+  real UID, mode, schema, size, target and latest-pointer fault cases. These are
+  unexecuted VM-only tests; direct manually supplied cache is not their substitute.
+- [ ] Independent coherent changed-graph review, then separately admitted actual
+  OMEN fresh built/published and loaded-baseline normal transactions, abrupt
+  custody/app/driver/rollback and repeated recovery, retaining all original raw
+  failures and closure. Package/GPU/imaging/whole-device safety remain unaccepted;
+  source syntax and authored procedures do not establish runtime or build success.

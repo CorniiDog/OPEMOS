@@ -465,6 +465,25 @@ if [[ ! -f "$STATE_ROOT/grub.default.before" &&
     sudo cp -a /etc/default/grub "$STATE_ROOT/grub.default.before"
 fi
 
+# Keep the exact downloaded package inputs before pacman or EXIT cleanup.
+# This is custody only: the existing pacman signature policy remains authority.
+CUSTODY_HOME=/home/.steamos/open-gpu-kernel-modules-steamos-support/recovery
+sudo python3 - "$SUPPORT_ROOT/lib" "$CUSTODY_HOME" <<'PYPRIVATE'
+import sys
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+from install_guardian_generation import private_directory
+private_directory(Path(sys.argv[2]))
+PYPRIVATE
+sudo python3 - "$SUPPORT_ROOT/lib" "$CUSTODY_HOME" "$RESOLVED_NVIDIA" "$PKG_DIR" <<'PYINPUTS'
+import sys
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+from recovery_cached_product import retain_userspace_inputs
+paths=sorted(Path(sys.argv[4]).iterdir())
+retain_userspace_inputs(Path(sys.argv[2]),sys.argv[3],paths)
+PYINPUTS
+
 log "Installing NVIDIA userspace ${RESOLVED_NVIDIA}..."
 
 sudo pacman -U --noconfirm --needed \

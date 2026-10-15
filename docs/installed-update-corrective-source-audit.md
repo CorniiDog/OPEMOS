@@ -310,3 +310,40 @@ forwards the already supported guardian binary/SHA options; it does not acquire 
 trust a new binary. Actual first driver execution also needs its separately supplied
 authenticated canonical product and userspace provisioning. The current source step
 supplies no such runtime artifact or credentials and claims no available VM lane.
+
+## Ordinary producer retention correction (plan996f1ef6, supersedes R6 custody claim)
+
+Root's retained R6 finding is correct: `online_install.sh` exited75 before durable
+retention and its EXIT trap removed temporary build output. Published paths had
+no canonical cache. Direct-cache tests never traversed that shell lifetime.
+
+The changed ordinary path authenticates/materializes existing raw or compressed
+release inputs through the existing repack/product/bundle/materializer tools,
+retains the canonical product and Core Git bundle, and snapshots the exact
+interstitial and userspace input custody before guardian activation. Published
+metadata must already exist in the selected release's inventory; missing inputs,
+older-target mismatch and incompatible immutable Core pins fail closed. No new
+trust endpoint, relabelled target or hand-written validation receipt is introduced.
+Downloaded userspace packages/signatures are retained before pacman/cleanup with
+bounded exact inventory; retention itself is not signature approval or rollback.
+
+A Root-private pending install binds immutable product ID, target/Core revision,
+interstitial SHA and actual installed userspace versions. App authority and its
+actual boot acknowledgement bind that ID; first-driver admission requires it and
+its exact cache. Ordinary repeated online entry pins the pending Core revision
+before mutable main discovery, and automatic repair prioritizes the pending
+product over an otherwise healthy prior driver or mutable latest-cache pointer.
+Cache and interstitial consumers enter actual UID0 before initial file reads;
+permissions are not relaxed. App rollback reconciles the independent driver
+before holding delegation to older mutable guardian code. Public status/retry/UI
+completion stays pending until the exact new driver passes actual boot health.
+Completed custody and inputs remain retained; no original or release data retires.
+
+`tests/vm/ordinary_online_install_acceptance.py` authors the actual enclosing
+producer/EXIT/first boot/resume/second boot consumer transaction and changed UID,
+schema, size, mode, target and mutable-pointer counterexamples. No project test
+has run on the controller. Existing phase/directory/F1–F6 and failure history are
+preserved. All OS, package integrity, fsync, rename, actual compilation and GPU
+claims require separate exact VM admission and retained raw evidence. In
+particular this source checkpoint does not claim atomic pacman rollback, physical
+power-loss certification, publication or a working/accepted updater.

@@ -77,6 +77,7 @@ def reconcile():
         raise ValueError('invalid bootstrap registry')
     # Restore mixed source files before importing guardian policy/helpers.
     # The independently retained driver engine does not depend on app imports.
+    custody_hold=False
     for name in ('app','driver'):
         if document[name] is None:
             continue
@@ -99,12 +100,21 @@ def reconcile():
                 subprocess.run(['/usr/bin/steamos-readonly','disable'],check=True,timeout=30)
             try:
                 result = module.startup(Path('/'), store)
+                if name=='app' and os.path.lexists(GUARDIAN/'pending-install.json'):
+                    reconciled=module.load_intent(Path('/'),store)
+                    # Still reconcile the independent driver engine below, but
+                    # never hand pending new-product success to rolled-back old
+                    # mutable source that does not know its custody contract.
+                    custody_hold=reconciled['phase']=='restored'
                 print(json.dumps({'component':name,**result}), flush=True)
             finally:
                 if readonly:
                     subprocess.run(['/usr/bin/steamos-readonly','enable'],check=True,timeout=30)
         finally:
             os.close(lock)
+
+    if custody_hold:
+        raise ValueError('app rolled back with retained install; prior boot preserved, exact source recovery required')
 
 
 def main():

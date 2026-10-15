@@ -236,8 +236,219 @@ def command_show(args):
     print(canonical(result).decode(), end="")
 
 
+# Private install custody is deliberately separate from the public generation
+# contract. The lifecycle lock held by guardian/driver/health serializes its
+# consumers; the short cache lock serializes independent online producers.
+HOME = Path('/home/.steamos/open-gpu-kernel-modules-steamos-support/recovery')
+
+
+def private(path):
+    info=path.lstat()
+    if (path.resolve()!=path or not stat.S_ISDIR(info.st_mode) or info.st_uid!=0
+            or stat.S_IMODE(info.st_mode)!=0o700):
+        fail('unsafe private install custody directory')
+
+
+def private_record(path):
+    info=path.lstat()
+    if info.st_uid!=0 or stat.S_IMODE(info.st_mode)!=0o600:
+        fail('unsafe install custody record')
+    return read_document(path)
+
+
+def userspace_versions():
+    import subprocess
+    versions={}
+    for name in ('nvidia-utils','lib32-nvidia-utils'):
+        observed=subprocess.run(['/usr/bin/pacman','-Q',name],stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=30)
+        if observed.returncode==1 and name=='lib32-nvidia-utils':
+            versions[name]=None  # Preserve a real pre-existing absence, not an invented package requirement.
+            continue
+        if observed.returncode!=0:fail('installed userspace query failed')
+        row=observed.stdout.decode().strip().split()
+        if len(row)!=2 or row[0]!=name:fail('exact installed userspace identity unavailable')
+        versions[name]=row[1]
+    return versions
+
+
+def retained_install(home, expected=None):
+    if not home.exists():return None
+    private(home)
+    path=home/'pending-install.json'
+    if not os.path.lexists(path):return None
+    record=private_record(path)
+    if (set(record)!={'schemaVersion','product','expected','interstitialSHA256','userspace','userspaceInput'}
+            or record['schemaVersion']!=1 or HEX.fullmatch(record.get('product','')) is None
+            or HEX.fullmatch(record.get('interstitialSHA256','')) is None):
+        fail('invalid pending install custody')
+    if expected is not None and record['expected']!=expected:
+        fail('pending install target/revision differs; original custody preserved')
+    private(home/'cached-products')
+    cache=home/'cached-products'/record['product']
+    doc,_,_=load(cache,record['expected'])
+    if digest(canonical(doc))!=record['product']:fail('pending product identity changed')
+    custody=home/'install-inputs'/record['product'];private(custody)
+    binary=custody/'opemos-interstitial'
+    info=binary.lstat()
+    if info.st_uid!=0 or stat.S_IMODE(info.st_mode)!=0o600:
+        fail('unsafe retained interstitial')
+    if digest(read_regular(binary,32*1024**2,'retained interstitial'))!=record['interstitialSHA256']:
+        fail('retained interstitial changed')
+    if userspace_versions()!=record['userspace']:fail('pending installed userspace changed')
+    if record['userspaceInput'] is not None:
+        verify_userspace_inputs(home,record['userspaceInput'],record['expected']['nvidia'])
+    return record
+
+
+def verify_userspace_inputs(home, identity, nvidia):
+    if HEX.fullmatch(identity or '') is None:fail('invalid userspace input identity')
+    directory=home/'userspace-inputs'/identity;private(directory)
+    manifest=private_record(directory/'inputs.json')
+    if digest(canonical(manifest))!=identity or manifest['nvidia']!=nvidia:
+        fail('retained userspace identity changed')
+    if len(manifest['files']) not in (2,3,4):fail('userspace inventory bound')
+    if {p.name for p in directory.iterdir()}!={'inputs.json',*manifest['files']}:
+        fail('unexpected userspace input')
+    for name,row in manifest['files'].items():
+        if SAFE_NAME.fullmatch(name) is None:fail('invalid package name')
+        info=(directory/name).lstat()
+        if info.st_uid!=0 or stat.S_IMODE(info.st_mode)!=0o600:fail('unsafe retained package')
+        data=read_regular(directory/name,MAX_ARCHIVE,'retained userspace package')
+        if len(data)!=row['bytes'] or digest(data)!=row['sha256']:fail('retained userspace package changed')
+    return manifest
+
+
+def retain_userspace_inputs(home, nvidia, paths):
+    # Called by existing setup producer BEFORE pacman -U and temporary cleanup.
+    # Retention is custody, never a new signature/trust approval or install.
+    import installed_update_transaction as tx
+    if os.geteuid()!=0 or home!=HOME:fail('userspace custody requires fixed owning root')
+    private(home)
+    parent=home/'userspace-inputs'
+    if not parent.exists():parent.mkdir(mode=0o700);tx.fsync_dir(home)
+    private(parent)
+    if not re.fullmatch(r'[0-9]+\.[0-9]+(?:\.[0-9]+)?',nvidia):fail('invalid NVIDIA package target')
+    names={p.name for p in paths}
+    packages={name for name in names if not name.endswith('.sig')}
+    patterns=[re.compile(re.escape(package+'-'+nvidia)+r'-[^/]+-x86_64\.pkg\.tar\.(?:zst|xz)')
+              for package in ('nvidia-utils','lib32-nvidia-utils')]
+    if (len(names)!=len(paths) or len(packages)!=2 or not 2<=len(names)<=4
+            or any(sum(bool(pattern.fullmatch(name)) for name in packages)!=1 for pattern in patterns)
+            or any(name.endswith('.sig') and name[:-4] not in packages for name in names)):
+        fail('userspace producer inventory is not the exact two existing packages and optional signatures')
+    files={}
+    for path in paths:
+        if SAFE_NAME.fullmatch(path.name) is None or path.name in files:fail('invalid package inventory')
+        data=read_regular(path,MAX_ARCHIVE,'userspace producer input')
+        files[path.name]={'bytes':len(data),'sha256':digest(data)}
+    manifest={'schemaVersion':1,'nvidia':nvidia,'files':files,'trust':'custody-only-pacman-remains-authority'}
+    identity=digest(canonical(manifest));destination=parent/identity
+    if not destination.exists():
+        if len(list(parent.iterdir()))>=10:fail('userspace custody bound; preserve inputs')
+        temporary=Path(tempfile.mkdtemp(prefix='.input-',dir=parent));os.chmod(temporary,0o700)
+        # Retain incomplete staging on failure: no broad cleanup of evidence.
+        for path in paths:copy_file(path,temporary/path.name,MAX_ARCHIVE)
+        tx.durable(temporary/'inputs.json',manifest);tx.fsync_dir(temporary)
+        os.rename(temporary,destination);tx.fsync_dir(parent)
+    verify_userspace_inputs(home,identity,nvidia)
+    tx.durable(home/'userspace-input-current.json',{'input':identity})
+
+
+def command_retain_install(args):
+    import fcntl
+    import installed_update_transaction as tx
+    if os.geteuid()!=0 or args.home!=HOME:fail('install custody requires fixed owning root')
+    home=args.home;private(home)
+    lock=home/'install-custody.lock'
+    fd=os.open(lock,os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600)
+    try:
+        info=os.fstat(fd)
+        if info.st_uid!=0 or info.st_nlink!=1 or not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode)!=0o600:
+            fail('unsafe install custody lock')
+        fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        expected={'steamos':args.steamos,'kernel':args.kernel,'nvidia':args.nvidia,'revision':args.support_revision}
+        doc,_,directory=load(args.directory,expected);identity=digest(canonical(doc))
+        if directory!=home/'cached-products'/identity:fail('install product not durably content addressed')
+        existing=retained_install(home,expected)
+        if existing:
+            if existing['product']!=identity:fail('different first-install candidate pending; preserve it')
+            record=existing
+        else:
+            binary=args.interstitial or home/'bin/opemos-interstitial'
+            sha=args.interstitial_sha256 or read_regular(home/'interstitial.sha256',128,'interstitial receipt').decode().strip()
+            if HEX.fullmatch(sha or '') is None:fail('explicit existing interstitial SHA required')
+            data=read_regular(binary,32*1024**2,'interstitial input')
+            if digest(data)!=sha:fail('interstitial input changed')
+            # Existing binary validator is executed against the retained snapshot
+            # below, not an unchecked mutable caller path.
+            versions=userspace_versions()
+            if any(v is not None and v.rsplit('-',1)[0]!=args.nvidia for v in versions.values()):fail('userspace target mismatch')
+            inputs=None
+            if (home/'userspace-input-current.json').exists():
+                inputs=private_record(home/'userspace-input-current.json')['input']
+                verify_userspace_inputs(home,inputs,args.nvidia)
+            parent=home/'install-inputs'
+            if not parent.exists():parent.mkdir(mode=0o700);tx.fsync_dir(home)
+            private(parent)
+            custody=parent/identity
+            if not custody.exists():custody.mkdir(mode=0o700);tx.fsync_dir(parent)
+            private(custody)
+            saved=custody/'opemos-interstitial'
+            if saved.exists():
+                if read_regular(saved,32*1024**2,'retained interstitial')!=data:fail('conflicting retained interstitial; preserved')
+            else:tx.replace_durable(saved,data,0o600)
+            # CLI validation avoids importing an adapter with assumed ABI.
+            import subprocess
+            subprocess.run(['/usr/bin/python3',str(Path(__file__).with_name('validate_interstitial_binary.py')),
+                            '--binary',str(saved),'--sha256',sha],check=True,timeout=30,stdout=subprocess.DEVNULL)
+            record={'schemaVersion':1,'product':identity,'expected':expected,'interstitialSHA256':sha,
+                    'userspace':versions,'userspaceInput':inputs}
+            from recovery_public_status import invalidate
+            invalidate()
+            tx.durable(home/'pending-install.json',record)
+            retained_install(home,expected)
+            tx.checkpoint('product-retained')
+        print(canonical({'interstitial':str(home/'install-inputs'/identity/'opemos-interstitial'),
+                         'sha256':record['interstitialSHA256']}).decode(),end='')
+    finally:os.close(fd)
+
+
+def command_pending(args):
+    expected={'steamos':args.steamos,'kernel':args.kernel,'nvidia':args.nvidia,'revision':args.support_revision}
+    record=retained_install(args.home,expected)
+    if record:print(args.home/'cached-products'/record['product'])
+
+
+def complete_install(home, intent):
+    # Called only after actual driver boot health, never app-only acknowledgement
+    # or an installer return code. Preserve completed custody; no input deletion.
+    import installed_update_transaction as tx
+    import fcntl
+    private(home)
+    fd=os.open(home/'install-custody.lock',os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW,0o600)
+    try:
+        info=os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid!=0 or info.st_nlink!=1 or stat.S_IMODE(info.st_mode)!=0o600:
+            fail('unsafe install completion lock')
+        fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        record=retained_install(home)
+        if record is None:return
+        if (intent['phase']!='healthy' or intent['action']!='update'
+                or intent['authority'].get('installProduct')!=record['product']):
+            fail('pending install completion lacks exact healthy driver generation')
+        destination=home/('completed-install-'+record['product']+'.json')
+        if destination.exists():
+            if private_record(destination)!=record:fail('conflicting completed install evidence')
+        else:tx.durable(destination,record)
+        os.unlink(home/'pending-install.json');tx.fsync_dir(home)
+
+    finally:os.close(fd)
+
+
 def command_select(args):
     home=args.home
+    if (home/'pending-install.json').exists():
+        command_pending(args);return
     pointer=home/'cached-current.json'
     if not pointer.exists():
         legacy=home/'cached-repair'
@@ -267,7 +478,7 @@ def command_select(args):
 def main():
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
-    for name in ("stage", "show", "select"):
+    for name in ("stage", "show", "select", "pending", "retain-install"):
         command = subparsers.add_parser(name)
         command.add_argument("--steamos", required=True)
         command.add_argument("--kernel", required=True)
@@ -277,12 +488,16 @@ def main():
             command.add_argument("--materialization", required=True, type=Path)
             command.add_argument("--input-dir", required=True, type=Path)
             command.add_argument("--destination", required=True, type=Path)
-        elif name == "select":
+        elif name in ("select", "pending", "retain-install"):
             command.add_argument("--home", required=True, type=Path)
+            if name == "retain-install":
+                command.add_argument("--directory", required=True, type=Path)
+                command.add_argument("--interstitial", type=Path)
+                command.add_argument("--interstitial-sha256")
         else:
             command.add_argument("--directory", required=True, type=Path)
     args = parser.parse_args()
-    ({"stage":command_stage,"show":command_show,"select":command_select}[args.command])(args)
+    ({"stage":command_stage,"show":command_show,"select":command_select,"pending":command_pending,"retain-install":command_retain_install}[args.command])(args)
 
 
 if __name__ == "__main__":

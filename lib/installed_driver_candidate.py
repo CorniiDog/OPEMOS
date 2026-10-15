@@ -665,6 +665,17 @@ def update(args):
                 tx.heal_known_generation(args.root,prior)
             finally:
                 if repair_readonly:command(['/usr/bin/steamos-readonly','enable'],30)
+        from recovery_cached_product import retained_install, HOME
+        install_custody=retained_install(HOME)
+        if install_custody is not None:
+            tx.need(args.cache is not None and args.cache.resolve()==HOME/'cached-products'/install_custody['product'],
+                    'pending install requires the same exact retained candidate')
+            from install_guardian_generation import registered
+            import installed_boot_guard as boot_guard
+            app_engine,app_store=boot_guard.engine(registered()['app'])
+            app=app_engine.load_intent(Path('/'),app_store)
+            tx.need(app['phase']=='healthy' and app['authority'].get('installProduct')==install_custody['product'],
+                    'pending product requires its actual boot-acknowledged app generation')
         # Old artifacts/target/boot provenance must be verified before staging
         # or changing any live target. No inference from a healthy boolean.
         fresh_target=None
@@ -713,6 +724,8 @@ def update(args):
                        'previousAction': (old['authority'].get('previousAction','update') if old['phase']=='restored' else old['action']) if prior else ('stock-baseline' if boot_qualification['kind']=='observed-current-stock-boot-no-opemos-nvidia' else 'update'),
                        'previousProfile': (old['authority'].get('previousProfile','console') if old['phase']=='restored' else old['profile']) if prior else 'console'},
                    'readonlyBefore': was_readonly, 'action': args.action, 'profile': args.profile}
+        if install_custody is not None:
+            context['authority']['installProduct']=install_custody['product']
         # All exact originals, candidates and the intent are flushed BEFORE
         # publishing the pointer or altering root read-only policy. A reboot
         # can therefore always discover enough evidence to restore both.

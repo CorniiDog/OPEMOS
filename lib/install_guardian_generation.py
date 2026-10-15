@@ -136,6 +136,11 @@ def acknowledge_app():
                     'independent recovery entry unavailable')
         engine.need(os.readlink('/etc/systemd/system/multi-user.target.wants/opemos-nvidia-guardian.service')==
                     '../opemos-nvidia-guardian.service','recovery service not enabled')
+        from recovery_cached_product import retained_install
+        custody=retained_install(DEST)
+        if custody is not None:
+            engine.need(intent['authority'].get('installProduct')==custody['product'],
+                        'app generation not bound to pending exact install product')
         if intent['phase']=='healthy':
             engine.verify_set(Path('/'),intent,'newSHA256')
             return {'state':'healthy','appHealthOnly':True}
@@ -166,6 +171,9 @@ def build(args):
     frozen=freeze_source(args.source,args.revision)
     existing=registered()
     if not (BOOT/'current.json').exists():tx.durable(BOOT/'current.json',existing)
+    from recovery_cached_product import retained_install
+    custody=retained_install(DEST) if DEST.exists() else None
+    pending_product=None if custody is None else custody['product']
     old=existing['app']
     if old:
         import installed_boot_guard as guard
@@ -183,13 +191,15 @@ def build(args):
         if (previous['authority']['policy']=={'supportRevision':args.revision,'nvidiaVersion':args.nvidia}
                 and previous['phase'] in ('healthy','pending-health')):
             engine.verify_set(Path('/'),previous,'newSHA256')
-            unchanged=True
+            unchanged=(pending_product is None or previous['authority'].get('installProduct')==pending_product)
+            tx.need(previous['phase']!='pending-health' or unchanged,
+                    'pending app is bound to a different install product; preserve it')
             if (previous['phase']=='healthy' and existing['driver'] is None
                     and not Path('/sys/module/nvidia').exists() and previous['authority'].get('stockBootBefore') is not None):
                 from installed_driver_candidate import observe_stock_boot
                 current=observe_stock_boot(Path('/'),previous['target'])
                 acknowledged=previous['authority'].get('stockBootAcknowledgement',{})
-                unchanged=(current['images']==acknowledged.get('images') and
+                unchanged=unchanged and (current['images']==acknowledged.get('images') and
                            current['kernelSHA256']==acknowledged.get('kernelSHA256'))
             if unchanged:return {'state':previous['phase'],'sourceUnchanged':True}
             # Real changed stock assets need a new actual app boot observation,
@@ -259,6 +269,12 @@ def build(args):
     from installed_driver_candidate import readonly_enabled,command
     readonly=readonly_enabled()
     authority={'policy':{'supportRevision':args.revision,'nvidiaVersion':args.nvidia}}
+    from recovery_cached_product import retained_install
+    custody=retained_install(DEST)
+    if custody is not None:
+        tx.need(custody['expected']['revision']==args.revision and custody['expected']['nvidia']==args.nvidia
+                and custody['expected']['kernel']==os.uname().release,'app/pending product authority mismatch')
+        authority['installProduct']=custody['product']
     directory=Path('/usr/lib/modules')/os.uname().release/'updates/open-gpu-kernel-modules-steamos'
     if not Path('/sys/module/nvidia').exists() and (not directory.exists() or not any(directory.iterdir())):
         from installed_driver_candidate import observe_stock_boot
