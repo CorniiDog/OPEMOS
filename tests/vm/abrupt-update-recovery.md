@@ -193,3 +193,42 @@ acceptance separately invokes the actual existing `install_to_root.sh` and guard
 image installer with authenticated inputs and independent final-image validation;
 the pending-marker test alone does not establish full image success or discard
 permission. Controller teardown/rollback/closure and hardware remain separate.
+
+## Changed independent-review cases F1–F6 (NOT executed)
+
+The installed profile now refuses missing target directories: start from the
+existing authenticated offline-provisioned guardian layout. This source checkpoint
+neither creates a new VM nor supplies live directory migration authority.
+Before `update`, run `install-guardian` (actual ordinary installer, returns75 for
+pending app), then `refuse-before-app-health` and verify driver files unchanged.
+The external owner reboots the same overlay; run `guardian-after-boot` to record
+actual permanent app health. Only then run `update` and the driver reboot/health
+sequence above. For app abrupt cases invoke `install-guardian --pause ...` on its
+qualified old-source baseline, not an already acknowledged idempotent app.
+
+Run `python3 tests/guardian_immutable_inputs.py --output EXACT_NEW_OUTPUT` in the
+admitted VM: real clean Git producer/freeze succeeds, each edited template or
+engine is refused with retained stderr despite unchanged HEAD. Full ordinary app
+installation still supplies the producer-to-systemd transaction proof.
+Run `refuse-directory-mode-change` before the positive driver update: the actual
+original module directory0700 must remain0700 while candidate0755 recreation is
+refused, all five actual module files unchanged; exact test-owned mode is restored.
+The raw-plan CLI test additionally refuses driver control-plane paths and absent
+parent directories before creating an intent or live directory. Actual confined
+hook-side unit/dispatcher writes must be refused by collection as well; retain that
+candidate and initial failure, not a mocked collect result.
+
+For F6 use a separately retained acknowledged console baseline without an existing
+retry journal. `repair-verified-fallback` authors a real matching retry then calls
+ordinary `repair-auto`; require75, selected generation pending, retry not restored,
+progress not succeeded. After the same-overlay actual reboot invoke
+`verify-disabled-fallback-boot`; inspect retry restored and progress success only
+following actual replacement health. Preserve existing journals rather than rearm
+or replace them. Do not repeat the earlier direct-disable stage unchanged.
+
+F5 release failure is an actual network/control fault, not a fake curl executable.
+The separately admitted owner must prepare current authenticated checkout/cache,
+then remove ONLY that test guest's admitted network before ordinary discovery and
+retain raw command/exit. Test exact retained cache, no cache and inherited unrelated
+BUILD_OUT. Normal release discovery is still required once with genuine inputs;
+source syntax and retained selector tests are not end-to-end network evidence.

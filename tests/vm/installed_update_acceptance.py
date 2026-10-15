@@ -91,7 +91,7 @@ def observed_modules(m):
     return {name:digest(prefix/(name+'.ko.zst')) for name in m['moduleSHA256']}
 
 
-def command(out,label,argv,env=None):
+def command(out,label,argv,env=None,expected=(0,)):
     # The actual command, PID/start, numeric exit and full raw output are kept.
     # Actual complete descendant/cgroup and QEMU closure comes from the owner.
     record=out/(label+'.command.json')
@@ -119,12 +119,12 @@ def command(out,label,argv,env=None):
     tx.durable(record,{'argv':argv,'pid':pid,'startTicks':start,'exit':numeric,
                        'bootId':tx.boot_id(),'rawLog':str(log),'rawSHA256':digest(log),
                        'environment':'admitted-OMEN-guest','hypervisorClosureVerifiedByThisProgram':False})
-    assert numeric==0,(argv,numeric,str(log))
+    assert numeric in expected,(argv,numeric,str(log))
 
 
 def main():
     p=argparse.ArgumentParser()
-    p.add_argument('action',choices=('qualify','update','after-boot','verify-restored','corrupt-owned-module','verify-healed','arm-recovery-pause','remove-recovery-pause','refuse-bad-checksum','refuse-corrupt-cache','enable-console-fallback','verify-console-boot','disable-console-fallback','verify-readonly-status','verify-disabled-fallback-boot'))
+    p.add_argument('action',choices=('qualify','update','after-boot','verify-restored','corrupt-owned-module','verify-healed','arm-recovery-pause','remove-recovery-pause','refuse-bad-checksum','refuse-corrupt-cache','enable-console-fallback','verify-console-boot','disable-console-fallback','verify-readonly-status','verify-disabled-fallback-boot','install-guardian','guardian-after-boot','refuse-before-app-health','refuse-directory-mode-change','repair-verified-fallback'))
     p.add_argument('--manifest',type=Path,required=True)
     p.add_argument('--repeat-observation',action='store_true')
     p.add_argument('--fault-component',choices=('app','driver'),default='driver')
@@ -141,6 +141,43 @@ def main():
         write(out/'baseline.json',{'bootId':tx.boot_id(),'loadedIdentity':loaded,'modules':modules,
             'bootImages':boot,'receipt':receipt,'manifestSHA256':digest(a.manifest),
             'GPUDisplayAcceptance':False})
+    elif a.action=='install-guardian':
+        env={**os.environ}
+        if a.pause:env.update(PROJECT_TEST_MODE='1',OPEMOS_INSTALLED_TRANSACTION_TEST_PAUSE=a.pause)
+        command(out,'setup-guardian',['/bin/bash',str(REPO/'bootstrap/install_recovery_guardian.sh')],env,expected=(0,75))
+        write(out/'guardian-setup.json',{'bootId':tx.boot_id(),'requiresActualNewBoot':True})
+    elif a.action=='guardian-after-boot':
+        previous=json.loads((out/'guardian-setup.json').read_bytes())
+        assert tx.boot_id()!=previous['bootId']
+        command(out,'app-startup',['systemctl','start','opemos-nvidia-guardian.service'])
+        command(out,'app-health',[str(HOME/'bootstrap/recoveryctl.sh'),'installed-health','--json'])
+        from install_guardian_generation import registered
+        from installed_boot_guard import engine
+        tool,store=engine(registered()['app'])
+        assert tool.load_intent(Path('/'),store)['phase']=='healthy'
+        write(out/'guardian-acknowledged.json',{'bootId':tx.boot_id(),'permanentEntryAcknowledged':True})
+    elif a.action=='refuse-directory-mode-change':
+        directory=Path('/usr/lib/modules')/m['kernel']/'updates/open-gpu-kernel-modules-steamos'
+        original=directory.stat().st_mode&0o777
+        assert original==0o755
+        before=observed_modules(m)
+        from installed_driver_candidate import readonly_enabled,command as bounded_command
+        readonly=readonly_enabled()
+        try:
+            if readonly:bounded_command(['/usr/bin/steamos-readonly','disable'],30)
+            os.chmod(directory,0o700);tx.fsync_dir(directory)
+            command(out,'directory-metadata-refusal',['/bin/bash',str(REPO/'bootstrap/install.sh'),
+                '--archive',m['archive'],'--checksum',m['checksum'],'-y'],expected=(1,))
+            assert directory.stat().st_mode&0o777==0o700 and observed_modules(m)==before
+        finally:
+            os.chmod(directory,original);tx.fsync_dir(directory)
+            if readonly:bounded_command(['/usr/bin/steamos-readonly','enable'],30)
+        write(out/'directory-refusal.json',{'actualOriginalMode':original,'candidateRecreationRefused':True})
+    elif a.action=='refuse-before-app-health':
+        before=observed_modules(m)
+        command(out,'unacknowledged-app-driver-refusal',['/bin/bash',str(REPO/'bootstrap/install.sh'),
+            '--archive',m['archive'],'--checksum',m['checksum'],'-y'],expected=(1,))
+        assert observed_modules(m)==before
     elif a.action=='update':
         baseline=json.loads((out/'baseline.json').read_bytes())
         assert baseline['manifestSHA256']==digest(a.manifest)
@@ -221,14 +258,29 @@ def main():
         assert value['target']['kernelVersion']==m['kernel']
         assert value['moduleVerification']['status']=='verified'
         write(out/'readonly-status.json',{'actualOtherUID':True,'credentialGrantCreated':False})
-    elif a.action in ('enable-console-fallback','disable-console-fallback'):
+    elif a.action in ('enable-console-fallback','disable-console-fallback','repair-verified-fallback'):
         assert (out/'boot-health.json').exists(),'qualify the exact installed generation first'
         argv=[str(HOME/'bootstrap/recoveryctl.sh'),
               'enable-fallback' if a.action=='enable-console-fallback' else 'disable-fallback','-y']
         if a.action=='enable-console-fallback':argv+=['--profile','console']
-        command(out,a.action,argv)
+        if a.action=='repair-verified-fallback':
+            journal=HOME/'transaction.json'
+            assert not journal.exists(),'preserve an existing retry; use a separately prepared baseline'
+            command(out,'begin-real-retry',['python3',str(HOME/'lib/recovery_transaction.py'),'begin',
+                '--state',str(journal),'--kernel',m['kernel'],'--nvidia',m['nvidia'],
+                '--support-revision',m['coreCommit'],'--phase','offline_waiting','--reason','actual_fallback_repair'])
+            argv=[str(HOME/'bootstrap/recoveryctl.sh'),'repair-auto','--json']
+        environment=None
+        if a.action=='repair-verified-fallback':
+            progress='/run/opemos/interstitial/progress.json'
+            command(out,'prepare-real-progress',['python3',str(HOME/'lib/interstitial_progress.py'),'reset','--state',progress])
+            environment={**os.environ,'OPEMOS_RECOVERY_PROGRESS_STATE':progress}
+        command(out,a.action,argv,env=environment,expected=(75,) if a.action=='repair-verified-fallback' else (0,))
+        if a.action=='repair-verified-fallback':
+            assert json.loads(journal.read_bytes())['phase']!='restored'
+            assert not json.loads(Path('/run/opemos/interstitial/progress.json').read_bytes()).get('status')=='succeeded'
         assert reconcile_controller(Path('/'),HOME,inspect_only=True)['state']=='pending-health'
-        write(out/(a.action+'.json'),{'bootId':tx.boot_id(),'externalSameOverlayRebootRequired':True})
+        write(out/(('disable-console-fallback' if a.action=='repair-verified-fallback' else a.action)+'.json'),{'bootId':tx.boot_id(),'externalSameOverlayRebootRequired':True})
     elif a.action=='verify-console-boot':
         prior=json.loads((out/'enable-console-fallback.json').read_bytes())
         assert tx.boot_id()!=prior['bootId'] and not Path('/sys/module/nvidia').exists()

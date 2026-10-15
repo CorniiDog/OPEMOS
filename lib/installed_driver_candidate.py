@@ -347,6 +347,16 @@ def produce(args, store, boot_images, target):
     work = Path(tempfile.mkdtemp(prefix='candidate-', dir=store))
     for name in ('upper', 'work', 'merged', 'inputs', *[x + suffix for x in STAGE_TREES for suffix in ('-upper', '-work')]):
         (work / name).mkdir(mode=0o700)
+    # Overlay roots otherwise inherit the private scratch0700 mode. Preserve
+    # each actual lower-root metadata before any target command can run.
+    for upper,original in [(work/'upper',args.root)]+[(work/(name+'-upper'),args.root/name) for name in STAGE_TREES]:
+        if original.is_dir():
+            info=original.lstat()
+            os.chown(upper,info.st_uid,info.st_gid)
+            os.chmod(upper,stat.S_IMODE(info.st_mode))
+            for key in os.listxattr(original,follow_symlinks=False):
+                if not key.startswith(('trusted.overlay.','user.overlay.')):
+                    os.setxattr(upper,key,os.getxattr(original,key,follow_symlinks=False),follow_symlinks=False)
     inputs = work / 'inputs'
     if args.action == 'update':
         expected = args.archive_sha256
@@ -426,10 +436,34 @@ def collect(args):
     layers = [(work / 'upper', '')] + [(work / (name + '-upper'), name + '/') for name in STAGE_TREES]
     seen = set()
     for upper, prefix in layers:
+        original=args.root/prefix.rstrip('/')
+        if original.is_dir():
+            before=original.lstat();after=upper.lstat()
+            tx.need((stat.S_IMODE(before.st_mode),before.st_uid,before.st_gid)==
+                    (stat.S_IMODE(after.st_mode),after.st_uid,after.st_gid),
+                    'unplanned mounted-root directory metadata: '+prefix)
+            for key in set(os.listxattr(original,follow_symlinks=False))|set(os.listxattr(upper,follow_symlinks=False)):
+                if not key.startswith(('trusted.overlay.','user.overlay.')):
+                    tx.need(os.getxattr(original,key,follow_symlinks=False)==os.getxattr(upper,key,follow_symlinks=False),
+                            'unplanned mounted-root directory attribute')
         for path in sorted(upper.rglob('*')):
             relative = prefix + str(path.relative_to(upper))
             info = path.lstat()
             if stat.S_ISDIR(info.st_mode):
+                if relative==f'var/lib/{PROJECT}/backups' or relative.startswith(('tmp/','var/tmp/','run/',f'var/lib/{PROJECT}/backups/')):
+                    continue  # Explicit private candidate scratch, never exported.
+                original=args.root/relative
+                tx.need(original.is_dir() and not original.is_symlink(),
+                        'unplanned directory creation: '+relative)
+                before=original.lstat()
+                tx.need((stat.S_IMODE(info.st_mode),info.st_uid,info.st_gid)==
+                        (stat.S_IMODE(before.st_mode),before.st_uid,before.st_gid),
+                        'unplanned directory metadata: '+relative)
+                def attributes(node):
+                    return {name:os.getxattr(node,name,follow_symlinks=False)
+                            for name in os.listxattr(node,follow_symlinks=False)
+                            if not name.startswith(('trusted.overlay.','user.overlay.'))}
+                tx.need(attributes(path)==attributes(original),'unplanned directory attributes: '+relative)
                 if 'trusted.overlay.opaque' in os.listxattr(path, follow_symlinks=False):
                     value = os.getxattr(path, 'trusted.overlay.opaque', follow_symlinks=False)
                     if value in (b'y', b'Y'):
@@ -447,7 +481,7 @@ def collect(args):
                 continue
             tx.need(relative not in seen, 'duplicate cross-tree effect')
             seen.add(relative)
-            tx.target(args.root, relative, kernel, allow_missing=True)
+            tx.effect_target(args.root,relative,kernel,args.action,allow_missing=True)
             info = path.lstat()
             if stat.S_ISCHR(info.st_mode) and info.st_rdev == 0:
                 rows.append({'path': relative, 'source': None, 'sha256': None})
@@ -529,7 +563,14 @@ def require_recovery_bootstrap(source, policy_root):
             'persistent boot recovery entry is not installed')
     link=Path('/etc/systemd/system/multi-user.target.wants/opemos-nvidia-guardian.service')
     tx.need(os.readlink(link)=='../opemos-nvidia-guardian.service','boot recovery is not enabled')
-    registered()  # Closed, private, already durable registry; no authority bool.
+    doc=registered()
+    tx.need(doc['app'] is not None,'acknowledged permanent recovery application required')
+    import installed_boot_guard as guard
+    engine,store=guard.engine(doc['app'])
+    app=engine.load_intent(Path('/'),store)
+    tx.need(app['phase']=='healthy' and app['action']=='guardian-update',
+            'reboot and acknowledge guardian before driver activation; app rollback must not remove recovery entry')
+    engine.verify_set(Path('/'),app,'newSHA256')
     for name in ('installed_update_transaction.py','atomic_output.py','installed_driver_candidate.py',
                  'install_guardian_generation.py','installed_boot_guard.py'):
         tx.need(tx.read(policy_root/'lib'/name,256*1024)==read_regular(source/'lib'/name,256*1024,'controller source'),
@@ -582,6 +623,16 @@ def update(args):
         generation = manager / ('txn-' + uuid.uuid4().hex)
         generation.mkdir(mode=0o700)
         tx.fsync_dir(manager)
+        from install_guardian_generation import retained_driver_source
+        frozen=retained_driver_source()
+        source=generation/'source';source.mkdir(mode=0o700)
+        for relative,data in frozen.items():
+            destination=source/relative
+            destination.parent.mkdir(mode=0o700,parents=True,exist_ok=True)
+            tx.replace_durable(destination,data,0o700)
+        tx.fsync_dir(source)
+        # Ordinary writer and all helpers now consume only this frozen copy.
+        args.support=source
         plan = produce(args, generation, boot_images, target)
         module_prefix=f'usr/lib/modules/{args.kernel}/updates/open-gpu-kernel-modules-steamos/'
         original_modules={name:tx.digest(tx.read(args.root/module_prefix/(name+'.ko.zst'),tx.MAX_FILE)) for name in tx.MODULES}
@@ -600,7 +651,7 @@ def update(args):
         # can therefore always discover enough evidence to restore both.
         tx.prepare(args.root, generation, plan, context=context)
         from install_guardian_generation import register
-        register('driver', generation, args.support)
+        register('driver',generation,frozen)
         tx.durable(manager / 'current.json', {'generation': generation.name})
         try:
             writable_root(was_readonly)
@@ -632,7 +683,7 @@ def reconcile_controller(root, support, health=False, inspect_only=False):
         # An interrupted disable may leave the observed mode off. The durable
         # prestate, rather than today's mode alone, governs restoration.
         if inspect_only:
-            result={'state':intent['phase'],'rebootHealthVerified':False}
+            result={'state':intent['phase'],'action':intent['action'],'rebootHealthVerified':False}
             if intent['phase'] in ('healthy','restored'):
                 which='oldSHA256' if intent['phase']=='restored' else 'newSHA256'
                 tx.verify_set(root,intent,which)

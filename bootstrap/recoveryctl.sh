@@ -139,16 +139,31 @@ status_json()
     fi
     transaction="$(transaction_tool show)"
     installed='{"state":"not-inspected"}'
+    app_state='not-inspected'
     if [[ "$ROOT" == / ]]; then
         installed="$(python3 "$SUPPORT_ROOT/lib/installed_update_transaction.py" inspect \
             --root / --policy-root "$POLICY_ROOT")" || return 1
+        app_state="$(python3 - "$SUPPORT_ROOT/lib" <<'PYAPPSTATUS'
+import sys
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+from install_guardian_generation import registered
+from installed_boot_guard import engine
+record=registered()['app']
+if record is None:print('no-app-intent')
+else:
+    module,store=engine(record)
+    value=module.load_intent(Path('/'),store)
+    print(value['phase'])
+PYAPPSTATUS
+)" || return 1
     fi
-    python3 - "$base" "$transaction" "$installed" <<'PYSTATUS'
+    python3 - "$base" "$transaction" "$installed" "$app_state" <<'PYSTATUS'
 import json,sys
 result=json.loads(sys.argv[1]);result['transaction']=json.loads(sys.argv[2])
 result['installedGeneration']=json.loads(sys.argv[3])
 if (result['installedGeneration'].get('state') in ('prepared','activating','pending-health','rolling-back')
-        or result['installedGeneration'].get('rebootRequired')):
+        or result['installedGeneration'].get('rebootRequired') or sys.argv[4] in ('prepared','activating','pending-health','rolling-back')):
     # Keep schema-1 module/file status values; boot health is an additive reason.
     result['reason']='installed_generation_awaits_boot_health';result['actions']=[]
 print(json.dumps(result,sort_keys=True,separators=(',',':')))
@@ -167,13 +182,16 @@ plan_tool()
 
 reconcile_verified_transaction()
 {
-    local existing installed kernel="$1" nvidia="$2" revision="$3"
+    local existing installed kernel="$1" nvidia="$2" revision="$3" acknowledged="${4:-0}"
     if [[ "$ROOT" == / ]]; then
+    # File-only status/fallback is never a replacement boot acknowledgement.
+    [[ "$acknowledged" == 1 ]] || return 0
     installed="$(python3 "$SUPPORT_ROOT/lib/installed_update_transaction.py" inspect \
         --root "$ROOT" --policy-root "$POLICY_ROOT")"
     if python3 -c 'import json,sys; raise SystemExit(0 if json.loads(sys.argv[1]).get("state") in ("prepared","activating","pending-health","rolling-back") else 1)' "$installed"; then
         return 0
     fi
+    python3 -c 'import json,sys; d=json.loads(sys.argv[1]); raise SystemExit(0 if d.get("state")=="healthy" and d.get("action") in ("update","disable-fallback") and d.get("currentRuntimeMatches") is True else 1)' "$installed" || return 0
     fi
     [[ -f "$TRANSACTION" ]] || return 0
     existing="$(transaction_tool show)"
@@ -493,8 +511,18 @@ case "$COMMAND" in
     installed-health)
         [[ "$ROOT" == / ]] || die "Installed health requires the actual running guest root."
         acquire_recovery_mutation_locks
-        python3 "$SUPPORT_ROOT/lib/installed_update_transaction.py" health \
-            --root / --policy-root "$POLICY_ROOT"
+        health_result="$(python3 "$SUPPORT_ROOT/lib/installed_update_transaction.py" health \
+            --root / --policy-root "$POLICY_ROOT")"
+        printf '%s\n' "$health_result"
+        if python3 -c 'import json,sys; raise SystemExit(0 if json.loads(sys.argv[1]).get("state")=="no-pending-intent" else 1)' "$health_result"; then
+            python3 - "$SUPPORT_ROOT/lib" "$(get_kernel_version)" "$(get_nvidia_version)" <<'PYBASEHEALTH'
+import sys
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+from installed_update_transaction import require_loaded_identity
+require_loaded_identity(Path('/'),sys.argv[2],sys.argv[3])
+PYBASEHEALTH
+        fi
         python3 - "$SUPPORT_ROOT/lib" <<'PYHEALTH'
 import sys,json
 sys.path.insert(0,sys.argv[1])
@@ -503,8 +531,10 @@ print(json.dumps(acknowledge_app(),sort_keys=True))
 PYHEALTH
         status_json | python3 "$SUPPORT_ROOT/lib/recovery_public_status.py" publish
         reconcile_verified_transaction "$(get_kernel_version)" "$(get_nvidia_version)" \
-            "$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["supportRevision"])' "$(python3 "$POLICY_TOOL" --root "$POLICY_ROOT")")"
-        if [[ -f /run/opemos/interstitial/progress.json ]]; then
+            "$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["supportRevision"])' "$(python3 "$POLICY_TOOL" --root "$POLICY_ROOT")")" 1
+        health_status="$(status_json)"
+        if [[ -f /run/opemos/interstitial/progress.json ]] &&
+           python3 -c 'import json,sys; d=json.loads(sys.argv[1]); raise SystemExit(0 if d.get("status")=="healthy" and d.get("reason")!="installed_generation_awaits_boot_health" else 1)' "$health_status"; then
             python3 "$RECOVERY_PROGRESS_WRITER" succeed --state /run/opemos/interstitial/progress.json >/dev/null
             systemctl stop opemos-interstitial.service
         fi
@@ -538,10 +568,15 @@ PYHEALTH
         acquire_recovery_operation_lock
         if [[ "$ROOT" == / ]]; then
             generation="$(python3 "$SUPPORT_ROOT/lib/installed_update_transaction.py" inspect --root / --policy-root "$POLICY_ROOT")"
-            if python3 -c 'import json,sys; raise SystemExit(0 if json.loads(sys.argv[1]).get("state") in ("prepared","activating","pending-health","rolling-back") else 1)' "$generation"; then
+            if python3 -c 'import json,sys; raise SystemExit(0 if json.loads(sys.argv[1]).get("state") in ("prepared","activating","pending-health","rolling-back") or json.loads(sys.argv[1]).get("rebootRequired") else 1)' "$generation"; then
                 emit_result pending-health reboot_required installed_health
                 exit 75
             fi
+        fi
+        pending_status="$(status_json)"
+        if python3 -c 'import json,sys; raise SystemExit(0 if json.loads(sys.argv[1]).get("reason")=="installed_generation_awaits_boot_health" else 1)' "$pending_status"; then
+            emit_result pending-health reboot_required installed_health
+            exit 75
         fi
         publish_recovery_progress set --phase inspecting
         policy_args=(--root "$POLICY_ROOT")
@@ -570,18 +605,24 @@ PYHEALTH
             [[ "$existing_phase" != cancelled ]] || die "Automatic recovery retries were cancelled."
         fi
         if [[ "$recovery_status" == healthy ]]; then
+            if [[ "$ROOT" == / ]]; then
+                # Reuse the actual acknowledgement consumer, not a file-only
+                # shortcut. Drop this operation lock before its normal locks.
+                flock -u 8
+                exec 8>&-
+                exec /bin/bash "$0" installed-health --json
+            fi
             reconcile_verified_transaction "$kernel" "$nvidia" "$revision"
-            publish_recovery_progress succeed
-            emit_result restored exact_nvidia_already_healthy no_action
+            publish_recovery_progress set --phase verifying
+            emit_result pending-health actual_boot_health_required installed_health
             exit 0
         fi
         if [[ "$recovery_status" == fallback-active && "$modules_status" == verified ]]; then
-            reconcile_verified_transaction "$kernel" "$nvidia" "$revision"
             publish_recovery_progress set --phase updating_boot
             YES=1 disable_fallback
-            publish_recovery_progress succeed
-            emit_result restored exact_nvidia_restored fallback_disabled
-            exit 0
+            publish_recovery_progress set --phase verifying
+            emit_result pending-health reboot_required installed_health
+            exit 75
         fi
         if [[ -f "$TRANSACTION" ]]; then
             existing="$(transaction_tool show)"
@@ -704,7 +745,8 @@ PYHEALTH
         # Fallback restoration, boot/config and receipt were part of the same
         # candidate. Startup health, not a second writer, completes the retry.
         emit_result pending-health reboot_required installed_health
-        publish_recovery_progress succeed
+        publish_recovery_progress set --phase verifying
+        exit 75
         ;;
     cancel-repair)
         acquire_recovery_operation_lock

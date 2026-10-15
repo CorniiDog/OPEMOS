@@ -3411,3 +3411,16 @@ Source integration completed through separate reviewed PRs: displayPR2 squash33e
   source migration, UI build/status and actual scheduled health remain unverified.
   GPU rendering, the all-three/all-five compiler matrix and Linux/Windows builds
   are separate milestones. No push/PR/merge/install/runtime/publication here.
+
+### Same updater: independent96a592b COMPOSED-F1–F6 correction
+
+- [x] Bundle independent source findings into the same owning correction:
+  acknowledged permanent app before driver, driver-only effect authority,
+  directory-effect refusal/pre-existing layout, Git-frozen templates/engines,
+  exact retained-product discovery and actual post-boot retry/UI completion.
+  Preserve96a592b/r4 and earlier incomplete checkpoints/failures. Source code and
+  authored VM regressions only; exact new commit/pins are in the typed handback.
+- [ ] Independently review changed full graph, then execute actual admitted OMEN
+  normal producer-to-new-boot-health transaction and changed F1–F6/abrupt recovery
+  cases. No claim that source correction or static syntax proves OS behavior,
+  executable build, three-kernel/five-module compile, GPU or publication readiness.

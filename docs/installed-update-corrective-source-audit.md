@@ -177,3 +177,72 @@ remain independent. No actual project tests, compilers, VM operations or hardwar
 acceptance occurred during this source-only composition. Independent full-graph
 review and the ordinary actual producer-to-consumer VM transaction, followed by
 necessary changed fault cases and abrupt/repeated recovery, remain mandatory.
+
+## Independent 96a592b review: COMPOSED-F1–F6 correction
+
+The independent frozen review found six remaining causal interactions; the r4
+composition statement did not establish an authenticated complete boot transaction.
+That checkpoint and all initial findings remain preserved. This continuation fixes
+these findings together, without project execution or another infrastructure task.
+
+* **F1:** driver admission now loads the registered app's retained engine, requires
+  its actual `healthy` acknowledgement, and verifies its complete new file set.
+  Source/app replacement is already refused while a driver is pending. Thus a
+  driver cannot become pending while the app can still roll back to a legacy or
+  absent recovery unit. Guardian installation exits75 while awaiting boot health;
+  status and retry consumers expose that app pending state instead of reinstalling.
+  Normal flow is guardian install -> new boot/ack -> driver update -> new boot/ack.
+* **F2:** candidate collection, plan preparation, intent loading, activation,
+  restoration and healing enforce the driver effect profile. Guardian source,
+  units/wants, dispatcher and keep-list authority are excluded from driver and
+  fallback intents. Only the app installer may plan that control-plane set.
+* **F3:** the installed file profile requires pre-existing target parents and
+  never creates live target directories. Source installation requires the existing
+  offline-provisioned bootstrap/lib/trust/bin structure before private preparation.
+  Collector checks directory owner/group/mode and non-overlay xattrs, including
+  mounted-tree roots, and refuses unexplained new directories. Overlay roots copy
+  the original directory metadata before construction instead of inheriting0700
+  scratch permissions. Only explicitly candidate-private scratch/backups are
+  excluded; they are never exported. Directory timestamps from child file writes
+  are not a claimed recoverable metadata contract. Missing structure holds and
+  needs the existing unpublished offline provisioning path; no live migration or
+  implicit post-rollback empty-directory residue is accepted.
+* **F4:** managed helpers, eight privileged support templates, bootstrap and
+  engines are read, compared to exact Git objects and frozen together. Substituted
+  units and retained engines use those bytes. The path validator also executes
+  from its private frozen copy. Driver construction consumes the acknowledged
+  app's authenticated retained candidate source, rather than rereading a live
+  checkout after validation. Its retained engine registration uses that same set.
+* **F5:** release-query failure AND ordinary empty-selection build/cache handling
+  use validated retained-product selection for the exact target/revision. Neither
+  reads an unproduced `materialization.json`; inherited BUILD_OUT/RETAINED_PRODUCT
+  are cleared. Absence/invalid cache refuses that reuse; failure is not compiler
+  authorization. Produced materialization is used only after actual production.
+* **F6:** only `installed-health`, after actual app/driver acknowledgement, may
+  complete a matching retry. An acknowledged console fallback is not acknowledged
+  replacement NVIDIA. Fallback disable and new activation leave retry nonterminal,
+  emit pending/reboot-required and return75 without visual success. The repair
+  wrapper releases its renderer without publishing a terminal failure/success for
+  that pending state. Root health with no driver intent checks actual loaded
+  identities before acknowledging the initial app. Console health cannot publish
+  NVIDIA visual success or complete an NVIDIA replacement retry.
+
+Authored VM regressions extend the real CLI entry for pre-ack driver refusal,
+actual0700 module-directory counterexample and verified-fallback retry remaining
+nonterminal. Raw-plan CLI regression rejects recovery-control effects even with
+existing parents and refuses absent state parents without creation.
+`tests/guardian_immutable_inputs.py` runs a real local Git clone and actual freeze
+consumer, then changes each real privileged template and engine independently;
+it preserves each refusal and verifies HEAD equality cannot authorize changed bytes.
+It does not override any method or stand in for full installed execution.
+
+Required next evidence remains one separately admitted ordinary actual changed
+product transaction through real producer/startup/new-boot/health, followed by
+these changed fault cases and abrupt/repeated recovery on the same owned overlay.
+For F1 interrupt between component reconciliation, verify the permanent entry is
+still enabled and reachable; app-pending driver refusal is the enforced baseline.
+For F5 disable only the admitted guest network after the existing authenticated
+checkout/cache are prepared, then execute ordinary release discovery with no
+BUILD_OUT and with an inherited unrelated BUILD_OUT: require exact cache reuse or
+explicit safe absence, never nounset/unrelated materialization/unchanged compile.
+No fake curl, UID, filesystem, systemd or method adapter proves this OS workflow.

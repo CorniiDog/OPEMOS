@@ -90,6 +90,21 @@ def main():
         plan.write_text(json.dumps(document))
         run(root, rejected, 'activate', plan, success=False)
         assert not (rejected / 'intent.json').exists()
+        # Driver plans cannot replace the recovery entry/dispatcher/app, and
+        # absent parent directories are never silently created outside intent.
+        (root/'etc/systemd/system').mkdir(parents=True)
+        (root/'etc/NetworkManager/dispatcher.d').mkdir(parents=True)
+        for relative in ('etc/systemd/system/opemos-nvidia-guardian.service',
+                         'etc/NetworkManager/dispatcher.d/90-opemos-nvidia-repair',
+                         'var/lib/open-gpu-kernel-modules-steamos-support/recovery/state.json'):
+            row={'path':relative,'source':str(candidate),
+                 'sha256':hashlib.sha256(candidate.read_bytes()).hexdigest()}
+            bad={'schemaVersion':1,'kernel':'6.18.50-test','rootIdentity':root_identity(root),
+                 'completeWriterSet':True,'files':[row]}
+            plan.write_text(json.dumps(bad))
+            run(root,rejected,'activate',plan,success=False)
+            assert not (rejected/'intent.json').exists() and not (root/relative).exists()
+        assert not (root/'var').exists(),'no unjournaled directory creation'
     print('ordinary CLI transaction/UID/schema/foreign-data cases passed')
 
 

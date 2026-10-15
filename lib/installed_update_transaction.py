@@ -142,6 +142,19 @@ def target(root, relative, kernel, allow_missing=False):
     return path
 
 
+def effect_target(root,relative,kernel,action,allow_missing=False):
+    path=target(root,relative,kernel,allow_missing=allow_missing)
+    control=(relative.startswith(GUARDIAN_HOME) or relative.startswith('etc/systemd/system/')
+             and relative!='etc/systemd/system/default.target' or
+             relative.startswith(('etc/NetworkManager/','etc/atomic-update.conf.d/')))
+    need(action=='guardian-update' or not control,'driver effect cannot change recovery authority')
+    # This profile deliberately requires existing directory structure. Directory
+    # creation/migration belongs to the unpublished offline image installer;
+    # file rollback must not silently leave newly created live directories.
+    need(path.parent.is_dir(),'installed profile requires pre-existing target directories')
+    return path
+
+
 def root_identity(root):
     need(root.is_absolute() and root.resolve() == root, 'exact root required')
     info = root.stat()
@@ -231,7 +244,7 @@ def load_intent(root, store):
     for index, row in enumerate(rows):
         need(set(row) == {'path', 'backup', 'candidate', 'oldSHA256', 'newSHA256', 'oldMode', 'newMode'},
              'invalid artifact fields')
-        target(root, row['path'], intent['kernel'], allow_missing=True)
+        effect_target(root, row['path'], intent['kernel'], intent['action'], allow_missing=True)
         for key, prefix in [('backup', 'previous-'), ('candidate', 'candidate-')]:
             need(row[key] is None or row[key] == prefix + str(index), 'invalid retained reference')
         need((row['backup'] is None) == (row['oldSHA256'] is None)
@@ -249,7 +262,7 @@ def load_intent(root, store):
 
 def verify_set(root, intent, field):
     for row in intent['files']:
-        path = target(root, row['path'], intent['kernel'], allow_missing=True)
+        path = effect_target(root, row['path'], intent['kernel'], intent['action'], allow_missing=True)
         need(current_hash(path) == row[field], 'installed generation differs: ' + row['path'])
         if row[field] is not None:
             expected_mode = row['oldMode' if field == 'oldSHA256' else 'newMode']
@@ -265,14 +278,7 @@ def place(path, data, mode, expected_hash):
             os.unlink(path)
             fsync_dir(path.parent)
         return
-    missing = []
-    node = path.parent
-    while not node.exists():
-        missing.append(node)
-        node = node.parent
-    for directory in reversed(missing):
-        directory.mkdir(mode=0o755)
-        fsync_dir(directory.parent)
+    need(path.parent.is_dir(),'unplanned directory creation refused')
     if link_key(path) is not None:
         prefix = b'OP_DEFAULT_TARGET_LINK\0'
         need(data.startswith(prefix), 'managed target must be a closed symlink')
@@ -300,7 +306,7 @@ def recover(root, store):
         verify_set(root, intent, 'oldSHA256' if intent['phase'] == 'restored' else 'newSHA256')
         return {'state': intent['phase'], 'rebootHealthVerified': intent['phase'] == 'healthy'}
     for row in intent['files']:
-        path = target(root, row['path'], intent['kernel'], allow_missing=True)
+        path = effect_target(root, row['path'], intent['kernel'], intent['action'], allow_missing=True)
         need(current_hash(path) in (row['oldSHA256'], row['newSHA256']), 'foreign artifact; hold')
         if os.path.lexists(path):
             need(stat.S_IMODE(path.lstat().st_mode) in (row['oldMode'], row['newMode']),
@@ -312,7 +318,7 @@ def recover(root, store):
     durable(store / 'intent.json', intent)
     for index, row in enumerate(reversed(intent['files'])):
         old = None if row['backup'] is None else read(store / row['backup'], MAX_FILE)
-        path = target(root, row['path'], intent['kernel'], allow_missing=True)
+        path = effect_target(root, row['path'], intent['kernel'], intent['action'], allow_missing=True)
         if (current_hash(path) != row['oldSHA256'] or
                 os.path.lexists(path) and stat.S_IMODE(path.lstat().st_mode) != row['oldMode']):
             observed = current_hash(path)
@@ -360,7 +366,7 @@ def heal_known_generation(root, store):
         rows=[]
         total=0
         for index,row in enumerate(intent['files']):
-            path=target(root,row['path'],intent['kernel'],allow_missing=True)
+            path=effect_target(root,row['path'],intent['kernel'],intent['action'],allow_missing=True)
             expected=row[which+'SHA256']
             observed=current_hash(path)
             need(expected is not None or observed is None, 'new unknown file at an absent owned path; preserve it')
@@ -395,7 +401,7 @@ def heal_known_generation(root, store):
         source=row['candidate' if which=='new' else 'backup']
         data=None if source is None else read(store/source,MAX_FILE)
         need((None if data is None else digest(data))==row[which+'SHA256'],'good repair bytes changed')
-        path=target(root,row['path'],intent['kernel'],allow_missing=True)
+        path=effect_target(root,row['path'],intent['kernel'],intent['action'],allow_missing=True)
         current=current_hash(path)
         need(current in (entry['observedSHA256'],row[which+'SHA256']),'new foreign bytes during repair')
         if current!=row[which+'SHA256']:
@@ -420,6 +426,7 @@ def prepare(root, store, plan_path, *, context=None):
     need(type(plan['kernel']) is str and re.fullmatch(r'[A-Za-z0-9_.+-]{1,192}', plan['kernel']),
          'invalid plan kernel')
     need(plan['rootIdentity'] == root_identity(root), 'target changed')
+    action=(context or {}).get('action','update')
     rows = plan['files']
     need(0 < len(rows) <= MAX_FILES and len({r['path'] for r in rows}) == len(rows), 'invalid plan')
     # Boot artifacts are always last; no caller-provided ordering override.
@@ -429,7 +436,7 @@ def prepare(root, store, plan_path, *, context=None):
     filesystem_budgets = {}
     for index, row in enumerate(rows):
         need(set(row) == {'path', 'source', 'sha256'}, 'closed plan row required')
-        path = target(root, row['path'], plan['kernel'], allow_missing=True)
+        path = effect_target(root,row['path'],plan['kernel'],action,allow_missing=True)
         need(not path.is_relative_to(store), 'cannot overwrite transaction evidence')
         if os.path.lexists(path):
             metadata=path.lstat()
@@ -490,7 +497,7 @@ def commit_prepared(root, store):
     intent['phase'] = 'activating'
     durable(store / 'intent.json', intent)
     for index, row in enumerate(intent['files']):
-        path = target(root, row['path'], intent['kernel'], allow_missing=True)
+        path = effect_target(root, row['path'], intent['kernel'], intent['action'], allow_missing=True)
         need(current_hash(path) == row['oldSHA256'], 'prestate changed')
         new = None if row['candidate'] is None else read(store / row['candidate'], MAX_FILE)
         need(new is None or digest(new) == row['newSHA256'], 'retained candidate changed')

@@ -64,6 +64,12 @@ args=(--source "$SUPPORT_ROOT" --revision "$REVISION" --nvidia "$NVIDIA_VERSION"
 if [[ -n "$INTERSTITIAL_BINARY" ]]; then
     args+=(--interstitial "$STAGING/opemos-interstitial" --interstitial-sha256 "$INTERSTITIAL_SHA256")
 fi
-sudo python3 "$SUPPORT_ROOT/lib/install_guardian_generation.py" "${args[@]}"
+result="$(sudo python3 "$SUPPORT_ROOT/lib/install_guardian_generation.py" "${args[@]}")"
+printf '%s\n' "$result"
 sudo systemctl daemon-reload
 log "Guardian generation installed; a new boot and health acknowledgement are required."
+
+if python3 -c 'import json,sys; raise SystemExit(0 if json.loads(sys.argv[1]).get("state")=="pending-health" else 1)' "$result"; then
+    log "Guardian requires a new boot and health acknowledgement before driver activation."
+    exit 75
+fi

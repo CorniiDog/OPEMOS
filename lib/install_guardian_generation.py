@@ -49,7 +49,47 @@ def registered():
     return doc
 
 
-def register(kind, store, source):
+TEMPLATES=tuple('support/recovery/'+name for name in (
+    'opemos-nvidia-guardian.service.in','opemos-interstitial.service.in',
+    'opemos-nvidia-repair.service.in','opemos-nvidia-health.service.in',
+    'opemos-nvidia-repair.timer','opemos-nvidia-health.timer',
+    '90-opemos-nvidia-repair','90-opemos-nvidia-guardian.conf'))
+
+
+def freeze_source(source,revision):
+    import subprocess
+    from recovery_cached_product import read_regular
+    actual=subprocess.check_output(['git','-C',str(source),'rev-parse','HEAD'],timeout=30).decode().strip()
+    tx.need(actual==revision,'guardian checkout commit differs')
+    frozen={}
+    for relative in dict.fromkeys((*tx.GUARDIAN_FILES,*EXTRA,*TEMPLATES)):
+        data=read_regular(source/relative,8*1024**2,'immutable guardian source')
+        committed=subprocess.check_output(['git','-C',str(source),'show',revision+':'+relative],timeout=30)
+        tx.need(data==committed,'guardian source/template differs from immutable Git input: '+relative)
+        frozen[relative]=data
+    return frozen
+
+
+def retained_driver_source():
+    # Driver admission requires an acknowledged app. Consume its private sealed
+    # candidate bytes, not another read from the live checkout after validation.
+    import installed_boot_guard as guard
+    doc=registered();tx.need(doc['app'] is not None,'no permanent app generation')
+    engine,store=guard.engine(doc['app']);intent=engine.load_intent(Path('/'),store)
+    tx.need(intent['phase']=='healthy','permanent app must be acknowledged')
+    engine.verify_set(Path('/'),intent,'newSHA256')
+    result={}
+    for row in intent['files']:
+        if row['path'].startswith(tx.GUARDIAN_HOME):
+            name=row['path'][len(tx.GUARDIAN_HOME):]
+            if row['candidate'] is not None:
+                data=engine.read(store/row['candidate'],engine.MAX_FILE)
+                tx.need(engine.digest(data)==row['newSHA256'],'retained source changed')
+                result[name]=data
+    return result
+
+
+def register(kind, store, frozen):
     private_directory(BOOT)
     doc = registered()
     if doc[kind] is not None:
@@ -61,11 +101,11 @@ def register(kind, store, source):
     private_directory(store / 'engine')
     hashes = {}
     for name in ('installed_update_transaction.py','atomic_output.py'):
-        data = (source / 'lib' / name).read_bytes()
+        data = frozen['lib/'+name]
         tx.need(0 < len(data) <= 256 * 1024, 'recovery engine size')
         tx.replace_durable(store / 'engine' / name, data, 0o500)
         hashes[name] = tx.digest(data)
-    data = (source / 'lib/installed_boot_guard.py').read_bytes()
+    data = frozen['lib/installed_boot_guard.py']
     boot_script = BOOT / 'boot-guard.py'
     if boot_script.exists() and tx.read(boot_script, 256 * 1024) != data:
         # Never rewrite the bootstrap while an earlier transaction needs it.
@@ -100,12 +140,18 @@ def acknowledge_app():
 def build(args):
     tx.need(os.geteuid() == 0 and re.fullmatch('[0-9a-f]{40}',args.revision)
             and re.fullmatch(r'[0-9]+\.[0-9]+(?:\.[0-9]+)?',args.nvidia), 'exact installed authority required')
+    # Installed profile does not create target directories outside its journal.
+    # First image provisioning supplies this finite structure in the unpublished
+    # offline profile. Refuse before even creating private bootstrap artifacts.
+    for relative in ('bootstrap','lib','trust','bin'):
+        parent=DEST/relative
+        tx.need(parent.is_dir() and parent.resolve()==parent,
+                'pre-existing offline-provisioned guardian directories required')
     private_directory(BOOT)
     # Source comes from the existing authenticated immutable Git checkout.
     # Bind every copied managed byte to that exact commit, including engines.
     import subprocess
-    actual = subprocess.check_output(['git','-C',str(args.source),'rev-parse','HEAD'],timeout=30).decode().strip()
-    tx.need(actual == args.revision, 'guardian checkout commit differs')
+    frozen=freeze_source(args.source,args.revision)
     existing=registered()
     if not (BOOT/'current.json').exists():tx.durable(BOOT/'current.json',existing)
     old=existing['app']
@@ -135,13 +181,7 @@ def build(args):
     for relative in (*tx.GUARDIAN_FILES,*EXTRA):
         if relative in {r['path'].removeprefix(tx.GUARDIAN_HOME) for r in rows}:
             continue
-        path = args.source / relative
-        from recovery_cached_product import read_regular
-        data = read_regular(path,8*1024**2,'guardian source')
-        authenticated = subprocess.check_output(['git','-C',str(args.source),'show',args.revision+':'+relative],timeout=30)
-        tx.need(data == authenticated, 'guardian source differs from immutable Git input')
-        tx.need(path.is_file() and not path.is_symlink() and 0 < len(data) <= 8*1024**2,
-                'guardian source missing/unsafe: ' + relative)
+        data=frozen[relative]
         original = DEST / relative
         if relative.startswith('trust/') and original.exists():
             tx.need(tx.read(original, 1024**2) == data, 'trust input change requires separate approval')
@@ -161,20 +201,22 @@ def build(args):
                 'first guardian requires authenticated interstitial; existing binary must retain exact receipt')
     for name in ('opemos-nvidia-guardian.service','opemos-interstitial.service',
                  'opemos-nvidia-repair.service','opemos-nvidia-health.service'):
-        data=(args.source/'support/recovery'/ (name+'.in')).read_bytes().replace(b'@DEST@',str(DEST).encode())
+        data=frozen['support/recovery/'+name+'.in'].replace(b'@DEST@',str(DEST).encode())
         if name=='opemos-nvidia-guardian.service':
             data=data.replace(b'ExecStart='+str(DEST).encode()+b'/bootstrap/run_guardian_with_interstitial.sh',
                               b'ExecStart=/usr/bin/python3 '+str(BOOT).encode()+b'/boot-guard.py')
         add('etc/systemd/system/'+name,data,0o644)
     for name in ('opemos-nvidia-repair.timer','opemos-nvidia-health.timer'):
-        add('etc/systemd/system/'+name,(args.source/'support/recovery'/name).read_bytes(),0o644)
+        add('etc/systemd/system/'+name,frozen['support/recovery/'+name],0o644)
     for relative,source in [('etc/NetworkManager/dispatcher.d/90-opemos-nvidia-repair','90-opemos-nvidia-repair'),
                             ('etc/atomic-update.conf.d/90-opemos-nvidia-guardian.conf','90-opemos-nvidia-guardian.conf')]:
-        add(relative,(args.source/'support/recovery'/source).read_bytes(),0o755 if 'dispatcher.d' in relative else 0o644)
+        add(relative,frozen['support/recovery/'+source],0o755 if 'dispatcher.d' in relative else 0o644)
     for relative,targets in tx.LINK_TARGETS.items():
         if relative != 'etc/systemd/system/default.target':
             add(relative,b'OP_DEFAULT_TARGET_LINK\0'+targets[0].encode(),0o777)
-    check=['/usr/bin/python3',str(args.source/'lib/validate_recovery_install_path.py'),'--root','/']
+    validator=store/'validate-paths.py'
+    tx.replace_durable(validator,frozen['lib/validate_recovery_install_path.py'],0o500)
+    check=['/usr/bin/python3',str(validator),'--root','/']
     for row in rows:
         if row['path'] in tx.LINK_TARGETS:
             check += ['--expected-symlink', row['path']+'='+tx.LINK_TARGETS[row['path']][0]]
@@ -189,7 +231,7 @@ def build(args):
         'authority':{'policy':{'supportRevision':args.revision,'nvidiaVersion':args.nvidia}},
         'readonlyBefore':readonly,'action':'guardian-update','profile':'console'})
     # Publishing engine registration is after durable intent and before files.
-    register('app',store,args.source)
+    register('app',store,frozen)
     try:
         if readonly: command(['/usr/bin/steamos-readonly','disable'],30)
         return tx.commit_prepared(Path('/'),store)

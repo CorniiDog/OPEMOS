@@ -46,6 +46,14 @@ fi
 status=0
 OPEMOS_RECOVERY_PROGRESS_STATE="$PROGRESS" \
     "$SUPPORT_ROOT/bootstrap/recoveryctl.sh" repair-auto --json || status=$?
+if [[ "$status" == 75 ]]; then
+    document="$("$SUPPORT_ROOT/bootstrap/recoveryctl.sh" status --json)" || exit 1
+    if python3 -c 'import json,sys; raise SystemExit(0 if json.loads(sys.argv[1]).get("reason")=="installed_generation_awaits_boot_health" else 1)' "$document"; then
+        python3 "$WRITER" set --state "$PROGRESS" --phase verifying >/dev/null
+        [[ "$PROGRESS" != /run/opemos/interstitial/progress.json ]] || systemctl stop opemos-interstitial.service
+        exit 75
+    fi
+fi
 if [[ "$status" -ne 0 ]]; then
     # Leave every unsuccessful automatic attempt visibly terminal. The writer
     # refuses to replace a terminal document, which is safe for future phases.
