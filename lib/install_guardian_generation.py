@@ -40,6 +40,8 @@ def private_directory(path):
 def registered():
     pointer = BOOT / 'current.json'
     if not pointer.exists():
+        tx.need(not (BOOT/'boot-guard.py').exists() and not list(BOOT.glob('app-*')),
+                'bootstrap registry missing; preserve retained operations')
         return {'schemaVersion': 1, 'app': None, 'driver': None}
     doc = tx.parse(tx.read(pointer, 16384))
     tx.need(set(doc) == {'schemaVersion','app','driver'} and doc['schemaVersion'] == 1,
@@ -49,6 +51,13 @@ def registered():
 
 def register(kind, store, source):
     private_directory(BOOT)
+    doc = registered()
+    if doc[kind] is not None:
+        import installed_boot_guard as guard
+        old_engine,old_store=guard.engine(doc[kind])
+        old_intent=old_engine.load_intent(Path('/'),old_store)
+        tx.need(old_intent['phase'] in ('healthy','restored'),
+                'registered operation is still pending; preserve it')
     private_directory(store / 'engine')
     hashes = {}
     for name in ('installed_update_transaction.py','atomic_output.py'):
@@ -67,7 +76,6 @@ def register(kind, store, source):
                 prior = engine.load_intent(Path('/'), previous)
                 tx.need(prior['phase'] in ('healthy','restored'), 'pending bootstrap version; preserve it')
     tx.replace_durable(boot_script, data, 0o500)
-    doc = registered()
     doc[kind] = {'store':str(store),'engine':hashes}
     tx.durable(BOOT / 'current.json', doc)
 
@@ -99,6 +107,7 @@ def build(args):
     actual = subprocess.check_output(['git','-C',str(args.source),'rev-parse','HEAD'],timeout=30).decode().strip()
     tx.need(actual == args.revision, 'guardian checkout commit differs')
     existing=registered()
+    if not (BOOT/'current.json').exists():tx.durable(BOOT/'current.json',existing)
     old=existing['app']
     if old:
         import installed_boot_guard as guard

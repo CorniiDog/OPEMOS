@@ -467,7 +467,14 @@ fn status_card(ui: &mut egui::Ui, title: &str, message: &str, color: Color32) {
 }
 
 fn draw_status(ui: &mut egui::Ui, status: &RecoveryStatus) {
-    let (title, message, color) = match status.status.as_str() {
+    let (title, message, color) = if status.reason == "installed_generation_awaits_boot_health" {
+        (
+            "Awaiting boot health",
+            "The installed files are verified. A new boot and driver health check are still required.",
+            WARNING,
+        )
+    } else {
+        match status.status.as_str() {
         "healthy" => (
             "Exact NVIDIA stack ready",
             "All five modules match the running kernel and userspace.",
@@ -483,6 +490,7 @@ fn draw_status(ui: &mut egui::Ui, status: &RecoveryStatus) {
             "The active slot cannot start the exact NVIDIA stack safely.",
             FAILURE,
         ),
+        }
     };
     status_card(ui, title, message, color);
     ui.add_space(12.0);

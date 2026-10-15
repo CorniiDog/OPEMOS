@@ -288,9 +288,15 @@ acquire_lifecycle_lock()
 
     # Preserve one inode so concurrent lifecycle operations cannot lock
     # different files after a pathname replacement.
-    sudo mkdir -p "$(dirname "$lock_file")"
-    sudo touch "$lock_file"
-    sudo chmod 0666 "$lock_file"
+    if (( EUID == 0 )); then
+        mkdir -p "$(dirname "$lock_file")"
+        touch "$lock_file"
+        chmod 0666 "$lock_file"
+    else
+        sudo mkdir -p "$(dirname "$lock_file")"
+        sudo touch "$lock_file"
+        sudo chmod 0666 "$lock_file"
+    fi
 
     exec 9>"$lock_file"
     flock -n 9 ||

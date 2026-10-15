@@ -141,22 +141,26 @@ if [[ "$YES" != "1" ]]; then
 fi
 
 log "Requesting administrator privileges..."
-sudo -v
+if (( EUID != 0 )); then sudo -v; fi
 acquire_lifecycle_lock
 
 # The old writer can operate only inside a kernel-verified private candidate.
 # Original installed roots always enter the persistent owning controller.
-if ! sudo python3 "$SUPPORT_ROOT/lib/installed_update_transaction.py" stage-check --root / 2>/dev/null; then
+ROOT_COMMAND=(sudo)
+if (( EUID == 0 )); then ROOT_COMMAND=(); fi
+if ! "${ROOT_COMMAND[@]}" python3 "$SUPPORT_ROOT/lib/installed_update_transaction.py" stage-check --root / 2>/dev/null; then
     [[ -n "$CHECKSUM" ]] || die "Transactional installed updates require an exact archive checksum."
     update_args=(update --root / --support "$SUPPORT_ROOT"
         --policy-root /home/.steamos/open-gpu-kernel-modules-steamos-support/recovery
         --kernel "$CURRENT_KERNEL" --nvidia "$CURRENT_NVIDIA"
         --archive "$ARCHIVE" --archive-sha256 "${EXPECTED_SHA,,}")
     [[ -z "$CACHE" ]] || update_args+=(--cache "$CACHE")
-    sudo python3 "$SUPPORT_ROOT/lib/installed_update_transaction.py" "${update_args[@]}"
+    "${ROOT_COMMAND[@]}" python3 "$SUPPORT_ROOT/lib/installed_update_transaction.py" "${update_args[@]}"
     exit 0
 fi
 CANDIDATE_STAGE=1
+# The confined writer is already UID0; it must not invoke a setuid PAM helper.
+ROOT_COMMAND=()
 
 TARGET_DIR="$(project_system_path "/usr/lib/modules/${CURRENT_KERNEL}/updates/open-gpu-kernel-modules-steamos")"
 STATE_ROOT="$(project_system_path "/var/lib/open-gpu-kernel-modules-steamos-support")"
@@ -173,7 +177,7 @@ STAGE=""
 restore_readonly()
 {
     if [[ "$RO_WAS_ENABLED" == "1" ]]; then
-        if ! sudo steamos-readonly enable >/dev/null 2>&1; then
+        if ! "${ROOT_COMMAND[@]}" steamos-readonly enable >/dev/null 2>&1; then
             warn "Failed to re-enable SteamOS read-only mode."
             return 1
         fi
@@ -189,23 +193,23 @@ cleanup()
     if [[ "$INSTALL_COMPLETE" != "1" && "$TARGET_TOUCHED" == "1" ]]; then
         warn "Install failed; restoring previous updates directory."
 
-        if ! sudo rm -rf "$TARGET_DIR"; then
+        if ! "${ROOT_COMMAND[@]}" rm -rf "$TARGET_DIR"; then
             ROLLBACK_COMPLETE=0
         fi
 
         if [[ -d "$BACKUP_DIR/modules" ]]; then
-            if ! sudo mkdir -p "$(dirname "$TARGET_DIR")" ||
-               ! sudo cp -a "$BACKUP_DIR/modules" "$TARGET_DIR"; then
+            if ! "${ROOT_COMMAND[@]}" mkdir -p "$(dirname "$TARGET_DIR")" ||
+               ! "${ROOT_COMMAND[@]}" cp -a "$BACKUP_DIR/modules" "$TARGET_DIR"; then
                 ROLLBACK_COMPLETE=0
             fi
         fi
 
-        if ! sudo depmod -a "$CURRENT_KERNEL"; then
+        if ! "${ROOT_COMMAND[@]}" depmod -a "$CURRENT_KERNEL"; then
             ROLLBACK_COMPLETE=0
         fi
 
         if command -v mkinitcpio >/dev/null 2>&1; then
-            if ! sudo mkinitcpio -P >/dev/null 2>&1; then
+            if ! "${ROOT_COMMAND[@]}" mkinitcpio -P >/dev/null 2>&1; then
                 ROLLBACK_COMPLETE=0
             fi
         fi
@@ -214,7 +218,7 @@ cleanup()
     if [[ "$INSTALL_COMPLETE" != "1" && "$STATE_TOUCHED" == "1" ]]; then
         warn "Restoring previous install state metadata."
 
-        if ! sudo rm -f \
+        if ! "${ROOT_COMMAND[@]}" rm -f \
             "${STATE_ROOT}/installed-build-info.txt" \
             "${STATE_ROOT}/installed-archive.txt" \
             "${STATE_ROOT}/installed-kernel.txt" \
@@ -223,7 +227,7 @@ cleanup()
         fi
 
         if [[ -d "$BACKUP_DIR/state" ]]; then
-            if ! sudo cp -a "$BACKUP_DIR/state/." "$STATE_ROOT/"; then
+            if ! "${ROOT_COMMAND[@]}" cp -a "$BACKUP_DIR/state/." "$STATE_ROOT/"; then
                 ROLLBACK_COMPLETE=0
             fi
         fi
@@ -232,7 +236,7 @@ cleanup()
     if [[ "$INSTALL_COMPLETE" != "1" && -n "$BACKUP_DIR" &&
           -d "$BACKUP_DIR" ]]; then
         if [[ "$ROLLBACK_COMPLETE" == "1" ]]; then
-            sudo rm -rf "$BACKUP_DIR" ||
+            "${ROOT_COMMAND[@]}" rm -rf "$BACKUP_DIR" ||
                 warn "Could not remove the completed failed-attempt rollback generation."
         else
             warn "Rollback was incomplete; preserving generation: $BACKUP_DIR"
@@ -266,16 +270,16 @@ if [[ "${CANDIDATE_STAGE:-0}" != 1 ]] && command -v steamos-readonly >/dev/null 
    steamos-readonly status 2>/dev/null | grep -qi enabled; then
     log "Temporarily disabling SteamOS read-only mode..."
     RO_WAS_ENABLED=1
-    sudo steamos-readonly disable
+    "${ROOT_COMMAND[@]}" steamos-readonly disable
 fi
 
-sudo mkdir -p "$BACKUP_ROOT"
-BACKUP_DIR="$(sudo mktemp -d "${BACKUP_ROOT}/${STAMP}.XXXXXX")"
-sudo chown "$(id -u):$(id -g)" "$BACKUP_DIR"
+"${ROOT_COMMAND[@]}" mkdir -p "$BACKUP_ROOT"
+BACKUP_DIR="$("${ROOT_COMMAND[@]}" mktemp -d "${BACKUP_ROOT}/${STAMP}.XXXXXX")"
+"${ROOT_COMMAND[@]}" chown "$(id -u):$(id -g)" "$BACKUP_DIR"
 
 if [[ -d "$TARGET_DIR" ]]; then
-    sudo cp -a "$TARGET_DIR" "$BACKUP_DIR/modules"
-    sudo chown -R "$(id -u):$(id -g)" "$BACKUP_DIR"
+    "${ROOT_COMMAND[@]}" cp -a "$TARGET_DIR" "$BACKUP_DIR/modules"
+    "${ROOT_COMMAND[@]}" chown -R "$(id -u):$(id -g)" "$BACKUP_DIR"
 fi
 
 STAGE="$(mktemp -d "${INSTALL_TMP_ROOT%/}/${PROJECT_ID}-install-stage.XXXXXX")"
@@ -290,7 +294,7 @@ for module in "${MODULES[@]}"; do
             install -m 0644 "$module" "$STAGE/$module_name"
             ;;
         *.ko)
-            zstd -q -f -T0 "$module" -o "$STAGE/${module_name}.zst"
+            zstd -q -f -T1 "$module" -o "$STAGE/${module_name}.zst"
             ;;
         *)
             die "Unsupported module file: $module_name"
@@ -329,12 +333,12 @@ printf '[%s]   Required with reserve:  %d MiB\n\n' "$PROJECT_NAME" "$((REQUIRED_
     die "Insufficient SteamOS root space for safe module replacement."
 
 TARGET_TOUCHED=1
-sudo rm -rf "$TARGET_DIR"
-sudo install -d -m 0755 "$(dirname "$TARGET_DIR")" "$TARGET_DIR"
-sudo cp -a "$STAGE/." "$TARGET_DIR/"
-sudo chown root:root "$TARGET_DIR"/*.ko.zst
-sudo chmod 0644 "$TARGET_DIR"/*.ko.zst
-sudo install -d -m 0755 "$TARGET_DIR"
+"${ROOT_COMMAND[@]}" rm -rf "$TARGET_DIR"
+"${ROOT_COMMAND[@]}" install -d -m 0755 "$(dirname "$TARGET_DIR")" "$TARGET_DIR"
+"${ROOT_COMMAND[@]}" cp -a "$STAGE/." "$TARGET_DIR/"
+"${ROOT_COMMAND[@]}" chown root:root "$TARGET_DIR"/*.ko.zst
+"${ROOT_COMMAND[@]}" chmod 0644 "$TARGET_DIR"/*.ko.zst
+"${ROOT_COMMAND[@]}" install -d -m 0755 "$TARGET_DIR"
 
 for staged_module in "$STAGE"/*.ko.zst; do
     installed_module="$TARGET_DIR/$(basename "$staged_module")"
@@ -356,7 +360,7 @@ for staged_module in "$STAGE"/*.ko.zst; do
 done
 
 log "Refreshing module dependency database..."
-sudo depmod -a "$CURRENT_KERNEL"
+"${ROOT_COMMAND[@]}" depmod -a "$CURRENT_KERNEL"
 
 RESOLVED="$(modinfo -n nvidia 2>/dev/null || true)"
 RESOLVED_REAL="$(canonicalize_path "$RESOLVED")"
@@ -369,10 +373,10 @@ esac
 
 if command -v mkinitcpio >/dev/null 2>&1; then
     log "Rebuilding initramfs..."
-    sudo mkinitcpio -P
+    "${ROOT_COMMAND[@]}" mkinitcpio -P
 fi
 
-sudo mkdir -p "$STATE_ROOT"
+"${ROOT_COMMAND[@]}" mkdir -p "$STATE_ROOT"
 mkdir -p "$BACKUP_DIR/state"
 
 for state_file in \
@@ -382,19 +386,19 @@ for state_file in \
     installed-nvidia.txt
 do
     if [[ -f "${STATE_ROOT}/${state_file}" ]]; then
-        sudo cp -a "${STATE_ROOT}/${state_file}" "$BACKUP_DIR/state/"
+        "${ROOT_COMMAND[@]}" cp -a "${STATE_ROOT}/${state_file}" "$BACKUP_DIR/state/"
     fi
 done
 
-sudo chown -R "$(id -u):$(id -g)" "$BACKUP_DIR"
+"${ROOT_COMMAND[@]}" chown -R "$(id -u):$(id -g)" "$BACKUP_DIR"
 
 STATE_TOUCHED=1
-sudo cp "$INFO" "${STATE_ROOT}/installed-build-info.txt"
-printf '%s\n' "$ARCHIVE" | sudo tee "${STATE_ROOT}/installed-archive.txt" >/dev/null
-printf '%s\n' "$CURRENT_KERNEL" | sudo tee "${STATE_ROOT}/installed-kernel.txt" >/dev/null
-printf '%s\n' "$BUILD_NVIDIA" | sudo tee "${STATE_ROOT}/installed-nvidia.txt" >/dev/null
+"${ROOT_COMMAND[@]}" cp "$INFO" "${STATE_ROOT}/installed-build-info.txt"
+printf '%s\n' "$ARCHIVE" | "${ROOT_COMMAND[@]}" tee "${STATE_ROOT}/installed-archive.txt" >/dev/null
+printf '%s\n' "$CURRENT_KERNEL" | "${ROOT_COMMAND[@]}" tee "${STATE_ROOT}/installed-kernel.txt" >/dev/null
+printf '%s\n' "$BUILD_NVIDIA" | "${ROOT_COMMAND[@]}" tee "${STATE_ROOT}/installed-nvidia.txt" >/dev/null
 
-sudo python3 "$SUPPORT_ROOT/lib/prune_backup_generations.py" \
+"${ROOT_COMMAND[@]}" python3 "$SUPPORT_ROOT/lib/prune_backup_generations.py" \
     --root "$BACKUP_ROOT" --protect "$(basename "$BACKUP_DIR")" \
     --keep 10 --max-age-days 90 ||
     warn "Backup retention could not be applied; preserved all generations."

@@ -71,7 +71,7 @@ def engine(record):
 
 def reconcile():
     if not (HOME / 'current.json').exists():
-        return
+        raise ValueError('bootstrap registry missing; preserve source/driver operations')
     document = json.loads(read(HOME / 'current.json', 16384))
     if set(document) != {'schemaVersion','app','driver'} or document['schemaVersion'] != 1:
         raise ValueError('invalid bootstrap registry')
@@ -90,8 +90,11 @@ def reconcile():
                 print(json.dumps({'component':name,'state':'retarget-required'}),flush=True)
                 continue
             intent = module.load_intent(Path('/'), store)
-            readonly = intent['readonlyBefore']
             import subprocess
+            status=subprocess.run(['/usr/bin/steamos-readonly','status'],check=True,
+                                  stdout=subprocess.PIPE,timeout=10)
+            if len(status.stdout)>4096:raise ValueError('readonly status excessive')
+            readonly = intent['readonlyBefore'] or b'enabled' in status.stdout.lower()
             if readonly:
                 subprocess.run(['/usr/bin/steamos-readonly','disable'],check=True,timeout=30)
             try:

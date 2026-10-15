@@ -273,6 +273,18 @@ def verify_receipt_modules(root, kernel, expected_version, installed_paths,
     # archive/target/current policy were checked before closed-effect staging.
     # This covers selected published/local archives without inventing canonical
     # materialization or relabelling an older offline payload receipt.
+    if root==Path('/') and Path('/.opemos-candidate-context.json').exists():
+        import installed_update_transaction as tx
+        from installed_driver_candidate import stage_allowed
+        stage_allowed(root)  # Actual producer overlay, not a caller env flag.
+        prior=tx.parse(tx.read(Path('/run/inputs/prior-modules.json'),16384))
+        if (set(prior)=={'kernel','nvidia','modules'} and prior['kernel']==kernel
+                and prior['nvidia']==expected_version and set(prior['modules'])==tx.MODULES):
+            prefix=Path('/usr/lib/modules')/kernel/'updates/open-gpu-kernel-modules-steamos'
+            if all(tx.digest(tx.read(prefix/(name+'.ko.zst'),tx.MAX_FILE))==expected
+                   for name,expected in prior['modules'].items()):
+                return 'qualified-producer-prestate'
+        # Changed modules still require their new canonical receipt below.
     pointer=root/'home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/installed-updates/current.json'
     if pointer.exists():
         import installed_update_transaction as tx
@@ -287,15 +299,25 @@ def verify_receipt_modules(root, kernel, expected_version, installed_paths,
             raise ValueError('installed generation unavailable or targets another system')
         policy=intent['authority']['policy']
         if support_revision and policy['supportRevision']!=support_revision:
-            raise ValueError('installed generation belongs to another Core policy')
+            if not (intent['phase'] in ('healthy','restored') and
+                    policy['nvidiaVersion']==expected_version and
+                    re.fullmatch('[0-9a-f]{40}',policy['supportRevision'])):
+                raise ValueError('installed generation belongs to another Core policy')
         tx.verify_set(root,intent,'oldSHA256' if intent['phase']=='restored' else 'newSHA256')
         prefix=f'usr/lib/modules/{kernel}/updates/open-gpu-kernel-modules-steamos/'
         paths={r['path'] for r in intent['files']}
         expected={prefix+name+'.ko.zst' for name in tx.MODULES}
         if not expected<=paths:
-            # Fallback transactions do not replace modules; preserve the
-            # original receipt checks rather than inventing file evidence.
-            pass
+            # Fallback deliberately preserves all five previously qualified
+            # module bytes. Keep their exact identities in owning authority;
+            # a new source revision must not make up a new module receipt.
+            key='previousModuleSHA256' if intent['phase']=='restored' else 'moduleSHA256'
+            retained=intent['authority'].get(key)
+            if type(retained) is dict and set(retained)==tx.MODULES:
+                directory=root/prefix
+                if all(tx.digest(tx.read(directory/(name+'.ko.zst'),tx.MAX_FILE))==expected_hash
+                       for name,expected_hash in retained.items()):
+                    return 'installed-transaction-retained-modules'
         else:
             return 'installed-transaction'
     if support_revision:

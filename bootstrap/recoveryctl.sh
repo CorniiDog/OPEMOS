@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SUPPORT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 source "${SUPPORT_ROOT}/lib/common.sh"
 
+ORIGINAL_RECOVERY_ARGS=("$@")
 COMMAND="${1:-status}"
 [[ $# -eq 0 ]] || shift
 PROFILE=console
@@ -12,6 +13,15 @@ ALLOW_NOUVEAU=0
 JSON=0
 YES=0
 ROOT="${PROJECT_TEST_ROOT:-/}"
+if [[ "$ROOT" == / && "$EUID" != 0 && "$COMMAND" == status ]]; then
+    # No credential prompt or access to private root-owned intent from the UI.
+    exec python3 "$SUPPORT_ROOT/lib/recovery_public_status.py" read
+fi
+if [[ "$ROOT" == / && "$EUID" != 0 ]]; then
+    exec sudo /bin/bash "$0" "${ORIGINAL_RECOVERY_ARGS[@]}"
+fi
+ROOT_COMMAND=(sudo)
+if (( EUID == 0 )); then ROOT_COMMAND=(); fi
 RECOVERY_OPERATION_LOCK_HELD=0
 RECOVERY_LIFECYCLE_LOCK_HELD=0
 RO_WAS_ENABLED=0
@@ -103,7 +113,7 @@ publish_recovery_progress()
 
 status_json()
 {
-    local base nvidia policy policy_args transaction status_code
+    local base nvidia policy policy_args transaction installed status_code
     if [[ $# -eq 1 ]]; then
         policy="$1"
     else
@@ -121,6 +131,12 @@ status_json()
         printf '%s\n' "$base"
         return "$status_code"
     fi
+    if [[ "$CANDIDATE_STAGE" == 1 ]]; then
+        # The candidate uses real file receipts, never the outer controller's
+        # live-root identity, retry journal or lifecycle lock as overlay data.
+        printf '%s\n' "$base"
+        return 0
+    fi
     transaction="$(transaction_tool show)"
     installed='{"state":"not-inspected"}'
     if [[ "$ROOT" == / ]]; then
@@ -131,8 +147,10 @@ status_json()
 import json,sys
 result=json.loads(sys.argv[1]);result['transaction']=json.loads(sys.argv[2])
 result['installedGeneration']=json.loads(sys.argv[3])
-if result['installedGeneration'].get('state') in ('prepared','activating','pending-health','rolling-back'):
-    result['status']='pending-health';result['reason']='installed_generation_awaits_boot_health'
+if (result['installedGeneration'].get('state') in ('prepared','activating','pending-health','rolling-back')
+        or result['installedGeneration'].get('rebootRequired')):
+    # Keep schema-1 module/file status values; boot health is an additive reason.
+    result['reason']='installed_generation_awaits_boot_health';result['actions']=[]
 print(json.dumps(result,sort_keys=True,separators=(',',':')))
 PYSTATUS
 }
@@ -188,10 +206,10 @@ acquire_recovery_operation_lock()
     local lock_file
     lock_file="$(project_system_path "/run/lock/${PROJECT_ID}-recovery.lock")"
     if [[ "$ROOT" == / ]]; then
-        sudo install -d -o root -g root -m 0755 "$(dirname "$lock_file")"
-        sudo touch "$lock_file"
-        sudo chown root:root "$lock_file"
-        sudo chmod 0600 "$lock_file"
+        "${ROOT_COMMAND[@]}" install -d -o root -g root -m 0755 "$(dirname "$lock_file")"
+        "${ROOT_COMMAND[@]}" touch "$lock_file"
+        "${ROOT_COMMAND[@]}" chown root:root "$lock_file"
+        "${ROOT_COMMAND[@]}" chmod 0600 "$lock_file"
     else
         install -d -m 0755 "$(dirname "$lock_file")"
         touch "$lock_file"
@@ -227,7 +245,7 @@ with_writable_root()
     RO_WAS_ENABLED=0
     if [[ "$CANDIDATE_STAGE" != 1 && "$ROOT" == / ]] && command -v steamos-readonly >/dev/null 2>&1 &&
        steamos-readonly status 2>/dev/null | grep -qi enabled; then
-        sudo steamos-readonly disable
+        "${ROOT_COMMAND[@]}" steamos-readonly disable
         RO_WAS_ENABLED=1
     fi
 }
@@ -235,7 +253,7 @@ with_writable_root()
 restore_readonly()
 {
     if [[ "${RO_WAS_ENABLED:-0}" == 1 ]]; then
-        sudo steamos-readonly enable || warn "Could not restore SteamOS read-only mode."
+        "${ROOT_COMMAND[@]}" steamos-readonly enable || warn "Could not restore SteamOS read-only mode."
         RO_WAS_ENABLED=0
     fi
 }
@@ -320,7 +338,7 @@ enable_fallback()
         *) die "Unsupported fallback profile: $PROFILE" ;;
     esac
     confirm "Enable the ${PROFILE} recovery profile?"
-    [[ "$ROOT" != / ]] || sudo -v
+    if [[ "$ROOT" == / && "$EUID" != 0 ]]; then sudo -v; fi
     acquire_recovery_mutation_locks
     # Fallback/config/initramfs/GRUB writers must join the same durable plan;
     # a retry-phase journal is not a rollback image or boot-safe transaction.
@@ -335,7 +353,7 @@ enable_fallback()
     python3 "$SUPPORT_ROOT/lib/installed_update_transaction.py" require-plan --root "$ROOT"
     with_writable_root
     local install_cmd=(install) move_cmd=(mv)
-    if [[ "$ROOT" == / ]]; then install_cmd=(sudo install); move_cmd=(sudo mv); fi
+    if [[ "$ROOT" == / ]]; then install_cmd=("${ROOT_COMMAND[@]}" install); move_cmd=("${ROOT_COMMAND[@]}" mv); fi
     "${install_cmd[@]}" -d -m 0755 "$STATE_ROOT" "$(dirname "$RECOVERY_CONFIG")"
     local temporary
     temporary="$(mktemp)"
@@ -363,15 +381,17 @@ enable_fallback()
     fi
     if [[ "$PROFILE" == nouveau-experimental && "$ROOT" == / && -f /etc/default/grub ]]; then
         [[ -e "$STATE_ROOT/grub.before-fallback" ]] ||
-            sudo install -o root -g root -m 0600 /etc/default/grub "$STATE_ROOT/grub.before-fallback"
-        sudo python3 "$SUPPORT_ROOT/lib/update_recovery_grub_args.py" --config /etc/default/grub
-        command -v update-grub >/dev/null 2>&1 && run_cancellable sudo update-grub
+            "${ROOT_COMMAND[@]}" install -o root -g root -m 0600 /etc/default/grub "$STATE_ROOT/grub.before-fallback"
+        [[ -e "$STATE_ROOT/grub.cfg.before-fallback" ]] ||
+            "${ROOT_COMMAND[@]}" install -o root -g root -m 0600 /boot/grub/grub.cfg "$STATE_ROOT/grub.cfg.before-fallback"
+        "${ROOT_COMMAND[@]}" python3 "$SUPPORT_ROOT/lib/update_recovery_grub_args.py" --config /etc/default/grub \
+            --boot-config /boot/grub/grub.cfg
     fi
     python3 "$FALLBACK_STATE_TOOL" write \
         --state "$STATE_ROOT/state.json" --profile "$PROFILE"
     if [[ "$ROOT" == / ]]; then
-        sudo systemctl --root / set-default "$([[ "$PROFILE" == console ]] && echo multi-user.target || echo graphical.target)"
-        command -v mkinitcpio >/dev/null 2>&1 && run_cancellable sudo mkinitcpio -P
+        "${ROOT_COMMAND[@]}" systemctl --root / set-default "$([[ "$PROFILE" == console ]] && echo multi-user.target || echo graphical.target)"
+        command -v mkinitcpio >/dev/null 2>&1 && run_cancellable "${ROOT_COMMAND[@]}" mkinitcpio -P
         # Candidate construction never stops the current display manager.
     fi
     restore_readonly
@@ -384,7 +404,7 @@ disable_fallback()
     document="$(status_json)"
     require_verified_fallback "$document"
     confirm "Disable recovery fallback and restore NVIDIA graphical boot?"
-    [[ "$ROOT" != / ]] || sudo -v
+    if [[ "$ROOT" == / && "$EUID" != 0 ]]; then sudo -v; fi
     acquire_recovery_mutation_locks
     # The first check avoids prompting for an invalid operation. This second
     # check is authoritative: target/module/receipt state may change before
@@ -404,7 +424,7 @@ disable_fallback()
     python3 "$SUPPORT_ROOT/lib/installed_update_transaction.py" require-plan --root "$ROOT"
     with_writable_root
     local remove_cmd=(rm -f) move_cmd=(mv)
-    if [[ "$ROOT" == / ]]; then remove_cmd=(sudo rm -f); move_cmd=(sudo mv); fi
+    if [[ "$ROOT" == / ]]; then remove_cmd=("${ROOT_COMMAND[@]}" rm -f); move_cmd=("${ROOT_COMMAND[@]}" mv); fi
     "${remove_cmd[@]}" "$RECOVERY_CONFIG"
     for path in "$NVIDIA_CONFIG" "$NVIDIA_INITRAMFS"; do
         [[ ! -f "${path}.opemos-disabled" ]] || "${move_cmd[@]}" "${path}.opemos-disabled" "$path"
@@ -412,12 +432,14 @@ disable_fallback()
     python3 "$FALLBACK_STATE_TOOL" remove --state "$STATE_ROOT/state.json"
     if [[ "$ROOT" == / ]]; then
         if [[ -f "$STATE_ROOT/grub.before-fallback" ]]; then
-            sudo install -o root -g root -m 0644 "$STATE_ROOT/grub.before-fallback" /etc/default/grub
-            sudo rm -f "$STATE_ROOT/grub.before-fallback"
-            command -v update-grub >/dev/null 2>&1 && run_cancellable sudo update-grub
+            "${ROOT_COMMAND[@]}" install -o root -g root -m 0644 "$STATE_ROOT/grub.before-fallback" /etc/default/grub
+            "${ROOT_COMMAND[@]}" rm -f "$STATE_ROOT/grub.before-fallback"
+            [[ -f "$STATE_ROOT/grub.cfg.before-fallback" ]] || die "Exact prior GRUB configuration is unavailable."
+            "${ROOT_COMMAND[@]}" install -o root -g root -m 0644 "$STATE_ROOT/grub.cfg.before-fallback" /boot/grub/grub.cfg
+            "${ROOT_COMMAND[@]}" rm -f "$STATE_ROOT/grub.cfg.before-fallback"
         fi
-        command -v mkinitcpio >/dev/null 2>&1 && run_cancellable sudo mkinitcpio -P
-        sudo systemctl --root / set-default graphical.target
+        command -v mkinitcpio >/dev/null 2>&1 && run_cancellable "${ROOT_COMMAND[@]}" mkinitcpio -P
+        "${ROOT_COMMAND[@]}" systemctl --root / set-default graphical.target
     fi
     restore_readonly
     emit_result healthy fallback_disabled graphical.target
@@ -460,6 +482,9 @@ case "$COMMAND" in
     status)
         status_code=0
         document="$(status_json)" || status_code=$?
+        if [[ "$ROOT" == / && "$CANDIDATE_STAGE" == 0 && "$status_code" == 0 ]]; then
+            printf '%s\n' "$document" | python3 "$SUPPORT_ROOT/lib/recovery_public_status.py" publish
+        fi
         if [[ "$JSON" == 1 ]]; then printf '%s\n' "$document"; else
             python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print("OPEMOS NVIDIA recovery: %s (%s)" % (d["status"],d["reason"]))' "$document"
         fi
@@ -476,8 +501,13 @@ sys.path.insert(0,sys.argv[1])
 from install_guardian_generation import acknowledge_app
 print(json.dumps(acknowledge_app(),sort_keys=True))
 PYHEALTH
+        status_json | python3 "$SUPPORT_ROOT/lib/recovery_public_status.py" publish
         reconcile_verified_transaction "$(get_kernel_version)" "$(get_nvidia_version)" \
             "$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["supportRevision"])' "$(python3 "$POLICY_TOOL" --root "$POLICY_ROOT")")"
+        if [[ -f /run/opemos/interstitial/progress.json ]]; then
+            python3 "$RECOVERY_PROGRESS_WRITER" succeed --state /run/opemos/interstitial/progress.json >/dev/null
+            systemctl stop opemos-interstitial.service
+        fi
         ;;
     guard)
         # Restart reconciliation precedes ordinary status/fallback decisions.
@@ -526,6 +556,14 @@ PYHEALTH
         nvidia="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["target"]["nvidiaVersion"] or "")' "$document")"
         [[ -n "$nvidia" ]] || die "Cannot queue repair without an exact NVIDIA userspace identity."
         [[ "$nvidia" == "$policy_nvidia" ]] || die "Recovery status differs from persistent NVIDIA policy."
+        if [[ "$COMMAND" == repair-auto && -f "$TRANSACTION" ]]; then
+            existing_retry="$(transaction_tool show)"
+            if python3 -c 'import json,sys; d=json.loads(sys.argv[1]); raise SystemExit(0 if d.get("phase")=="failed" and d.get("reason")=="unchanged_rolled_back_product" and d.get("supportRevision")==sys.argv[2] and d.get("target")=={"kernelVersion":sys.argv[3],"nvidiaVersion":sys.argv[4]} else 1)' \
+                "$existing_retry" "$revision" "$kernel" "$nvidia"; then
+                emit_result failed unchanged_rolled_back_product corrected_product_required
+                exit 76
+            fi
+        fi
         if [[ "$COMMAND" == repair-auto && -f "$TRANSACTION" ]]; then
             existing="$(transaction_tool show)"
             existing_phase="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["phase"])' "$existing")"
@@ -599,9 +637,15 @@ PYHEALTH
             cached_checksum="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["paths"]["checksum"])' "$cached_result")"
             transaction_tool set --phase installing --reason canonical_exact_cached_install >/dev/null
             publish_recovery_progress set --phase installing_modules
-            if ! OPEMOS_PINNED_NVIDIA_VERSION="$nvidia" \
+            install_rc=0
+            OPEMOS_PINNED_NVIDIA_VERSION="$nvidia" \
                 run_cancellable "$SUPPORT_ROOT/bootstrap/install.sh" \
-                    --archive "$cached_archive" --checksum "$cached_checksum" --cache "$CACHED_PRODUCT" -y; then
+                    --archive "$cached_archive" --checksum "$cached_checksum" --cache "$CACHED_PRODUCT" -y || install_rc=$?
+            if [[ "$install_rc" == 78 ]]; then
+                transaction_tool set --phase failed --reason unchanged_rolled_back_product >/dev/null
+                emit_result failed unchanged_rolled_back_product corrected_product_required
+                exit 76
+            elif [[ "$install_rc" != 0 ]]; then
                 transaction_tool set --phase retry_scheduled --reason exact_cached_repair_failed >/dev/null
                 emit_result retry_scheduled exact_cached_repair_failed timer_and_connectivity
                 exit 75
@@ -634,6 +678,10 @@ PYHEALTH
         if [[ "$online_rc" == 76 ]]; then
             transaction_tool set --phase failed --reason exact_reviewed_build_incompatible >/dev/null
             emit_result failed exact_reviewed_build_incompatible unchanged_exact_build_not_repeated
+            exit 76
+        elif [[ "$online_rc" == 78 ]]; then
+            transaction_tool set --phase failed --reason unchanged_rolled_back_product >/dev/null
+            emit_result failed unchanged_rolled_back_product corrected_product_required
             exit 76
         elif [[ "$online_rc" != 0 && "$skip_unchanged_build" == 1 ]]; then
             transaction_tool set --phase failed --reason exact_reviewed_build_incompatible >/dev/null

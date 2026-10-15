@@ -24,6 +24,10 @@ from recovery_cached_product import load as cached_load, read_regular
 
 PROJECT = 'open-gpu-kernel-modules-steamos-support'
 MAX_INPUT = 512 * 1024**2
+
+
+class RepeatedFailedProduct(ValueError):
+    pass
 CACHE_NAMES = {'modules.dep', 'modules.dep.bin', 'modules.alias', 'modules.alias.bin',
                'modules.softdep', 'modules.symbols', 'modules.symbols.bin',
                'modules.builtin.bin', 'modules.builtin.alias.bin', 'modules.devname',
@@ -267,12 +271,13 @@ def stage_namespace(args):
         subprocess.run(verification, check=True, timeout=120)
     else:
         # Fallback deliberately removes forced NVIDIA early loading. Validate
-        # the real archive listings and exact embedded fallback configuration;
+        # the real bounded archive listings and the fallback configuration path;
         # normal NVIDIA early-module verification would reject this by design.
         records = []
         for index, image in enumerate(images):
             listing = tx.read(evidence / ('listing-' + str(index)), 8 * 1024**2).decode('utf-8')
-            paths = {line.strip().lstrip('./') for line in listing.splitlines()}
+            from verify_initramfs import normalized_listing
+            paths = set(normalized_listing(evidence / ('listing-' + str(index))))
             tx.need('etc/modprobe.d/98-opemos-recovery.conf' in paths,
                     'fallback config absent from initramfs')
             tx.need('etc/mkinitcpio.conf.d/90-open-gpu-kernel-modules-steamos.conf' not in paths,
@@ -316,6 +321,7 @@ def archive_modules(path):
         for index,member in enumerate(archive):
             tx.need(index<9,'archive member bound')
             name=member.name.rstrip('/') if member.isdir() else member.name
+            tx.need(member.name in (name,name+'/') if member.isdir() else member.name==name, 'noncanonical archive path')
             tx.need(name not in seen,'duplicate archive member')
             seen.add(name)
             if name=='modules' and member.isdir():continue
@@ -323,6 +329,8 @@ def archive_modules(path):
                 'modules/'+mod+suffix for mod in tx.MODULES for suffix in ('.ko','.ko.zst')}
             tx.need(member.isfile() and name in allowed and 0<member.size<=tx.MAX_FILE,
                     'unplanned archive member')
+            if name in ('BUILD-INFO.txt','PROVENANCE.json'):
+                tx.need(member.size<=1024**2,'archive metadata bound')
             total+=member.size
             tx.need(total<=MAX_INPUT,'archive expanded input bound')
             payload=archive.extractfile(member).read(member.size+1)
@@ -350,6 +358,12 @@ def produce(args, store, boot_images, target):
         tx.replace_durable(inputs / 'archive.tar.gz', data, 0o400)
         archive_modules(inputs / 'archive.tar.gz')
         tx.replace_durable(inputs / 'archive.sha256', (expected + '  archive.tar.gz\n').encode(), 0o400)
+    # The original module set was just qualified by old_boot_evidence. Bind
+    # that exact set into read-only candidate inputs for fallback status, even
+    # when a source-only guardian upgrade changes the current Core revision.
+    prefix=args.root/'usr/lib/modules'/args.kernel/'updates/open-gpu-kernel-modules-steamos'
+    tx.durable(inputs/'prior-modules.json',{'kernel':args.kernel,'nvidia':args.nvidia,
+        'modules':{name:tx.digest(tx.read(prefix/(name+'.ko.zst'),tx.MAX_FILE)) for name in tx.MODULES}})
     if args.cache is not None:
         from recovery_cached_product import command_stage
         command_stage(SimpleNamespace(materialization=args.cache / 'materialization.json',
@@ -357,7 +371,7 @@ def produce(args, store, boot_images, target):
             steamos=target['steamosVersion'], kernel=args.kernel,
             nvidia=args.nvidia, support_revision=args.revision))
         for file in (inputs / 'cache').iterdir():
-            tx.replace_durable(file, tx.read(file, MAX_INPUT), 0o400)
+            tx.replace_durable(file, tx.read(file, MAX_INPUT), 0o600)
     command(['/usr/bin/unshare', '--mount', '--net', '--pid', '--fork', '--kill-child',
              sys.executable, str(Path(__file__).resolve()), '_stage', '--root', args.root,
              '--workspace', work, '--support', args.support, '--action', args.action,
@@ -414,7 +428,8 @@ def collect(args):
     for upper, prefix in layers:
         for path in sorted(upper.rglob('*')):
             relative = prefix + str(path.relative_to(upper))
-            if path.is_dir():
+            info = path.lstat()
+            if stat.S_ISDIR(info.st_mode):
                 if 'trusted.overlay.opaque' in os.listxattr(path, follow_symlinks=False):
                     value = os.getxattr(path, 'trusted.overlay.opaque', follow_symlinks=False)
                     if value in (b'y', b'Y'):
@@ -470,12 +485,12 @@ def collect(args):
                'rootIdentity': tx.root_identity(args.root), 'completeWriterSet': True, 'files': rows})
 
 
-def manager_path(support):
+def manager_path(support, create=True):
     # Same root-owned persistent guardian directory and policy authority.
     from recovery_policy import read_policy
     policy = read_policy(support)
     manager = support / 'installed-updates'
-    if not manager.exists():
+    if not manager.exists() and create:
         manager.mkdir(mode=0o700)
         tx.fsync_dir(manager.parent)
     return manager, policy
@@ -504,14 +519,32 @@ def check_authority(intent, policy):
             'current recovery authority changed while update pending; hold')
 
 
+def require_recovery_bootstrap(source, policy_root):
+    from install_guardian_generation import BOOT,registered
+    expected=read_regular(source/'lib/installed_boot_guard.py',256*1024,'bootstrap source')
+    tx.need(tx.read(BOOT/'boot-guard.py',256*1024)==expected,
+            'install the current authenticated guardian generation before driver activation')
+    unit=tx.read(Path('/etc/systemd/system/opemos-nvidia-guardian.service'),65536)
+    tx.need(b'ExecStart=/usr/bin/python3 '+str(BOOT).encode()+b'/boot-guard.py' in unit,
+            'persistent boot recovery entry is not installed')
+    link=Path('/etc/systemd/system/multi-user.target.wants/opemos-nvidia-guardian.service')
+    tx.need(os.readlink(link)=='../opemos-nvidia-guardian.service','boot recovery is not enabled')
+    registered()  # Closed, private, already durable registry; no authority bool.
+    for name in ('installed_update_transaction.py','atomic_output.py','installed_driver_candidate.py',
+                 'install_guardian_generation.py','installed_boot_guard.py'):
+        tx.need(tx.read(policy_root/'lib'/name,256*1024)==read_regular(source/'lib'/name,256*1024,'controller source'),
+                'supplied controller differs from installed immutable Core snapshot')
+
+
 def update(args):
     import uuid
     tx.need(os.geteuid() == 0 and args.root == Path('/'), 'installed update requires owning root controller')
-    tx.need(False, 'source candidate is incomplete: installed writer/guardian joins are not enabled')
     tx.need(args.support is not None and args.kernel == os.uname().release,
             'current exact kernel/support directory required')
+    require_recovery_bootstrap(args.support,args.policy_root)
     manager, policy = manager_path(args.policy_root)
     tx.need(args.nvidia == policy['nvidiaVersion'], 'current NVIDIA authority differs')
+    tx.require_userspace(args.nvidia)
     args.revision = policy['supportRevision']
     lock = tx.guarded_store(manager)
     was_readonly = False
@@ -521,6 +554,10 @@ def update(args):
             old = tx.load_intent(args.root, prior)
             check_authority(old, policy)
             tx.need(old['phase'] in ('healthy', 'restored'), 'pending transaction must reconcile before another update')
+            if (old['phase']=='restored' and (prior/'failure.json').exists()
+                    and old['authority'].get('archiveSHA256')==args.archive_sha256
+                    and old['authority']['policy']==policy and args.action=='update'):
+                raise RepeatedFailedProduct('same exact product already failed health; preserve evidence and require a corrected input')
             repair_readonly=readonly_enabled()
             try:
                 writable_root(repair_readonly)
@@ -546,9 +583,17 @@ def update(args):
         generation.mkdir(mode=0o700)
         tx.fsync_dir(manager)
         plan = produce(args, generation, boot_images, target)
+        module_prefix=f'usr/lib/modules/{args.kernel}/updates/open-gpu-kernel-modules-steamos/'
+        original_modules={name:tx.digest(tx.read(args.root/module_prefix/(name+'.ko.zst'),tx.MAX_FILE)) for name in tx.MODULES}
+        produced=tx.parse(tx.read(plan,tx.MAX_STATE))
+        rows={row['path']:row for row in produced['files']}
+        selected_modules={name:rows.get(module_prefix+name+'.ko.zst',{}).get('sha256',original_modules[name]) for name in tx.MODULES}
         was_readonly = readonly_enabled()
         context = {'bootImages': boot_images, 'target': target,
-                   'authority': {'policy': policy, 'archiveSHA256': args.archive_sha256, 'bootQualification': boot_qualification},
+                   'authority': {'policy': policy, 'archiveSHA256': args.archive_sha256, 'bootQualification': boot_qualification,
+                       'moduleSHA256':selected_modules,'previousModuleSHA256':original_modules,
+                       'previousAction': (old['authority'].get('previousAction','update') if old['phase']=='restored' else old['action']) if prior else 'update',
+                       'previousProfile': (old['authority'].get('previousProfile','console') if old['phase']=='restored' else old['profile']) if prior else 'console'},
                    'readonlyBefore': was_readonly, 'action': args.action, 'profile': args.profile}
         # All exact originals, candidates and the intent are flushed BEFORE
         # publishing the pointer or altering root read-only policy. A reboot
@@ -574,8 +619,9 @@ def update(args):
 
 def reconcile_controller(root, support, health=False, inspect_only=False):
     tx.need(os.geteuid() == 0 and root == Path('/'), 'installed guardian root required')
-    manager, policy = manager_path(support)
-    lock = tx.guarded_store(manager)
+    manager, policy = manager_path(support,create=False)
+    if not manager.exists():return {'state':'no-pending-intent'}
+    lock = tx.guarded_store(manager,read_only=inspect_only)
     readonly = False
     try:
         generation = selected_generation(manager)
@@ -586,13 +632,23 @@ def reconcile_controller(root, support, health=False, inspect_only=False):
         # An interrupted disable may leave the observed mode off. The durable
         # prestate, rather than today's mode alone, governs restoration.
         if inspect_only:
-            return {'state': intent['phase'], 'rebootHealthVerified': intent['phase'] == 'healthy'}
+            result={'state':intent['phase'],'rebootHealthVerified':False}
+            if intent['phase'] in ('healthy','restored'):
+                which='oldSHA256' if intent['phase']=='restored' else 'newSHA256'
+                tx.verify_set(root,intent,which)
+                try:
+                    tx.runtime_identity(root,intent,previous=intent['phase']=='restored')
+                    result.update(rebootHealthVerified=True,currentRuntimeMatches=True,rebootRequired=False)
+                except (OSError,ValueError,subprocess.SubprocessError):
+                    result.update(currentRuntimeMatches=False,rebootRequired=True)
+            return result
         readonly = intent['readonlyBefore'] or readonly_enabled()
         writable_root(readonly)
         try:
             if health:
                 if intent['phase'] == 'healthy':
                     tx.verify_set(root,intent,'newSHA256')
+                    tx.runtime_identity(root,intent)
                     return {'state':'healthy','rebootHealthVerified':True}
                 return tx.acknowledge(root, generation)
             return tx.startup(root, generation)
@@ -600,6 +656,10 @@ def reconcile_controller(root, support, health=False, inspect_only=False):
             # A bad target/authority/unknown artifact was refused before any
             # recovery writes. Recovery itself never overwrites unknown bytes.
             if health:
+                error=sys.exc_info()[1]
+                tx.durable(generation/'failure.json',{'schemaVersion':1,'phase':'health',
+                    'bootId':tx.boot_id(),'exceptionType':type(error).__name__,'reason':str(error)[:1024],
+                    'unchangedAutomaticRetryPermitted':False})
                 tx.recover(root, generation)
             raise
     finally:

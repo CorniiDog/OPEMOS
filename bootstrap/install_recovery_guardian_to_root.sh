@@ -80,6 +80,7 @@ python3 "$SUPPORT_ROOT/lib/validate_recovery_install_path.py" "${HOME_PATH_CHECK
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/bootstrap/show_recovery_console.sh \
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/recovery_status.py \
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/recovery_policy.py \
+    --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/recovery_public_status.py \
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/installed_boot_guard.py \
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/install_guardian_generation.py \
     --path .steamos/open-gpu-kernel-modules-steamos-support/recovery/lib/offline_generation.py \
@@ -137,10 +138,11 @@ if [[ -e "$LEGACY_KEEP_LIST_DIR" || -L "$LEGACY_KEEP_LIST_DIR" ]]; then
         echo "Legacy guardian keep-list mode is unexpected." >&2
         exit 1
     }
-    cmp -s "$SUPPORT_ROOT/support/recovery/90-opemos-nvidia-guardian.conf" "$LEGACY_KEEP_LIST" || {
+    if ! cmp -s "$SUPPORT_ROOT/support/recovery/90-opemos-nvidia-guardian.conf" "$LEGACY_KEEP_LIST" &&
+       [[ "$(sha256sum "$LEGACY_KEEP_LIST" | awk '{print $1}')" != "9cfec066ffcba283d572d8e146024cd19b4a7479032232d17920df4b2972a3d3" ]]; then
         echo "Legacy guardian keep-list content is unexpected." >&2
         exit 1
-    }
+    fi
 fi
 # Never reset a retained installed job or unknown bootstrap registry merely
 # because this target is mounted as an image.
@@ -177,7 +179,7 @@ install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/launch_interstitial.s
 install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/show_recovery_console.sh" "$DEST/bootstrap/show_recovery_console.sh"
 install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/bootstrap/online_install.sh" "$DEST/bootstrap/online_install.sh"
 install "${OWNERSHIP[@]}" -m 0644 "$SUPPORT_ROOT/lib/common.sh" "$DEST/lib/common.sh"
-for helper in install_guardian_generation.py installed_boot_guard.py offline_generation.py installed_driver_candidate.py snapshot_target_execution.py verify_initramfs.py capture_bounded_command.py verify_installed_modules.py installed_update_transaction.py recovery_status.py recovery_policy.py recovery_fallback_state.py recovery_transaction.py recovery_release_plan.py recovery_cached_product.py recovery_cached_receipt.py validate_github_meta.py update_recovery_grub_args.py open_opemos_contract.py validate_recovery_install_path.py desktop_update_generations.py interstitial_progress.py validate_interstitial_binary.py run_in_process_group.py payload_receipt.py atomic_output.py; do
+for helper in recovery_public_status.py install_guardian_generation.py installed_boot_guard.py offline_generation.py installed_driver_candidate.py snapshot_target_execution.py verify_initramfs.py capture_bounded_command.py verify_installed_modules.py installed_update_transaction.py recovery_status.py recovery_policy.py recovery_fallback_state.py recovery_transaction.py recovery_release_plan.py recovery_cached_product.py recovery_cached_receipt.py validate_github_meta.py update_recovery_grub_args.py open_opemos_contract.py validate_recovery_install_path.py desktop_update_generations.py interstitial_progress.py validate_interstitial_binary.py run_in_process_group.py payload_receipt.py atomic_output.py; do
     install "${OWNERSHIP[@]}" -m 0755 "$SUPPORT_ROOT/lib/$helper" "$DEST/lib/$helper"
 done
 install "${OWNERSHIP[@]}" -m 0755 "$STAGING/opemos-interstitial" "$DEST/bin/opemos-interstitial"

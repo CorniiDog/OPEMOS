@@ -101,3 +101,79 @@ resolve this without needing user action? Yes: continue the same owning source
 transaction under the current corrective plan, then obtain independent review
 and separate OMEN admission. Do not claim this draft is a working updater,
 complete handback, compiler milestone or whole-device power-loss recovery.
+
+## Continuation: composed source checkpoint (supersedes draft gap list above)
+
+The preceding findings and incomplete commits are retained as history. The same
+owning corrective work item now supplies the following source joins. This is a
+review candidate, **not a working-updater, VM, compiler or hardware result**.
+
+1. The installed producer refuses uncovered nested mounts, stages each required
+   mounted tree independently, masks devices/home/run, and executes the ordinary
+   writer and target verifiers inside one mount/network/PID namespace. Collection
+   reads retained evidence, refuses unknown effects/opaque directories and binds
+   all five output modules to the supplied authenticated archive. Actual mount,
+   capability, PID namespace and complete descendant closure remain VM properties.
+2. Enable/disable fallback now enter that same producer. Only closed default-target
+   symlinks are planned; no live display-manager stop occurs. Fallback validates
+   real bounded initramfs listings for the fallback configuration path, rather
+   than claiming normal early NVIDIA loading. This is archive-membership proof,
+   not measured embedded configuration contents or Nouveau/iGPU functionality.
+   Literal current-root/current-kernel GRUB changes preserve unrelated entries;
+   ambiguous/dynamic configuration is refused, never used to select an OS slot.
+3. Canonical caches are staged before production; cached receipts enter the
+   candidate. Online retention uses exact product identities instead of replacing
+   a previous cache. Retry completion waits for actual boot health; an unchanged
+   product rolled back after health failure requires corrected input, not a loop.
+4. Mounted offline installation retains the existing disposable unpublished-image
+   contract. A durable pending marker permits only the actual producer ancestry;
+   independent receipt validation refuses interrupted output. `syncfs` of the
+   supplied root/EFI/persistent mounts precedes removing the completion barrier.
+   It does not implement in-place rollback or confer overlay retirement authority.
+5. Guardian source/policy/unit files use the artifact transaction. A private
+   persistent bootstrap and exact retained engine precede mutable imports and
+   unit replacement. Registry publication follows durable complete prestate;
+   pending prior operations cannot be replaced. Trust-key changes still refuse.
+6. The guardian registers startup before the ordered health timer. First new boot,
+   exact selected files, actual userspace and loaded nvidia/modeset/drm source
+   identities are distinct from file-only status. A subsequent unacknowledged boot
+   restores prior bytes. Pending UI releases DRM without announcing ready graphics.
+   The read-only Desktop status bridge exports no private intent: root publishes
+   status, other UID verifies boot and module/config bytes; mutations invalidate
+   that observation before artifact effects. Missing/stale evidence fails closed.
+7. New VM-only tests use ordinary CLI/process boundaries, actual other UID and
+   read-only mounts. The full guest entry covers real changed update, new boot,
+   health/idempotence, console fallback/restore, exact-owned corruption/heal and
+   negative checksum/cache inputs. Development hooks only pause; the separately
+   admitted external controller performs abrupt VM off/restart and proves closure.
+8. Initial compatible LKG qualification requires existing authenticated payload,
+   all five actual module payloads, retained boot-image hashes and actual running
+   loaded identities. Later acknowledged generations retain exact prestate.
+   Exact-owned corruption is preserved before bounded redo repair; interrupted
+   heal/recovery is repeatable. Unknown shared GRUB changes, aliases, modes or
+   unavailable known-good bytes hold instead of overwriting ambiguous data.
+
+The causal review caught joins missed by AST and isolated models: cache mode0400
+versus the real consumer's0600 contract; root candidate sudo/PAM use after privilege
+confinement; read-only interstitial consumer opening writer locks; candidate status
+reading the outer live journal; the existing Desktop status enum and non-root
+access to private journals; recovery bootstrap observing changed read-only policy;
+and a heal pause indexed by artifact rather than actual repair step. Source
+corrections and VM regressions accompany these findings. Syntax checks cannot
+establish that any OS-dependent correction works.
+
+### Exact remaining input and acceptance conditions
+
+A separately admitted OMEN guest must supply a compatible already usable NVIDIA
+baseline, the exact corrected4a authenticated product for its running Valve kernel,
+canonical cache/provenance and interstitial bytes, and a filled immutable test
+manifest. A different OS root/kernel without such compatible qualification is not
+silently adopted: SteamOS retains slot ownership, old driver evidence is preserved,
+and a pending transaction for another root refuses. No arbitrary first install,
+legacy-fallback adoption, absent artifact, GPU or cross-slot recovery is claimed.
+
+The three target/five module compiler matrix and Linux/Windows executable builds
+remain independent. No actual project tests, compilers, VM operations or hardware
+acceptance occurred during this source-only composition. Independent full-graph
+review and the ordinary actual producer-to-consumer VM transaction, followed by
+necessary changed fault cases and abrupt/repeated recovery, remain mandatory.

@@ -105,3 +105,91 @@ set, exact restored/acknowledged generation, source/app guardian integrity and
 read-only policy. No display/GPU/hardware acceptance is inferred. Do not repeat
 unchanged successful expensive stages. No admission, guest control, runtime or
 compiler authority is conveyed by this document.
+
+## Composed continuation: current VM procedure (authored, NOT executed)
+
+The draft-disable statements above describe the preserved ad1db4f checkpoint.
+The composed source now joins the installed and unpublished-offline profiles as
+listed in `docs/installed-update-corrective-source-audit.md`. Source availability
+is not runtime admission. Do not use old SIGKILL tests as this acceptance.
+
+Freeze the final reviewed Core commit and independently pin every source byte.
+The owning VM controller must bind queue/grant, guest UUID, immutable base and
+same disposable overlay, all CPU/RAM/overhead/no-swap/60GB budgets, no conflicting
+owner, actual process identities, raw serial/output and complete descendant
+closure before and after each run. DMI checks in a guest are only an accidental
+physical-host guard, never evidence of that grant. Reuse previous successful
+stages only when their exact bytes and preconditions remain applicable.
+
+Fill the strict schema consumed by `tests/vm/installed_update_acceptance.py`:
+`schemaVersion=1`, unique32hex `runId`, actual `guestUUID`, reviewed40hex
+`coreCommit`, exact `kernel` (one of the three Valve releases in the program),
+`nvidia=575.64.05`, absolute `archive/checksum/provenance/cache/output` paths,
+SHA256 for archive/checksum/provenance, `driverSourceCommit` equal to
+4a616372ce3c1f1d0a10c04960107a1db51b6fc0, exact compressed-module `moduleSHA256`
+map for all five names, and `installedCoreSHA256` map for the distributed managed
+bootstrap/lib files. Cache is mandatory for cached-repair/fallback repair cases.
+Output's final basename includes runId. Do not invent source/signature provenance,
+copy a historical d8 product, fill dummy digests or call this manifest complete
+until actual authenticated bytes and admission are present. Preserve every run.
+
+Inside that admitted guest, invoke the real functions/processes, for example:
+
+```
+python3 tests/installed_update_transaction_normal.py
+python3 tests/offline_generation_transaction.py --output EXACT_NEW_OUTPUT
+python3 tests/recovery_readonly_consumer.py --output EXACT_NEW_OUTPUT
+python3 tests/vm/installed_update_acceptance.py qualify --manifest EXACT_MANIFEST
+python3 tests/vm/installed_update_acceptance.py refuse-bad-checksum --manifest EXACT_MANIFEST
+python3 tests/vm/installed_update_acceptance.py refuse-corrupt-cache --manifest EXACT_MANIFEST
+python3 tests/vm/installed_update_acceptance.py update --manifest EXACT_MANIFEST
+# Owning controller: ordinary reboot SAME overlay, retain commands/exits/closure.
+python3 tests/vm/installed_update_acceptance.py after-boot --manifest EXACT_MANIFEST
+python3 tests/vm/installed_update_acceptance.py verify-readonly-status --manifest EXACT_MANIFEST
+python3 tests/vm/installed_update_acceptance.py enable-console-fallback --manifest EXACT_MANIFEST
+# Owning controller: ordinary reboot SAME overlay.
+python3 tests/vm/installed_update_acceptance.py verify-console-boot --manifest EXACT_MANIFEST
+python3 tests/vm/installed_update_acceptance.py disable-console-fallback --manifest EXACT_MANIFEST
+# Owning controller: ordinary reboot SAME overlay.
+python3 tests/vm/installed_update_acceptance.py verify-disabled-fallback-boot --manifest EXACT_MANIFEST
+```
+
+Confirm the first two tests' argument interfaces before scheduling. They are
+actual CLI/UID/marker regressions, not substitutes for real installed production.
+The normal acceptance requires a genuinely changed driver archive; five modules
+matching an unchanged baseline is insufficient. Capture normal startup and health
+service ordering, current root/slot receipt, real permission/mode/size behavior,
+read-only restoration and all retained files. Health proves file/loaded identities,
+not GPU display output or game rendering. Desktop Rust checks/build also remain
+VM-only and must validate pending-state presentation with the final exact bytes.
+
+For each changed abrupt case, start from a separately retained qualified baseline,
+new run/output identity and coherent manifest; never rearm an old job or overwrite
+its logs. Run `update --fault-component app|driver --pause prepared|activated:0|pending-health`.
+Retain the actual phase line. The external controller abruptly powers off ONLY
+that exclusively owned VM, waits/reaps it, verifies complete closure, and cold
+boots the SAME overlay. For partial activation run `verify-restored`; for fully
+pending activation on first new boot run `after-boot`, then separately exercise a
+second boot without health (health timer deliberately masked by an exact owned
+VM test setting) and confirm rollback. Do not let the scheduled health race the
+unacknowledged-second-boot scenario; record exact test setting and restoration.
+
+Interrupt restore using `arm-recovery-pause --pause restore:0`, exact VM off/restart,
+then `remove-recovery-pause` (exact owned drop-in only) and `verify-restored`, then `verify-restored --repeat-observation`
+under disjoint output labels. For heal, after real positive health run
+`corrupt-owned-module`, optionally arm `heal:0`, then exact VM off/restart; remove
+pause, restart and run `verify-healed`, then `verify-healed --repeat-observation`. Its preserved foreign bytes must match
+corruption evidence and final all-five hashes must match the selected generation.
+Do not infer usable old modules merely from hashes: retain actual new boot,
+userspace and loaded identity checks for restored NVIDIA state too.
+
+Necessary additional production refusal cases use disposable test-created inputs
+only: malformed/oversized cache, unsupported nested mount, unknown upper effect,
+real destination ENOSPC within its quota, changed foreign shared GRUB, unavailable
+loaded identity, changed authority/root and corrupt retained candidate. Preserve
+initial failures; stop only affected integrity/lifecycle work. No fake adapters,
+clock/sysfs overrides or method replacement can establish OS behavior. Full image
+acceptance separately invokes the actual existing `install_to_root.sh` and guardian
+image installer with authenticated inputs and independent final-image validation;
+the pending-marker test alone does not establish full image success or discard
+permission. Controller teardown/rollback/closure and hardware remain separate.

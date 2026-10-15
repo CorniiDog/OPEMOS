@@ -3387,3 +3387,27 @@ Source integration completed through separate reviewed PRs: displayPR2 squash33e
   earlier checkpoints remain preserved but are not the new acceptance method.
   Source AST/bash-n/diff checks are not project-test, compiler, boot or GPU
   results. No tests/runtime/compiler/push/PR/merge/publication occurred here.
+
+### Same corrective updater: composed source for independent review (2026-10-15)
+
+- [x] Compose the eight audited owning-source joins on the existing isolated
+  branch, preserving 106f172/12e6bef/ad1db4f and intermediate f5207f8. Installed
+  driver/fallback/cache receipt activation, durable guardian generations and
+  independent boot engine, ordered real boot health, exact-owned retained-byte
+  heal and unpublished offline completion barrier are now connected in source.
+  Detailed join map and conditional refusals follow the retained historical audit
+  in `docs/installed-update-corrective-source-audit.md`. This checks source
+  composition only, not tested functionality or a completed product requirement.
+- [x] Author real VM-only ordinary CLI/other-UID/read-only-mount regressions and
+  full installed producer/new-boot/health/fallback/self-heal entry plus external
+  abrupt-off/restart/repeated recovery procedure. No method under test is replaced.
+  Local validation is limited to Python AST, Bash syntax and diff whitespace;
+  exact commit/tree/files/check evidence is in the authenticated source handback.
+- [ ] Independent coherent full-graph review, then separately admitted OMEN
+  normal producer-to-consumer and necessary fault/abrupt-recovery verification on
+  final exact bytes. Fill the real authenticated4a product/test-input manifest
+  and actual guest/pool/process-closure evidence; no prepared test is a run.
+  Namespace confinement, filesystem durability/permissions, usable prior boot,
+  source migration, UI build/status and actual scheduled health remain unverified.
+  GPU rendering, the all-three/all-five compiler matrix and Linux/Windows builds
+  are separate milestones. No push/PR/merge/install/runtime/publication here.

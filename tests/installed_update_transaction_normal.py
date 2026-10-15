@@ -32,6 +32,8 @@ def run(root, store, action, plan=None, *, uid=None, success=True):
 
 def main():
     assert os.geteuid() == 0, 'actual root/other-UID cases require the admitted guest root'
+    product=Path('/sys/class/dmi/id/product_name').read_text().lower()
+    assert any(x in product for x in ('kvm','qemu','standard pc','virtual machine')), 'VM-only test'
     global TOOL
     with tempfile.TemporaryDirectory(prefix='opemos-installed-normal-') as directory:
         base = Path(directory)
