@@ -436,7 +436,10 @@ exit 76
         restored_progress = json.loads((cached_failure_root /
             "run/opemos/interstitial/progress.json").read_text(encoding="utf-8"))
         # Fixture bytes/metadata are not a real boot acknowledgement.
-        assert json.loads(cached_retry.stdout)["status"] == "pending-health"
+        # The actual installer retains its human progress output; the final
+        # recoveryctl line is its typed result, not the preceding install log.
+        assert json.loads(cached_retry.stdout.splitlines()[-1])["status"] == "pending-health", (
+            cached_retry.stdout, cached_retry.stderr)
         assert restored_progress["status"] != "succeeded"
         assert restored_progress["phase"] != "complete"
         assert restored_progress["sequence"] >= 5
