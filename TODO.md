@@ -3483,3 +3483,8 @@ Source integration completed through separate reviewed PRs: displayPR2 squash33e
 ## 2026-10-16 recovery-status ordinary receipt CI correction
 
 * [ ] Preserve PR76 original22d6eea shell failures and diagnostic023405f run38927387217: real status subprocess exited1 with empty stdout and UnboundLocalError at receipt re.fullmatch. Branch-local import shadowed the module import across the entire function; remove redundant local binding, retain actual subprocess exit/stderr diagnostics. Existing ordinary receipt commit -> status CLI -> healthy -> payload tamper refusal exercises regression without overriding producer. Final-head GitHub checks and separately admitted OMEN private fresh/loaded app/driver/reboot transaction remain required; no acceptance inferred from AST or CI. Evidence in opemos-scheduler/core-recovery-status-causal-correction-20261016-r1.
+
+
+## 2026-10-16 offline fixture generation lifecycle correction
+
+* [ ] Root causal plan core-offline-fixture-lifecycle-root-cause-plan-20261016.json (5afb004d) owns the demonstrated e869187 full-gate failure: shared compression fault reused an interrupted target and correctly received image_generation_begin. Keep production barrier and failed original immutable; independent activation, normal, userspace, GRUB/initramfs and cancellation cases now use distinct clean/sealed target copies, with no pending-marker copy/rearm. Actual original reentry refusal and complete failed-target inode/mode/UID/bytes preservation are asserted. Same-target successful ordinary/repeated install remains. Local AST/diff only; full final-head Source CI and separately admitted actual SteamOS private producer/app/driver/two-boot verification remain required. No guard/trust/ownership/pin changes or local project execution.
