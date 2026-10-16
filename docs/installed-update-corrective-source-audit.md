@@ -1,3 +1,9 @@
+---
+layout: page
+title: Installed updater corrective source audit
+description: Preserved source correction history and required installed updater verification.
+---
+
 # Installed updater corrective source audit, 2026-10-15
 
 Status: INCOMPLETE SOURCE DRAFT; production update disabled. This is a bundled
