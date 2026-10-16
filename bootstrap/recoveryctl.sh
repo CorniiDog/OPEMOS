@@ -189,9 +189,10 @@ plan_tool()
 reconcile_verified_transaction()
 {
     local existing installed kernel="$1" nvidia="$2" revision="$3" acknowledged="${4:-0}"
-    if [[ "$ROOT" == / ]]; then
-    # File-only status/fallback is never a replacement boot acknowledgement.
+    # File-only status/fallback is never a replacement boot acknowledgement,
+    # including non-live roots used for contract verification.
     [[ "$acknowledged" == 1 ]] || return 0
+    if [[ "$ROOT" == / ]]; then
     installed="$(python3 "$SUPPORT_ROOT/lib/installed_update_transaction.py" inspect \
         --root "$ROOT" --policy-root "$POLICY_ROOT")"
     if python3 -c 'import json,sys; raise SystemExit(0 if json.loads(sys.argv[1]).get("state") in ("prepared","activating","pending-health","rolling-back") else 1)' "$installed"; then

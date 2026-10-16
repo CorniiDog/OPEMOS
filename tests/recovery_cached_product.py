@@ -366,8 +366,12 @@ exit 76
         online.write_text(successful_online)
         online_root = flow / "online-root"
         online_repair = recovery(absent, online_root)
-        assert online_repair.returncode == 0, (
+        assert online_repair.returncode == 75, (
             online_repair.stdout, online_repair.stderr)
+        assert json.loads(online_repair.stdout) == {
+            "action": "installed_health", "reason": "reboot_required",
+            "schemaVersion": 1, "status": "pending-health",
+        }
         assert curl_marker.is_file() and online_marker.is_file()
         online_modules = (online_root / "usr/lib/modules" / KERNEL / "updates" /
                           "open-gpu-kernel-modules-steamos")
@@ -427,12 +431,14 @@ exit 76
             cached_failure_root / "usr/lib/modules" / KERNEL / "updates")
         assert not missing_updates.exists()
         cached_retry = recovery(valid_product, cached_failure_root)
-        assert cached_retry.returncode == 0, (
+        assert cached_retry.returncode == 75, (
             cached_retry.stdout, cached_retry.stderr)
         restored_progress = json.loads((cached_failure_root /
             "run/opemos/interstitial/progress.json").read_text(encoding="utf-8"))
-        assert restored_progress["status"] == "succeeded"
-        assert restored_progress["phase"] == "complete"
+        # Fixture bytes/metadata are not a real boot acknowledgement.
+        assert json.loads(cached_retry.stdout)["status"] == "pending-health"
+        assert restored_progress["status"] != "succeeded"
+        assert restored_progress["phase"] != "complete"
         assert restored_progress["sequence"] >= 5
         target = (cached_failure_root / "usr/lib/modules" / KERNEL / "updates" /
                   "open-gpu-kernel-modules-steamos")
@@ -487,15 +493,15 @@ exit 76
         assert rejected_receipt.returncode != 0
         (target / "nvidia.ko.zst").write_bytes(original_module)
         (target / "nvidia.ko.zst").chmod(0o644)
-        assert not (cached_failure_root / "var/lib" /
-            "open-gpu-kernel-modules-steamos-support/recovery/state.json").exists()
+        assert (cached_failure_root / "var/lib" /
+            "open-gpu-kernel-modules-steamos-support/recovery/state.json").is_file()
         retried_transaction = json.loads((cached_failure_root /
             "var/lib/open-gpu-kernel-modules-steamos-support/recovery/transaction.json"
         ).read_text(encoding="utf-8"))
-        assert retried_transaction["phase"] == "restored"
-        assert retried_transaction["reason"] == "exact_nvidia_restored"
+        assert retried_transaction["phase"] == "verifying"
+        assert retried_transaction["reason"] == "exact_module_verification"
         assert retried_transaction["attempt"] >= 4
-        assert retried_transaction["active"] is False
+        assert retried_transaction["active"] is True
         backup_root = (cached_failure_root / "var/lib" /
             "open-gpu-kernel-modules-steamos-support/backups" / KERNEL)
         assert len(list(backup_root.iterdir())) == 1
