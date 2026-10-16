@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Exercise setup_nvidia.sh transaction failure cleanup with command fixtures."""
+"""Exercise real shell signal cleanup before custody using command fixtures.
+
+Read-only command logs are adapter evidence, not proof of SteamOS mount state.
+Privileged pacman/custody and abrupt-off cases require the ordinary OMEN VM.
+"""
 import os
 import signal
 import subprocess
@@ -16,7 +20,7 @@ def executable(path: Path, body: str) -> None:
     path.chmod(0o755)
 
 def exercise(interrupt: signal.Signals | None) -> None:
-    case = interrupt.name.lower() if interrupt is not None else "pacman-failure"
+    case = interrupt.name.lower() if interrupt is not None else "custody-refusal"
     with tempfile.TemporaryDirectory(prefix=f"setup-nvidia-{case}-") as name:
         root = Path(name)
         home = root / "home with spaces"
@@ -45,7 +49,12 @@ esac
 ''')
         executable(fake_bin / "steamos-readonly", '''case "${1:-}" in
   status) echo enabled;;
-  disable|enable) printf '%s\\n' "$1" >> "$MOCK_READONLY_LOG";;
+  disable|enable)
+    printf '%s\\n' "$1" >> "$MOCK_READONLY_LOG"
+    if [ "$1" = disable ] && [ "$MOCK_PAUSE_DISABLE" = 1 ]; then
+      : > "$MOCK_DISABLE_STARTED"
+      while :; do sleep 1; done
+    fi;;
   *) exit 2;;
 esac
 ''')
@@ -69,7 +78,8 @@ exec "$@"
             "PROJECT_TEST_MODE": "1",
             "PROJECT_TEST_ROOT": str(root),
             "MOCK_READONLY_LOG": str(readonly_log),
-            "MOCK_PACMAN_FAIL": "1" if interrupt is None else "0",
+            "MOCK_PAUSE_DISABLE": "0" if interrupt is None else "1",
+            "MOCK_DISABLE_STARTED": str(root / "disable-started"),
             "MOCK_PACMAN_STARTED": str(pacman_started),
         }
         process = subprocess.Popen(
@@ -78,17 +88,23 @@ exec "$@"
             stderr=subprocess.PIPE, text=True,
         )
         deadline = time.monotonic() + 10
-        while not pacman_started.exists() and process.poll() is None:
+        while not (root / "disable-started").exists() and process.poll() is None:
             if time.monotonic() >= deadline:
                 process.kill()
-                raise AssertionError("setup did not reach the pacman transaction")
+                raise AssertionError("setup did not reach the read-only disable boundary")
             time.sleep(0.02)
         if interrupt is not None:
             assert process.poll() is None, process.communicate()
             os.killpg(process.pid, interrupt)
         stdout, stderr = process.communicate(timeout=10)
-        expected = 42 if interrupt is None else 128 + interrupt.value
-        assert process.returncode == expected, (process.returncode, stdout, stderr)
+        if interrupt is not None:
+            assert process.returncode == 128 + interrupt.value, (process.returncode, stdout, stderr)
+        else:
+            assert process.returncode != 0, (stdout, stderr)
+            assert any(reason in stderr for reason in (
+                "Permission denied", "unsafe bootstrap ancestor", "private bootstrap directory required"
+            )), stderr
+        assert not pacman_started.exists(), "this fixture never grants actual installed custody"
         assert readonly_log.read_text(encoding="utf-8").splitlines() == ["disable", "enable"]
         cache = home / ".cache/open-gpu-kernel-modules-steamos-support"
         assert cache.is_dir()
