@@ -7,6 +7,7 @@ SUPPORT_BRANCH="${SUPPORT_BRANCH:-main}"
 FUZZY=0
 IN_CODE=0
 LOCAL_SOURCE=""
+LOCAL_INPUT_SHA=""
 YES=0
 RESOLVE_ONLY=0
 BUILD_AS_FALLBACK=0
@@ -24,7 +25,8 @@ Usage: online_install.sh [options]
 Options:
       --fuzzy        Compatibility alias; certified installs already allow
                      bounded fallback to older same-series SteamOS releases
-      --local PATH   Install an explicitly supplied local bundle/archive
+      --local PATH --local-sha256 SHA256
+                     Install an exact privately pinned four-file bundle/archive
       --in-code      Compile the current NVIDIA source working tree, then install it
       --build-as-fallback    Build a reviewed exact target only if no product exists
       --resolve-only Describe the authorized Automatic action without installation
@@ -45,6 +47,7 @@ while [[ $# -gt 0 ]]; do
         --in-code) IN_CODE=1; shift ;;
         --build-as-fallback) BUILD_AS_FALLBACK=1; shift ;;
         --resolve-only) RESOLVE_ONLY=1; shift ;;
+        --local-sha256) [[ $# -ge 2 ]] || { echo "--local-sha256 requires a digest." >&2; exit 2; }; LOCAL_INPUT_SHA="$2"; shift 2 ;;
         --local) [[ $# -ge 2 ]] || { echo "--local requires a path." >&2; exit 1; }; LOCAL_SOURCE="$2"; shift 2 ;;
         --interstitial-binary) [[ $# -ge 2 ]] || exit 2; INTERSTITIAL_BINARY="$2"; shift 2 ;;
         --interstitial-sha256) [[ $# -ge 2 ]] || exit 2; INTERSTITIAL_SHA256="$2"; shift 2 ;;
@@ -54,6 +57,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+if [[ -n "$LOCAL_SOURCE" || -n "$LOCAL_INPUT_SHA" ]]; then
+    [[ -n "$LOCAL_SOURCE" && "$LOCAL_INPUT_SHA" =~ ^[0-9a-f]{64}$ ]] || {
+        echo "--local and authenticated --local-sha256 are required together." >&2; exit 2;
+    }
+fi
 MODE_COUNT=0
 [[ "$FUZZY" == "1" ]] && MODE_COUNT=$((MODE_COUNT + 1))
 [[ "$IN_CODE" == "1" ]] && MODE_COUNT=$((MODE_COUNT + 1))
@@ -81,7 +89,7 @@ if [[ "$RESOLVE_ONLY" == 0 ]]; then
 fi
 
 PENDING_CORE_PIN=""
-if [[ "$RESOLVE_ONLY" == 0 && "$IN_CODE" == 0 && -z "$LOCAL_SOURCE" && "$SUPPORT_REPO" == CorniiDog/OPEMOS ]]; then
+if [[ "$RESOLVE_ONLY" == 0 && "$IN_CODE" == 0 && "$SUPPORT_REPO" == CorniiDog/OPEMOS ]]; then
     PENDING_CORE_PIN="$(sudo python3 - <<'PYPIN'
 import json,os,re,stat
 from pathlib import Path
@@ -113,6 +121,10 @@ PYPIN
             echo "Explicit Core pin conflicts with pending install; preserved." >&2; exit 1;
         }
         SUPPORT_REVISION="$PENDING_CORE_PIN"
+        if [[ -n "$LOCAL_SOURCE" ]]; then
+            echo "Resuming the retained pending product; the local input is not reselected." >&2
+            LOCAL_SOURCE=""
+        fi
     fi
 fi
 
@@ -244,25 +256,124 @@ if [[ "$RESOLVE_ONLY" == 1 ]]; then
     exit 0
 fi
 
-NVIDIA_VERSION=""
+resolve_local()
+{
+    local source="$1"
+    local work="$TMP/local"
+    mkdir -p "$work"
 
+    if [[ -d "$source" ]]; then
+        mapfile -t archives < <(find "$source" -maxdepth 1 -type f -name 'nvidia-open-*.tar.gz' | sort)
+        (( ${#archives[@]} == 1 )) || die "Local directory must contain exactly one nvidia-open-*.tar.gz archive."
+        LOCAL_ARCHIVE="${archives[0]}"
+    elif [[ "$source" == *.zip ]]; then
+        local zip_sha="$LOCAL_INPUT_SHA"
+        if [[ -z "$zip_sha" ]]; then
+            [[ "$IN_CODE" == 1 ]] || die "Private zip requires its authenticated byte pin."
+            zip_sha="$(sha256sum "$source" | awk '{print $1}')"
+        fi
+        python3 - "$TMP/support/lib" "$source" "$work" "$zip_sha" <<'PYZIP'
+import io,re,sys,zipfile
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+from recovery_cached_product import read_regular,digest,MAX_ARCHIVE
+payload=read_regular(sys.argv[2],MAX_ARCHIVE,'private zip')
+if digest(payload)!=sys.argv[4]:raise SystemExit('Private zip differs from authenticated input pin')
+with zipfile.ZipFile(io.BytesIO(payload)) as z:
+    rows=z.infolist();names=[r.filename for r in rows]
+    archives=[n for n in names if re.fullmatch(r'nvidia-open-[A-Za-z0-9._+\-]+[.]tar[.]gz',n)]
+    if len(archives)!=1:raise SystemExit('Private zip requires exactly one existing raw archive')
+    archive=archives[0];stem=archive.removesuffix('.tar.gz')
+    expected={archive,archive+'.sha256',stem+'.build-info.txt',stem+'.provenance.json'}
+    if len(names)!=4 or set(names)!=expected:raise SystemExit('Private zip must contain exactly four canonical regular files')
+    for row in rows:
+        mode=row.external_attr>>16
+        if row.is_dir() or mode&0o170000 not in (0,0o100000) or row.flag_bits&1:
+            raise SystemExit('Private zip contains an unsafe entry')
+        maximum=2*1024**3 if row.filename==archive else 16*1024**2
+        if not 0<row.file_size<=maximum:raise SystemExit('Private zip exceeds input bound')
+        with z.open(row) as src,(Path(sys.argv[3])/row.filename).open('xb') as dst:
+            total=0
+            while True:
+                data=src.read(1024**2)
+                if not data:break
+                total+=len(data)
+                if total>maximum:raise SystemExit('Private zip expansion exceeds input bound')
+                dst.write(data)
+            if total!=row.file_size:raise SystemExit('Private zip size changed')
+PYZIP
+        mapfile -t archives < <(find "$work" -maxdepth 1 -type f -name 'nvidia-open-*.tar.gz' | sort)
+        LOCAL_ARCHIVE="${archives[0]}"
+    elif [[ "$source" == *.tar.gz ]]; then
+        LOCAL_ARCHIVE="$source"
+    else
+        die "Unsupported local package type: $source"
+    fi
+
+    LOCAL_CHECKSUM="${LOCAL_ARCHIVE}.sha256"
+    [[ -f "$LOCAL_CHECKSUM" ]] || die "Matching checksum not found: $LOCAL_CHECKSUM"
+}
+
+# Authenticate and freeze private input BEFORE absent-userspace selection or any
+# setup effect. Invalid/wrong-target private bytes never authorize package work.
+PRIVATE_SELECTION=""
+PRIVATE_ARCHIVE_SHA=""
+if [[ -n "$LOCAL_SOURCE" ]]; then
+    LOCAL_SOURCE="$(realpath "$LOCAL_SOURCE")"
+    resolve_local "$LOCAL_SOURCE"
+    if [[ "$LOCAL_SOURCE" == *.zip ]]; then
+        [[ "$(sha256sum "$LOCAL_SOURCE" | awk '{print $1}')" == "$LOCAL_INPUT_SHA" ]] || die "Private zip differs from authenticated input pin."
+        PRIVATE_PIN_ARGS=()
+    else
+        # A directory has no single byte identity; explicit private transactions
+        # pin its one selected raw archive instead.
+        PRIVATE_PIN_ARGS=(--expected-archive-sha256 "$LOCAL_INPUT_SHA")
+    fi
+    PRIVATE_SELECTION="$TMP/private-selection.json"
+    python3 "$TMP/support/lib/recovery_cached_product.py" authenticate-local \
+        --archive "$LOCAL_ARCHIVE" --checksum "$LOCAL_CHECKSUM" --destination "$TMP/private-input"         "${PRIVATE_PIN_ARGS[@]}" \
+        --steamos "$STEAMOS_VERSION" --kernel "$KERNEL_VERSION" --support-revision "$SUPPORT_REV" > "$PRIVATE_SELECTION"
+    PRIVATE_JSON="$(cat "$PRIVATE_SELECTION")"
+    PRIVATE_ARCHIVE_SHA="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["archiveSHA256"])' "$PRIVATE_JSON")"
+    PRIVATE_NVIDIA="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["target"]["nvidiaVersion"])' "$PRIVATE_JSON")"
+    LOCAL_ARCHIVE="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["paths"]["archive"])' "$PRIVATE_JSON")"
+    LOCAL_CHECKSUM="$LOCAL_ARCHIVE.sha256"
+    [[ -z "${OPEMOS_PINNED_NVIDIA_VERSION:-}" || "$PRIVATE_NVIDIA" == "$OPEMOS_PINNED_NVIDIA_VERSION" ]] ||
+        die "Private product differs from pinned NVIDIA policy; no userspace effects authorized."
+fi
+
+NVIDIA_VERSION=""
+NEEDS_USERSPACE=0
 if NVIDIA_VERSION="$(get_nvidia_version 2>/dev/null)"; then
     log "Existing NVIDIA userspace detected: ${NVIDIA_VERSION}"
+    if [[ -n "$PRIVATE_SELECTION" ]]; then
+        [[ "$NVIDIA_VERSION" == "$PRIVATE_NVIDIA" ]] || die "Existing NVIDIA userspace differs from private product; no version transition authorized."
+        LIB32_INSTALLED="$(pacman -Q lib32-nvidia-utils 2>/dev/null | awk '{print $2}' || true)"
+        [[ "${LIB32_INSTALLED%-*}" == "$PRIVATE_NVIDIA" ]] || NEEDS_USERSPACE=1
+        if [[ "$NEEDS_USERSPACE" == 0 ]] && ! sudo pacman -Qkk nvidia-utils lib32-nvidia-utils; then
+            NEEDS_USERSPACE=1
+        fi
+    fi
 else
     log "NVIDIA userspace is not installed."
-    log "Running SteamOS NVIDIA userspace setup..."
-
+    NEEDS_USERSPACE=1
+fi
+if [[ "$NEEDS_USERSPACE" == 1 ]]; then
+    log "Running authenticated exact-target NVIDIA userspace setup..."
     SETUP_ARGS=("${FALLBACK_ARGS[@]}")
+    [[ -z "$PRIVATE_SELECTION" ]] || SETUP_ARGS+=(--local-product "$LOCAL_ARCHIVE" --local-product-sha256 "$PRIVATE_ARCHIVE_SHA")
     [[ "$YES" == "1" ]] && SETUP_ARGS+=(-y)
-
     "$TMP/support/bootstrap/setup_nvidia.sh" "${SETUP_ARGS[@]}"
-
     NVIDIA_VERSION="$(get_nvidia_version)"
 fi
 
 if [[ -n "${OPEMOS_PINNED_NVIDIA_VERSION:-}" &&
       "$NVIDIA_VERSION" != "$OPEMOS_PINNED_NVIDIA_VERSION" ]]; then
     die "Resolved NVIDIA userspace ${NVIDIA_VERSION} differs from pinned recovery policy ${OPEMOS_PINNED_NVIDIA_VERSION}."
+fi
+
+if [[ -n "$PRIVATE_SELECTION" ]]; then
+    [[ "$NVIDIA_VERSION" == "$PRIVATE_NVIDIA" ]] || die "Installed userspace differs from authenticated private product."
 fi
 
 KERNEL_TAG="$(sanitize_release_component "$KERNEL_VERSION")"
@@ -609,6 +720,18 @@ canonicalize_product()
         --expected-kernel "$KERNEL_VERSION" --expected-nvidia "$NVIDIA_VERSION" --expected-architecture x86_64 \
         --output-dir "$BUILD_OUT" > "$TMP/materialization-result.json"
     cp "$TMP/materialization-result.json" "$BUILD_OUT/materialization.json"
+    if [[ -n "$PRIVATE_ARCHIVE_SHA" ]]; then
+        python3 - "$BUILD_OUT/materialization.json" "$BUILD_OUT" "$PRIVATE_ARCHIVE_SHA" <<'PYPRIVATEBIND'
+import json,sys
+from pathlib import Path
+m=json.load(open(sys.argv[1]));p=json.load(open(Path(sys.argv[2])/m['outputs']['provenance']['name']))
+# Raw input is genuinely repacked by the current Core producer; compressed
+# current-Core input is genuinely validated/materialized byte-identically.
+observed=p.get('repack',{}).get('sourceArchiveSha256')
+if m['outputs']['archive']['sha256']!=sys.argv[3] and observed!=sys.argv[3]:
+    raise SystemExit('Canonical producer did not consume selected exact private input')
+PYPRIVATEBIND
+    fi
 }
 
 retain_install_inputs()
@@ -617,38 +740,13 @@ retain_install_inputs()
     home="$(project_system_path /home/.steamos/open-gpu-kernel-modules-steamos-support/recovery)"
     args=(retain-install --home "$home" --directory "$RETAINED_PRODUCT" --steamos "$STEAMOS_VERSION" \
           --kernel "$KERNEL_VERSION" --nvidia "$NVIDIA_VERSION" --support-revision "$SUPPORT_REV")
+    [[ -z "$PRIVATE_SELECTION" ]] || args+=(--verify-userspace-files)
     if [[ -n "$INTERSTITIAL_BINARY" || -n "$INTERSTITIAL_SHA256" ]]; then
         args+=(--interstitial "$INTERSTITIAL_BINARY" --interstitial-sha256 "$INTERSTITIAL_SHA256")
     fi
     result="$(sudo python3 "$TMP/support/lib/recovery_cached_product.py" "${args[@]}")"
     INTERSTITIAL_BINARY="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["interstitial"])' "$result")"
     INTERSTITIAL_SHA256="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["sha256"])' "$result")"
-}
-
-resolve_local()
-{
-    local source="$1"
-    local work="$TMP/local"
-    mkdir -p "$work"
-
-    if [[ -d "$source" ]]; then
-        mapfile -t archives < <(find "$source" -maxdepth 1 -type f -name 'nvidia-open-*.tar.gz' | sort)
-        (( ${#archives[@]} == 1 )) || die "Local directory must contain exactly one nvidia-open-*.tar.gz archive."
-        LOCAL_ARCHIVE="${archives[0]}"
-    elif [[ "$source" == *.zip ]]; then
-        need unzip
-        unzip -q "$source" -d "$work"
-        mapfile -t archives < <(find "$work" -maxdepth 1 -type f -name 'nvidia-open-*.tar.gz' | sort)
-        (( ${#archives[@]} == 1 )) || die "Local bundle must contain exactly one nvidia-open-*.tar.gz archive."
-        LOCAL_ARCHIVE="${archives[0]}"
-    elif [[ "$source" == *.tar.gz ]]; then
-        LOCAL_ARCHIVE="$source"
-    else
-        die "Unsupported local package type: $source"
-    fi
-
-    LOCAL_CHECKSUM="${LOCAL_ARCHIVE}.sha256"
-    [[ -f "$LOCAL_CHECKSUM" ]] || die "Matching checksum not found: $LOCAL_CHECKSUM"
 }
 
 # A pending ordinary transaction wins over discovery/build. Its immutable
@@ -684,8 +782,7 @@ if [[ "$IN_CODE" == "1" ]]; then
 fi
 
 if [[ -n "$LOCAL_SOURCE" ]]; then
-    LOCAL_SOURCE="$(realpath "$LOCAL_SOURCE")"
-    resolve_local "$LOCAL_SOURCE"
+    # Consume the pre-setup authenticated snapshot, not a second caller-path read.
     install_archive "$LOCAL_ARCHIVE" "$LOCAL_CHECKSUM" 0
     install_recovery_guardian
     offer_reboot

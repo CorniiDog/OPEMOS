@@ -13,6 +13,8 @@ RESOLVE_ONLY=0
 BUILD_AS_FALLBACK=0
 OFFER_REBOOT=0
 YES=0
+LOCAL_PRODUCT=""
+LOCAL_PRODUCT_SHA=""
 
 usage()
 {
@@ -20,6 +22,8 @@ usage()
 Usage: setup_nvidia.sh [options]
 
 Options:
+      --local-product FILE --local-product-sha256 SHA256
+                            Authenticate exact private four-file driver input before selecting userspace
       --development PREFIX   Select/install matching NVIDIA userspace for
                              patched-module development. Kernel modules are
                              not installed or replaced by this mode.
@@ -54,6 +58,8 @@ EOF
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --local-product-sha256) [[ $# -ge 2 ]] || die "--local-product-sha256 requires a digest."; LOCAL_PRODUCT_SHA="$2"; shift 2 ;;
+        --local-product) [[ $# -ge 2 ]] || die "--local-product requires an archive."; LOCAL_PRODUCT="$2"; shift 2 ;;
         --development)
             [[ $# -ge 2 ]] || die "--development requires a version."
             DEVELOPMENT_SPEC="$2"
@@ -86,6 +92,11 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+if [[ -n "$LOCAL_PRODUCT" || -n "$LOCAL_PRODUCT_SHA" ]]; then
+    [[ -n "$LOCAL_PRODUCT" && "$LOCAL_PRODUCT_SHA" =~ ^[0-9a-f]{64}$ ]] || die "Private product archive and exact SHA256 are required together."
+fi
+[[ -z "$LOCAL_PRODUCT" || ( -z "$DEVELOPMENT_SPEC$UPSTREAM_SPEC" && "$BUILD_AS_FALLBACK" == 0 ) ]] ||
+    die "--local-product is mutually exclusive with other selection modes."
 FALLBACK_ARGS=()
 [[ "$BUILD_AS_FALLBACK" == 0 ]] || FALLBACK_ARGS=(--build-as-fallback)
 [[ "$BUILD_AS_FALLBACK" == 0 || -z "$DEVELOPMENT_SPEC$UPSTREAM_SPEC" ]] || die "--build-as-fallback cannot be combined with development modes."
@@ -232,7 +243,22 @@ REFERENCE_RELEASE=""
 SELECTION_PURPOSE=""
 MODULE_BEHAVIOR=""
 
-if [[ -n "$UPSTREAM_SPEC" ]]; then
+if [[ -n "$LOCAL_PRODUCT" ]]; then
+    PRIVATE_CORE="$(git -C "$SUPPORT_ROOT" rev-parse HEAD)"
+    python3 "$SUPPORT_ROOT/lib/recovery_cached_product.py" authenticate-local \
+        --archive "$LOCAL_PRODUCT" --checksum "$LOCAL_PRODUCT.sha256" --destination "$TMP/private-input" \
+        --expected-archive-sha256 "$LOCAL_PRODUCT_SHA" \
+        --steamos "$STEAMOS_VERSION" --kernel "$KERNEL_VERSION" --support-revision "$PRIVATE_CORE" > "$TMP/private-selection.json"
+    RESOLVED_NVIDIA="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["target"]["nvidiaVersion"])' "$TMP/private-selection.json")"
+    [[ -z "${OPEMOS_PINNED_NVIDIA_VERSION:-}" || "$RESOLVED_NVIDIA" == "$OPEMOS_PINNED_NVIDIA_VERSION" ]] ||
+        die "Private product differs from pinned NVIDIA userspace policy."
+    REFERENCE_RELEASE="private:$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["archiveSHA256"])' "$TMP/private-selection.json")"
+    REFERENCE_STEAMOS="$STEAMOS_VERSION"; REFERENCE_KERNEL="$KERNEL_VERSION"
+    SELECTION_MODE="authenticated-private-exact-target"
+    SELECTION_PURPOSE="align signed userspace with the authenticated exact private driver product"
+    MODULE_BEHAVIOR="normal retained online consumer installs the same authenticated driver product after app boot"
+    NVIDIA_UTILS_FILE="$(resolve_arch_package nvidia-utils "$RESOLVED_NVIDIA" exact)"
+elif [[ -n "$UPSTREAM_SPEC" ]]; then
     SELECTION_MODE="upstream-development"
     SELECTION_PURPOSE="establish an unmodified NVIDIA upstream-development control build"
     MODULE_BEHAVIOR="build and install unmodified upstream modules; project fixes are not applied"
@@ -391,12 +417,22 @@ download_package()
         die "Failed to download ${file}."
 
     # Keep detached signatures next to packages when the archive provides them.
-    curl -fL --retry 2 "${base}.sig" -o "${PKG_DIR}/${file}.sig" 2>/dev/null ||
+    if ! curl -fL --retry 2 "${base}.sig" -o "${PKG_DIR}/${file}.sig" 2>/dev/null; then
+        [[ -z "$LOCAL_PRODUCT" ]] || die "Private exact userspace requires the existing detached package signature."
         rm -f "${PKG_DIR}/${file}.sig"
+    fi
 }
 
 download_package nvidia-utils "$NVIDIA_UTILS_FILE"
 download_package lib32-nvidia-utils "$LIB32_FILE"
+
+if [[ -n "$LOCAL_PRODUCT" ]]; then
+    # Verify using ONLY the actual existing guest pacman trust. No key import,
+    # trust override, SigLevel relaxation, release selection or fake receipt.
+    need_cmd pacman-key
+    sudo pacman-key --verify "$PKG_DIR/$NVIDIA_UTILS_FILE.sig" "$PKG_DIR/$NVIDIA_UTILS_FILE"
+    sudo pacman-key --verify "$PKG_DIR/$LIB32_FILE.sig" "$PKG_DIR/$LIB32_FILE"
+fi
 
 STATE_ROOT="/var/lib/open-gpu-kernel-modules-steamos-support/nvidia-setup"
 STATE_TMP="$TMP/state"
@@ -460,7 +496,7 @@ fi
 # NVIDIA userspace setup.
 sudo mkdir -p "$STATE_ROOT"
 
-if [[ ! -f "$STATE_ROOT/grub.default.before" &&
+if [[ -z "$LOCAL_PRODUCT" && ! -f "$STATE_ROOT/grub.default.before" &&
       -f /etc/default/grub ]]; then
     sudo cp -a /etc/default/grub "$STATE_ROOT/grub.default.before"
 fi
@@ -486,7 +522,12 @@ PYINPUTS
 
 log "Installing NVIDIA userspace ${RESOLVED_NVIDIA}..."
 
-sudo pacman -U --noconfirm --needed \
+PACMAN_INSTALL_ARGS=(--noconfirm --needed)
+# --needed would skip a package whose database version is right but files are
+# missing/corrupt. Private repair reinstalls the exact signed inputs once and
+# checks native package integrity, without --overwrite or config/trust bypass.
+[[ -z "$LOCAL_PRODUCT" ]] || PACMAN_INSTALL_ARGS=(--noconfirm)
+sudo pacman -U "${PACMAN_INSTALL_ARGS[@]}" \
     "${PKG_DIR}/${NVIDIA_UTILS_FILE}" \
     "${PKG_DIR}/${LIB32_FILE}"
 
@@ -502,6 +543,12 @@ INSTALLED_LIB32="${INSTALLED_LIB32%-*}"
 [[ "$INSTALLED_LIB32" == "$RESOLVED_NVIDIA" ]] ||
     die "Installed lib32-nvidia-utils reports ${INSTALLED_LIB32:-unknown}; expected ${RESOLVED_NVIDIA}."
 
+if [[ -n "$LOCAL_PRODUCT" ]]; then
+    sudo pacman -Qkk nvidia-utils lib32-nvidia-utils ||
+        die "Native installed userspace file verification failed; preserve failure before driver/app activation."
+fi
+
+if [[ -z "$LOCAL_PRODUCT" ]]; then
 log "Writing NVIDIA module configuration..."
 
 sudo install -d -m 0755 /etc/modprobe.d
@@ -533,6 +580,10 @@ for service in nvidia-suspend.service nvidia-resume.service nvidia-hibernate.ser
         sudo systemctl enable "$service" >/dev/null 2>&1 || true
     fi
 done
+
+else
+    log "Private userspace-only setup defers module/GRUB/service configuration to the journaled driver candidate."
+fi
 
 sudo ldconfig
 

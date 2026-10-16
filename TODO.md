@@ -3459,3 +3459,22 @@ Source integration completed through separate reviewed PRs: displayPR2 squash33e
   custody/app/driver/rollback and repeated recovery, retaining all original raw
   failures and closure. Package/GPU/imaging/whole-device safety remain unaccepted;
   source syntax and authored procedures do not establish runtime or build success.
+
+### Private absent-userspace ordinary consumer (plan6bfbf47a)
+
+- [x] Correct Source29eb's publication-before-private selection order: pin and
+  authenticate the actual existing four-file private input before userspace,
+  reauthenticate exact archive in setup, require existing-keyring signatures and
+  native package file integrity, defer boot/module writes to the journaled
+  candidate, and bind actual canonical output plus retained resume to that input.
+  Preserve original29eb failures and all R7/R13/PR history. Exact changed-head
+  commit, static evidence and material limits are in the authenticated handback.
+- [x] Author ordinary private fresh/loaded real-process cases and bad checksum,
+  bounded zip traversal, actual other-target input and native signature refusals;
+  retain existing app/driver phase/rollback/UID/custody tests. Adapt obsolete
+  direct-installer CI text assumptions while retaining actual CLI/path checks.
+- [ ] Independent changed full graph/input review, exact corrected4a raw product,
+  signed userspace/keyring/dependency/interstitial and <=60GB same-guest readiness,
+  then fresh admitted OMEN producer-to-two-boot-health/failure and closure. No
+  preinstalled-userspace workaround, generated trust receipt, physical/GPU or
+  whole-device/pacman rollback/publication claim; VM tests remain unexecuted here.

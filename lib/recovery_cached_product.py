@@ -277,7 +277,8 @@ def retained_install(home, expected=None):
     path=home/'pending-install.json'
     if not os.path.lexists(path):return None
     record=private_record(path)
-    if (set(record)!={'schemaVersion','product','expected','interstitialSHA256','userspace','userspaceInput'}
+    fields={'schemaVersion','product','expected','interstitialSHA256','userspace','userspaceInput'}
+    if (set(record) not in (fields,fields|{'userspaceIntegrityRequired'})
             or record['schemaVersion']!=1 or HEX.fullmatch(record.get('product','')) is None
             or HEX.fullmatch(record.get('interstitialSHA256','')) is None):
         fail('invalid pending install custody')
@@ -295,6 +296,18 @@ def retained_install(home, expected=None):
     if digest(read_regular(binary,32*1024**2,'retained interstitial'))!=record['interstitialSHA256']:
         fail('retained interstitial changed')
     if userspace_versions()!=record['userspace']:fail('pending installed userspace changed')
+    if 'userspaceIntegrityRequired' in record and record['userspaceIntegrityRequired'] is not True:
+        fail('invalid private userspace integrity policy')
+    if record.get('userspaceIntegrityRequired'):
+        import subprocess
+        checked=subprocess.run(['/usr/bin/pacman','-Qkk','nvidia-utils','lib32-nvidia-utils'],
+                               stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=60)
+        if checked.returncode!=0:
+            import sys
+            if len(checked.stdout)+len(checked.stderr)>MAX_METADATA:
+                fail('private native userspace diagnostics exceed bound; hold health/completion')
+            sys.stderr.buffer.write(checked.stdout+checked.stderr)
+            fail('private installed userspace file integrity failed; hold health/completion')
     if record['userspaceInput'] is not None:
         verify_userspace_inputs(home,record['userspaceInput'],record['expected']['nvidia'])
     return record
@@ -372,6 +385,8 @@ def command_retain_install(args):
         existing=retained_install(home,expected)
         if existing:
             if existing['product']!=identity:fail('different first-install candidate pending; preserve it')
+            if args.verify_userspace_files and existing.get('userspaceIntegrityRequired') is not True:
+                fail('existing pending custody has another userspace policy; preserve it')
             record=existing
         else:
             binary=args.interstitial or home/'bin/opemos-interstitial'
@@ -403,6 +418,7 @@ def command_retain_install(args):
                             '--binary',str(saved),'--sha256',sha],check=True,timeout=30,stdout=subprocess.DEVNULL)
             record={'schemaVersion':1,'product':identity,'expected':expected,'interstitialSHA256':sha,
                     'userspace':versions,'userspaceInput':inputs}
+            if args.verify_userspace_files:record['userspaceIntegrityRequired']=True
             from recovery_public_status import invalidate
             invalidate()
             tx.durable(home/'pending-install.json',record)
@@ -475,16 +491,88 @@ def command_select(args):
     print(cache)
 
 
+def command_authenticate_local(args):
+    """Snapshot the existing four-input format and validate before selection.
+
+    This produces diagnostic selection data, not a trust receipt. Consumers
+    pass the immutable snapshot through the existing canonical producer again.
+    No package, rootfs, keyring or installed generation is changed here.
+    """
+    import subprocess
+    import sys
+    archive=args.archive.absolute()
+    if (SAFE_NAME.fullmatch(archive.name) is None or not archive.name.startswith('nvidia-open-')
+            or not archive.name.endswith('.tar.gz')):
+        fail('private input must use the existing nvidia-open four-file archive format')
+    checksum=args.checksum.absolute()
+    if checksum.name!=archive.name+'.sha256':fail('private checksum filename differs')
+    stem=archive.name.removesuffix('.tar.gz')
+    sources={'archive':archive,'checksum':checksum,'buildInfo':archive.with_name(stem+'.build-info.txt'),
+             'provenance':archive.with_name(stem+'.provenance.json')}
+    destination=args.destination.absolute()
+    if destination.exists() or destination.is_symlink():fail('private snapshot already exists; preserve it')
+    parent=destination.parent
+    info=parent.lstat()
+    if (parent.resolve()!=parent or not stat.S_ISDIR(info.st_mode) or info.st_uid!=os.geteuid()
+            or stat.S_IMODE(info.st_mode)&0o077):fail('private snapshot parent must be exact and private')
+    destination.mkdir(mode=0o700)
+    for role,path in sources.items():
+        copy_file(path,destination/path.name,MAX_ARCHIVE if role=='archive' else MAX_METADATA)
+    before={role:digest(read_regular(destination/path.name,MAX_ARCHIVE if role=='archive' else MAX_METADATA,'private snapshot'))
+            for role,path in sources.items()}
+    if args.expected_archive_sha256 is not None and before['archive']!=args.expected_archive_sha256:
+        fail('private archive differs from the selected producer input')
+    argv=[sys.executable,str(Path(__file__).with_name('validate_publish_inputs.py')),
+          '--archive',str(destination/archive.name),'--checksum',str(destination/checksum.name),
+          '--build-info',str(destination/sources['buildInfo'].name),
+          '--provenance',str(destination/sources['provenance'].name),'--repository','CorniiDog/OPEMOS']
+    result=subprocess.run(argv,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=180)
+    if len(result.stdout)>MAX_DOCUMENT or len(result.stderr)>MAX_METADATA:
+        fail('private validator output exceeds bound')
+    if result.returncode:
+        sys.stderr.buffer.write(result.stderr)
+        fail('private product authentication failed; no userspace selection authorized')
+    after={role:digest(read_regular(destination/path.name,MAX_ARCHIVE if role=='archive' else MAX_METADATA,'private snapshot'))
+           for role,path in sources.items()}
+    if before!=after:fail('private input changed across actual validator')
+    validated=json.loads(result.stdout)
+    provenance=json.loads(read_regular(destination/sources['provenance'].name,MAX_METADATA,'private provenance'))
+    target=provenance['target']
+    if (validated.get('status')!='ready' or target!={
+            'steamosVersion':args.steamos,'kernelVersion':args.kernel,
+            'nvidiaVersion':target.get('nvidiaVersion'),'architecture':'x86_64'}):
+        fail('private product must match the actual exact SteamOS/kernel target')
+    if COMMIT.fullmatch(args.support_revision or '') is None:fail('exact consumer Core revision required')
+    if (provenance['artifact'].get('representation')=='ko.zst'
+            and provenance['support']['commit']!=args.support_revision):
+        fail('private compressed input belongs to another Core; supply its original authenticated raw four-file input, never relabel it')
+    # Complete snapshot durability before the caller may select userspace.
+    fd=os.open(destination,os.O_RDONLY|os.O_DIRECTORY)
+    try:os.fsync(fd)
+    finally:os.close(fd)
+    fd=os.open(parent,os.O_RDONLY|os.O_DIRECTORY)
+    try:os.fsync(fd)
+    finally:os.close(fd)
+    print(canonical({'schemaVersion':1,'target':target,'producerCore':provenance['support'],
+                     'source':provenance['source'],'archiveSHA256':before['archive'],
+                     'paths':{role:str(destination/path.name) for role,path in sources.items()}}).decode(),end='')
+
+
 def main():
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
-    for name in ("stage", "show", "select", "pending", "retain-install"):
+    for name in ("stage", "show", "select", "pending", "retain-install", "authenticate-local"):
         command = subparsers.add_parser(name)
         command.add_argument("--steamos", required=True)
         command.add_argument("--kernel", required=True)
-        command.add_argument("--nvidia", required=True)
+        if name != "authenticate-local":command.add_argument("--nvidia", required=True)
         command.add_argument("--support-revision", required=True)
-        if name == "stage":
+        if name == "authenticate-local":
+            command.add_argument("--archive", required=True, type=Path)
+            command.add_argument("--checksum", required=True, type=Path)
+            command.add_argument("--destination", required=True, type=Path)
+            command.add_argument("--expected-archive-sha256")
+        elif name == "stage":
             command.add_argument("--materialization", required=True, type=Path)
             command.add_argument("--input-dir", required=True, type=Path)
             command.add_argument("--destination", required=True, type=Path)
@@ -494,10 +582,11 @@ def main():
                 command.add_argument("--directory", required=True, type=Path)
                 command.add_argument("--interstitial", type=Path)
                 command.add_argument("--interstitial-sha256")
+                command.add_argument("--verify-userspace-files", action="store_true")
         else:
             command.add_argument("--directory", required=True, type=Path)
     args = parser.parse_args()
-    ({"stage":command_stage,"show":command_show,"select":command_select,"pending":command_pending,"retain-install":command_retain_install}[args.command])(args)
+    ({"stage":command_stage,"show":command_show,"select":command_select,"pending":command_pending,"retain-install":command_retain_install,"authenticate-local":command_authenticate_local}[args.command])(args)
 
 
 if __name__ == "__main__":

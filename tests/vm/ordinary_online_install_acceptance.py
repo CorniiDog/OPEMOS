@@ -23,13 +23,14 @@ from installed_update_acceptance import command,write,digest as file_digest,TARG
 
 def context(path):
     m=json.loads(path.read_bytes())
-    assert set(m)=={'schemaVersion','runId','guestUUID','coreCommit','kernel','steamos','nvidia',
+    required={'schemaVersion','runId','guestUUID','coreCommit','kernel','steamos','nvidia',
                     'profile','producer','installerUID','driverSourceCommit','interstitial','interstitialSHA256','output'}
+    assert set(m)==(required|{'privateInputs'} if m.get('producer')=='private' else required)
     assert m['schemaVersion']==1 and re.fullmatch('[0-9a-f]{32}',m['runId'])
     assert os.geteuid()==0 and os.uname().release==m['kernel'] and m['kernel'] in TARGETS
     assert m['nvidia']=='575.64.05' and m['driverSourceCommit']=='4a616372ce3c1f1d0a10c04960107a1db51b6fc0'
     assert type(m['installerUID']) is int and m['installerUID'] in (0,1000)
-    assert m['profile'] in ('fresh','loaded') and m['producer'] in ('built','published')
+    assert m['profile'] in ('fresh','loaded') and m['producer'] in ('built','published','private')
     product=Path('/sys/class/dmi/id/product_name').read_text().lower()
     assert any(x in product for x in ('virtual machine','kvm','qemu','standard pc'))
     assert Path('/sys/class/dmi/id/product_uuid').read_text().strip().lower()==m['guestUUID'].lower()
@@ -37,6 +38,23 @@ def context(path):
     assert re.fullmatch('[0-9a-f]{40}',m['coreCommit'])
     subprocess.run(['git','-C',str(REPO),'diff','--quiet','HEAD','--'],check=True,timeout=10)
     assert file_digest(Path(m['interstitial']))==m['interstitialSHA256']
+    if m['producer']=='private':
+        entries=m['privateInputs']
+        assert set(entries)=={'archive','checksum','provenance','buildInfo'}
+        for row in entries.values():
+            assert set(row)=={'path','bytes','sha256'}
+            path=Path(row['path']);assert path.is_file() and not path.is_symlink()
+            assert path.stat().st_size==row['bytes'] and file_digest(path)==row['sha256']
+        archive=entries['archive']['path']
+        assert entries['checksum']['path']==archive+'.sha256'
+        assert entries['provenance']['path']==archive.removesuffix('.tar.gz')+'.provenance.json'
+        assert entries['buildInfo']['path']==archive.removesuffix('.tar.gz')+'.build-info.txt'
+        provenance=json.loads(Path(entries['provenance']['path']).read_bytes())
+        assert provenance['source']['commit']==m['driverSourceCommit']
+        assert provenance['target']=={'steamosVersion':m['steamos'],'kernelVersion':m['kernel'],
+                                      'nvidiaVersion':m['nvidia'],'architecture':'x86_64'}
+        assert provenance['artifact'].get('representation','raw')!='ko.zst','use authenticated original raw producer input, no old-Core relabel'
+
     out=Path(m['output']);assert out.is_absolute() and out.resolve()==out and m['runId'] in out.name
     out.mkdir(mode=0o700,exist_ok=True)
     assert out.stat().st_uid==0 and out.stat().st_mode&0o077==0
@@ -53,8 +71,10 @@ def custody(m):
     document,outputs,_=load(directory,expected(m))
     provenance=json.loads((directory/outputs['provenance']['name']).read_bytes())
     assert provenance['source']['commit']==m['driverSourceCommit']
-    if m['producer']=='built':assert provenance['trust']=='locally-built-verified'
-    else:assert provenance['trust']=='certified-published','do not substitute a local build for published-path acceptance'
+    if m['producer'] in ('built','private'):assert provenance['trust']=='locally-built-verified'
+    if m['producer']=='private':
+        assert provenance['repack']['sourceArchiveSha256']==m['privateInputs']['archive']['sha256']
+    if m['producer']=='published':assert provenance['trust']=='certified-published','do not substitute a local build for published-path acceptance'
     return record,document,directory
 
 
@@ -69,6 +89,8 @@ def online(m):
     argv=['/bin/bash',str(REPO/'bootstrap/online_install.sh'),'-y',
           '--interstitial-binary',m['interstitial'],'--interstitial-sha256',m['interstitialSHA256']]
     if m['producer']=='built':argv+=['--build-as-fallback']
+    if m['producer']=='private':
+        argv+=['--local',m['privateInputs']['archive']['path'],'--local-sha256',m['privateInputs']['archive']['sha256']]
     if m['installerUID']!=0:
         import pwd
         owner=pwd.getpwuid(m['installerUID'])
@@ -89,15 +111,83 @@ def main():
     p=argparse.ArgumentParser()
     p.add_argument('action',choices=('start','repeat-pending','app-health','resume-online','resume-auto',
                                     'driver-health','repeat-healthy','refuse-other-uid','refuse-custody-mode',
-                                    'refuse-custody-schema','refuse-custody-size','refuse-custody-target','ignore-latest-pointer'))
+                                    'refuse-custody-schema','refuse-custody-size','refuse-custody-target','ignore-latest-pointer','private-refuse-checksum','private-refuse-zip-entry','private-refuse-target','private-refuse-signature'))
     p.add_argument('--manifest',type=Path,required=True)
+    p.add_argument('--wrong-target-archive',type=Path)
+    p.add_argument('--wrong-target-sha256')
     a=p.parse_args();m,out=context(a.manifest)
     argv,env=online(m)
-    if a.action=='start':
+    if a.action in ('private-refuse-checksum','private-refuse-zip-entry','private-refuse-target'):
+        assert m['producer']=='private' and m['installerUID']==0,'controlled private fault operands are Root-private'
+        assert not (HOME/'pending-install.json').exists()
+        before=subprocess.check_output(['pacman','-Q'])
+        registry=HOME.parent/'recovery-bootstrap/current.json'
+        registry_before=registry.read_bytes() if registry.exists() else None
+        root=out/a.action;root.mkdir(mode=0o700)
+        import shutil
+        for row in m['privateInputs'].values():
+            shutil.copyfile(row['path'],root/Path(row['path']).name)
+        archive=root/Path(m['privateInputs']['archive']['path']).name
+        test_argv=list(argv)
+        if a.action=='private-refuse-checksum':
+            (root/(archive.name+'.sha256')).write_text('0'*64+'  '+archive.name+'\n')
+            test_argv[test_argv.index('--local')+1]=str(archive)
+        elif a.action=='private-refuse-zip-entry':
+            import zipfile
+            path=root/'unsafe.zip'
+            outside=out/'zip-must-not-change';outside.write_text('preserve')
+            with zipfile.ZipFile(path,'x') as z:
+                for row in m['privateInputs'].values():z.write(row['path'],Path(row['path']).name)
+                z.writestr('../zip-must-not-change','unexpected')
+            test_argv[test_argv.index('--local')+1]=str(path)
+            test_argv[test_argv.index('--local-sha256')+1]=file_digest(path)
+        else:
+            # A real separately authenticated other-target artifact through
+            # the ordinary entry. Never override uname/get_kernel/validator.
+            assert a.wrong_target_archive is not None and a.wrong_target_sha256 is not None
+            assert file_digest(a.wrong_target_archive)==a.wrong_target_sha256
+            provenance=json.loads(a.wrong_target_archive.with_name(a.wrong_target_archive.name.removesuffix('.tar.gz')+'.provenance.json').read_bytes())
+            assert provenance['target']['kernelVersion']!=m['kernel']
+            test_argv[test_argv.index('--local')+1]=str(a.wrong_target_archive)
+            test_argv[test_argv.index('--local-sha256')+1]=a.wrong_target_sha256
+        command(out,a.action,test_argv,env,expected=(1,))
+        log=(out/(a.action+'.raw.log')).read_text()
+        expected_reason={'private-refuse-checksum':'private product authentication failed',
+                         'private-refuse-zip-entry':'Private zip must contain exactly four',
+                         'private-refuse-target':'private product must match the actual exact'}[a.action]
+        assert expected_reason in log,'do not count an unrelated permission/transport failure as target refusal'
+        assert subprocess.check_output(['pacman','-Q'])==before,'private refusal must precede package effects'
+        assert (registry.read_bytes() if registry.exists() else None)==registry_before
+        assert not (HOME/'pending-install.json').exists()
+        if a.action=='private-refuse-zip-entry':assert outside.read_text()=='preserve'
+    elif a.action=='private-refuse-signature':
+        assert m['producer']=='private'
+        record,_,_=custody(m);assert record['userspaceInput'] is not None
+        from recovery_cached_product import verify_userspace_inputs
+        manifest=verify_userspace_inputs(HOME,record['userspaceInput'],m['nvidia'])
+        src=HOME/'userspace-inputs'/record['userspaceInput']
+        name=next(n for n in manifest['files'] if n.endswith('.pkg.tar.zst'))
+        import shutil
+        bad=out/'invalid-signature';bad.mkdir(mode=0o700)
+        shutil.copyfile(src/name,bad/name)
+        data=bytearray((src/(name+'.sig')).read_bytes());data[-1]^=1
+        (bad/(name+'.sig')).write_bytes(data)
+        before=subprocess.check_output(['pacman','-Q'])
+        command(out,'private-good-signature-control',['env','LC_ALL=C','pacman-key','--verify',str(src/(name+'.sig')),str(src/name)])
+        command(out,a.action,['env','LC_ALL=C','pacman-key','--verify',str(bad/(name+'.sig')),str(bad/name)],expected=(1,))
+        assert subprocess.check_output(['pacman','-Q'])==before
+        assert custody(m)[0]==record
+    elif a.action=='start':
         assert not (HOME/'pending-install.json').exists(),'do not rearm an existing job'
         if m['profile']=='fresh':
             assert not Path('/sys/module/nvidia').exists()
             assert not (HOME/'installed-updates/current.json').exists()
+            if m['producer']=='private':
+                for package in ('nvidia-utils','lib32-nvidia-utils'):
+                    absent=subprocess.run(['pacman','-Q',package],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+                    assert absent.returncode==1,'no preinstalled-userspace shortcut'
+                write(out/'private-absent-prestate.json',{'bootId':tx.boot_id(),'packageQueryExit':1,
+                    'noNvidiaModuleLoaded':True,'noDriverGeneration':True})
         else:
             from installed_driver_candidate import reconcile_controller
             old=reconcile_controller(Path('/'),HOME,inspect_only=True)
@@ -106,6 +196,15 @@ def main():
         # No caller-supplied materialization/cache shortcut.
         command(out,'ordinary-producer',argv,env,expected=(75,))
         record,document,directory=custody(m)
+        if m['producer']=='private':
+            assert record['userspaceIntegrityRequired'] is True
+            if m['profile']=='fresh':assert record['userspaceInput'] is not None
+            assert all(v is not None and v.rsplit('-',1)[0]==m['nvidia'] for v in record['userspace'].values())
+            from recovery_cached_product import verify_userspace_inputs
+            inputs=verify_userspace_inputs(HOME,record['userspaceInput'],m['nvidia']) if record['userspaceInput'] is not None else None
+            if inputs is not None:assert sum(n.endswith('.sig') for n in inputs['files'])==2
+            write(out/'private-userspace-retained.json',{'bootId':tx.boot_id(),'userspace':record['userspace'],
+                  'inputIdentity':record['userspaceInput'],'manifest':inputs,'product':record['product']})
         app=app_intent()
         assert app['phase']=='pending-health' and app['authority']['installProduct']==record['product']
         assert app['preparedBootId']==tx.boot_id()

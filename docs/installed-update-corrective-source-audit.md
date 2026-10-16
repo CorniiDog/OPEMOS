@@ -347,3 +347,74 @@ preserved. All OS, package integrity, fsync, rename, actual compilation and GPU
 claims require separate exact VM admission and retained raw evidence. In
 particular this source checkpoint does not claim atomic pacman rollback, physical
 power-loss certification, publication or a working/accepted updater.
+
+## Private absent-userspace consumer (plan6bfbf47a, source checkpoint)
+
+The R7 first-verification finding is preserved: a private `--local` input did not
+select userspace before setup, so a fresh slot still consulted publication and
+could fail before seeing its private product. Installing userspace by hand would
+hide that missing join. The current correction changes this existing private
+path, not automatic published selection or boundary authority.
+
+`--local` now requires `--local-sha256`, supplied by the independently authenticated
+input packet. For a directory this pins its one archive; for a four-entry zip it
+pins the transport bytes. Extraction accepts only the existing archive/checksum/
+provenance/build-info names and bounded regular entries, without path traversal,
+aliases, duplicate entries or arbitrary extraction. The existing cached-product
+module snapshots all four inputs and invokes the actual current publication
+validator before any userspace selection. Exact running SteamOS/kernel and the
+pinned NVIDIA policy must match. Before/after snapshot hashes and setup's exact
+selected archive pin refuse changed input. Diagnostic selection JSON is not a
+new trust or validation receipt.
+
+Setup's `--local-product` plus exact SHA revalidates that same snapshot itself,
+selects its exact NVIDIA version, and queries only the existing Arch endpoints.
+Private package signatures are mandatory and `pacman-key --verify` uses only the
+existing guest keyring; no import, TrustAll or signature-policy override is added.
+Both packages are retained before native installation. Existing matching installed
+userspace is checked with native `pacman -Qkk`; missing or corrupt package files
+cause one exact signed reinstall rather than `--needed` silently skipping them.
+A still-invalid native file set holds before app/driver activation. A different
+already-installed NVIDIA version is refused, not silently transitioned.
+
+Private setup does not issue the old module configuration, GRUB update or service
+enablement writes. Those belong to the existing journaled candidate. Native
+pacman hooks, library cache and package state remain native package operations;
+this change does not journal pacman, certify its power-loss semantics or claim
+whole-device rollback. The actual guest must retain native package, keyring,
+dependency and hook evidence. Modified user configuration is not force-overwritten.
+
+The real canonical producer consumes the selected private archive. Its resulting
+archive/provenance must bind that original SHA before root-private retention and
+app activation. Compressed input is accepted only for the same producer Core;
+an old-Core compressed product is not relabelled as the current updater. Its
+original authenticated raw four-file input can instead traverse the existing
+real canonical repack, preserving the original driver source. A product tarball
+containing `DRIVER-MANIFEST` is not silently treated as the raw input format.
+Historical627/d8 is a separate mechanics control, never corrected4a evidence.
+
+The private pending record additionally requires native installed userspace file
+integrity at app acknowledgement/driver consumption/completion. The optional
+private field does not alter public generation/materialization schemas; old
+records keep their existing policy and are not rearmed or rewritten. Pending
+product resume dominates a new `--local` argument and no longer re-reads an
+external original input after the first intentional pending75 exit. A real
+package-integrity failure after custody remains a hold with evidence; no unknown
+file overwrite or fictitious healthy result is authorized.
+
+The ordinary VM harness now has a private profile with actual four-file input
+pins, absent nvidia-utils AND lib32 prestate, actual setup/retained package evidence,
+first app boot, same-candidate normal/auto driver resume, second health boot and
+loaded repeat. Faults use real CLI processes/data: bad checksum, a pinned unsafe
+zip, an actual other-target product (no uname override), native good-signature
+control and altered detached signature, plus existing UID/schema/size/mode/custody
+and abrupt-recovery cases. The CI direct-shell-text assumptions are removed;
+actual CLI pair/mode refusals and real path-confinement tests remain. Enabled
+entry and boot/rollback behavior require the meaningful admitted VM transaction.
+Original29eb CI failures remain retained in the authenticated handoff.
+
+No project test, package install or VM was executed on the controller. AST,
+embedded-Python syntax, bash syntax and whitespace checks are source checks only.
+Actual corrected4a input, signed userspace/keyring/dependency closure, interstitial,
+exact <=60GB same-guest A/B source and fresh lease/runtime admission remain with
+the existing OS owner/Resolver. No physical, GPU, publication or merge acceptance.

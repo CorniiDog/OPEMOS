@@ -359,3 +359,50 @@ Repeat the positive ordinary producer/resume case through the existing UID1000
 account and its existing sudo route as well as Root. The harness does not create
 credentials or grant sudo. A missing account/noninteractive sudo route is an
 actual environment failure with retained exit/log, not OS-permission acceptance.
+
+### Authenticated private fresh path (plan6bfbf47a; authored, NOT RUN)
+
+Use the same ordinary harness with `producer:"private"`. Add `privateInputs`
+containing exactly archive/checksum/provenance/buildInfo records, each with path,
+bytes and SHA-256 from the independently reviewed real producer. The positive
+corrected-source case requires source4a616372 and real exact3.8.28/6.18.50/575 input;
+never relabel historical627/d8 as that case. Input is the original raw four-file
+`nvidia-open-*.tar.gz` format; an old-Core compressed or outer product tarball must
+not be disguised as raw input. Actual existing canonical revalidation/repack runs
+inside the ordinary entry; no caller pre-stages its output cache.
+
+On an independently admitted fresh exact-target guest, `start` first proves
+BOTH userspace packages absent. Its actual CLI is `online_install.sh --local
+<archive> --local-sha256 <authenticated-archive-SHA> ... -y`. It must authenticate
+private input before querying userspace, verify both actual detached package
+signatures using existing pacman trust, install/verify native package files,
+retain package/input identity and return75 only after real app activation.
+Module/GRUB effects stay with the journaled candidate, not userspace setup.
+
+Before positive start run `private-refuse-checksum`, `private-refuse-zip-entry`
+and `private-refuse-target` as Root with separate new output labels. The latter
+requires `--wrong-target-archive` and `--wrong-target-sha256` for an actual admitted
+other-kernel artifact with its genuine four files. It uses the ordinary entry,
+not an overridden kernel detector or validator. Every refusal requires the
+specific expected cause, identical native `pacman -Q` inventory and app registry,
+no pending product, and no change to the real outside zip sentinel. Preserve all
+failed operand copies/raw output. These cases must not pass merely because of
+unrelated permission/network errors.
+
+After positive package retention, `private-refuse-signature` verifies the real
+retained good signature with current pacman-key, then a copied altered signature
+must fail with unchanged package inventory/custody. No key, clock, signer or
+source method is mocked or imported. Keep the normal two real boots and
+same-product resume/health/repeat sequence described above. Pending `--local`
+resumes the retained candidate even if external original media is no longer
+present; a changed private input cannot replace an in-flight identity.
+
+Also run existing loaded-baseline and built/published profiles. Existing healthy
+userspace may remain the qualified OS baseline without an unnecessary package
+reinstall; fresh private setup must retain both exact signed inputs. Actual
+package file failures hold native health rather than forcing user configuration
+or accepting just a version database entry. Observe native pacman hook effects,
+read-only restoration, process/FD/resource/queue closure and real GPU availability.
+A GPU-less no-device failure is not a healthy updater result; do not substitute a
+mock nvidia-smi or sysfs. Package integrity is not pacman crash rollback or physical
+power-loss certification. Source-only check results never replace these runs.
