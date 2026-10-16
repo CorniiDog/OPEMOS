@@ -20,15 +20,21 @@ EXTRA = ('bootstrap/run_repair_with_interstitial.sh','lib/install_guardian_gener
 
 
 def private_directory(path):
-    if not path.parent.exists():
-        # Create only the fixed Core installation ancestry after validating the
-        # nearest existing root-owned ancestor. Never follow a parent alias.
-        missing=[]; parent=path.parent
-        while not parent.exists():missing.append(parent);parent=parent.parent
-        info=parent.lstat()
-        tx.need(stat.S_ISDIR(info.st_mode) and info.st_uid==0 and not info.st_mode&0o022,'unsafe bootstrap ancestor')
-        for entry in reversed(missing):entry.mkdir(mode=0o755);tx.fsync_dir(entry.parent)
-    tx.need(path.parent.resolve()==path.parent,'bootstrap parent alias')
+    tx.need(path.is_absolute() and path.resolve(strict=False)==path,
+            'bootstrap parent alias')
+    # Validate existing ancestry even when the immediate parent already exists.
+    # Otherwise an unsafe writable parent could acquire a new leaf before the
+    # leaf ownership check refuses it. Only root controls this bootstrap tree.
+    missing=[]; parent=path.parent
+    while not parent.exists():
+        missing.append(parent);parent=parent.parent
+    for existing in (parent, *parent.parents):
+        info=existing.lstat()
+        tx.need(stat.S_ISDIR(info.st_mode) and info.st_uid==0
+                and not stat.S_IMODE(info.st_mode)&0o022,
+                'unsafe bootstrap ancestor')
+    for entry in reversed(missing):
+        entry.mkdir(mode=0o755);tx.fsync_dir(entry.parent)
     if not path.exists():
         path.mkdir(mode=0o700)
         tx.fsync_dir(path.parent)

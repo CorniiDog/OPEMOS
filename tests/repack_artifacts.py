@@ -193,7 +193,7 @@ def main():
             str(ROOT / "lib"), str(destination),
         ], text=True, capture_output=True)
         assert refused.returncode != 0, (refused.stdout, refused.stderr)
-        assert "unsafe bootstrap ancestor" in refused.stderr
+        assert "unsafe bootstrap ancestor" in refused.stderr, (refused.returncode, refused.stdout, refused.stderr)
         assert not destination.exists()
         assert (cache / "materialization.json").is_file()
 
