@@ -42,7 +42,15 @@ def run(root, path, expected=None, require_receipt=False):
         text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         env={**os.environ, "PATH": f"{path}:{os.environ['PATH']}"}, check=False,
     )
-    return result.returncode, json.loads(result.stdout)
+    try:
+        document = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise AssertionError(
+            f"recovery-status protocol failure: argv={arguments!r} "
+            f"exit={result.returncode} stdout={result.stdout!r} "
+            f"stderr={result.stderr!r}"
+        ) from error
+    return result.returncode, document
 
 
 with tempfile.TemporaryDirectory(prefix="opemos-recovery-") as temporary:
