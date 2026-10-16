@@ -288,7 +288,6 @@ def verify_receipt_modules(root, kernel, expected_version, installed_paths,
     pointer=root/'home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/installed-updates/current.json'
     if pointer.exists():
         import installed_update_transaction as tx
-        import re
         record=tx.parse(tx.read(pointer,4096))
         if set(record)!={'generation'} or not re.fullmatch('txn-[0-9a-f]{32}',record['generation']):
             raise ValueError('installed generation pointer invalid')

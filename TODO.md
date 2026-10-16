@@ -3478,3 +3478,8 @@ Source integration completed through separate reviewed PRs: displayPR2 squash33e
   then fresh admitted OMEN producer-to-two-boot-health/failure and closure. No
   preinstalled-userspace workaround, generated trust receipt, physical/GPU or
   whole-device/pacman rollback/publication claim; VM tests remain unexecuted here.
+
+
+## 2026-10-16 recovery-status ordinary receipt CI correction
+
+* [ ] Preserve PR76 original22d6eea shell failures and diagnostic023405f run38927387217: real status subprocess exited1 with empty stdout and UnboundLocalError at receipt re.fullmatch. Branch-local import shadowed the module import across the entire function; remove redundant local binding, retain actual subprocess exit/stderr diagnostics. Existing ordinary receipt commit -> status CLI -> healthy -> payload tamper refusal exercises regression without overriding producer. Final-head GitHub checks and separately admitted OMEN private fresh/loaded app/driver/reboot transaction remain required; no acceptance inferred from AST or CI. Evidence in opemos-scheduler/core-recovery-status-causal-correction-20261016-r1.
