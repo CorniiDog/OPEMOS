@@ -796,11 +796,20 @@ with tempfile.TemporaryDirectory(prefix="opemos-recovery-transaction-") as tempo
     lock.chmod(0o600)
     with lock.open("r+") as stream:
         fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        contended = subprocess.run(base + ["show", "--state", str(state)],
+        # Reads are atomic snapshots and need no writable lock. Mutation
+        # still contends on the actual OS flock and must preserve the bytes.
+        before = state.read_bytes()
+        snapshot = subprocess.run(base + ["show", "--state", str(state)],
+                                  text=True, stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE)
+        assert snapshot.returncode == 0, snapshot.stderr
+        assert json.loads(snapshot.stdout) == json.loads(before)
+        contended = subprocess.run(base + ["cancel", "--state", str(state)],
                                    text=True, stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE)
         assert contended.returncode != 0
         assert "another recovery transaction operation" in contended.stderr
+        assert state.read_bytes() == before
 
     success_state = Path(temporary) / "successful.json"
     subprocess.run(base + [
