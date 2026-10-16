@@ -2363,7 +2363,7 @@ def main():
             PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
             MOCK_SHARED_ROOT_MOUNT="1",
         )
-        assert shared_activation["reason"] == "compression_policy_activation"
+        assert shared_activation["reason"] == "compression_policy_activation", shared_activation
         assert shared_activation["cleanup"]["compressionPolicyRestored"] is True
         test_temp_root = binaries.parent / "appliance-tmp"
         mutation_work_before = set(test_temp_root.glob("offline-root-mutation.*"))
