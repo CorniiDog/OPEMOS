@@ -417,103 +417,38 @@ exit 76
         assert failed_progress["status"] == "failed"
         assert failed_progress["phase"] == "recovery_required"
 
-        # A new exact validated materialization can service the next automatic
-        # timer after the bounded failure. Run the real installer with USER
-        # absent, as it is for the systemd repair service, and prove the five
-        # exact modules survive the successful retry without either network path.
+        # A valid cached archive still cannot authorize installed effects in
+        # an arbitrary non-root fixture. Exercise the actual installer refusal,
+        # rather than overriding the installed controller to claim completion.
+        # The positive ordinary cache -> app -> driver -> two-boot transaction
+        # is tests/vm/ordinary_online_install_acceptance.py on an admitted VM.
         valid_source = flow / "valid-source"
         archive_payload = valid_archive(flow)
         valid_materialization, _ = fixture(valid_source, archive_payload)
         valid_product = flow / "valid-cache"
         run("stage", *exact_args(), "--materialization", valid_materialization,
             "--input-dir", valid_source, "--destination", valid_product)
-        missing_updates = (
-            cached_failure_root / "usr/lib/modules" / KERNEL / "updates")
+        missing_updates = cached_failure_root / "usr/lib/modules" / KERNEL / "updates"
+        fallback = cached_failure_root / "var/lib/open-gpu-kernel-modules-steamos-support/recovery/state.json"
+        before_fallback = fallback.read_bytes()
         assert not missing_updates.exists()
         cached_retry = recovery(valid_product, cached_failure_root)
-        assert cached_retry.returncode == 75, (
-            cached_retry.stdout, cached_retry.stderr)
-        restored_progress = json.loads((cached_failure_root /
-            "run/opemos/interstitial/progress.json").read_text(encoding="utf-8"))
-        # Fixture bytes/metadata are not a real boot acknowledgement.
-        # The actual installer retains its human progress output; the final
-        # recoveryctl line is its typed result, not the preceding install log.
-        assert json.loads(cached_retry.stdout.splitlines()[-1])["status"] == "pending-health", (
-            cached_retry.stdout, cached_retry.stderr)
-        assert restored_progress["status"] != "succeeded"
-        assert restored_progress["phase"] != "complete"
-        assert restored_progress["sequence"] >= 5
-        target = (cached_failure_root / "usr/lib/modules" / KERNEL / "updates" /
-                  "open-gpu-kernel-modules-steamos")
-        assert sorted(path.name for path in target.glob("*.ko.zst")) == [
-            "nvidia-drm.ko.zst", "nvidia-modeset.ko.zst", "nvidia-peermem.ko.zst",
-            "nvidia-uvm.ko.zst", "nvidia.ko.zst",
-        ]
-        assert all(
-            (path.stat().st_uid, path.stat().st_gid,
-             path.stat().st_mode & 0o777, path.stat().st_nlink)
-            == (os.geteuid(), os.getegid(), 0o644, 1)
-            for path in target.glob("*.ko.zst")
-        )
-        assert target.parent.stat().st_mode & 0o777 == 0o755
-        assert target.stat().st_mode & 0o777 == 0o755
-        receipt = (cached_failure_root / "var/lib" /
-            "open-gpu-kernel-modules-steamos-support/recovery/cached-repair-receipt.json")
-        assert receipt.is_file() and receipt.stat().st_mode & 0o777 == 0o644
-        verified_receipt = subprocess.run([
-            "python3", str(ROOT / "lib/recovery_cached_receipt.py"), "verify",
-            "--root", str(cached_failure_root), "--kernel", KERNEL,
-            "--nvidia", NVIDIA, "--support-revision", REVISION,
-        ], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        assert verified_receipt.returncode == 0, verified_receipt.stderr
-        assert json.loads(verified_receipt.stdout)["modules"] == [
-            {"bytes": path.stat().st_size, "name": name,
-             "path": str(path.relative_to(cached_failure_root)),
-             "sha256": digest(path.read_bytes())}
-            for name in ("nvidia", "nvidia-drm", "nvidia-modeset", "nvidia-peermem", "nvidia-uvm")
-            for path in (target / f"{name}.ko.zst",)
-        ]
-        strict_status = subprocess.run([
-            "python3", str(ROOT / "lib/recovery_status.py"),
-            "--root", str(cached_failure_root), "--kernel", KERNEL,
-            "--expected-nvidia", NVIDIA, "--expected-support-revision", REVISION,
-            "--require-payload-receipt",
-        ], env={**os.environ, "PATH": f"{mockbin}:{os.environ['PATH']}",
-                "PROJECT_TEST_ROOT": str(cached_failure_root),
-                "PROJECT_TEST_KERNEL": KERNEL, "PROJECT_TEST_NVIDIA": NVIDIA},
-            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        assert strict_status.returncode == 0, strict_status.stderr
-        strict_document = json.loads(strict_status.stdout)
-        assert strict_document["status"] == "healthy"
-        assert strict_document["moduleVerification"]["status"] == "verified"
-        original_module = (target / "nvidia.ko.zst").read_bytes()
-        (target / "nvidia.ko.zst").write_bytes(b"changed after receipt\n")
-        rejected_receipt = subprocess.run([
-            "python3", str(ROOT / "lib/recovery_cached_receipt.py"), "verify",
-            "--root", str(cached_failure_root), "--kernel", KERNEL,
-            "--nvidia", NVIDIA, "--support-revision", REVISION,
-        ], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        assert rejected_receipt.returncode != 0
-        (target / "nvidia.ko.zst").write_bytes(original_module)
-        (target / "nvidia.ko.zst").chmod(0o644)
-        assert (cached_failure_root / "var/lib" /
-            "open-gpu-kernel-modules-steamos-support/recovery/state.json").is_file()
-        retried_transaction = json.loads((cached_failure_root /
-            "var/lib/open-gpu-kernel-modules-steamos-support/recovery/transaction.json"
-        ).read_text(encoding="utf-8"))
-        assert retried_transaction["phase"] == "verifying"
-        assert retried_transaction["reason"] == "exact_module_verification"
-        assert retried_transaction["attempt"] >= 4
-        assert retried_transaction["active"] is True
-        backup_root = (cached_failure_root / "var/lib" /
-            "open-gpu-kernel-modules-steamos-support/backups" / KERNEL)
-        assert len(list(backup_root.iterdir())) == 1
+        assert cached_retry.returncode == 75, (cached_retry.stdout, cached_retry.stderr)
+        assert "installed update requires owning root controller" in cached_retry.stderr
+        assert json.loads(cached_retry.stdout.splitlines()[-1]) == {
+            "action": "timer_and_connectivity", "reason": "exact_cached_repair_failed",
+            "schemaVersion": 1, "status": "retry_scheduled",
+        }, (cached_retry.stdout, cached_retry.stderr)
+        assert not missing_updates.exists()
+        assert fallback.read_bytes() == before_fallback
+        assert not (fallback.parent / "cached-repair-receipt.json").exists()
+        retry = json.loads((fallback.parent / "transaction.json").read_text())
+        assert retry["phase"] == "retry_scheduled" and retry["active"] is True
+        progress = json.loads((cached_failure_root / "run/opemos/interstitial/progress.json").read_text())
+        assert progress["status"] != "succeeded" and progress["phase"] != "complete"
         assert not any(immutable_home.iterdir())
         assert not any(installer_tmp.iterdir())
         assert readonly_marker.is_file()
-        assert readonly_log.read_text(encoding="utf-8").splitlines() == [
-            "status", "disable", "enable",
-        ]
         assert not curl_marker.exists() and not online_marker.exists()
 
 
