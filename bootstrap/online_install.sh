@@ -8,6 +8,8 @@ FUZZY=0
 IN_CODE=0
 LOCAL_SOURCE=""
 LOCAL_INPUT_SHA=""
+USERSPACE_INPUTS=""
+USERSPACE_INPUTS_SHA=""
 YES=0
 RESOLVE_ONLY=0
 BUILD_AS_FALLBACK=0
@@ -25,6 +27,8 @@ Usage: online_install.sh [options]
 Options:
       --fuzzy        Compatibility alias; certified installs already allow
                      bounded fallback to older same-series SteamOS releases
+      --userspace-inputs FILE --userspace-inputs-sha256 SHA256
+                     Snapshot exact local package/signature transport; native guest trust remains required
       --local PATH --local-sha256 SHA256
                      Install an exact privately pinned four-file bundle/archive
       --in-code      Compile the current NVIDIA source working tree, then install it
@@ -43,6 +47,8 @@ EOF
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --userspace-inputs) [[ $# -ge 2 ]] || exit 2; USERSPACE_INPUTS="$2"; shift 2 ;;
+        --userspace-inputs-sha256) [[ $# -ge 2 ]] || exit 2; USERSPACE_INPUTS_SHA="$2"; shift 2 ;;
         --fuzzy) FUZZY=1; shift ;;
         --in-code) IN_CODE=1; shift ;;
         --build-as-fallback) BUILD_AS_FALLBACK=1; shift ;;
@@ -60,6 +66,11 @@ done
 if [[ -n "$LOCAL_SOURCE" || -n "$LOCAL_INPUT_SHA" ]]; then
     [[ -n "$LOCAL_SOURCE" && "$LOCAL_INPUT_SHA" =~ ^[0-9a-f]{64}$ ]] || {
         echo "--local and authenticated --local-sha256 are required together." >&2; exit 2;
+    }
+fi
+if [[ -n "$USERSPACE_INPUTS" || -n "$USERSPACE_INPUTS_SHA" ]]; then
+    [[ -n "$LOCAL_SOURCE" && -n "$USERSPACE_INPUTS" && "$USERSPACE_INPUTS_SHA" =~ ^[0-9a-f]{64}$ ]] || {
+        echo "Local userspace inputs require private driver input and paired SHA-256." >&2; exit 2;
     }
 fi
 MODE_COUNT=0
@@ -362,6 +373,7 @@ if [[ "$NEEDS_USERSPACE" == 1 ]]; then
     log "Running authenticated exact-target NVIDIA userspace setup..."
     SETUP_ARGS=("${FALLBACK_ARGS[@]}")
     [[ -z "$PRIVATE_SELECTION" ]] || SETUP_ARGS+=(--local-product "$LOCAL_ARCHIVE" --local-product-sha256 "$PRIVATE_ARCHIVE_SHA")
+    [[ -z "$USERSPACE_INPUTS" ]] || SETUP_ARGS+=(--userspace-inputs "$USERSPACE_INPUTS" --userspace-inputs-sha256 "$USERSPACE_INPUTS_SHA")
     [[ "$YES" == "1" ]] && SETUP_ARGS+=(-y)
     "$TMP/support/bootstrap/setup_nvidia.sh" "${SETUP_ARGS[@]}"
     NVIDIA_VERSION="$(get_nvidia_version)"

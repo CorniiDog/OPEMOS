@@ -15,6 +15,8 @@ OFFER_REBOOT=0
 YES=0
 LOCAL_PRODUCT=""
 LOCAL_PRODUCT_SHA=""
+USERSPACE_INPUTS=""
+USERSPACE_INPUTS_SHA=""
 
 usage()
 {
@@ -22,6 +24,8 @@ usage()
 Usage: setup_nvidia.sh [options]
 
 Options:
+      --userspace-inputs FILE --userspace-inputs-sha256 SHA256
+                     Snapshot exact local package/signature transport; native guest trust remains required
       --local-product FILE --local-product-sha256 SHA256
                             Authenticate exact private four-file driver input before selecting userspace
       --development PREFIX   Select/install matching NVIDIA userspace for
@@ -58,6 +62,8 @@ EOF
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --userspace-inputs) [[ $# -ge 2 ]] || exit 2; USERSPACE_INPUTS="$2"; shift 2 ;;
+        --userspace-inputs-sha256) [[ $# -ge 2 ]] || exit 2; USERSPACE_INPUTS_SHA="$2"; shift 2 ;;
         --local-product-sha256) [[ $# -ge 2 ]] || die "--local-product-sha256 requires a digest."; LOCAL_PRODUCT_SHA="$2"; shift 2 ;;
         --local-product) [[ $# -ge 2 ]] || die "--local-product requires an archive."; LOCAL_PRODUCT="$2"; shift 2 ;;
         --development)
@@ -92,6 +98,11 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+if [[ -n "$USERSPACE_INPUTS" || -n "$USERSPACE_INPUTS_SHA" ]]; then
+    [[ -n "$LOCAL_PRODUCT" && -n "$USERSPACE_INPUTS" && "$USERSPACE_INPUTS_SHA" =~ ^[0-9a-f]{64}$ ]] || {
+        echo "Local userspace inputs require private driver input and paired SHA-256." >&2; exit 2;
+    }
+fi
 if [[ -n "$LOCAL_PRODUCT" || -n "$LOCAL_PRODUCT_SHA" ]]; then
     [[ -n "$LOCAL_PRODUCT" && "$LOCAL_PRODUCT_SHA" =~ ^[0-9a-f]{64}$ ]] || die "Private product archive and exact SHA256 are required together."
 fi
@@ -257,7 +268,14 @@ if [[ -n "$LOCAL_PRODUCT" ]]; then
     SELECTION_MODE="authenticated-private-exact-target"
     SELECTION_PURPOSE="align signed userspace with the authenticated exact private driver product"
     MODULE_BEHAVIOR="normal retained online consumer installs the same authenticated driver product after app boot"
-    NVIDIA_UTILS_FILE="$(resolve_arch_package nvidia-utils "$RESOLVED_NVIDIA" exact)"
+    if [[ -n "$USERSPACE_INPUTS" ]]; then
+        python3 "$SUPPORT_ROOT/lib/recovery_cached_product.py" snapshot-userspace \
+            --manifest "$USERSPACE_INPUTS" --manifest-sha256 "$USERSPACE_INPUTS_SHA" \
+            --nvidia "$RESOLVED_NVIDIA" --destination "$TMP/packages" > "$TMP/userspace-snapshot.json"
+        NVIDIA_UTILS_FILE="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["packages"]["nvidia-utils"])' "$TMP/userspace-snapshot.json")"
+    else
+        NVIDIA_UTILS_FILE="$(resolve_arch_package nvidia-utils "$RESOLVED_NVIDIA" exact)"
+    fi
 elif [[ -n "$UPSTREAM_SPEC" ]]; then
     SELECTION_MODE="upstream-development"
     SELECTION_PURPOSE="establish an unmodified NVIDIA upstream-development control build"
@@ -338,7 +356,11 @@ PACKAGE_NVIDIA_VERSION="${NVIDIA_UTILS_VERREL%-*}"
 [[ "$PACKAGE_NVIDIA_VERSION" == "$RESOLVED_NVIDIA" ]] ||
     die "Resolved nvidia-utils package is ${PACKAGE_NVIDIA_VERSION}; expected ${RESOLVED_NVIDIA}."
 
-LIB32_FILE="$(resolve_arch_package lib32-nvidia-utils "$RESOLVED_NVIDIA" exact)"
+if [[ -n "$USERSPACE_INPUTS" ]]; then
+    LIB32_FILE="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["packages"]["lib32-nvidia-utils"])' "$TMP/userspace-snapshot.json")"
+else
+    LIB32_FILE="$(resolve_arch_package lib32-nvidia-utils "$RESOLVED_NVIDIA" exact)"
+fi
 
 LIB32_VERREL="${LIB32_FILE#lib32-nvidia-utils-}"
 LIB32_VERREL="${LIB32_VERREL%-x86_64.pkg.tar.zst}"
@@ -423,8 +445,10 @@ download_package()
     fi
 }
 
-download_package nvidia-utils "$NVIDIA_UTILS_FILE"
-download_package lib32-nvidia-utils "$LIB32_FILE"
+if [[ -z "$USERSPACE_INPUTS" ]]; then
+    download_package nvidia-utils "$NVIDIA_UTILS_FILE"
+    download_package lib32-nvidia-utils "$LIB32_FILE"
+fi
 
 if [[ -n "$LOCAL_PRODUCT" ]]; then
     # Verify using ONLY the actual existing guest pacman trust. No key import,
@@ -432,6 +456,10 @@ if [[ -n "$LOCAL_PRODUCT" ]]; then
     need_cmd pacman-key
     sudo pacman-key --verify "$PKG_DIR/$NVIDIA_UTILS_FILE.sig" "$PKG_DIR/$NVIDIA_UTILS_FILE"
     sudo pacman-key --verify "$PKG_DIR/$LIB32_FILE.sig" "$PKG_DIR/$LIB32_FILE"
+    [[ "$(LC_ALL=C pacman -Qp "$PKG_DIR/$NVIDIA_UTILS_FILE")" == "nvidia-utils $NVIDIA_UTILS_VERREL" ]] ||
+        die "Signed package metadata differs from exact NVIDIA input."
+    [[ "$(LC_ALL=C pacman -Qp "$PKG_DIR/$LIB32_FILE")" == "lib32-nvidia-utils $LIB32_VERREL" ]] ||
+        die "Signed lib32 package metadata differs from exact NVIDIA input."
 fi
 
 STATE_ROOT="/var/lib/open-gpu-kernel-modules-steamos-support/nvidia-setup"

@@ -558,9 +558,70 @@ def command_authenticate_local(args):
                      'paths':{role:str(destination/path.name) for role,path in sources.items()}}).decode(),end='')
 
 
+def command_snapshot_userspace(args):
+    """Snapshot pinned transport bytes, NOT a signature/trust receipt."""
+    payload=read_regular(args.manifest,MAX_DOCUMENT,'userspace input manifest')
+    if HEX.fullmatch(args.manifest_sha256) is None or digest(payload)!=args.manifest_sha256:
+        fail('userspace input manifest digest differs')
+    try:
+        document=json.loads(payload,object_pairs_hook=pairs,
+                            parse_constant=lambda _value:fail('invalid JSON number'))
+    except (UnicodeError,json.JSONDecodeError):
+        fail('userspace input manifest is invalid')
+    if (payload!=canonical(document) or type(document) is not dict or
+            set(document)!={'schemaVersion','nvidiaVersion','packages'} or
+            type(document['schemaVersion']) is not int or document['schemaVersion']!=1 or
+            document['nvidiaVersion']!=args.nvidia or
+            re.fullmatch(r'[0-9]+\.[0-9]+(?:\.[0-9]+)?',args.nvidia) is None or
+            type(document['packages']) is not list or len(document['packages'])!=2):
+        fail('userspace input manifest fields/target differ')
+    frozen={};names={}
+    for row in document['packages']:
+        fields={'name','filename','bytes','sha256','signatureFilename','signatureBytes','signatureSha256'}
+        if type(row) is not dict or set(row)!=fields:
+            fail('userspace package input fields differ')
+        name=row['name']
+        if type(name) is not str or name not in ('nvidia-utils','lib32-nvidia-utils') or name in names:
+            fail('userspace package roles differ')
+        filename=row['filename']
+        pattern=re.escape(name+'-'+args.nvidia)+r'-[1-9][0-9]*(?:\.[0-9]+)*-x86_64\.pkg\.tar\.(?:zst|xz)'
+        if type(filename) is not str or re.fullmatch(pattern,filename) is None or row['signatureFilename']!=filename+'.sig':
+            fail('userspace package filename/target differs')
+        names[name]=filename
+        for filekey,sizekey,hashkey,cap in [('filename','bytes','sha256',768*1024**2),
+                                          ('signatureFilename','signatureBytes','signatureSha256',1024**2)]:
+            if (type(row[sizekey]) is not int or not 0<row[sizekey]<=cap or
+                    type(row[hashkey]) is not str or HEX.fullmatch(row[hashkey]) is None):
+                fail('userspace package input bounds differ')
+            data=read_regular(args.manifest.parent/row[filekey],cap,'userspace package input')
+            if len(data)!=row[sizekey] or digest(data)!=row[hashkey]:
+                fail('userspace package input digest differs')
+            frozen[row[filekey]]=data
+    destination=args.destination.absolute();parent=destination.parent
+    info=parent.lstat()
+    if (parent.resolve()!=parent or not stat.S_ISDIR(info.st_mode) or
+            info.st_uid!=os.geteuid() or stat.S_IMODE(info.st_mode)&0o077):
+        fail('userspace snapshot parent is not private')
+    destination.mkdir(mode=0o700)  # create-only; never replace another attempt
+    for filename,data in frozen.items():
+        with (destination/filename).open('xb') as output:
+            os.chmod(destination/filename,0o600)
+            output.write(data);output.flush();os.fsync(output.fileno())
+    descriptor=os.open(destination,os.O_RDONLY|os.O_DIRECTORY)
+    try:os.fsync(descriptor)
+    finally:os.close(descriptor)
+    print(canonical({'status':'snapshotted-unverified','packages':names,
+                     'manifestSHA256':args.manifest_sha256}).decode(),end='')
+
+
 def main():
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
+    snapshot=subparsers.add_parser('snapshot-userspace')
+    snapshot.add_argument('--manifest',type=Path,required=True)
+    snapshot.add_argument('--manifest-sha256',required=True)
+    snapshot.add_argument('--nvidia',required=True)
+    snapshot.add_argument('--destination',type=Path,required=True)
     for name in ("stage", "show", "select", "pending", "retain-install", "authenticate-local"):
         command = subparsers.add_parser(name)
         command.add_argument("--steamos", required=True)
@@ -586,7 +647,7 @@ def main():
         else:
             command.add_argument("--directory", required=True, type=Path)
     args = parser.parse_args()
-    ({"stage":command_stage,"show":command_show,"select":command_select,"pending":command_pending,"retain-install":command_retain_install,"authenticate-local":command_authenticate_local}[args.command])(args)
+    ({"snapshot-userspace":command_snapshot_userspace,"stage":command_stage,"show":command_show,"select":command_select,"pending":command_pending,"retain-install":command_retain_install,"authenticate-local":command_authenticate_local}[args.command])(args)
 
 
 if __name__ == "__main__":
