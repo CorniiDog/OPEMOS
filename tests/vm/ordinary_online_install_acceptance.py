@@ -25,7 +25,10 @@ def context(path):
     m=json.loads(path.read_bytes())
     required={'schemaVersion','runId','guestUUID','coreCommit','kernel','steamos','nvidia',
                     'profile','producer','installerUID','driverSourceCommit','interstitial','interstitialSHA256','output'}
-    assert set(m)==(required|{'privateInputs'} if m.get('producer')=='private' else required)
+    if m.get('producer')=='private':
+        required|={'privateInputs'}
+        if 'userspaceInputs' in m:required|={'userspaceInputs'}
+    assert set(m)==required
     assert m['schemaVersion']==1 and re.fullmatch('[0-9a-f]{32}',m['runId'])
     assert os.geteuid()==0 and os.uname().release==m['kernel'] and m['kernel'] in TARGETS
     assert m['nvidia']=='575.64.05' and m['driverSourceCommit']=='4a616372ce3c1f1d0a10c04960107a1db51b6fc0'
@@ -39,6 +42,13 @@ def context(path):
     subprocess.run(['git','-C',str(REPO),'diff','--quiet','HEAD','--'],check=True,timeout=10)
     assert file_digest(Path(m['interstitial']))==m['interstitialSHA256']
     if m['producer']=='private':
+        if 'userspaceInputs' in m:
+            userspace=m['userspaceInputs']
+            assert set(userspace)=={'path','sha256'}
+            assert re.fullmatch('[0-9a-f]{64}',userspace['sha256'])
+            assert file_digest(Path(userspace['path']))==userspace['sha256']
+            # This input pin grants no package trust; the ordinary installer
+            # still runs the guest keyring and native package checks.
         entries=m['privateInputs']
         assert set(entries)=={'archive','checksum','provenance','buildInfo'}
         for row in entries.values():
@@ -91,6 +101,9 @@ def online(m):
     if m['producer']=='built':argv+=['--build-as-fallback']
     if m['producer']=='private':
         argv+=['--local',m['privateInputs']['archive']['path'],'--local-sha256',m['privateInputs']['archive']['sha256']]
+        if 'userspaceInputs' in m:
+            argv+=['--userspace-inputs',m['userspaceInputs']['path'],
+                   '--userspace-inputs-sha256',m['userspaceInputs']['sha256']]
     if m['installerUID']!=0:
         import pwd
         owner=pwd.getpwuid(m['installerUID'])
