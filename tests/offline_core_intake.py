@@ -51,7 +51,9 @@ with tempfile.TemporaryDirectory(prefix='offline-core-intake-') as tmp:
         print('Native SteamOS install is separately admitted; no Source CI install invoked.')
     wrong=args.copy();wrong[-1]='0'*64
     invoke('wrong-digest',wrong,expected='Offline Core bundle digest differs')
-    invoke('wrong-revision',extra_env={'SUPPORT_REVISION':'f'*40},expected='reference is not a tree')
+    refused=invoke('wrong-revision',extra_env={'SUPPORT_REVISION':'f'*40})
+    assert 'Restored the explicitly pinned Core checkout' not in refused.stderr
+    assert 'This operation is intended for SteamOS.' not in refused.stderr
     invoke('missing-explicit-revision',extra_env={'SUPPORT_REVISION':''},expected='Offline Core requires')
     invoke('wrong-repository',extra_env={'SUPPORT_REPO':'unapproved/example'},expected='Offline Core requires')
     invoke('without-private-mode',['bash',str(ENTRY),*args[6:]],expected='Offline Core requires')
