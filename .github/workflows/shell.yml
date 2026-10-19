@@ -19,7 +19,7 @@ jobs:
       - name: Install test dependencies
         run: >-
           sudo apt-get update && sudo apt-get install --yes
-          libarchive-tools shellcheck zstd
+          libarchive-tools shellcheck zstd kmod
 
       - name: Run project checks
         run: ./tests/check.sh

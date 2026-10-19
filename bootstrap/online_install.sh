@@ -10,6 +10,8 @@ LOCAL_SOURCE=""
 LOCAL_INPUT_SHA=""
 USERSPACE_INPUTS=""
 USERSPACE_INPUTS_SHA=""
+OFFLINE_CORE_BUNDLE=""
+OFFLINE_CORE_SHA=""
 YES=0
 RESOLVE_ONLY=0
 BUILD_AS_FALLBACK=0
@@ -29,6 +31,8 @@ Options:
                      bounded fallback to older same-series SteamOS releases
       --userspace-inputs FILE --userspace-inputs-sha256 SHA256
                      Snapshot exact local package/signature transport; native guest trust remains required
+      --offline-core-bundle FILE --offline-core-sha256 SHA256
+                     Exact Git objects for private mode with explicit SUPPORT_REVISION; no network
       --local PATH --local-sha256 SHA256
                      Install an exact privately pinned four-file bundle/archive
       --in-code      Compile the current NVIDIA source working tree, then install it
@@ -47,6 +51,8 @@ EOF
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --offline-core-bundle) [[ $# -ge 2 ]] || exit 2; OFFLINE_CORE_BUNDLE="$2"; shift 2 ;;
+        --offline-core-sha256) [[ $# -ge 2 ]] || exit 2; OFFLINE_CORE_SHA="$2"; shift 2 ;;
         --userspace-inputs) [[ $# -ge 2 ]] || exit 2; USERSPACE_INPUTS="$2"; shift 2 ;;
         --userspace-inputs-sha256) [[ $# -ge 2 ]] || exit 2; USERSPACE_INPUTS_SHA="$2"; shift 2 ;;
         --fuzzy) FUZZY=1; shift ;;
@@ -71,6 +77,12 @@ fi
 if [[ -n "$USERSPACE_INPUTS" || -n "$USERSPACE_INPUTS_SHA" ]]; then
     [[ -n "$LOCAL_SOURCE" && -n "$USERSPACE_INPUTS" && "$USERSPACE_INPUTS_SHA" =~ ^[0-9a-f]{64}$ ]] || {
         echo "Local userspace inputs require private driver input and paired SHA-256." >&2; exit 2;
+    }
+fi
+if [[ -n "$OFFLINE_CORE_BUNDLE" || -n "$OFFLINE_CORE_SHA" ]]; then
+    [[ -n "$LOCAL_SOURCE" && -n "$OFFLINE_CORE_BUNDLE" && "$OFFLINE_CORE_SHA" =~ ^[0-9a-f]{64}$ &&
+       "${SUPPORT_REVISION:-}" =~ ^[0-9a-f]{40}$ && "$SUPPORT_REPO" == CorniiDog/OPEMOS && "$RESOLVE_ONLY" == 0 ]] || {
+        echo "Offline Core requires private --local, paired SHA-256 and explicit canonical Core revision." >&2; exit 2;
     }
 fi
 MODE_COUNT=0
@@ -195,9 +207,14 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 CORE_BUNDLE_CACHE="${HOME}/.cache/open-gpu-kernel-modules-steamos-support/core-checkouts"
-if git clone --quiet --depth 1 "https://github.com/${SUPPORT_REPO}.git" "$TMP/support" &&
-   git -C "$TMP/support" fetch --quiet --depth 1 origin "$SUPPORT_REV" &&
-   git -C "$TMP/support" checkout --quiet --detach "$SUPPORT_REV"; then
+# Explicit private source objects are consumed BEFORE any network attempt. The
+# hash and caller's immutable revision authorize data, never bundle hooks/config.
+CORE_FROM_BUNDLE=0
+if [[ -n "$OFFLINE_CORE_BUNDLE" ]]; then
+    CORE_FROM_BUNDLE=1
+elif git clone --quiet --depth 1 "https://github.com/${SUPPORT_REPO}.git" "$TMP/support" &&
+     git -C "$TMP/support" fetch --quiet --depth 1 origin "$SUPPORT_REV" &&
+     git -C "$TMP/support" checkout --quiet --detach "$SUPPORT_REV"; then
     :
 else
     CORE_ACQUISITION_STATUS=$?
@@ -205,22 +222,26 @@ else
        -n "${SUPPORT_REVISION:-}" ]] || {
         echo "Could not acquire the exact Core checkout." >&2; exit "$CORE_ACQUISITION_STATUS";
     }
-    # Snapshot data only, before any cached code executes. A bundle carries Git
-    # objects, never repository configuration or hooks. The caller's exact pin
-    # remains the authority; no cached mutable branch is selected.
-    python3 - "$CORE_BUNDLE_CACHE" "$SUPPORT_REV" "$TMP/core.bundle" <<'PY'
-import os, stat, sys
+    CORE_FROM_BUNDLE=1
+fi
+if [[ "$CORE_FROM_BUNDLE" == 1 ]]; then
+    python3 - "$CORE_BUNDLE_CACHE" "$SUPPORT_REV" "$TMP/core.bundle" "$OFFLINE_CORE_BUNDLE" "$OFFLINE_CORE_SHA" <<'PY'
+import hashlib, os, stat, sys
 from pathlib import Path
-parent = Path(sys.argv[1])
-info = parent.lstat()
-if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o700:
-    raise SystemExit('Core checkout cache directory is unsafe')
-path = parent / (sys.argv[2] + '.bundle')
+explicit = bool(sys.argv[4])
+if explicit:
+    path = Path(sys.argv[4])
+else:
+    parent = Path(sys.argv[1])
+    info = parent.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o700:
+        raise SystemExit('Core checkout cache directory is unsafe')
+    path = parent / (sys.argv[2] + '.bundle')
 descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
 try:
     before = os.fstat(descriptor)
-    if (not stat.S_ISREG(before.st_mode) or before.st_uid != os.geteuid()
-            or stat.S_IMODE(before.st_mode) != 0o600 or before.st_nlink != 1
+    if (not stat.S_ISREG(before.st_mode) or before.st_uid not in ((0, os.geteuid()) if explicit else (os.geteuid(),))
+            or (bool(stat.S_IMODE(before.st_mode) & 0o022) if explicit else stat.S_IMODE(before.st_mode) != 0o600) or before.st_nlink != 1
             or not 0 < before.st_size <= 128 * 1024 * 1024):
         raise SystemExit('Core checkout bundle is unsafe')
     payload = bytearray()
@@ -234,14 +255,19 @@ try:
                 info.st_uid, info.st_gid, info.st_mode, info.st_nlink)
     if len(payload) != before.st_size or identity(before) != identity(os.fstat(descriptor)) or identity(before) != identity(path.lstat()):
         raise SystemExit('Core checkout bundle changed while read')
+    if explicit and hashlib.sha256(payload).hexdigest() != sys.argv[5]:
+        raise SystemExit('Offline Core bundle digest differs')
     with open(sys.argv[3], 'xb') as output:
         output.write(payload)
 finally:
     os.close(descriptor)
 PY
     [[ ! -e "$TMP/support" && ! -L "$TMP/support" ]] || mv "$TMP/support" "$TMP/network-checkout"
-    git -c pack.threads=1 clone --quiet --no-checkout "$TMP/core.bundle" "$TMP/support"
-    git -C "$TMP/support" checkout --quiet --detach "$SUPPORT_REV"
+    # No network, system/global Git config, imported hooks or submodule recursion.
+    GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null git -c core.hooksPath=/dev/null -c pack.threads=1 \
+        -c protocol.allow=never -c protocol.file.allow=always clone --quiet --no-checkout "$TMP/core.bundle" "$TMP/support"
+    GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null git -c core.hooksPath=/dev/null \
+        -C "$TMP/support" checkout --quiet --detach "$SUPPORT_REV"
     echo "Restored the explicitly pinned Core checkout from retained Git objects." >&2
 fi
 [[ "$(git -C "$TMP/support" rev-parse HEAD)" == "$SUPPORT_REV" ]] || {
