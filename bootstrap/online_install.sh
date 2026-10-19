@@ -228,8 +228,8 @@ if [[ "$CORE_FROM_BUNDLE" == 1 ]]; then
     python3 - "$CORE_BUNDLE_CACHE" "$SUPPORT_REV" "$TMP/core.bundle" "$OFFLINE_CORE_BUNDLE" "$OFFLINE_CORE_SHA" <<'PY'
 import hashlib, os, stat, sys
 from pathlib import Path
-explicit = bool(sys.argv[4])
-if explicit:
+provided_bundle = bool(sys.argv[4])
+if provided_bundle:
     path = Path(sys.argv[4])
 else:
     parent = Path(sys.argv[1])
@@ -240,8 +240,8 @@ else:
 descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
 try:
     before = os.fstat(descriptor)
-    if (not stat.S_ISREG(before.st_mode) or before.st_uid not in ((0, os.geteuid()) if explicit else (os.geteuid(),))
-            or (bool(stat.S_IMODE(before.st_mode) & 0o022) if explicit else stat.S_IMODE(before.st_mode) != 0o600) or before.st_nlink != 1
+    if (not stat.S_ISREG(before.st_mode) or before.st_uid not in ((0, os.geteuid()) if provided_bundle else (os.geteuid(),))
+            or (bool(stat.S_IMODE(before.st_mode) & 0o022) if provided_bundle else stat.S_IMODE(before.st_mode) != 0o600) or before.st_nlink != 1
             or not 0 < before.st_size <= 128 * 1024 * 1024):
         raise SystemExit('Core checkout bundle is unsafe')
     payload = bytearray()
@@ -255,7 +255,7 @@ try:
                 info.st_uid, info.st_gid, info.st_mode, info.st_nlink)
     if len(payload) != before.st_size or identity(before) != identity(os.fstat(descriptor)) or identity(before) != identity(path.lstat()):
         raise SystemExit('Core checkout bundle changed while read')
-    if explicit and hashlib.sha256(payload).hexdigest() != sys.argv[5]:
+    if provided_bundle and hashlib.sha256(payload).hexdigest() != sys.argv[5]:
         raise SystemExit('Offline Core bundle digest differs')
     with open(sys.argv[3], 'xb') as output:
         output.write(payload)
