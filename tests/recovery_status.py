@@ -42,7 +42,15 @@ def run(root, path, expected=None, require_receipt=False):
         text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         env={**os.environ, "PATH": f"{path}:{os.environ['PATH']}"}, check=False,
     )
-    return result.returncode, json.loads(result.stdout)
+    try:
+        document = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise AssertionError(
+            f"recovery-status protocol failure: argv={arguments!r} "
+            f"exit={result.returncode} stdout={result.stdout!r} "
+            f"stderr={result.stderr!r}"
+        ) from error
+    return result.returncode, document
 
 
 with tempfile.TemporaryDirectory(prefix="opemos-recovery-") as temporary:
@@ -471,14 +479,13 @@ assert "reconcile_verified_transaction" in control
 assert "trap restore_readonly EXIT" in control
 assert "trap cancel_recovery HUP INT TERM" in control
 assert "terminate_active_process_group" in control
-assert 'run_cancellable sudo mkinitcpio -P' in control
 assert 'ONLINE_INSTALL="$SUPPORT_ROOT/bootstrap/online_install.sh"' in control
 assert 'run_cancellable "$ONLINE_INSTALL" --build-as-fallback -y' in control
 assert "trap restore_readonly EXIT INT TERM" not in control
 cancel_gate = control.index(
     '[[ "$existing_phase" != cancelled ]] || die "Automatic recovery retries were cancelled."'
 )
-healthy_gate = control.index('if [[ "$recovery_status" == healthy ]]')
+healthy_gate = control.index('if [[ "$recovery_status" == healthy && ! -e "$SUPPORT_ROOT/pending-install.json" ]]; then')
 assert cancel_gate < healthy_gate
 assert 'rm -f "$TRANSACTION"' not in control
 assert 'rm -f "$RELEASE_PLAN"' not in control
@@ -578,12 +585,14 @@ print(json.dumps({{
         env={**race_environment, "MOCK_RECOVERY_STATUS": "stable"},
         check=False,
     )
-    assert disabled.returncode == 0, disabled.stderr
-    assert json.loads(disabled.stdout) == {
-        "action": "graphical.target", "reason": "fallback_disabled",
-        "schemaVersion": 1, "status": "healthy",
-    }
-    assert not recovery_config.exists() and not recovery_state.exists()
+    # A synthetic status result cannot authorize installed writes in an
+    # arbitrary root. Positive activation is a real installed VM transaction.
+    assert disabled.returncode != 0, (disabled.stdout, disabled.stderr)
+    assert "Fallback requires the owning installed controller" in disabled.stderr
+    assert recovery_config.read_text() == "fallback remains active\n"
+    assert recovery_state.is_file()
+    recovery_config.unlink()
+    recovery_state.unlink()
 
     # A guardian decision made before acquiring the mutation locks is
     # provisional. If another serialized operation restores the exact payload,
@@ -626,28 +635,21 @@ print(json.dumps({{
             },
             check=False,
         )
-        assert failed.returncode == 0, failed.stderr
+        assert failed.returncode != 0, (failed.stdout, failed.stderr)
+        assert "Fallback requires the owning installed controller" in failed.stderr
         assert status_counter.read_text() == "2"
-        assert recovery_config.is_file() and recovery_state.is_file()
-        result = json.loads(failed.stdout)
-        assert json.loads(recovery_state.read_text())["profile"] == result["action"]
-        return result
+        assert not recovery_config.exists() and not recovery_state.exists()
+        return "refused-unowned-root"
 
     for vendor in ("0x8086", "0x1002"):
-        assert run_guard_failure((("card0", vendor, "1"),)) == {
-            "action": "igpu-desktop", "reason": "fallback_enabled",
-            "schemaVersion": 1, "status": "fallback-active",
-        }
+        assert run_guard_failure((("card0", vendor, "1"),)) == "refused-unowned-root"
     for devices in (
         (),
         (("card0", "0x8086", "0"),),
         (("card0", "0x10de", "1"),),
         (("card0", "0x10de", "1"), ("card1", "0x8086", "0")),
     ):
-        assert run_guard_failure(devices) == {
-            "action": "console", "reason": "fallback_enabled",
-            "schemaVersion": 1, "status": "fallback-active",
-        }
+        assert run_guard_failure(devices) == "refused-unowned-root"
 
 with tempfile.TemporaryDirectory(prefix="opemos-guardian-", dir="/tmp") as temporary:
     guard_root = Path(temporary) / "root"
@@ -691,19 +693,9 @@ with tempfile.TemporaryDirectory(prefix="opemos-guardian-", dir="/tmp") as tempo
         env=guard_environment,
         check=False,
     )
-    assert guarded.returncode == 0, guarded.stderr
-    result = json.loads(guarded.stdout)
-    assert result == {
-        "action": "console", "reason": "fallback_enabled",
-        "schemaVersion": 1, "status": "fallback-active",
-    }
-    fallback_state = json.loads((
-        guard_root
-        / "var/lib/open-gpu-kernel-modules-steamos-support/recovery/state.json"
-    ).read_text())
-    assert fallback_state == {
-        "schemaVersion": 1, "active": True, "profile": "console",
-    }
+    assert guarded.returncode != 0, (guarded.stdout, guarded.stderr)
+    assert "Fallback requires the owning installed controller" in guarded.stderr
+    assert not (guard_root / "var/lib/open-gpu-kernel-modules-steamos-support/recovery/state.json").exists()
 
 with tempfile.TemporaryDirectory(prefix="opemos-recovery-grub-") as temporary:
     grub = Path(temporary) / "grub"
@@ -804,11 +796,20 @@ with tempfile.TemporaryDirectory(prefix="opemos-recovery-transaction-") as tempo
     lock.chmod(0o600)
     with lock.open("r+") as stream:
         fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        contended = subprocess.run(base + ["show", "--state", str(state)],
+        # Reads are atomic snapshots and need no writable lock. Mutation
+        # still contends on the actual OS flock and must preserve the bytes.
+        before = state.read_bytes()
+        snapshot = subprocess.run(base + ["show", "--state", str(state)],
+                                  text=True, stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE)
+        assert snapshot.returncode == 0, snapshot.stderr
+        assert json.loads(snapshot.stdout) == json.loads(before)
+        contended = subprocess.run(base + ["cancel", "--state", str(state)],
                                    text=True, stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE)
         assert contended.returncode != 0
         assert "another recovery transaction operation" in contended.stderr
+        assert state.read_bytes() == before
 
     success_state = Path(temporary) / "successful.json"
     subprocess.run(base + [

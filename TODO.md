@@ -3324,3 +3324,177 @@ PR2 exact2adb821 coverage and fullbuild checkpoint: production detect+get_modes 
 
 
 Source integration completed through separate reviewed PRs: displayPR2 squash33e5327587eeb299d672d0252644579a4de89e92; kernelPR1 squashd8f6da4b84acee2886e44cc11a426d269b934270. Canonical finaltree4b34461a equals actualcompiledca467071. Exact approved3.8.28/6.18.50 Automatic plan selectsd8; olderplans retain40bd. Extended rawpublic selection/userspace/refusal/cleanup fixture and diffPASS viaheavy. Canonical finalCore/source provenance build/package, CorePR75 finalchecks/review/merge and Desktopdelivery still pending; no relabel of existingbuild or runtimeclaim.
+
+
+## Abrupt update/shutdown recovery — bounded source checkpoint (2026-10-14)
+
+- [ ] User requirement: preserve compatible known-good boot/driver/app state across
+  SIGKILL and abrupt guest power loss. Source checkpoint closes device-generation
+  sealing durability: fsync sealed file metadata and each nested directory before
+  publication, then the generation parent after rename. Existing pending intent,
+  target/receipt/trust verification, health acknowledgement and LKG contracts stay
+  unchanged. Authored new complete producer/restart SIGKILL cases and real-fsync
+  observation; tests have NOT run (VM-only authorization). Cold-reboot matrix:
+  `tests/vm/abrupt-update-recovery.md`.
+- [ ] Remaining critical gap: bootstrap/install.sh and install_to_root.sh destructively
+  mutate modules/depmod/initramfs/GRUB/state with in-process cleanup only. Guardian
+  recovery_transaction tracks retry phase, not durable prestate/artifact rollback.
+  Implement exact per-slot/root/kernel authenticated persistent intent, retained
+  boot/modules/state assets, ordered activation and restart reconciliation before
+  claiming installed-update recovery. Preserve SteamOS base OS slot ownership.
+- [ ] Independently review this coherent source checkpoint; execute new regression
+  and cold-reboot tests in separately admitted disposable OMEN VM. No publication,
+  host project execution or physical interruption authorized; no full safety claim.
+
+
+### Complete installed-writer continuation — source-only, not release ready
+
+- [ ] Added a development-only confined staged-artifact transaction prototype:
+  durable exact prestate/candidate copies, write-ahead intent, atomic replacements,
+  pending health and idempotent exact-hash rollback (including interrupted recovery).
+  Unknown current bytes/slot identity or rollback damage refuse without replay.
+  Authored actual CLI SIGKILL/interrupted rollback/idempotence tests; NOT executed.
+- [ ] Legacy install.sh, install_to_root.sh and recoveryctl fallback writers now
+  fail closed before target mutations rather than accepting trap rollback as power
+  loss protection. Guardian distribution includes the gate component. This is a
+  deliberate UNRELEASED functionality restriction; not a working update solution.
+- [ ] Remaining owning-Core implementation: produce the complete authenticated
+  candidate set (package/hooks/depmod/initramfs/GRUB/receipts), current rootfs/slot
+  target receipt and rollback health proof; join guardian startup reconciliation
+  and health acknowledgement. No atomic across-files boot activation or production
+  update/reboot acceptance is claimed. Review before removing any gate.
+
+### 2026-10-15 corrective installed updater — still incomplete, source only
+
+- [ ] Fulfil the complete installed automatic-update/maintenance transaction
+  assigned by `core-full-update-recovery-plan.json` (SHA78e2a50c). Current local
+  draft extends prepare/commit/restart/boot-ID reconciliation, exact old/new
+  artifact and mode retention, parent directory flush, read-only restoration,
+  loaded source identity checks, candidate namespace production/verification,
+  installed dispatch and guardian startup/import joins. Production activation
+  remains explicitly disabled. This is NOT a working updater or a completed
+  full-writer checkpoint. The entire remaining bundle is recorded in
+  `docs/installed-update-corrective-source-audit.md`: fallback, cached/online
+  receipt/retry, mounted-image writer, guardian source-generation persistence,
+  scheduled health and actual production transaction verification still need
+  completion together under the SAME owning corrective work item. No new
+  infrastructure TODO or unchanged counterpart request was opened.
+- [ ] Execute the newly authored ordinary real CLI/UID/schema/foreign-data test
+  `tests/installed_update_transaction_normal.py`, actual complete producer to
+  guardian/health transaction, and abrupt exclusively-owned VM off/restart plus
+  interrupted/repeated recovery ONLY after full source completion, independent
+  review and separately admitted OMEN VM. Historical authored SIGKILL tests and
+  earlier checkpoints remain preserved but are not the new acceptance method.
+  Source AST/bash-n/diff checks are not project-test, compiler, boot or GPU
+  results. No tests/runtime/compiler/push/PR/merge/publication occurred here.
+
+### Same corrective updater: composed source for independent review (2026-10-15)
+
+- [x] Compose the eight audited owning-source joins on the existing isolated
+  branch, preserving 106f172/12e6bef/ad1db4f and intermediate f5207f8. Installed
+  driver/fallback/cache receipt activation, durable guardian generations and
+  independent boot engine, ordered real boot health, exact-owned retained-byte
+  heal and unpublished offline completion barrier are now connected in source.
+  Detailed join map and conditional refusals follow the retained historical audit
+  in `docs/installed-update-corrective-source-audit.md`. This checks source
+  composition only, not tested functionality or a completed product requirement.
+- [x] Author real VM-only ordinary CLI/other-UID/read-only-mount regressions and
+  full installed producer/new-boot/health/fallback/self-heal entry plus external
+  abrupt-off/restart/repeated recovery procedure. No method under test is replaced.
+  Local validation is limited to Python AST, Bash syntax and diff whitespace;
+  exact commit/tree/files/check evidence is in the authenticated source handback.
+- [ ] Independent coherent full-graph review, then separately admitted OMEN
+  normal producer-to-consumer and necessary fault/abrupt-recovery verification on
+  final exact bytes. Fill the real authenticated4a product/test-input manifest
+  and actual guest/pool/process-closure evidence; no prepared test is a run.
+  Namespace confinement, filesystem durability/permissions, usable prior boot,
+  source migration, UI build/status and actual scheduled health remain unverified.
+  GPU rendering, the all-three/all-five compiler matrix and Linux/Windows builds
+  are separate milestones. No push/PR/merge/install/runtime/publication here.
+
+### Same updater: independent96a592b COMPOSED-F1–F6 correction
+
+- [x] Bundle independent source findings into the same owning correction:
+  acknowledged permanent app before driver, driver-only effect authority,
+  directory-effect refusal/pre-existing layout, Git-frozen templates/engines,
+  exact retained-product discovery and actual post-boot retry/UI completion.
+  Preserve96a592b/r4 and earlier incomplete checkpoints/failures. Source code and
+  authored VM regressions only; exact new commit/pins are in the typed handback.
+- [ ] Independently review changed full graph, then execute actual admitted OMEN
+  normal producer-to-new-boot-health transaction and changed F1–F6/abrupt recovery
+  cases. No claim that source correction or static syntax proves OS behavior,
+  executable build, three-kernel/five-module compile, GPU or publication readiness.
+
+### Same updater: fresh app-to-first-driver causal correction (plan6fcef0de)
+
+- [x] Separate app-only actual boot/source/control acknowledgement from loaded
+  NVIDIA health. Join first authenticated driver admission to unchanged stock
+  boot evidence across that app boot; preserve loaded-baseline verification.
+  Add exact absence/directory custody to the existing private transaction so
+  fresh module/source/state parents can activate and restore without untracked
+  directory effects. Preserve b6efee1/r5 and its independent review/history.
+- [x] Author fresh versus loaded ordinary CLI, same-boot refusal, first driver,
+  directory publication/interrupted rollback and stock restoration VM procedures.
+  Source AST/bash-n/diff only; exact final source pins and limits in handback.
+- [ ] Independent complete changed-graph review, then actual separately admitted
+  OMEN fresh AND loaded normal producer-to-new-boot-health transactions before
+  changed abrupt/repeated recovery. Real canonical driver/interstitial input and
+  exact userspace/stock boot evidence remain required; no synthetic NV/GPU health,
+  project-test/VM/compiler success or publication claimed by source preparation.
+
+### Same updater: ordinary built/published producer custody (plan996f1ef6)
+
+- [x] Source correction of Root's R6 enclosing-producer/EXIT defect: retain the
+  actual canonical product, interstitial and setup package inputs before app75;
+  bind app/new-boot ack/first-driver to one immutable retained product; prioritize
+  that pending identity through online and automatic resume and actual health.
+  Reuse existing validated materialization tools for published metadata; fail
+  closed on unavailable exact input. Preserve9b873ba/r6 and original failures.
+  Exact local commit/source pins and AST/bash-n/diff evidence are in handback.
+- [x] Author actual ordinary online producer/cleanup/two-boot consumer tests plus
+  real UID, mode, schema, size, target and latest-pointer fault cases. These are
+  unexecuted VM-only tests; direct manually supplied cache is not their substitute.
+- [ ] Independent coherent changed-graph review, then separately admitted actual
+  OMEN fresh built/published and loaded-baseline normal transactions, abrupt
+  custody/app/driver/rollback and repeated recovery, retaining all original raw
+  failures and closure. Package/GPU/imaging/whole-device safety remain unaccepted;
+  source syntax and authored procedures do not establish runtime or build success.
+
+### Private absent-userspace ordinary consumer (plan6bfbf47a)
+
+- [x] Correct Source29eb's publication-before-private selection order: pin and
+  authenticate the actual existing four-file private input before userspace,
+  reauthenticate exact archive in setup, require existing-keyring signatures and
+  native package file integrity, defer boot/module writes to the journaled
+  candidate, and bind actual canonical output plus retained resume to that input.
+  Preserve original29eb failures and all R7/R13/PR history. Exact changed-head
+  commit, static evidence and material limits are in the authenticated handback.
+- [x] Author ordinary private fresh/loaded real-process cases and bad checksum,
+  bounded zip traversal, actual other-target input and native signature refusals;
+  retain existing app/driver phase/rollback/UID/custody tests. Adapt obsolete
+  direct-installer CI text assumptions while retaining actual CLI/path checks.
+- [ ] Independent changed full graph/input review, exact corrected4a raw product,
+  signed userspace/keyring/dependency/interstitial and <=60GB same-guest readiness,
+  then fresh admitted OMEN producer-to-two-boot-health/failure and closure. No
+  preinstalled-userspace workaround, generated trust receipt, physical/GPU or
+  whole-device/pacman rollback/publication claim; VM tests remain unexecuted here.
+
+
+## 2026-10-16 recovery-status ordinary receipt CI correction
+
+* [ ] Preserve PR76 original22d6eea shell failures and diagnostic023405f run38927387217: real status subprocess exited1 with empty stdout and UnboundLocalError at receipt re.fullmatch. Branch-local import shadowed the module import across the entire function; remove redundant local binding, retain actual subprocess exit/stderr diagnostics. Existing ordinary receipt commit -> status CLI -> healthy -> payload tamper refusal exercises regression without overriding producer. Final-head GitHub checks and separately admitted OMEN private fresh/loaded app/driver/reboot transaction remain required; no acceptance inferred from AST or CI. Evidence in opemos-scheduler/core-recovery-status-causal-correction-20261016-r1.
+
+
+## 2026-10-16 offline fixture generation lifecycle correction
+
+* [ ] Root causal plan core-offline-fixture-lifecycle-root-cause-plan-20261016.json (5afb004d) owns the demonstrated e869187 full-gate failure: shared compression fault reused an interrupted target and correctly received image_generation_begin. Keep production barrier and failed original immutable; independent activation, normal, userspace, GRUB/initramfs and cancellation cases now use distinct clean/sealed target copies, with no pending-marker copy/rearm. Actual original reentry refusal and complete failed-target inode/mode/UID/bytes preservation are asserted. Same-target successful ordinary/repeated install remains. Local AST/diff only; full final-head Source CI and separately admitted actual SteamOS private producer/app/driver/two-boot verification remain required. No guard/trust/ownership/pin changes or local project execution.
+
+
+## 2026-10-18 exact private userspace delivery
+
+* [ ] R61 issued no installer transaction: guest PCI presence and missing modules/services are not a failed build. Retained exact 6.18.50 product38c4d9a2 and raw2983b0c6 companion carry NVIDIA source d8f6da4b, distinct from corrected4a and display build ca467071. Preserve all identities. Current private setup lacked a local signed-package transport and would query Arch despite staged inputs. Add paired pinned userspace manifest to the ordinary private CLI, snapshot both packages/signatures create-only, then require native guest pacman-key verification and exact package metadata before package effects. Existing durable retention, app pending75/actual boot acknowledgment, same-driver consumer and health gates remain. Transport is not a trust receipt. Authored actual subprocess/native file refusal tests run only through remote Source CI or separately admitted OMEN; full guest/GPU/A-B acceptance remains unperformed. Existing signed input hashes/GSP and normal CLI handoff are retained in opemos-scheduler/core-r62-exact-delivery-20261018-r1, never committed as private assets.
+
+
+## 2026-10-18 R65 fresh noNIC Core object intake
+
+* [ ] R65 at-use inspection exposed unconditional GitHub clone before private input consumption; no pending product exists and --local correctly forbids build fallback. Add explicit --offline-core-bundle/--offline-core-sha256 only for private mode with canonical repository and immutable SUPPORT_REVISION. Reuse bounded stable Git-object snapshot, never a tar tree/config/hooks, and select it before network. Real Git clone/checkout pins exact revision, preserves genuine pending/product and native package/boot-health gates. Actual Source CI CLI-to-native-OS-refusal and digest/ownership/mode/link/Git/revision/pair faults plus existing full gate are required; ordinary same-guest noNIC install/two-boot/render/A-B remains separately admitted SteamOS work. No fake pending, redirect, NIC or source identity relabel.

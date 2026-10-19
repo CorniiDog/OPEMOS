@@ -19,15 +19,17 @@ NVIDIA = "575.64.05"
 REVISION = "f" * 40
 
 # A later certified publication must not replace an already healthy exact local
-# repair. Freeze the recovery command's no-action return before all networking.
+# repair. Real boot health must be acknowledged before all networking.
 control = (ROOT / "bootstrap/recoveryctl.sh").read_text(encoding="utf-8")
-healthy_gate = control.index('if [[ "$recovery_status" == healthy ]]')
+healthy_gate = control.index('if [[ "$recovery_status" == healthy && ! -e "$SUPPORT_ROOT/pending-install.json" ]]; then')
 network_probe = control.index('curl -fsS --connect-timeout 10 --max-time 20')
 assert '| python3 "$SUPPORT_ROOT/lib/validate_github_meta.py"' in control[network_probe:]
 healthy_block = control[healthy_gate:network_probe]
 assert healthy_gate < network_probe
 assert 'reconcile_verified_transaction "$kernel" "$nvidia" "$revision"' in healthy_block
-assert 'emit_result restored exact_nvidia_already_healthy no_action' in healthy_block
+assert 'exec /bin/bash "$0" installed-health --json' in healthy_block
+assert 'emit_result pending-health actual_boot_health_required installed_health' in healthy_block
+assert 'exact_nvidia_already_healthy' not in healthy_block
 assert "exit 0" in healthy_block
 assert "online_install.sh" not in healthy_block
 
@@ -171,7 +173,9 @@ with tempfile.TemporaryDirectory(prefix="opemos-recovery-stress-") as temporary:
         assert state.read_bytes() == canonical_state
 
     holder = hold_lock(TRANSACTION, "transaction_lock", state)
-    run([*transaction, "show", "--state", state], success=False)
+    assert json.loads(run([*transaction, "show", "--state", state]).stdout) == json.loads(canonical_state)
+    run([*transaction, "cancel", "--state", state], success=False)
+    assert state.read_bytes() == canonical_state
     os.kill(holder.pid, signal.SIGKILL)
     holder.wait(timeout=10)
     assert holder.returncode == -signal.SIGKILL

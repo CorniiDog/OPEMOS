@@ -288,14 +288,24 @@ pair_rejected = subprocess.run(
     text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
 )
 assert pair_rejected.returncode != 0 and "must be supplied together" in pair_rejected.stderr
-live_installer = LIVE_INSTALLER.read_text(encoding="utf-8")
-assert "enable opemos-interstitial.service" in live_installer
-assert "validate_interstitial_binary.py" in live_installer
-assert "run_in_process_group.py" in live_installer
-assert "payload_receipt.py" in live_installer
-assert "atomic_output.py" in live_installer
-for helper in ("run_in_process_group.py", "payload_receipt.py", "atomic_output.py"):
-    assert f'--path "${{DEST#/}}/lib/{helper}"' in live_installer
+# Actual CLI refusals must occur before source acquisition, SteamOS detection,
+# package selection or sudo. These tests do not fake those OS properties.
+for script,arguments,reason in (
+    ('bootstrap/online_install.sh',['--local','/tmp/not-a-product'],'required together'),
+    ('bootstrap/setup_nvidia.sh',['--local-product','/tmp/not-a-product'],'required together'),
+    ('bootstrap/setup_nvidia.sh',['--local-product','/tmp/not-a-product','--local-product-sha256','0'*64,
+                                '--development','575'],'mutually exclusive'),
+):
+    refusal=subprocess.run([str(ROOT/script),*arguments],text=True,
+                           stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    assert refusal.returncode!=0 and reason in refusal.stderr
+
+# The live installer now delegates atomic unit/source/link publication to the
+# installed generation controller; direct shell-text snippets are not its
+# contract. CLI option/pair refusal above and actual path confinement below
+# remain process/OS checks. Positive enabled recovery-entry, app/driver boot ack
+# and rollback are exercised by the complete admitted VM transaction in
+# tests/vm/ordinary_online_install_acceptance.py; they are not implied here.
 
 with tempfile.TemporaryDirectory(prefix="opemos-live-guardian-confinement-") as temporary:
     root = Path(temporary) / "root"

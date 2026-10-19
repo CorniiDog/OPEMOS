@@ -38,7 +38,16 @@ document="$("$RECOVERYCTL" status --json)" || {
     finalize_failure
     exit "${guardian_status:-1}"
 }
-if python3 -c 'import json,sys; d=json.loads(sys.argv[1]); raise SystemExit(0 if d.get("moduleVerification",{}).get("status") == "verified" else 1)' "$document"
+# Pending health is neither a failed installation nor a graphics-ready claim.
+# Release the boot renderer so the real graphical startup can progress; the
+# separately ordered health consumer completes the actual boot proof.
+if python3 -c 'import json,sys; d=json.loads(sys.argv[1]); raise SystemExit(0 if d.get("reason")=="installed_generation_awaits_boot_health" and d.get("moduleVerification",{}).get("status")=="verified" else 1)' "$document"; then
+    python3 "$WRITER" set --state "$PROGRESS" --phase verifying >/dev/null
+    systemctl stop opemos-interstitial.service
+    FINALIZED=1
+    exit "$guardian_status"
+fi
+if python3 -c 'import json,sys; d=json.loads(sys.argv[1]); raise SystemExit(0 if d.get("moduleVerification",{}).get("status") == "verified" and d.get("status") == "healthy" else 1)' "$document"
 then
     python3 "$WRITER" succeed --state "$PROGRESS" >/dev/null
     systemctl stop opemos-interstitial.service

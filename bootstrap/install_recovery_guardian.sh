@@ -57,102 +57,24 @@ REVISION="$(git -C "$SUPPORT_ROOT" rev-parse HEAD)"
 # list. A service stored solely in the current /usr would disappear precisely
 # when the guardian is needed.
 DEST=/home/.steamos/open-gpu-kernel-modules-steamos-support/recovery
-python3 "$SUPPORT_ROOT/lib/validate_recovery_install_path.py" --root / \
-    --path "${DEST#/}/support-revision" --path "${DEST#/}/nvidia-version" \
-    --path "${DEST#/}/interstitial.sha256" \
-    --path "${DEST#/}/bootstrap/recoveryctl.sh" \
-    --path "${DEST#/}/bootstrap/install.sh" \
-    --path "${DEST#/}/bootstrap/launch_desktop_companion.sh" \
-    --path "${DEST#/}/bootstrap/launch_interstitial.sh" \
-    --path "${DEST#/}/bootstrap/show_recovery_console.sh" \
-    --path "${DEST#/}/bootstrap/run_guardian_with_interstitial.sh" \
-    --path "${DEST#/}/bin/opemos-interstitial" \
-    --path "${DEST#/}/lib/recovery_status.py" \
-    --path "${DEST#/}/lib/recovery_policy.py" \
-    --path "${DEST#/}/lib/recovery_cached_product.py" \
-    --path "${DEST#/}/lib/recovery_cached_receipt.py" \
-    --path "${DEST#/}/lib/recovery_fallback_state.py" \
-    --path "${DEST#/}/lib/run_in_process_group.py" \
-    --path "${DEST#/}/lib/payload_receipt.py" \
-    --path "${DEST#/}/lib/atomic_output.py" \
-    --path "${DEST#/}/lib/desktop_update_generations.py" \
-    --path "${DEST#/}/lib/open_opemos_contract.py" \
-    --path "${DEST#/}/lib/interstitial_progress.py" \
-    --path "${DEST#/}/lib/validate_interstitial_binary.py" \
-    --path "${DEST#/}/trust/desktop-update-signers.json" \
-    --path var/lib/open-gpu-kernel-modules-steamos-support/recovery/state.json \
-    --path etc/systemd/system/opemos-nvidia-guardian.service \
-    --path etc/systemd/system/opemos-interstitial.service \
-    --path etc/systemd/system/opemos-nvidia-repair.service \
-    --path etc/systemd/system/opemos-nvidia-repair.timer \
-    --path etc/NetworkManager/dispatcher.d/90-opemos-nvidia-repair \
-    --path etc/atomic-update.conf.d/90-opemos-nvidia-guardian.conf \
-    --expected-symlink etc/systemd/system/multi-user.target.wants/opemos-nvidia-guardian.service=../opemos-nvidia-guardian.service \
-    --expected-symlink etc/systemd/system/multi-user.target.wants/opemos-interstitial.service=../opemos-interstitial.service \
-    --expected-symlink etc/systemd/system/timers.target.wants/opemos-nvidia-repair.timer=../opemos-nvidia-repair.timer
-if command -v steamos-readonly >/dev/null 2>&1 && steamos-readonly status 2>/dev/null | grep -qi enabled; then
-    sudo steamos-readonly disable
-    RO_WAS_ENABLED=1
+# Compose source, policy, unit and entry-point changes together. The retained
+# bootstrap is reachable before any mutable guardian import is replaced.
+NVIDIA_VERSION="$(get_nvidia_version 2>/dev/null || true)"
+if [[ -z "$NVIDIA_VERSION" ]]; then
+    NVIDIA_VERSION="${OPEMOS_PINNED_NVIDIA_VERSION:-}"
+    [[ "$NVIDIA_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] ||
+        die "First app provisioning requires the explicit current reviewed NVIDIA policy version."
 fi
-sudo install -d -o root -g root -m 0755 "$DEST/bin" "$DEST/bootstrap" "$DEST/lib" "$DEST/trust" \
-    /etc/systemd/system /etc/atomic-update.conf.d \
-    /var/lib/open-gpu-kernel-modules-steamos-support/recovery
-sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/bootstrap/recoveryctl.sh" "$DEST/bootstrap/recoveryctl.sh"
-sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/bootstrap/install.sh" "$DEST/bootstrap/install.sh"
-sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/bootstrap/launch_desktop_companion.sh" "$DEST/bootstrap/launch_desktop_companion.sh"
-sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/bootstrap/launch_interstitial.sh" "$DEST/bootstrap/launch_interstitial.sh"
-sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/bootstrap/show_recovery_console.sh" "$DEST/bootstrap/show_recovery_console.sh"
-sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/bootstrap/run_guardian_with_interstitial.sh" "$DEST/bootstrap/run_guardian_with_interstitial.sh"
-sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/bootstrap/online_install.sh" "$DEST/bootstrap/online_install.sh"
-sudo install -o root -g root -m 0644 "$SUPPORT_ROOT/lib/common.sh" "$DEST/lib/common.sh"
-sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/recovery_status.py" "$DEST/lib/recovery_status.py"
-sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/recovery_policy.py" "$DEST/lib/recovery_policy.py"
-sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/recovery_fallback_state.py" "$DEST/lib/recovery_fallback_state.py"
-sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/desktop_update_generations.py" "$DEST/lib/desktop_update_generations.py"
-sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/update_recovery_grub_args.py" "$DEST/lib/update_recovery_grub_args.py"
-sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/recovery_transaction.py" "$DEST/lib/recovery_transaction.py"
-sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/recovery_release_plan.py" "$DEST/lib/recovery_release_plan.py"
-sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/recovery_cached_product.py" "$DEST/lib/recovery_cached_product.py"
-sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/recovery_cached_receipt.py" "$DEST/lib/recovery_cached_receipt.py"
-sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/validate_github_meta.py" "$DEST/lib/validate_github_meta.py"
-sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/open_opemos_contract.py" "$DEST/lib/open_opemos_contract.py"
-sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/interstitial_progress.py" "$DEST/lib/interstitial_progress.py"
-sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/validate_interstitial_binary.py" "$DEST/lib/validate_interstitial_binary.py"
-sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/validate_recovery_install_path.py" "$DEST/lib/validate_recovery_install_path.py"
-sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/run_in_process_group.py" "$DEST/lib/run_in_process_group.py"
-sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/payload_receipt.py" "$DEST/lib/payload_receipt.py"
-sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/lib/atomic_output.py" "$DEST/lib/atomic_output.py"
-sudo install -o root -g root -m 0644 "$SUPPORT_ROOT/trust/desktop-update-signers.json" "$DEST/trust/desktop-update-signers.json"
+args=(--source "$SUPPORT_ROOT" --revision "$REVISION" --nvidia "$NVIDIA_VERSION")
 if [[ -n "$INTERSTITIAL_BINARY" ]]; then
-    sudo install -o root -g root -m 0755 "$STAGING/opemos-interstitial" "$DEST/bin/opemos-interstitial"
-    printf '%s\n' "$INTERSTITIAL_SHA256" | sudo tee "$DEST/interstitial.sha256" >/dev/null
-    sudo chown root:root "$DEST/interstitial.sha256"
-    sudo chmod 0644 "$DEST/interstitial.sha256"
+    args+=(--interstitial "$STAGING/opemos-interstitial" --interstitial-sha256 "$INTERSTITIAL_SHA256")
 fi
-printf '%s\n' "$REVISION" | sudo tee "$DEST/support-revision" >/dev/null
-sudo chown root:root "$DEST/support-revision"
-sudo chmod 0644 "$DEST/support-revision"
-NVIDIA_VERSION="$(get_nvidia_version)"
-printf '%s\n' "$NVIDIA_VERSION" | sudo tee "$DEST/nvidia-version" >/dev/null
-sudo chown root:root "$DEST/nvidia-version"
-sudo chmod 0644 "$DEST/nvidia-version"
-sed "s|@DEST@|$DEST|g" "$SUPPORT_ROOT/support/recovery/opemos-nvidia-guardian.service.in" | \
-    sudo tee /etc/systemd/system/opemos-nvidia-guardian.service >/dev/null
-sed "s|@DEST@|$DEST|g" "$SUPPORT_ROOT/support/recovery/opemos-interstitial.service.in" | \
-    sudo tee /etc/systemd/system/opemos-interstitial.service >/dev/null
-sed "s|@DEST@|$DEST|g" "$SUPPORT_ROOT/support/recovery/opemos-nvidia-repair.service.in" | \
-    sudo tee /etc/systemd/system/opemos-nvidia-repair.service >/dev/null
-sudo install -o root -g root -m 0644 "$SUPPORT_ROOT/support/recovery/opemos-nvidia-repair.timer" \
-    /etc/systemd/system/opemos-nvidia-repair.timer
-sudo install -d -o root -g root -m 0755 /etc/NetworkManager/dispatcher.d
-sudo install -o root -g root -m 0755 "$SUPPORT_ROOT/support/recovery/90-opemos-nvidia-repair" \
-    /etc/NetworkManager/dispatcher.d/90-opemos-nvidia-repair
-sudo install -o root -g root -m 0644 "$SUPPORT_ROOT/support/recovery/90-opemos-nvidia-guardian.conf" \
-    /etc/atomic-update.conf.d/90-opemos-nvidia-guardian.conf
+result="$(sudo python3 "$SUPPORT_ROOT/lib/install_guardian_generation.py" "${args[@]}")"
+printf '%s\n' "$result"
 sudo systemctl daemon-reload
-sudo systemctl enable opemos-nvidia-guardian.service
-sudo systemctl enable opemos-interstitial.service
-sudo systemctl enable opemos-nvidia-repair.timer
-cleanup
-trap - EXIT INT TERM
-ok "Installed exact-kernel boot guardian bound to support revision $REVISION."
+log "Guardian generation installed; a new boot and health acknowledgement are required."
+
+if python3 -c 'import json,sys; raise SystemExit(0 if json.loads(sys.argv[1]).get("state")=="pending-health" else 1)' "$result"; then
+    log "Guardian requires a new boot and health acknowledgement before driver activation."
+    exit 75
+fi

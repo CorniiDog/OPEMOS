@@ -7,9 +7,19 @@ SUPPORT_BRANCH="${SUPPORT_BRANCH:-main}"
 FUZZY=0
 IN_CODE=0
 LOCAL_SOURCE=""
+LOCAL_INPUT_SHA=""
+USERSPACE_INPUTS=""
+USERSPACE_INPUTS_SHA=""
+OFFLINE_CORE_BUNDLE=""
+OFFLINE_CORE_SHA=""
 YES=0
 RESOLVE_ONLY=0
 BUILD_AS_FALLBACK=0
+INTERSTITIAL_BINARY=""
+INTERSTITIAL_SHA256=""
+# Never inherit a caller's unrelated build-output or retained product identity.
+BUILD_OUT=""
+RETAINED_PRODUCT=""
 
 usage()
 {
@@ -19,10 +29,17 @@ Usage: online_install.sh [options]
 Options:
       --fuzzy        Compatibility alias; certified installs already allow
                      bounded fallback to older same-series SteamOS releases
-      --local PATH   Install an explicitly supplied local bundle/archive
+      --userspace-inputs FILE --userspace-inputs-sha256 SHA256
+                     Snapshot exact local package/signature transport; native guest trust remains required
+      --offline-core-bundle FILE --offline-core-sha256 SHA256
+                     Exact Git objects for private mode with explicit SUPPORT_REVISION; no network
+      --local PATH --local-sha256 SHA256
+                     Install an exact privately pinned four-file bundle/archive
       --in-code      Compile the current NVIDIA source working tree, then install it
       --build-as-fallback    Build a reviewed exact target only if no product exists
       --resolve-only Describe the authorized Automatic action without installation
+      --interstitial-binary FILE --interstitial-sha256 SHA256
+                     Existing authenticated interstitial input for first app provisioning
   -y, --yes          Automatically confirm installer prompts
   -h, --help         Show this help
 
@@ -34,17 +51,40 @@ EOF
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --offline-core-bundle) [[ $# -ge 2 ]] || exit 2; OFFLINE_CORE_BUNDLE="$2"; shift 2 ;;
+        --offline-core-sha256) [[ $# -ge 2 ]] || exit 2; OFFLINE_CORE_SHA="$2"; shift 2 ;;
+        --userspace-inputs) [[ $# -ge 2 ]] || exit 2; USERSPACE_INPUTS="$2"; shift 2 ;;
+        --userspace-inputs-sha256) [[ $# -ge 2 ]] || exit 2; USERSPACE_INPUTS_SHA="$2"; shift 2 ;;
         --fuzzy) FUZZY=1; shift ;;
         --in-code) IN_CODE=1; shift ;;
         --build-as-fallback) BUILD_AS_FALLBACK=1; shift ;;
         --resolve-only) RESOLVE_ONLY=1; shift ;;
+        --local-sha256) [[ $# -ge 2 ]] || { echo "--local-sha256 requires a digest." >&2; exit 2; }; LOCAL_INPUT_SHA="$2"; shift 2 ;;
         --local) [[ $# -ge 2 ]] || { echo "--local requires a path." >&2; exit 1; }; LOCAL_SOURCE="$2"; shift 2 ;;
+        --interstitial-binary) [[ $# -ge 2 ]] || exit 2; INTERSTITIAL_BINARY="$2"; shift 2 ;;
+        --interstitial-sha256) [[ $# -ge 2 ]] || exit 2; INTERSTITIAL_SHA256="$2"; shift 2 ;;
         -y|--yes) YES=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) printf 'Unknown argument: %s\n' "$1" >&2; exit 1 ;;
     esac
 done
 
+if [[ -n "$LOCAL_SOURCE" || -n "$LOCAL_INPUT_SHA" ]]; then
+    [[ -n "$LOCAL_SOURCE" && "$LOCAL_INPUT_SHA" =~ ^[0-9a-f]{64}$ ]] || {
+        echo "--local and authenticated --local-sha256 are required together." >&2; exit 2;
+    }
+fi
+if [[ -n "$USERSPACE_INPUTS" || -n "$USERSPACE_INPUTS_SHA" ]]; then
+    [[ -n "$LOCAL_SOURCE" && -n "$USERSPACE_INPUTS" && "$USERSPACE_INPUTS_SHA" =~ ^[0-9a-f]{64}$ ]] || {
+        echo "Local userspace inputs require private driver input and paired SHA-256." >&2; exit 2;
+    }
+fi
+if [[ -n "$OFFLINE_CORE_BUNDLE" || -n "$OFFLINE_CORE_SHA" ]]; then
+    [[ -n "$LOCAL_SOURCE" && -n "$OFFLINE_CORE_BUNDLE" && "$OFFLINE_CORE_SHA" =~ ^[0-9a-f]{64}$ &&
+       "${SUPPORT_REVISION:-}" =~ ^[0-9a-f]{40}$ && "$SUPPORT_REPO" == CorniiDog/OPEMOS && "$RESOLVE_ONLY" == 0 ]] || {
+        echo "Offline Core requires private --local, paired SHA-256 and explicit canonical Core revision." >&2; exit 2;
+    }
+fi
 MODE_COUNT=0
 [[ "$FUZZY" == "1" ]] && MODE_COUNT=$((MODE_COUNT + 1))
 [[ "$IN_CODE" == "1" ]] && MODE_COUNT=$((MODE_COUNT + 1))
@@ -69,6 +109,46 @@ if [[ "$RESOLVE_ONLY" == 0 ]]; then
     need zstd
     need modinfo
     need realpath
+fi
+
+PENDING_CORE_PIN=""
+if [[ "$RESOLVE_ONLY" == 0 && "$IN_CODE" == 0 && "$SUPPORT_REPO" == CorniiDog/OPEMOS ]]; then
+    PENDING_CORE_PIN="$(sudo python3 - <<'PYPIN'
+import json,os,re,stat
+from pathlib import Path
+home=Path('/home/.steamos/open-gpu-kernel-modules-steamos-support/recovery')
+p=home/'pending-install.json'
+if os.path.lexists(p):
+    info=home.lstat()
+    if home.resolve()!=home or not stat.S_ISDIR(info.st_mode) or info.st_uid!=0 or stat.S_IMODE(info.st_mode)!=0o700:
+        raise SystemExit('Unsafe pending install parent')
+    fd=os.open(p,os.O_RDONLY|os.O_NOFOLLOW)
+    try:
+        info=os.fstat(fd)
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid!=0 or info.st_nlink!=1
+                or stat.S_IMODE(info.st_mode)!=0o600 or not 0<info.st_size<=65536):
+            raise SystemExit('Unsafe pending install metadata')
+        data=os.read(fd,65537)
+        if len(data)!=info.st_size:raise SystemExit('Pending install read changed')
+    finally:os.close(fd)
+    record=json.loads(data)
+    if (json.dumps(record,sort_keys=True,separators=(',',':'))+'\n').encode()!=data:
+        raise SystemExit('Noncanonical pending install metadata')
+    revision=record['expected']['revision']
+    if re.fullmatch('[0-9a-f]{40}',revision) is None:raise SystemExit('Invalid pending Core pin')
+    print(revision)
+PYPIN
+)" || { echo "Pending install Core identity unavailable; no discovery substitution." >&2; exit 1; }
+    if [[ -n "$PENDING_CORE_PIN" ]]; then
+        [[ -z "${SUPPORT_REVISION:-}" || "$SUPPORT_REVISION" == "$PENDING_CORE_PIN" ]] || {
+            echo "Explicit Core pin conflicts with pending install; preserved." >&2; exit 1;
+        }
+        SUPPORT_REVISION="$PENDING_CORE_PIN"
+        if [[ -n "$LOCAL_SOURCE" ]]; then
+            echo "Resuming the retained pending product; the local input is not reselected." >&2
+            LOCAL_SOURCE=""
+        fi
+    fi
 fi
 
 if [[ -n "${SUPPORT_REVISION:-}" ]]; then
@@ -127,32 +207,41 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 CORE_BUNDLE_CACHE="${HOME}/.cache/open-gpu-kernel-modules-steamos-support/core-checkouts"
-if git clone --quiet --depth 1 "https://github.com/${SUPPORT_REPO}.git" "$TMP/support" &&
-   git -C "$TMP/support" fetch --quiet --depth 1 origin "$SUPPORT_REV" &&
-   git -C "$TMP/support" checkout --quiet --detach "$SUPPORT_REV"; then
+# Explicit private source objects are consumed BEFORE any network attempt. The
+# hash and caller's immutable revision authorize data, never bundle hooks/config.
+CORE_FROM_BUNDLE=0
+if [[ -n "$OFFLINE_CORE_BUNDLE" ]]; then
+    CORE_FROM_BUNDLE=1
+elif git clone --quiet --depth 1 "https://github.com/${SUPPORT_REPO}.git" "$TMP/support" &&
+     git -C "$TMP/support" fetch --quiet --depth 1 origin "$SUPPORT_REV" &&
+     git -C "$TMP/support" checkout --quiet --detach "$SUPPORT_REV"; then
     :
 else
     CORE_ACQUISITION_STATUS=$?
-    [[ "$BUILD_AS_FALLBACK" == 1 && "$SUPPORT_REPO" == CorniiDog/OPEMOS &&
+    [[ ( "$BUILD_AS_FALLBACK" == 1 || -n "$PENDING_CORE_PIN" ) && "$SUPPORT_REPO" == CorniiDog/OPEMOS &&
        -n "${SUPPORT_REVISION:-}" ]] || {
         echo "Could not acquire the exact Core checkout." >&2; exit "$CORE_ACQUISITION_STATUS";
     }
-    # Snapshot data only, before any cached code executes. A bundle carries Git
-    # objects, never repository configuration or hooks. The caller's exact pin
-    # remains the authority; no cached mutable branch is selected.
-    python3 - "$CORE_BUNDLE_CACHE" "$SUPPORT_REV" "$TMP/core.bundle" <<'PY'
-import os, stat, sys
+    CORE_FROM_BUNDLE=1
+fi
+if [[ "$CORE_FROM_BUNDLE" == 1 ]]; then
+    python3 - "$CORE_BUNDLE_CACHE" "$SUPPORT_REV" "$TMP/core.bundle" "$OFFLINE_CORE_BUNDLE" "$OFFLINE_CORE_SHA" <<'PY'
+import hashlib, os, stat, sys
 from pathlib import Path
-parent = Path(sys.argv[1])
-info = parent.lstat()
-if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o700:
-    raise SystemExit('Core checkout cache directory is unsafe')
-path = parent / (sys.argv[2] + '.bundle')
+provided_bundle = bool(sys.argv[4])
+if provided_bundle:
+    path = Path(sys.argv[4])
+else:
+    parent = Path(sys.argv[1])
+    info = parent.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o700:
+        raise SystemExit('Core checkout cache directory is unsafe')
+    path = parent / (sys.argv[2] + '.bundle')
 descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
 try:
     before = os.fstat(descriptor)
-    if (not stat.S_ISREG(before.st_mode) or before.st_uid != os.geteuid()
-            or stat.S_IMODE(before.st_mode) != 0o600 or before.st_nlink != 1
+    if (not stat.S_ISREG(before.st_mode) or before.st_uid not in ((0, os.geteuid()) if provided_bundle else (os.geteuid(),))
+            or (bool(stat.S_IMODE(before.st_mode) & 0o022) if provided_bundle else stat.S_IMODE(before.st_mode) != 0o600) or before.st_nlink != 1
             or not 0 < before.st_size <= 128 * 1024 * 1024):
         raise SystemExit('Core checkout bundle is unsafe')
     payload = bytearray()
@@ -166,14 +255,19 @@ try:
                 info.st_uid, info.st_gid, info.st_mode, info.st_nlink)
     if len(payload) != before.st_size or identity(before) != identity(os.fstat(descriptor)) or identity(before) != identity(path.lstat()):
         raise SystemExit('Core checkout bundle changed while read')
+    if provided_bundle and hashlib.sha256(payload).hexdigest() != sys.argv[5]:
+        raise SystemExit('Offline Core bundle digest differs')
     with open(sys.argv[3], 'xb') as output:
         output.write(payload)
 finally:
     os.close(descriptor)
 PY
     [[ ! -e "$TMP/support" && ! -L "$TMP/support" ]] || mv "$TMP/support" "$TMP/network-checkout"
-    git -c pack.threads=1 clone --quiet --no-checkout "$TMP/core.bundle" "$TMP/support"
-    git -C "$TMP/support" checkout --quiet --detach "$SUPPORT_REV"
+    # No network, system/global Git config, imported hooks or submodule recursion.
+    GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null git -c core.hooksPath=/dev/null -c pack.threads=1 \
+        -c protocol.allow=never -c protocol.file.allow=always clone --quiet --no-checkout "$TMP/core.bundle" "$TMP/support"
+    GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null git -c core.hooksPath=/dev/null \
+        -C "$TMP/support" checkout --quiet --detach "$SUPPORT_REV"
     echo "Restored the explicitly pinned Core checkout from retained Git objects." >&2
 fi
 [[ "$(git -C "$TMP/support" rev-parse HEAD)" == "$SUPPORT_REV" ]] || {
@@ -199,25 +293,125 @@ if [[ "$RESOLVE_ONLY" == 1 ]]; then
     exit 0
 fi
 
-NVIDIA_VERSION=""
+resolve_local()
+{
+    local source="$1"
+    local work="$TMP/local"
+    mkdir -p "$work"
 
+    if [[ -d "$source" ]]; then
+        mapfile -t archives < <(find "$source" -maxdepth 1 -type f -name 'nvidia-open-*.tar.gz' | sort)
+        (( ${#archives[@]} == 1 )) || die "Local directory must contain exactly one nvidia-open-*.tar.gz archive."
+        LOCAL_ARCHIVE="${archives[0]}"
+    elif [[ "$source" == *.zip ]]; then
+        local zip_sha="$LOCAL_INPUT_SHA"
+        if [[ -z "$zip_sha" ]]; then
+            [[ "$IN_CODE" == 1 ]] || die "Private zip requires its authenticated byte pin."
+            zip_sha="$(sha256sum "$source" | awk '{print $1}')"
+        fi
+        python3 - "$TMP/support/lib" "$source" "$work" "$zip_sha" <<'PYZIP'
+import io,re,sys,zipfile
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+from recovery_cached_product import read_regular,digest,MAX_ARCHIVE
+payload=read_regular(sys.argv[2],MAX_ARCHIVE,'private zip')
+if digest(payload)!=sys.argv[4]:raise SystemExit('Private zip differs from authenticated input pin')
+with zipfile.ZipFile(io.BytesIO(payload)) as z:
+    rows=z.infolist();names=[r.filename for r in rows]
+    archives=[n for n in names if re.fullmatch(r'nvidia-open-[A-Za-z0-9._+\-]+[.]tar[.]gz',n)]
+    if len(archives)!=1:raise SystemExit('Private zip requires exactly one existing raw archive')
+    archive=archives[0];stem=archive.removesuffix('.tar.gz')
+    expected={archive,archive+'.sha256',stem+'.build-info.txt',stem+'.provenance.json'}
+    if len(names)!=4 or set(names)!=expected:raise SystemExit('Private zip must contain exactly four canonical regular files')
+    for row in rows:
+        mode=row.external_attr>>16
+        if row.is_dir() or mode&0o170000 not in (0,0o100000) or row.flag_bits&1:
+            raise SystemExit('Private zip contains an unsafe entry')
+        maximum=2*1024**3 if row.filename==archive else 16*1024**2
+        if not 0<row.file_size<=maximum:raise SystemExit('Private zip exceeds input bound')
+        with z.open(row) as src,(Path(sys.argv[3])/row.filename).open('xb') as dst:
+            total=0
+            while True:
+                data=src.read(1024**2)
+                if not data:break
+                total+=len(data)
+                if total>maximum:raise SystemExit('Private zip expansion exceeds input bound')
+                dst.write(data)
+            if total!=row.file_size:raise SystemExit('Private zip size changed')
+PYZIP
+        mapfile -t archives < <(find "$work" -maxdepth 1 -type f -name 'nvidia-open-*.tar.gz' | sort)
+        LOCAL_ARCHIVE="${archives[0]}"
+    elif [[ "$source" == *.tar.gz ]]; then
+        LOCAL_ARCHIVE="$source"
+    else
+        die "Unsupported local package type: $source"
+    fi
+
+    LOCAL_CHECKSUM="${LOCAL_ARCHIVE}.sha256"
+    [[ -f "$LOCAL_CHECKSUM" ]] || die "Matching checksum not found: $LOCAL_CHECKSUM"
+}
+
+# Authenticate and freeze private input BEFORE absent-userspace selection or any
+# setup effect. Invalid/wrong-target private bytes never authorize package work.
+PRIVATE_SELECTION=""
+PRIVATE_ARCHIVE_SHA=""
+if [[ -n "$LOCAL_SOURCE" ]]; then
+    LOCAL_SOURCE="$(realpath "$LOCAL_SOURCE")"
+    resolve_local "$LOCAL_SOURCE"
+    if [[ "$LOCAL_SOURCE" == *.zip ]]; then
+        [[ "$(sha256sum "$LOCAL_SOURCE" | awk '{print $1}')" == "$LOCAL_INPUT_SHA" ]] || die "Private zip differs from authenticated input pin."
+        PRIVATE_PIN_ARGS=()
+    else
+        # A directory has no single byte identity; explicit private transactions
+        # pin its one selected raw archive instead.
+        PRIVATE_PIN_ARGS=(--expected-archive-sha256 "$LOCAL_INPUT_SHA")
+    fi
+    PRIVATE_SELECTION="$TMP/private-selection.json"
+    python3 "$TMP/support/lib/recovery_cached_product.py" authenticate-local \
+        --archive "$LOCAL_ARCHIVE" --checksum "$LOCAL_CHECKSUM" --destination "$TMP/private-input"         "${PRIVATE_PIN_ARGS[@]}" \
+        --steamos "$STEAMOS_VERSION" --kernel "$KERNEL_VERSION" --support-revision "$SUPPORT_REV" > "$PRIVATE_SELECTION"
+    PRIVATE_JSON="$(cat "$PRIVATE_SELECTION")"
+    PRIVATE_ARCHIVE_SHA="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["archiveSHA256"])' "$PRIVATE_JSON")"
+    PRIVATE_NVIDIA="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["target"]["nvidiaVersion"])' "$PRIVATE_JSON")"
+    LOCAL_ARCHIVE="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["paths"]["archive"])' "$PRIVATE_JSON")"
+    LOCAL_CHECKSUM="$LOCAL_ARCHIVE.sha256"
+    [[ -z "${OPEMOS_PINNED_NVIDIA_VERSION:-}" || "$PRIVATE_NVIDIA" == "$OPEMOS_PINNED_NVIDIA_VERSION" ]] ||
+        die "Private product differs from pinned NVIDIA policy; no userspace effects authorized."
+fi
+
+NVIDIA_VERSION=""
+NEEDS_USERSPACE=0
 if NVIDIA_VERSION="$(get_nvidia_version 2>/dev/null)"; then
     log "Existing NVIDIA userspace detected: ${NVIDIA_VERSION}"
+    if [[ -n "$PRIVATE_SELECTION" ]]; then
+        [[ "$NVIDIA_VERSION" == "$PRIVATE_NVIDIA" ]] || die "Existing NVIDIA userspace differs from private product; no version transition authorized."
+        LIB32_INSTALLED="$(pacman -Q lib32-nvidia-utils 2>/dev/null | awk '{print $2}' || true)"
+        [[ "${LIB32_INSTALLED%-*}" == "$PRIVATE_NVIDIA" ]] || NEEDS_USERSPACE=1
+        if [[ "$NEEDS_USERSPACE" == 0 ]] && ! sudo pacman -Qkk nvidia-utils lib32-nvidia-utils; then
+            NEEDS_USERSPACE=1
+        fi
+    fi
 else
     log "NVIDIA userspace is not installed."
-    log "Running SteamOS NVIDIA userspace setup..."
-
+    NEEDS_USERSPACE=1
+fi
+if [[ "$NEEDS_USERSPACE" == 1 ]]; then
+    log "Running authenticated exact-target NVIDIA userspace setup..."
     SETUP_ARGS=("${FALLBACK_ARGS[@]}")
+    [[ -z "$PRIVATE_SELECTION" ]] || SETUP_ARGS+=(--local-product "$LOCAL_ARCHIVE" --local-product-sha256 "$PRIVATE_ARCHIVE_SHA")
+    [[ -z "$USERSPACE_INPUTS" ]] || SETUP_ARGS+=(--userspace-inputs "$USERSPACE_INPUTS" --userspace-inputs-sha256 "$USERSPACE_INPUTS_SHA")
     [[ "$YES" == "1" ]] && SETUP_ARGS+=(-y)
-
     "$TMP/support/bootstrap/setup_nvidia.sh" "${SETUP_ARGS[@]}"
-
     NVIDIA_VERSION="$(get_nvidia_version)"
 fi
 
 if [[ -n "${OPEMOS_PINNED_NVIDIA_VERSION:-}" &&
       "$NVIDIA_VERSION" != "$OPEMOS_PINNED_NVIDIA_VERSION" ]]; then
     die "Resolved NVIDIA userspace ${NVIDIA_VERSION} differs from pinned recovery policy ${OPEMOS_PINNED_NVIDIA_VERSION}."
+fi
+
+if [[ -n "$PRIVATE_SELECTION" ]]; then
+    [[ "$NVIDIA_VERSION" == "$PRIVATE_NVIDIA" ]] || die "Installed userspace differs from authenticated private product."
 fi
 
 KERNEL_TAG="$(sanitize_release_component "$KERNEL_VERSION")"
@@ -371,29 +565,70 @@ install_archive()
     local archive="$1"
     local checksum="$2"
     local fuzzy_flag="${3:-0}"
-    local args=(--archive "$archive" --checksum "$checksum")
-    [[ "$fuzzy_flag" == "1" ]] && args+=(--fuzzy)
-    [[ "$YES" == "1" ]] && args+=(-y)
-
-    if already_installed "$archive" "$checksum"; then
-        ok "Already installed, healthy, and current."
-        log "Nothing to do."
+    # Intentional guardian pending75 exits this entire set-e producer. Custody
+    # must cross that boundary BEFORE app activation, not in its success tail.
+    if [[ -z "$RETAINED_PRODUCT" ]]; then
+        [[ -n "$BUILD_OUT" && -f "$BUILD_OUT/materialization.json" ]] ||
+            canonicalize_product "$archive" "$checksum" "$fuzzy_flag"
+        retain_built_product
+    fi
+    retain_core_checkout
+    local paths
+    paths="$(sudo python3 "$TMP/support/lib/recovery_cached_product.py" show \
+        --directory "$RETAINED_PRODUCT" --steamos "$STEAMOS_VERSION" --kernel "$KERNEL_VERSION" \
+        --nvidia "$NVIDIA_VERSION" --support-revision "$SUPPORT_REV")"
+    archive="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["paths"]["archive"])' "$paths")"
+    checksum="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["paths"]["checksum"])' "$paths")"
+    local home
+    home="$(project_system_path /home/.steamos/open-gpu-kernel-modules-steamos-support/recovery)"
+    # A repeated already-loaded invocation must not create a new pending first
+    # install. Disk equality alone cannot establish this health decision.
+    local candidate_sha
+    candidate_sha="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["outputs"]["archive"]["sha256"])' "$paths")"
+    if ! sudo test -e "$home/pending-install.json" &&
+       sudo python3 - "$TMP/support/lib" "$candidate_sha" <<'PYLOADED'
+import sys
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+from installed_driver_candidate import reconcile_controller
+home=Path('/home/.steamos/open-gpu-kernel-modules-steamos-support/recovery')
+result=reconcile_controller(Path('/'),home,inspect_only=True)
+from install_guardian_generation import registered
+import installed_boot_guard as guard
+entry=registered()['driver']
+if entry is None:raise SystemExit(1)
+engine,store=guard.engine(entry)
+if engine.load_intent(Path('/'),store)['authority'].get('archiveSHA256')!=sys.argv[2]:raise SystemExit(1)
+if not (result.get('state')=='healthy' and result.get('action') in ('update','disable-fallback')
+        and result.get('currentRuntimeMatches') is True):raise SystemExit(1)
+PYLOADED
+    then
+        install_recovery_guardian
         INSTALL_CHANGED=0
+        log "Exact product is already loaded and boot-verified."
         return 0
     fi
+    retain_install_inputs
+    install_recovery_guardian
+    local args=(--archive "$archive" --checksum "$checksum" --cache "$RETAINED_PRODUCT")
+    [[ "$fuzzy_flag" == "1" ]] && args+=(--fuzzy)
+    [[ "$YES" == "1" ]] && args+=(-y)
 
     if [[ -f "$(project_system_path "/var/lib/open-gpu-kernel-modules-steamos-support/installed-build-info.txt")" ]]; then
         log "Existing NVIDIA open kernel module installation requires update or repair."
     fi
 
-    "$TMP/support/bootstrap/install.sh" "${args[@]}"
+    # Cache and retained interstitial are root-private. Enter the actual
+    # existing owning installer as UID0 before its first realpath/read, rather
+    # than widening permissions or expecting a later sudo to repair the read.
+    sudo env OPEMOS_PINNED_NVIDIA_VERSION="$NVIDIA_VERSION" \
+        /bin/bash "$TMP/support/bootstrap/install.sh" "${args[@]}"
     INSTALL_CHANGED=1
 }
 
 retain_core_checkout()
 {
-    [[ "$BUILD_AS_FALLBACK" == 1 && "$SUPPORT_REPO" == CorniiDog/OPEMOS &&
-       -z "${OPEMOS_RECOVERY_PLAN_FILE:-}" ]] || return 0
+    [[ "$SUPPORT_REPO" == CorniiDog/OPEMOS ]] || return 0
     # Preserve an existing entry, including an invalid one. Replacement is a
     # separate creator-ownership decision, never a side effect of installation.
     [[ ! -e "$CORE_BUNDLE_CACHE/$SUPPORT_REV.bundle" && ! -L "$CORE_BUNDLE_CACHE/$SUPPORT_REV.bundle" ]] || return 0
@@ -420,14 +655,37 @@ PY
 install_recovery_guardian()
 {
     log "Installing the persistent exact-kernel recovery guardian..."
-    "$TMP/support/bootstrap/install_recovery_guardian.sh"
+    local guardian_args=()
+    if [[ -n "$INTERSTITIAL_BINARY" || -n "$INTERSTITIAL_SHA256" ]]; then
+        guardian_args=(--interstitial-binary "$INTERSTITIAL_BINARY" --interstitial-sha256 "$INTERSTITIAL_SHA256")
+    fi
+    sudo env OPEMOS_PINNED_NVIDIA_VERSION="$NVIDIA_VERSION" \
+        /bin/bash "$TMP/support/bootstrap/install_recovery_guardian.sh" "${guardian_args[@]}"
 }
 
 retain_built_product()
 {
     local cache root
     root="$(project_system_path /)"
-    cache="$(project_system_path /home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/cached-repair)"
+    local home identity
+    home="$(project_system_path /home/.steamos/open-gpu-kernel-modules-steamos-support/recovery)"
+    identity="$(python3 - "$TMP/support/lib" "$BUILD_OUT/materialization.json" <<'PYIDENTITY'
+import sys
+sys.path.insert(0,sys.argv[1])
+from recovery_cached_product import canonical,read_document,digest
+print(digest(canonical(read_document(sys.argv[2]))))
+PYIDENTITY
+)"
+    [[ "$identity" =~ ^[0-9a-f]{64}$ ]] || die "Materialization identity unavailable."
+    sudo python3 - "$TMP/support/lib" "$home" <<'PYPRIVATE'
+import sys
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+from install_guardian_generation import private_directory
+home=Path(sys.argv[2]);private_directory(home);private_directory(home/'cached-products')
+PYPRIVATE
+    cache="$home/cached-products/$identity"
+    RETAINED_PRODUCT="$cache"
     local exact=(--steamos "$STEAMOS_VERSION" --kernel "$KERNEL_VERSION"
                  --nvidia "$NVIDIA_VERSION" --support-revision "$SUPPORT_REV")
     if [[ -e "$cache" || -L "$cache" ]]; then
@@ -442,39 +700,107 @@ if not (existing == expected):
     raise SystemExit("Exact built-product identity verification failed; existing data preserved.")
 PY
     else
+        [[ "$(sudo find "$home/cached-products" -mindepth 1 -maxdepth 1 -printf . | wc -c)" -lt 10 ]] ||
+            die "Retained product bound reached; preserve existing products."
         sudo python3 "$TMP/support/lib/recovery_cached_product.py" stage \
             "${exact[@]}" --materialization "$BUILD_OUT/materialization.json" \
             --input-dir "$BUILD_OUT" --destination "$cache" >/dev/null
     fi
-    sudo python3 "$TMP/support/lib/recovery_cached_receipt.py" commit \
-        "${exact[@]}" --root "$root" --cache "$cache" >/dev/null
+    sudo python3 - "$TMP/support/lib" "$home" "$identity" <<'PYCACHE'
+import sys
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+import installed_update_transaction as tx
+home=Path(sys.argv[2]);cache=home/'cached-products'/sys.argv[3]
+for entry in cache.iterdir():
+    fd=__import__('os').open(entry,__import__('os').O_RDONLY|__import__('os').O_NOFOLLOW)
+    try:__import__('os').fsync(fd)
+    finally:__import__('os').close(fd)
+tx.fsync_dir(cache);tx.fsync_dir(cache.parent)
+tx.durable(home/'cached-current.json',{'product':sys.argv[3]})
+PYCACHE
 }
 
-resolve_local()
+
+# Reuse the existing validated producer pipeline for a published/development
+# archive. Metadata must be actual producer sidecars; never synthesize trust or
+# a materialization receipt from downloaded archive hashes alone.
+canonicalize_product()
 {
-    local source="$1"
-    local work="$TMP/local"
-    mkdir -p "$work"
-
-    if [[ -d "$source" ]]; then
-        mapfile -t archives < <(find "$source" -maxdepth 1 -type f -name 'nvidia-open-*.tar.gz' | sort)
-        (( ${#archives[@]} == 1 )) || die "Local directory must contain exactly one nvidia-open-*.tar.gz archive."
-        LOCAL_ARCHIVE="${archives[0]}"
-    elif [[ "$source" == *.zip ]]; then
-        need unzip
-        unzip -q "$source" -d "$work"
-        mapfile -t archives < <(find "$work" -maxdepth 1 -type f -name 'nvidia-open-*.tar.gz' | sort)
-        (( ${#archives[@]} == 1 )) || die "Local bundle must contain exactly one nvidia-open-*.tar.gz archive."
-        LOCAL_ARCHIVE="${archives[0]}"
-    elif [[ "$source" == *.tar.gz ]]; then
-        LOCAL_ARCHIVE="$source"
-    else
-        die "Unsupported local package type: $source"
+    local archive="$1" checksum="$2" fuzzy="$3" stem
+    [[ "$fuzzy" == 0 ]] || die "Canonical recovery custody requires an exact SteamOS target; older-target release preserved, not relabelled."
+    stem="${archive%.tar.gz}"
+    [[ -f "$stem.build-info.txt" && -f "$stem.provenance.json" ]] ||
+        die "Exact product custody requires the release's existing build-info and provenance sidecars."
+    local packed products tag manifest_sha representation
+    representation="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["artifact"].get("representation","raw"))' "$stem.provenance.json")"
+    if [[ "$representation" != ko.zst ]]; then
+        python3 "$TMP/support/lib/repack_module_artifact.py" \
+            --archive "$archive" --checksum "$checksum" --build-info "$stem.build-info.txt" \
+            --provenance "$stem.provenance.json" --output-dir "$TMP/canonical-repacked" --support-commit "$SUPPORT_REV"
+        mapfile -t packed < <(find "$TMP/canonical-repacked" -maxdepth 1 -type f -name 'nvidia-open-*.tar.gz' | sort)
+        (( ${#packed[@]} == 1 )) || die "Canonical producer output is ambiguous."
+        archive="${packed[0]}"; stem="${archive%.tar.gz}"
     fi
-
-    LOCAL_CHECKSUM="${LOCAL_ARCHIVE}.sha256"
-    [[ -f "$LOCAL_CHECKSUM" ]] || die "Matching checksum not found: $LOCAL_CHECKSUM"
+    python3 "$TMP/support/lib/build_driver_product.py" --archive "$archive" --checksum "$archive.sha256" \
+        --build-info "$stem.build-info.txt" --provenance "$stem.provenance.json" --output-dir "$TMP/canonical-product"
+    mapfile -t products < <(find "$TMP/canonical-product" -maxdepth 1 -type f -name '*.tar.gz' | sort)
+    (( ${#products[@]} == 1 )) || die "Driver product output is ambiguous."
+    tag="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["artifact"]["releaseTag"])' "$stem.provenance.json")"
+    python3 "$TMP/support/lib/driver_binary_bundle.py" create --archive "${products[0]}" \
+        --sidecar "${products[0]}.sha256" --output "$TMP/canonical-product/bundle.json" --release-tag "$tag"
+    manifest_sha="$(sha256sum "$TMP/canonical-product/bundle.json" | cut -d ' ' -f 1)"
+    BUILD_OUT="$TMP/materialized"
+    # Materializer owns output creation; shell redirection must not pre-create it.
+    python3 "$TMP/support/lib/materialize_driver_product.py" --manifest "$TMP/canonical-product/bundle.json" \
+        --asset-dir "$TMP/canonical-product" --expected-manifest-sha256 "$manifest_sha" \
+        --expected-core-commit "$SUPPORT_REV" --expected-steamos "$STEAMOS_VERSION" \
+        --expected-kernel "$KERNEL_VERSION" --expected-nvidia "$NVIDIA_VERSION" --expected-architecture x86_64 \
+        --output-dir "$BUILD_OUT" > "$TMP/materialization-result.json"
+    cp "$TMP/materialization-result.json" "$BUILD_OUT/materialization.json"
+    if [[ -n "$PRIVATE_ARCHIVE_SHA" ]]; then
+        python3 - "$BUILD_OUT/materialization.json" "$BUILD_OUT" "$PRIVATE_ARCHIVE_SHA" <<'PYPRIVATEBIND'
+import json,sys
+from pathlib import Path
+m=json.load(open(sys.argv[1]));p=json.load(open(Path(sys.argv[2])/m['outputs']['provenance']['name']))
+# Raw input is genuinely repacked by the current Core producer; compressed
+# current-Core input is genuinely validated/materialized byte-identically.
+observed=p.get('repack',{}).get('sourceArchiveSha256')
+if m['outputs']['archive']['sha256']!=sys.argv[3] and observed!=sys.argv[3]:
+    raise SystemExit('Canonical producer did not consume selected exact private input')
+PYPRIVATEBIND
+    fi
 }
+
+retain_install_inputs()
+{
+    local home args result
+    home="$(project_system_path /home/.steamos/open-gpu-kernel-modules-steamos-support/recovery)"
+    args=(retain-install --home "$home" --directory "$RETAINED_PRODUCT" --steamos "$STEAMOS_VERSION" \
+          --kernel "$KERNEL_VERSION" --nvidia "$NVIDIA_VERSION" --support-revision "$SUPPORT_REV")
+    [[ -z "$PRIVATE_SELECTION" ]] || args+=(--verify-userspace-files)
+    if [[ -n "$INTERSTITIAL_BINARY" || -n "$INTERSTITIAL_SHA256" ]]; then
+        args+=(--interstitial "$INTERSTITIAL_BINARY" --interstitial-sha256 "$INTERSTITIAL_SHA256")
+    fi
+    result="$(sudo python3 "$TMP/support/lib/recovery_cached_product.py" "${args[@]}")"
+    INTERSTITIAL_BINARY="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["interstitial"])' "$result")"
+    INTERSTITIAL_SHA256="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["sha256"])' "$result")"
+}
+
+# A pending ordinary transaction wins over discovery/build. Its immutable
+# identity is not the mutable latest-product pointer, and is never rearmed.
+if [[ "$IN_CODE" == 0 && -z "$LOCAL_SOURCE" ]]; then
+    home="$(project_system_path /home/.steamos/open-gpu-kernel-modules-steamos-support/recovery)"
+    if sudo test -e "$home/pending-install.json"; then
+        RETAINED_PRODUCT="$(sudo python3 "$TMP/support/lib/recovery_cached_product.py" pending \
+            --home "$home" --steamos "$STEAMOS_VERSION" --kernel "$KERNEL_VERSION" \
+            --nvidia "$NVIDIA_VERSION" --support-revision "$SUPPORT_REV")" || die "Pending exact install cannot be replaced by discovery."
+        [[ -n "$RETAINED_PRODUCT" ]] || die "Pending product unavailable; preserve original intent."
+        install_archive unused unused 0
+        offer_reboot
+        exit 0
+    fi
+fi
 
 if [[ "$IN_CODE" == "1" ]]; then
     BUILD_OUT="$TMP/in-code-release"
@@ -494,8 +820,7 @@ if [[ "$IN_CODE" == "1" ]]; then
 fi
 
 if [[ -n "$LOCAL_SOURCE" ]]; then
-    LOCAL_SOURCE="$(realpath "$LOCAL_SOURCE")"
-    resolve_local "$LOCAL_SOURCE"
+    # Consume the pre-setup authenticated snapshot, not a second caller-path read.
     install_archive "$LOCAL_ARCHIVE" "$LOCAL_CHECKSUM" 0
     install_recovery_guardian
     offer_reboot
@@ -509,9 +834,14 @@ if ! curl -fsSL --retry 2 \
     -o "$RELEASES_JSON"; then
     # A failed query never authorizes compilation. Only an existing cache may
     # proceed through the exact current checkout's policy and byte validation.
-    cache="$(project_system_path /home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/cached-repair)"
+    home="$(project_system_path /home/.steamos/open-gpu-kernel-modules-steamos-support/recovery)"
+    cache="$(sudo python3 "$TMP/support/lib/recovery_cached_product.py" select \
+        --home "$home" --steamos "$STEAMOS_VERSION" --kernel "$KERNEL_VERSION" \
+        --nvidia "$NVIDIA_VERSION" --support-revision "$SUPPORT_REV")" || \
+        die "Retained exact product failed validation after release query failure."
+    RETAINED_PRODUCT="$cache"
     if [[ "$BUILD_AS_FALLBACK" == 1 && -z "${OPEMOS_RECOVERY_PLAN_FILE:-}" &&
-          ( -e "$cache" || -L "$cache" ) ]]; then
+          -n "$cache" && ( -e "$cache" || -L "$cache" ) ]]; then
         printf '[]\n' > "$RELEASES_JSON"
         OPEMOS_SKIP_UNCHANGED_BUILD=1
         log "Release query unavailable; checking the exact retained cache only."
@@ -549,7 +879,12 @@ if [[ -z "$SELECTED" ]]; then
     # Empty selection alone is not authorization. The strict shared contract
     # rejects malformed/incomplete metadata and unreviewed exact targets.
     BUILD_OUT="$TMP/automatic-build"
-    cache="$(project_system_path /home/.steamos/open-gpu-kernel-modules-steamos-support/recovery/cached-repair)"
+    home="$(project_system_path /home/.steamos/open-gpu-kernel-modules-steamos-support/recovery)"
+    cache="$(sudo python3 "$TMP/support/lib/recovery_cached_product.py" select \
+        --home "$home" --steamos "$STEAMOS_VERSION" --kernel "$KERNEL_VERSION" \
+        --nvidia "$NVIDIA_VERSION" --support-revision "$SUPPORT_REV")" || \
+        die "Retained exact build cache failed verification."
+    RETAINED_PRODUCT="$cache"
     if [[ -e "$cache" || -L "$cache" ]]; then
         sudo python3 "$TMP/support/lib/recovery_cached_product.py" show \
             --steamos "$STEAMOS_VERSION" --kernel "$KERNEL_VERSION" \
@@ -641,15 +976,8 @@ if not (provenance['source']['commit'] == plan['source']['commit']):
 if not (provenance['source']['repository'] == plan['source']['repository']):
     raise SystemExit("Exact built-product identity verification failed; existing data preserved.")
 PY
-    if already_installed "$ARCHIVE" "$CHECKSUM"; then
-        log "Exact built modules are already installed and verified; no module changes needed."
-    else
-        install_archive "$ARCHIVE" "$CHECKSUM" 0
-        already_installed "$ARCHIVE" "$CHECKSUM" || die "Automatic installation did not pass exact module verification."
-    fi
-    install_recovery_guardian
-    retain_built_product
-    retain_core_checkout
+    install_archive "$ARCHIVE" "$CHECKSUM" 0
+    log "Actual startup health, not build or installer completion, decides update success."
     offer_reboot
     exit 0
 fi
@@ -711,6 +1039,21 @@ if [[ -n "$RECOVERY_PLAN_FILE" ]]; then
         die "Downloaded release differs from the immutable recovery plan."
 fi
 
+# The archive/sidecar format is already the Core release contract. Require its
+# two existing metadata assets in the selected release inventory before fetch.
+python3 - "$RELEASES_JSON" "$SELECTED_TAG" "$SELECTED_ASSET" <<'PYASSETS'
+import json,sys
+rows=[r for r in json.load(open(sys.argv[1])) if r.get('tag_name')==sys.argv[2]]
+if len(rows)!=1:raise SystemExit('Selected release inventory missing or ambiguous; no fabricated provenance')
+names={a['name'] for a in rows[0].get('assets',[])}
+stem=sys.argv[3].removesuffix('.tar.gz')
+if not {stem+'.build-info.txt',stem+'.provenance.json'}<=names:
+    raise SystemExit('Published release lacks existing authenticated metadata inputs; no first-install product can be retained')
+PYASSETS
+for suffix in build-info.txt provenance.json; do
+    curl -fSL --retry 2 "${BASE_URL}/${SELECTED_ASSET%.tar.gz}.$suffix" \
+        -o "${ARCHIVE%.tar.gz}.$suffix" || die "Release metadata download failed."
+done
 INSTALL_FUZZY=0
 [[ "$SELECTED_STEAMOS" != "$STEAMOS_VERSION" ]] && INSTALL_FUZZY=1
 

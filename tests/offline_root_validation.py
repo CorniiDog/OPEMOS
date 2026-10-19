@@ -865,6 +865,43 @@ def assert_indeterminate_then_complete(records, phase):
     }
 
 
+PENDING_GENERATION = Path("var/lib/open-gpu-kernel-modules-steamos-support/offline-generation-pending.json")
+PRESERVED_FAILURES = []
+
+
+def target_snapshot(root):
+    """Real file identities/bytes; never follow a fixture symlink."""
+    rows = []
+    for directory, dirs, files in os.walk(root, followlinks=False):
+        for name in sorted([*dirs, *files]):
+            node = Path(directory) / name
+            info = node.lstat()
+            value = (os.readlink(node) if node.is_symlink() else
+                     hashlib.sha256(node.read_bytes()).hexdigest() if stat.S_ISREG(info.st_mode) else None)
+            rows.append((str(node.relative_to(root)), info.st_dev, info.st_ino,
+                         info.st_uid, info.st_gid, info.st_mode, info.st_size,
+                         info.st_mtime_ns, value))
+    return sorted(rows)
+
+
+def independent_target(paths, destination):
+    """Create a distinct case from clean/sealed prestate, never a failed image."""
+    source = paths["target"]
+    assert not os.path.lexists(source / PENDING_GENERATION), source
+    before = target_snapshot(source)
+    shutil.copytree(source, destination, symlinks=True)
+    assert source.stat().st_ino != destination.stat().st_ino
+    assert target_snapshot(source) == before
+    assert not os.path.lexists(destination / PENDING_GENERATION)
+    return {**paths, "target": destination}
+
+
+def preserve_failed_target(paths):
+    root = paths["target"]
+    if os.path.lexists(root / PENDING_GENERATION):
+        PRESERVED_FAILURES.append((root, target_snapshot(root)))
+
+
 def run_installer(paths, binaries, result, success, preserve_lock=False, **environment):
     command = installer_command(paths, result, preserve_lock=preserve_lock)
     mount_state = result.with_suffix(".mounts")
@@ -900,6 +937,8 @@ def run_installer(paths, binaries, result, success, preserve_lock=False, **envir
     assert set(test_temp_root.glob("offline-root-inputs.*")) == before_input_snapshots
     assert set(test_temp_root.glob("offline-root-workspace.*")) == before_workspace_results
     assert set(scratch_parent.glob("offline-root-initramfs.*")) == before_scratch
+    if not success:
+        preserve_failed_target(paths)
     return json.loads(result.read_text(encoding="utf-8"))
 
 
@@ -1258,6 +1297,7 @@ def cancel_installer(paths, binaries, result, expected_phase, **environment):
             for record in records
         )
         assert_item_progress(records, "mount_cleanup", 4)
+    preserve_failed_target(paths)
 
 
 def main():
@@ -2338,6 +2378,7 @@ def main():
         profile_fixture_root.mkdir()
         profile_paths = make_fixture(profile_fixture_root)
         profile_paths["compression_profile"] = "btrfs-zstd3"
+        profile_pristine = independent_target(profile_paths, temporary / "profile-pristine-baseline")
         activation_failed = run_installer(
             profile_paths,
             binaries,
@@ -2354,8 +2395,14 @@ def main():
         assert not activation_log.exists() or " -U " not in (
             " " + activation_log.read_text(encoding="utf-8") + " "
         )
+        failed_activation_before = target_snapshot(profile_paths["target"])
+        reentry = run_installer(profile_paths, binaries, temporary / "interrupted-profile-reentry.json", False,
+                                PROJECT_TEST_ROOT_AVAILABLE_BYTES=str(256 * 1024 * 1024),
+                                PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024))
+        assert reentry["reason"] == "image_generation_begin", reentry
+        assert target_snapshot(profile_paths["target"]) == failed_activation_before
         shared_activation = run_installer(
-            profile_paths,
+            independent_target(profile_pristine, temporary / "shared-activation-target"),
             binaries,
             temporary / "compression-profile-shared-activation.json",
             False,
@@ -2363,11 +2410,12 @@ def main():
             PROJECT_TEST_BTRFS_PAYLOAD_ALLOCATED_BYTES=str(8 * 1024 * 1024),
             MOCK_SHARED_ROOT_MOUNT="1",
         )
-        assert shared_activation["reason"] == "compression_policy_activation"
+        assert shared_activation["reason"] == "compression_policy_activation", shared_activation
         assert shared_activation["cleanup"]["compressionPolicyRestored"] is True
         test_temp_root = binaries.parent / "appliance-tmp"
         mutation_work_before = set(test_temp_root.glob("offline-root-mutation.*"))
         profile_mutation_path = temporary / "compression-profile-mutation.json"
+        profile_paths = independent_target(profile_pristine, temporary / "normal-profile-target")
         profile_mutation = run_installer(
             profile_paths,
             binaries,
@@ -2455,8 +2503,9 @@ def main():
         assert repeated_profile["validation"]["storage"]["moduleNoopCreditBytes"] == (
             8 * 1024 * 1024
         )
+        profile_sealed = independent_target(profile_paths, temporary / "profile-sealed-baseline")
         wrong_installed_version = run_installer(
-            profile_paths,
+            independent_target(profile_sealed, temporary / "wrong_installed_version-target"),
             binaries,
             temporary / "compression-profile-wrong-installed-version.json",
             False,
@@ -2500,7 +2549,7 @@ def main():
         )
         assert_item_progress(wrong_version_progress, "mount_cleanup", 4)
         corrupt_installed_payload = run_installer(
-            profile_paths,
+            independent_target(profile_sealed, temporary / "corrupt_installed_payload-target"),
             binaries,
             temporary / "compression-profile-corrupt-installed-payload.json",
             False,
@@ -2527,7 +2576,7 @@ def main():
             }],
         }
         inconsistent_database = run_installer(
-            profile_paths,
+            independent_target(profile_sealed, temporary / "inconsistent_database-target"),
             binaries,
             temporary / "compression-profile-database-inconsistent.json",
             False,
@@ -2540,7 +2589,7 @@ def main():
             "compressionPolicyRestored"
         ] is True
         drifted_profile = run_installer(
-            profile_paths,
+            independent_target(profile_sealed, temporary / "drifted_profile-target"),
             binaries,
             temporary / "compression-profile-drift.json",
             False,
@@ -2553,7 +2602,7 @@ def main():
         assert drifted_profile["cleanup"]["mountsReleased"] is True
         assert drifted_profile["cleanup"]["compressionPolicyRestored"] is True
         cancel_installer(
-            profile_paths,
+            independent_target(profile_sealed, temporary / "profile-cancel-target"),
             binaries,
             temporary / "compression-profile-cancel.json",
             "initramfs",
@@ -3086,8 +3135,9 @@ def main():
         assert validation_mount_drift["phase"] == "mutation_preflight"
         assert not (temporary / "validation-mount-identity-drift.pacman").exists()
 
+        initial_target = independent_target(paths, temporary / "main-clean-baseline")
         failed_first_bind = run_installer(
-            paths,
+            independent_target(initial_target, temporary / "failed_first_bind-target"),
             binaries,
             temporary / "first-runtime-bind-failed.json",
             False,
@@ -3098,7 +3148,7 @@ def main():
         assert not (temporary / "first-runtime-bind-failed.umount").exists()
 
         drifted_mount_identity = run_installer(
-            paths,
+            independent_target(initial_target, temporary / "drifted_mount_identity-target"),
             binaries,
             temporary / "target-mount-identity-drift.json",
             False,
@@ -3109,7 +3159,7 @@ def main():
         assert not (temporary / "target-mount-identity-drift.pacman").exists()
 
         locked = run_installer(
-            paths,
+            independent_target(initial_target, temporary / "locked-target"),
             binaries,
             temporary / "target-lifecycle-locked.json",
             False,
@@ -3311,8 +3361,9 @@ def main():
         assert bad_grub["phase"] == "validation"
         grub_path.write_bytes(valid_grub)
 
+        sealed_target = independent_target(paths, temporary / "main-sealed-baseline")
         drifted_execution = run_installer(
-            paths,
+            independent_target(sealed_target, temporary / "drifted_execution-target"),
             binaries,
             temporary / "install-target-execution-drift.json",
             False,
@@ -3337,7 +3388,7 @@ def main():
         )
 
         failed_verification = run_installer(
-            paths,
+            independent_target(sealed_target, temporary / "failed_verification-target"),
             binaries,
             temporary / "install-initramfs-verification-failed.json",
             False,
@@ -3372,8 +3423,9 @@ def main():
         )
         assert_item_progress(verification_progress, "mount_cleanup", 4)
 
+        state_write_paths = independent_target(sealed_target, temporary / "state-write-failure-target")
         state_write_failed = run_installer(
-            paths,
+            state_write_paths,
             binaries,
             temporary / "state-write-failed.json",
             False,
@@ -3406,18 +3458,18 @@ def main():
         ]
         assert_item_progress(state_write_progress, "mount_cleanup", 4)
         receipt_path = (
-            paths["target"]
+            state_write_paths["target"]
             / "usr/lib/open-gpu-kernel-modules-steamos-support/offline-install"
         )
         saved_receipt_path = receipt_path.with_name(
             receipt_path.name + ".mock-saved"
         )
         assert receipt_path.is_symlink()
-        receipt_path.unlink()
-        saved_receipt_path.rename(receipt_path)
+        assert saved_receipt_path.is_dir()
+        # Preserve the unsafe interrupted target; later faults use sealed copies.
 
         depmod_failed = run_installer(
-            paths,
+            independent_target(sealed_target, temporary / "depmod_failed-target"),
             binaries,
             temporary / "depmod-failed.json",
             False,
@@ -3438,7 +3490,7 @@ def main():
         assert_item_progress(depmod_progress, "mount_cleanup", 4)
 
         grub_failed = run_installer(
-            paths,
+            independent_target(sealed_target, temporary / "grub_failed-target"),
             binaries,
             temporary / "grub-failed.json",
             False,
@@ -3471,7 +3523,7 @@ def main():
         grub_path.write_bytes(valid_grub)
 
         failed = run_installer(
-            paths,
+            independent_target(sealed_target, temporary / "failed-target"),
             binaries,
             temporary / "install-failed.json",
             False,
@@ -3504,28 +3556,28 @@ def main():
         assert_item_progress(failed_progress, "mount_cleanup", 4)
 
         cancel_installer(
-            paths,
+            independent_target(sealed_target, temporary / "cancel-validation-target"),
             binaries,
             temporary / "cancel-validation.json",
             "validation",
             MOCK_GPGV_DELAY="30",
         )
         cancel_installer(
-            paths,
+            independent_target(sealed_target, temporary / "cancel-userspace-install-target"),
             binaries,
             temporary / "cancel-userspace-install.json",
             "userspace_install",
             MOCK_PACMAN_DELAY="30",
         )
         cancel_installer(
-            paths,
+            independent_target(sealed_target, temporary / "cancel-userspace-verification-target"),
             binaries,
             temporary / "cancel-userspace-verification.json",
             "userspace_verification",
             MOCK_PACMAN_QUERY_DELAY="30",
         )
         cancel_installer(
-            paths,
+            independent_target(sealed_target, temporary / "cancel-mutation-target"),
             binaries,
             temporary / "cancel-mutation.json",
             "initramfs",
@@ -3533,7 +3585,7 @@ def main():
         )
 
         reconciled_qkk = run_installer(
-            paths,
+            independent_target(sealed_target, temporary / "reconciled_qkk-target"),
             binaries,
             temporary / "install-qkk-directory-warning.json",
             True,
@@ -3548,7 +3600,7 @@ def main():
             "pacmanIntegrityVerified"
         ] is True
         unexplained_qkk = run_installer(
-            paths,
+            independent_target(sealed_target, temporary / "unexplained_qkk-target"),
             binaries,
             temporary / "install-qkk-unexplained-failure.json",
             False,
@@ -3574,7 +3626,7 @@ def main():
             ("package-directory", []),
         ):
             rejected_qkk = run_installer(
-                paths,
+                independent_target(sealed_target, temporary / f"qkk-{diagnostic}-target"),
                 binaries,
                 temporary / f"install-qkk-{diagnostic}.json",
                 False,
@@ -3591,6 +3643,11 @@ def main():
             assert mismatch["packageMismatches"][0]["affectedEntries"] == (
                 expected_entries
             )
+
+        assert PRESERVED_FAILURES
+        for failed_root, snapshot in PRESERVED_FAILURES:
+            assert target_snapshot(failed_root) == snapshot, failed_root
+        print("Preserved interrupted fixture generations:", len(PRESERVED_FAILURES))
 
 
 if __name__ == "__main__":

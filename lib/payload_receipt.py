@@ -289,6 +289,10 @@ def commit_receipt(args):
 
 def _verify_receipt(root, allow_live_root=False):
     resolved_root = safe_root(root, allow_live_root=allow_live_root)
+    pending = resolved_root / 'var/lib/open-gpu-kernel-modules-steamos-support/offline-generation-pending.json'
+    if pending.exists() or pending.is_symlink():
+        from offline_generation import require_producer
+        require_producer(resolved_root)
     expected_owner = 0 if resolved_root == Path("/") else os.geteuid()
     directory, descriptor, directory_identity = open_receipt_directory(
         resolved_root, allow_live_root=allow_live_root,

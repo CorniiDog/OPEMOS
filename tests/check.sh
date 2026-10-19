@@ -256,6 +256,8 @@ printf 'Checking installed-system recovery contract...\n'
 python3 tests/recovery_status.py
 python3 tests/recovery_state_stress.py
 python3 tests/recovery_cached_product.py
+python3 tests/local_userspace_inputs.py
+python3 tests/offline_core_intake.py
 python3 tests/cache_root_contract.py
 
 printf 'Checking target-owned execution trust...\n'

@@ -19,7 +19,13 @@ jobs:
       - name: Install test dependencies
         run: >-
           sudo apt-get update && sudo apt-get install --yes
-          libarchive-tools shellcheck zstd
+          libarchive-tools shellcheck zstd kmod
+
+      - name: Verify changed offline Core intake first
+        run: python3 tests/offline_core_intake.py
+
+      - name: Verify changed source hygiene before full gate
+        run: python3 tests/implementation_hygiene.py
 
       - name: Run project checks
         run: ./tests/check.sh

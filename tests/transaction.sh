@@ -493,24 +493,64 @@ run_successful_lifecycle()
         die "Successful uninstall did not retain its existing rollback generation."
 }
 
+# Installed updates require the actual owning root controller. A sudo adapter
+# cannot authorize the old direct writer. Positive activation/rollback/reboot
+# cases belong to tests/vm/ordinary_online_install_acceptance.py, not these
+# unprivileged temporary-root refusal cases. Historical helpers above remain
+# preserved as source history; they are not called as proof of installed health.
+run_unowned_install_case()
+{
+    local format="$1" before after output rc fallback unrelated
+    reset_case "unowned-install-${format}" "$format"
+    before="${CASE_ROOT}/before"; after="${CASE_ROOT}/after"
+    snapshot_fake_state "$before"
+    fallback="$(sha256_file "$MOCK_FALLBACK_MODULE")"
+    unrelated="$(sha256_file "$MOCK_UNRELATED_FILE")"
+    export MOCK_FAIL_POINT=target-copy
+    set +e
+    output="$("${PROJECT_ROOT}/bootstrap/install.sh" --archive "$RELEASE_ARCHIVE" \
+        --checksum "${RELEASE_ARCHIVE}.sha256" --yes 2>&1)"
+    rc=$?
+    set -e
+    (( rc != 0 )) || die "Unowned installed writer unexpectedly succeeded."
+    [[ "$output" == *"installed update requires owning root controller"* ]] || {
+        printf '%s\n' "$output" >&2; die "Expected owning-controller refusal."
+    }
+    [[ ! -e "$MOCK_FAILURE_MARKER" ]] || die "Unowned writer reached module copy."
+    snapshot_fake_state "$after"
+    assert_fake_state_restored "$before" "$after"
+    [[ "$(sha256_file "$MOCK_FALLBACK_MODULE")" == "$fallback" ]]
+    [[ "$(sha256_file "$MOCK_UNRELATED_FILE")" == "$unrelated" ]]
+}
+
+run_manual_uninstall_success_case()
+{
+    local output fallback unrelated
+    reset_case manual-uninstall-success
+    fallback="$(sha256_file "$MOCK_FALLBACK_MODULE")"
+    unrelated="$(sha256_file "$MOCK_UNRELATED_FILE")"
+    output="$("${PROJECT_ROOT}/bootstrap/uninstall.sh" --yes 2>&1)"
+    [[ "$output" == *"removed successfully"* ]] || { printf '%s\n' "$output" >&2; die "Manual fixture uninstall failed."; }
+    [[ ! -e "$MOCK_TARGET_DIR" ]]
+    [[ ! -e "${MOCK_STATE_ROOT}/installed-nvidia.txt" ]]
+    [[ "$(sha256_file "$MOCK_FALLBACK_MODULE")" == "$fallback" ]]
+    [[ "$(sha256_file "$MOCK_UNRELATED_FILE")" == "$unrelated" ]]
+    [[ "$(<"$MOCK_READONLY_STATE")" == enabled ]]
+}
+
 ORIGINAL_PATH="$PATH"
 snapshot_real_modules "$REAL_BEFORE"
 make_release_archive
 
 run_install_checksum_failure_case
-run_install_failure_case install-partial-copy target-copy
-run_install_failure_case install-initramfs initramfs
-run_install_failure_case install-legacy-raw-target initramfs raw
-run_install_failure_case install-state-write state-write
-run_install_failure_case install-readonly-restore readonly-enable
-run_install_incomplete_rollback_case
-run_install_signal_case
+run_unowned_install_case compressed
+run_unowned_install_case raw
 run_uninstall_failure_case
 run_uninstall_readonly_failure_case
-run_successful_lifecycle
+run_manual_uninstall_success_case
 
 snapshot_real_modules "$REAL_AFTER"
 cmp "$REAL_BEFORE" "$REAL_AFTER" ||
     die "Real installed NVIDIA modules changed during fake-root tests."
 
-printf 'All fake-root transaction tests passed; real system modules were untouched.\n'
+printf 'Controller refusal and manual fixture uninstall tests passed; real system modules were untouched.\n'

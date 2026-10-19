@@ -30,6 +30,7 @@ from device_generation_lifecycle import (  # noqa: E402
     DeviceGenerationError,
     snapshot_regular,
     snapshot_trust_file,
+    seal_generation,
 )
 from payload_receipt import commit_receipt  # noqa: E402
 
@@ -418,6 +419,29 @@ def main():
     assert help_result.returncode == 0 and "installed-device" in help_result.stdout
     with tempfile.TemporaryDirectory(prefix="opemos-device-generations-") as name:
         root = Path(name).resolve()
+        # Observe actual fsync calls, preserving the OS implementation. The
+        # production method is not replaced; later VM execution must perform
+        # the real permission changes and file/directory syncs.
+        sealed = root / "durable-seal"
+        (sealed / "payload").mkdir(parents=True, mode=0o700)
+        write(sealed / "payload" / "module.ko", b"durable payload")
+        synced = []
+        real_fsync = os.fsync
+        def observe_fsync(descriptor):
+            info = os.fstat(descriptor)
+            synced.append((info.st_ino, info.st_mode & 0o777))
+            return real_fsync(descriptor)
+        with mock.patch.object(os, "fsync", observe_fsync):
+            seal_generation(sealed)
+        assert synced == [
+            ((sealed / "payload" / "module.ko").stat().st_ino, 0o400),
+            ((sealed / "payload").stat().st_ino, 0o500),
+            (sealed.stat().st_ino, 0o500),
+        ], "all sealed inode metadata and nested entries must flush bottom-up"
+        # Allow fixture cleanup without weakening production sealed modes.
+        (sealed / "payload").chmod(0o700)
+        sealed.chmod(0o700)
+
         raced_trust = root / "raced-trust.json"
         replacement_trust = root / "replacement-trust.json"
         write(raced_trust, b'{"old":true}\n')
@@ -1269,6 +1293,46 @@ def main():
         assert not (store / "generations" / hash_10).exists()
         assert not list((store / "generations").glob(".stage-*"))
         assert not (store / "pending-activation.json").exists()
+
+        # NEW durable publication boundaries: real producer subprocess and
+        # ordinary startup reconciliation; no replacement of the method tested.
+        # These SIGKILL cases prove restart semantics, not power-loss durability.
+        for pause, published in (("AFTER_SEAL", False), ("AFTER_RENAME", True)):
+            stopped = subprocess.Popen(
+                [sys.executable, str(TOOL), "--store", str(store),
+                 "--policy", str(policy), "--keyring", str(keyring),
+                 "--checkpoint", str(checkpoint), "activate", "--source",
+                 str(generation_10), *TARGET_ARGUMENTS],
+                cwd="/", env={**environment,
+                              "OPEMOS_GENERATION_TEST_PAUSE_" + pause: "30"},
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            )
+            try:
+                deadline = time.monotonic() + 5
+                reached = False
+                while time.monotonic() < deadline:
+                    nodes = ([store / "generations" / hash_10] if published else
+                             list((store / "generations").glob(".stage-*")))
+                    reached = any(node.is_dir() and node.stat().st_mode & 0o777 == 0o500
+                                  for node in nodes)
+                    if reached:
+                        break
+                    assert stopped.poll() is None, "producer exited before boundary"
+                    time.sleep(0.02)
+                assert reached, "producer did not reach durable publication boundary"
+                stopped.kill()
+                stopped.communicate(timeout=5)
+                assert stopped.returncode == -signal.SIGKILL
+                for _ in range(2):
+                    reconciled = invoke(environment, store, policy, keyring, checkpoint, "check")
+                    assert reconciled["state"]["active"]["manifestSha256"] == hash_9
+                    assert not (store / "pending-activation.json").exists()
+                    assert not (store / "generations" / hash_10).exists()
+                    assert not list((store / "generations").glob(".stage-*"))
+            finally:
+                if stopped.poll() is None:
+                    stopped.kill()
+                stopped.communicate(timeout=5)
 
         publish_pause_environment = {
             **environment, "OPEMOS_GENERATION_TEST_PAUSE_AFTER_PUBLISH": "30",

@@ -36,6 +36,12 @@ status=$?
 set -e
 if [[ "$status" -ne 0 ]]; then
     document="$("$SUPPORT_ROOT/bootstrap/recoveryctl.sh" status --json 2>/dev/null)" || document='{}'
+    if [[ "$status" == 130 || "$status" == 143 ]] &&
+       python3 -c 'import json,sys; d=json.loads(sys.argv[1]); raise SystemExit(0 if d.get("reason")=="installed_generation_awaits_boot_health" and d.get("moduleVerification",{}).get("status")=="verified" else 1)' "$document"; then
+        # The guardian deliberately releases DRM for deferred actual health.
+        # Do not turn that ordinary handoff into a console/VT takeover.
+        exit "$status"
+    fi
     if python3 -c 'import json,sys; d=json.loads(sys.argv[1]); raise SystemExit(0 if d.get("status") == "healthy" and d.get("moduleVerification",{}).get("status") == "verified" else 1)' "$document"; then
         # UI acquisition failure is not a failed driver repair and must not
         # steal an already healthy graphical session's VT.

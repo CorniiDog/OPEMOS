@@ -314,15 +314,17 @@ def main():
     parser.add_argument("--reason", default="")
     args = parser.parse_args()
     args.state = safe_parent(args.state) / args.state.name
+    # Atomic, identity-revalidated reads do not need a writable lock file.
+    # This is also used by the installed renderer's read-only home mount.
+    if args.operation == "show":
+        if any((args.kernel, args.nvidia, args.support_revision,
+                args.phase, args.reason)):
+            fail("show does not accept transaction fields")
+        document = load(args.state)
+        print(json.dumps(document or {"schemaVersion": 1, "phase": "restored", "active": False},
+                         sort_keys=True, separators=(",", ":")))
+        return
     with transaction_lock(args.state):
-        if args.operation == "show":
-            if any((args.kernel, args.nvidia, args.support_revision,
-                    args.phase, args.reason)):
-                fail("show does not accept transaction fields")
-            document = load(args.state)
-            print(json.dumps(document or {"schemaVersion": 1, "phase": "restored", "active": False},
-                             sort_keys=True, separators=(",", ":")))
-            return
         if args.operation == "remove-terminal":
             if any((args.kernel, args.nvidia, args.support_revision,
                     args.phase, args.reason)):
